@@ -224,7 +224,7 @@ int main( int argc, char** argv )
    const size_t seed( 12345 );
 
    // Verbose mode
-   const bool verbose( false );  // Switches the output of the simulation on and off
+   const bool verbose( true );  // Switches the output of the simulation on and off
 
    // Visualization
    bool povray( true );  // Switches the POV-Ray visualization on and off

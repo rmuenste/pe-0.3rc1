@@ -1070,17 +1070,26 @@ void Writer::writeBoxDataAscii(std::ostream& out) const {
    out << "<?xml version=\"1.0\"?>\n";
    out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
    out << " <UnstructuredGrid>\n";
-   out << "  <Piece NumberOfPoints=\"" << boxes_.size() <<
-        "\" NumberOfCells=\"" << boxes_.size() << "\">\n";
+   out << "  <Piece NumberOfPoints=\"" << boxes_.size() * 8 <<
+        "\" NumberOfCells=\"" << boxes_.size() * 6<< "\">\n";
    out << "   <Points>\n";
    out << "    <DataArray type=\"" << "Float32" <<
         "\" NumberOfComponents=\"" << 3 <<
         "\" format=\"ascii\">\n";
 
-     // Write the sphere positions
+     // Write the box positions
      for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
      {
-       out << "\t" << s->getPosition()[0] << "\t" << s->getPosition()[1] << "\t" << s->getPosition()[2] << "\n";
+       Vec3 length = s->getLengths();
+       out << "\t" << s->getPosition()[0] - 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
+       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
+       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
+       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
+
+       out << "\t" << s->getPosition()[0] - 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
+       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
+       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
+       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
      }
 
      // Declare grid as point cloud
@@ -1088,122 +1097,144 @@ void Writer::writeBoxDataAscii(std::ostream& out) const {
      out << "   </Points>\n";
      out << "   <Cells>\n";
      out << "    <DataArray type=\"Int32\" Name=\"connectivity\">\n";
-     for (unsigned int i = 0; i < boxes_.size(); i++)
-        out << " " << i << "\n";
+     unsigned int voff = 0;
+     for (unsigned int i = 0; i < boxes_.size(); i++) {
+        for(unsigned int j = 0; j < 6; ++j) {
+          // face bottom 
+          out << " " << 0 + voff << " " << 1 + voff << " " << 2 + voff << " " << 3 + voff << "\n";
+          // face top 
+          out << " " << 4 + voff << " " << 5 + voff << " " << 6 + voff << " " << 7 + voff << "\n";
+          // face right 
+          out << " " << 1 + voff << " " << 2 + voff << " " << 6 + voff << " " << 5 + voff << "\n";
+          // face left 
+          out << " " << 0 + voff << " " << 4 + voff << " " << 7 + voff << " " << 3 + voff << "\n";
+          // face front 
+          out << " " << 0 + voff << " " << 1 + voff << " " << 5 + voff << " " << 4 + voff << "\n";
+          // face back 
+          out << " " << 2 + voff << " " << 3 + voff << " " << 7 + voff << " " << 6 + voff << "\n";
+        }
+        voff += 8;
+     }
      out << "    </DataArray>\n";
      out << "    <DataArray type=\"Int32\" Name=\"offsets\">\n";
+     voff = 0;
      for (unsigned int i = 0; i < boxes_.size(); i++)
-        out << " " << i + 1 << "\n";
+       for(unsigned int j = 0; j < 6; ++j) {
+          out << " " << (i * 24) + j * 4 + 4 << "\n";
+       }
      out << "    </DataArray>\n";
      out << "    <DataArray type=\"UInt8\" Name=\"types\">\n";
+     // Every box has 6 faces
      for (unsigned int i = 0; i < boxes_.size(); i++)
-        out << " " << 1 << "\n";
+       for(unsigned int j = 0; j < 6; ++j) 
+         out << " " << 9 << "\n";
      out << "    </DataArray>\n";
      out << "   </Cells>\n";
 
-     // Data at each point
-     out << "   <PointData Scalars=\"scalars\" Vectors=\"vectors\">\n";
-
-     // write IDs
-     out << "    <DataArray type=\"" << "UInt32" <<
-            "\" Name=\"" << "ID" <<
-            "\" NumberOfComponents=\"" << 1 <<
-            "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        out << "\t" << s->getID() << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write Radii
-     out << "    <DataArray type=\"" << "Float32" <<
-           "\" Name=\"" << "Lengths" <<
-           "\" NumberOfComponents=\"" << 3 <<
-           "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        out << "\t" << s->getLengths()[0] << "\t" << s->getLengths()[1] << "\t" << s->getLengths()[2] << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write Mass
-     out << "    <DataArray type=\"" << "Float32" <<
-            "\" Name=\"" << "Mass" <<
-            "\" NumberOfComponents=\"" << 1 <<
-            "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        out << "\t" << s->getMass() << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write Orientation
-     out << "    <DataArray type=\"" << "Float32" <<
-            "\" Name=\"" << "Orientation" <<
-            "\" NumberOfComponents=\"" << 9 <<
-            "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        const pe::Rot3& rot = s->getRotation();
-        //Vector3<Real> o = calcEulerAngles(rot);
-        out << "\t" << rot[0] << " " << rot[1] << " " << rot[2] <<
-               "\t" << rot[3] << " " << rot[4] << " " << rot[5] <<
-               "\t" << rot[6] << " " << rot[7] << " " << rot[8] <<"\n";
-        //out << "\t" << o[0] << "\t" << o[1] << "\t" << o[2] << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write Euler angles
-     out << "    <DataArray type=\"" << "Float32" <<
-            "\" Name=\"" << "Euler Rotation" <<
-            "\" NumberOfComponents=\"" << 3 <<
-            "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        const pe::Vec3& rot = s->getRotation().getEulerAnglesXYZ();
-        //Vector3<Real> o = calcEulerAngles(rot);
-        out << "\t" << rot[0] << "\t" << rot[1] << "\t" << rot[2] << "\n";
-        //out << "\t" << o[0] << "\t" << o[1] << "\t" << o[2] << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write Net Force
-     out << "    <DataArray type=\"" << "Float32" <<
-           "\" Name=\"" << "Net Force" <<
-           "\" NumberOfComponents=\"" << 3 <<
-           "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        const Vec3 &f = s->getForce();
-        out << "\t" << f[0] << "\t" << f[1] << "\t" << f[2] << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write Velocsy
-     out << "    <DataArray type=\"" << "Float32" <<
-           "\" Name=\"" << "Velocity" <<
-           "\" NumberOfComponents=\"" << 3 <<
-           "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        const Vec3 &v = s->getLinearVel();
-        out << "\t" << v[0] << "\t" << v[1] << "\t" << v[2] << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     // write angular Velocity
-     out << "    <DataArray type=\"" << "Float32" <<
-           "\" Name=\"" << "Angular Velocity" <<
-           "\" NumberOfComponents=\"" << 3 <<
-           "\" format=\"ascii\">\n";
-     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
-     {
-        const Vec3 &v = s->getAngularVel();
-        out << "\t" << v[0] << "\t" << v[1] << "\t" << v[2] << "\n";
-     }      //end for all Boxes
-     out << "    </DataArray>\n";
-
-     out << "   </PointData>\n";
+//     // Data at each point
+//     out << "   <PointData Scalars=\"scalars\" Vectors=\"vectors\">\n";
+//
+//     // write IDs
+//     out << "    <DataArray type=\"" << "UInt32" <<
+//            "\" Name=\"" << "ID" <<
+//            "\" NumberOfComponents=\"" << 1 <<
+//            "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        out << "\t" << s->getID() << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write Radii
+//     out << "    <DataArray type=\"" << "Float32" <<
+//           "\" Name=\"" << "Lengths" <<
+//           "\" NumberOfComponents=\"" << 3 <<
+//           "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        out << "\t" << s->getLengths()[0] << "\t" << s->getLengths()[1] << "\t" << s->getLengths()[2] << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write Mass
+//     out << "    <DataArray type=\"" << "Float32" <<
+//            "\" Name=\"" << "Mass" <<
+//            "\" NumberOfComponents=\"" << 1 <<
+//            "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        out << "\t" << s->getMass() << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write Orientation
+//     out << "    <DataArray type=\"" << "Float32" <<
+//            "\" Name=\"" << "Orientation" <<
+//            "\" NumberOfComponents=\"" << 9 <<
+//            "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        const pe::Rot3& rot = s->getRotation();
+//        //Vector3<Real> o = calcEulerAngles(rot);
+//        out << "\t" << rot[0] << " " << rot[1] << " " << rot[2] <<
+//               "\t" << rot[3] << " " << rot[4] << " " << rot[5] <<
+//               "\t" << rot[6] << " " << rot[7] << " " << rot[8] <<"\n";
+//        //out << "\t" << o[0] << "\t" << o[1] << "\t" << o[2] << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write Euler angles
+//     out << "    <DataArray type=\"" << "Float32" <<
+//            "\" Name=\"" << "Euler Rotation" <<
+//            "\" NumberOfComponents=\"" << 3 <<
+//            "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        const pe::Vec3& rot = s->getRotation().getEulerAnglesXYZ();
+//        //Vector3<Real> o = calcEulerAngles(rot);
+//        out << "\t" << rot[0] << "\t" << rot[1] << "\t" << rot[2] << "\n";
+//        //out << "\t" << o[0] << "\t" << o[1] << "\t" << o[2] << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write Net Force
+//     out << "    <DataArray type=\"" << "Float32" <<
+//           "\" Name=\"" << "Net Force" <<
+//           "\" NumberOfComponents=\"" << 3 <<
+//           "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        const Vec3 &f = s->getForce();
+//        out << "\t" << f[0] << "\t" << f[1] << "\t" << f[2] << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write Velocsy
+//     out << "    <DataArray type=\"" << "Float32" <<
+//           "\" Name=\"" << "Velocity" <<
+//           "\" NumberOfComponents=\"" << 3 <<
+//           "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        const Vec3 &v = s->getLinearVel();
+//        out << "\t" << v[0] << "\t" << v[1] << "\t" << v[2] << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     // write angular Velocity
+//     out << "    <DataArray type=\"" << "Float32" <<
+//           "\" Name=\"" << "Angular Velocity" <<
+//           "\" NumberOfComponents=\"" << 3 <<
+//           "\" format=\"ascii\">\n";
+//     for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+//     {
+//        const Vec3 &v = s->getAngularVel();
+//        out << "\t" << v[0] << "\t" << v[1] << "\t" << v[2] << "\n";
+//     }      //end for all Boxes
+//     out << "    </DataArray>\n";
+//
+//     out << "   </PointData>\n";
+     out << "   <PointData>  </PointData>\n";
      out << "   <CellData>  </CellData>\n";
      out << "  </Piece>\n";
      out << " </UnstructuredGrid>\n";
