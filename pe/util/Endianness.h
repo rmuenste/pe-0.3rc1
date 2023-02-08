@@ -28,7 +28,8 @@
 // Includes
 //*************************************************************************************************
 
-#include <boost/detail/endian.hpp>
+
+#include <boost/predef/other/endian.h>
 #include <pe/util/EmptyType.h>
 #include <stdint.h>
 
@@ -53,9 +54,13 @@ enum Endianness {
    littleEndian,
    bigEndian,
    networkEndian = bigEndian,
-#if defined(BOOST_LITTLE_ENDIAN)
+#if defined(BOOST_ENDIAN_LITTLE_BYTE)
    hostEndian = littleEndian
-#elif defined(BOOST_BIG_ENDIAN)
+#elif defined(BOOST_ENDIAN_LITTLE_WORD)
+   hostEndian = littleEndian
+#elif defined(BOOST_ENDIAN_BIG_BYTE)
+   hostEndian = bigEndian
+#elif defined(BOOST_ENDIAN_BIG_WORD)
    hostEndian = bigEndian
 #else
 #  error "Unkown system endianness."

@@ -68,15 +68,15 @@ ENDIF()
 # Setting compiler flags analogously to the configure script (and clear default compiler flags set
 # by cmake for all compilers supported by the configure script to ensure compatibility)
 IF( CMAKE_COMPILER_IS_GNUCXX )
-   SET( CMAKE_CXX_FLAGS "-Wall -Werror -Wextra -Wshadow -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
+   SET( CMAKE_CXX_FLAGS "-Wall -Wextra -Wshadow -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
 ENDIF()
 
 IF( ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
-   SET( CMAKE_CXX_FLAGS "-Wall -Werror -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
+   SET( CMAKE_CXX_FLAGS "-Wall -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
 ENDIF()
 
 IF( ${CMAKE_CXX_COMPILER} MATCHES "clang\\+\\+" )
-   SET( CMAKE_CXX_FLAGS "-Wall -Werror -Wextra -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
+   SET( CMAKE_CXX_FLAGS "-Wall -Wextra -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
 ENDIF()
 
 # Setting user compiler and linker flags
