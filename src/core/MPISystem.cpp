@@ -310,7 +310,13 @@ void MPISystem::checkProcesses() const
          unmarshal( recvbuffer, n );
          unmarshal( recvbuffer, d );
 
-         remoteDescriptionOfRemoteDomain.push_back( std::make_pair<Vec3, real>( n, d - trans( n ) * it->getOffset() ) );
+         
+         std::pair<Vec3, real> aNewPair;
+         aNewPair.first = n;
+         aNewPair.second = d - trans(n) * it->getOffset();
+         //std::make_pair<Vec3, real>( n, d - trans( n ) * it->getOffset() ) );
+         //remoteDescriptionOfRemoteDomain.push_back( std::make_pair<Vec3, real>( n, d - trans( n ) * it->getOffset() ) );
+         remoteDescriptionOfRemoteDomain.push_back( aNewPair );
       }
 
       // Compare with local description of neighbor.
