@@ -53,6 +53,7 @@
 #include <pe/util/Time.h>
 #include <pe/vtk/Writer.h>
 #include <pe/vtk/Base64Writer.h>
+#include <vector>
 
 
 namespace pe {
@@ -1081,15 +1082,31 @@ void Writer::writeBoxDataAscii(std::ostream& out) const {
      for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
      {
        Vec3 length = s->getLengths();
-       out << "\t" << s->getPosition()[0] - 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
-       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
-       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
-       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] - 0.5 * length[2] << "\n";
+       std::vector<Vec3> points;
+       points.push_back(Vec3(- 0.5 * length[0], - 0.5 * length[1], - 0.5 * length[2]));
+       points.push_back(Vec3(+ 0.5 * length[0], - 0.5 * length[1], - 0.5 * length[2]));
+       points.push_back(Vec3(+ 0.5 * length[0], + 0.5 * length[1], - 0.5 * length[2]));
+       points.push_back(Vec3(- 0.5 * length[0], + 0.5 * length[1], - 0.5 * length[2]));
 
-       out << "\t" << s->getPosition()[0] - 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
-       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] - 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
-       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
-       out << "\t" << s->getPosition()[0] + 0.5 * length[0] << "\t" << s->getPosition()[1] + 0.5 * length[1] << "\t" << s->getPosition()[2] + 0.5 * length[2] << "\n";
+       points.push_back(Vec3(- 0.5 * length[0], - 0.5 * length[1], + 0.5 * length[2]));
+       points.push_back(Vec3(+ 0.5 * length[0], - 0.5 * length[1], + 0.5 * length[2]));
+       points.push_back(Vec3(+ 0.5 * length[0], + 0.5 * length[1], + 0.5 * length[2]));
+       points.push_back(Vec3(- 0.5 * length[0], + 0.5 * length[1], + 0.5 * length[2]));
+
+       const pe::Rot3& rot = s->getRotation();
+       for (std::vector<Vec3>::size_type idx = 0; idx < points.size(); ++idx) {
+         points[idx] = (rot * points[idx]) + s->getPosition();
+       }
+
+       out << "\t" << points[0][0] << "\t" << points[0][1] << "\t" << points[0][2] << "\n";
+       out << "\t" << points[1][0] << "\t" << points[1][1] << "\t" << points[1][2] << "\n";
+       out << "\t" << points[2][0] << "\t" << points[2][1] << "\t" << points[2][2] << "\n";
+       out << "\t" << points[3][0] << "\t" << points[3][1] << "\t" << points[3][2] << "\n";
+                                                                      
+       out << "\t" << points[4][0] << "\t" << points[4][1] << "\t" << points[4][2] << "\n";
+       out << "\t" << points[5][0] << "\t" << points[5][1] << "\t" << points[5][2] << "\n";
+       out << "\t" << points[6][0] << "\t" << points[6][1] << "\t" << points[6][2] << "\n";
+       out << "\t" << points[7][0] << "\t" << points[7][1] << "\t" << points[7][2] << "\n";
      }
 
      // Declare grid as point cloud
@@ -1099,20 +1116,18 @@ void Writer::writeBoxDataAscii(std::ostream& out) const {
      out << "    <DataArray type=\"Int32\" Name=\"connectivity\">\n";
      unsigned int voff = 0;
      for (unsigned int i = 0; i < boxes_.size(); i++) {
-        for(unsigned int j = 0; j < 6; ++j) {
-          // face bottom 
-          out << " " << 0 + voff << " " << 1 + voff << " " << 2 + voff << " " << 3 + voff << "\n";
-          // face top 
-          out << " " << 4 + voff << " " << 5 + voff << " " << 6 + voff << " " << 7 + voff << "\n";
-          // face right 
-          out << " " << 1 + voff << " " << 2 + voff << " " << 6 + voff << " " << 5 + voff << "\n";
-          // face left 
-          out << " " << 0 + voff << " " << 4 + voff << " " << 7 + voff << " " << 3 + voff << "\n";
-          // face front 
-          out << " " << 0 + voff << " " << 1 + voff << " " << 5 + voff << " " << 4 + voff << "\n";
-          // face back 
-          out << " " << 2 + voff << " " << 3 + voff << " " << 7 + voff << " " << 6 + voff << "\n";
-        }
+        // face bottom 
+        out << " " << 0 + voff << " " << 1 + voff << " " << 2 + voff << " " << 3 + voff << "\n";
+        // face top 
+        out << " " << 4 + voff << " " << 5 + voff << " " << 6 + voff << " " << 7 + voff << "\n";
+        // face right 
+        out << " " << 1 + voff << " " << 2 + voff << " " << 6 + voff << " " << 5 + voff << "\n";
+        // face left 
+        out << " " << 0 + voff << " " << 4 + voff << " " << 7 + voff << " " << 3 + voff << "\n";
+        // face front 
+        out << " " << 0 + voff << " " << 1 + voff << " " << 5 + voff << " " << 4 + voff << "\n";
+        // face back 
+        out << " " << 2 + voff << " " << 3 + voff << " " << 7 + voff << " " << 6 + voff << "\n";
         voff += 8;
      }
      out << "    </DataArray>\n";

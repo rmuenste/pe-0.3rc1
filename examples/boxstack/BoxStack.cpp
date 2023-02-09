@@ -140,7 +140,7 @@ int main( int argc, char* argv[] )
 
    // Setup of the VTK visualization
    if( vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 400, 0, timesteps, true);
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 400, 0, timesteps, false);
    }
 
 
