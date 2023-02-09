@@ -123,12 +123,13 @@ int main( int argc, char* argv[] )
    // Setup of the ground plane
    PlaneID plane = createPlane( 0, 0.0, 0.0, 1.0, 0.0, granite );
 
+   real boxHeight = 8.0;
    // Setup of the wooden box stack
    for( unsigned int i=H; i>0; --i ) {
       for( unsigned int j=0; j<i; ++j )
       {
-         const Vec3 pos( -2.5*(i-1)+j*5.0, 0.0, 2.0+(H-i)*4.0 );
-         BoxID box = createBox( ++id, pos, 4.0, 4.0, 4.0, oak );
+         const Vec3 pos( -2.5*(i-1)+j*5.0, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
+         BoxID box = createBox( ++id, pos, 4.0, 4.0, boxHeight, oak );
          box->rotate( 0.0, 0.0, angle() );
       }
    }

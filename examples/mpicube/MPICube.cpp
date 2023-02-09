@@ -38,6 +38,7 @@
 #include <cmath>
 #include <iostream>
 #include <sstream>
+#include <pe/vtk.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -199,6 +200,7 @@ int main( int argc, char** argv )
 
    // Visualization
    bool povray( true );  // Switches the POV-Ray visualization on and off
+   bool vtk( true );
 
    // Visualization parameters
    const bool   colorProcesses(  true );  // Switches the processes visualization on and off
@@ -237,6 +239,8 @@ int main( int argc, char** argv )
    variables_map& vm = cli.getVariablesMap();
    if( vm.count( "no-povray" ) > 0 )
       povray = false;
+   if( vm.count( "no-vtk" ) > 0 )
+      vtk = false;
 
    // Creating the material for the particles
    MaterialID granular = createMaterial( "granular", 1.0, 0.25, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
@@ -246,6 +250,10 @@ int main( int argc, char** argv )
    world->setGravity( 0.0, 0.0, -2.0 );
    world->setDamping( 0.9 );
 
+   // Setup of the VTK visualization
+   if( vtk ) {
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 400, 0, timesteps, false);
+   }
 
    /////////////////////////////////////////////////////
    // Setup of the POV-Ray visualization
