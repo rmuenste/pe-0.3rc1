@@ -39,6 +39,7 @@
 #include <cstddef>
 #include <iostream>
 #include <vector>
+#include <pe/vtk.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -91,17 +92,18 @@ int main( int argc, char** argv )
    const real   spacing   (  2.0  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 10000 );  // Total number of time steps
+   const size_t timesteps ( 30000 );  // Total number of time steps
    const real   stepsize  (  0.01 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
-         bool   povray    ( false );  // Switches the POV-Ray visualization on and off
+   bool   povray    ( false );        // Switches the POV-Ray visualization on and off
+   bool vtk( true );
    const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
-   const bool spheres     ( false );  // Switch between spheres and granular particles
+   const bool spheres     ( true );  // Switch between spheres and granular particles
 
 
    /////////////////////////////////////////////////////
@@ -503,6 +505,10 @@ int main( int argc, char** argv )
    mpisystem->checkProcesses();
 #endif
 
+   // Setup of the VTK visualization
+   if( vtk ) {
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+   }
 
    /////////////////////////////////////////////////////
    // Setup of the POV-Ray visualization
