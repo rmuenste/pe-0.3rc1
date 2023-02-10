@@ -219,7 +219,7 @@ private:
 
    //**Friend declarations*************************************************************************
    /*! \cond PE_INTERNAL */
-   template<class T> friend void boost::checked_delete( T* x );
+   //template<class T> friend void boost::checked_delete( T* x );
    friend class World;
    /*! \endcond */
    //**********************************************************************************************

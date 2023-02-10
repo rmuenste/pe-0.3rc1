@@ -640,6 +640,7 @@ int main( int argc, char** argv )
                 << " Size of the domain                      = (" << lx << "," << ly << "," << lz << ")\n"
                 << " Number of MPI processes                 = (" << px << "," << py << "," << pz << ")\n"
                 << " Total number of particles               = " << nx*ny*nz << "\n"
+                << " World gravity                           = " << world->getGravity() << "\n"
                 << " Number of particles on each process     = " << nxpp*nypp*nzpp << "\n"
                 << " Radius of a single particle             = " << radius << "\n"
                 << " Initial spacing inbetween two particles = " << spacing << "\n"
