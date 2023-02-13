@@ -185,6 +185,17 @@ int main( int argc, char** argv )
 
    setSeed( seed );  // Setup of the random number generation
 
+   // Creates the material "myMaterial" with the following material properties:
+   //  - material density               : 2.54
+   //  - coefficient of restitution     : 0.8
+   //  - coefficient of static friction : 0.1
+   //  - coefficient of dynamic friction: 0.05
+   //  - Poisson's ratio                : 0.2
+   //  - Young's modulus                : 80
+   //  - Contact stiffness              : 100
+   //  - dampingN                       : 10
+   //  - dampingT                       : 11
+   //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    WorldID     world     = theWorld();
