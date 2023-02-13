@@ -53,6 +53,7 @@
 #include <pe/util/Time.h>
 #include <pe/vtk/Writer.h>
 #include <pe/vtk/Base64Writer.h>
+#include <pe/core/rigidbody/Capsule.h>
 #include <vector>
 
 
@@ -1469,7 +1470,7 @@ void Writer::writeCapsuleDataAscii(std::ostream& out) const {
         "\" format=\"ascii\">\n";
 
      // Write the capsule triangulation vertices
-     for( Capsules::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+     for( Capsules::ConstIterator s=capsules_.begin(); s!=capsules_.end(); ++s )
      {
        
        Vec3 center = s->getPosition();

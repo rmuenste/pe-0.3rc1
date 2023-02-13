@@ -89,7 +89,7 @@ int main( int argc, char** argv )
    // Simulation parameters
 
    const real   radius    (  0.5  );  // The radius of spherical particles
-   const real   spacing   (  2.0  );  // Initial spacing inbetween two spherical particles
+   const real   spacing   (  2.5  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
    const size_t timesteps ( 30000 );  // Total number of time steps
@@ -98,7 +98,7 @@ int main( int argc, char** argv )
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
    bool   povray    ( false );        // Switches the POV-Ray visualization on and off
-   bool vtk( true );
+   bool   vtk( true );
    const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
@@ -108,10 +108,13 @@ int main( int argc, char** argv )
 
    /////////////////////////////////////////////////////
    // Initial setups
+   real radiusx = 4 * radius;
+   real sphereRad = Vec3(0.5 * radiusx, 0.5 * radius, 0.5 * radius).length();
 
    // Checking the ratio of the particle radius and the spacing
-   if( real(2.1)*radius >= spacing ) {
+   if( real(2.1)*sphereRad >= spacing ) {
       std::cerr << pe_RED << "\n Invalid particle/spacing ratio!\n\n" << pe_OLDCOLOR;
+      std::cout << "Bounding sphere radius, spacing: " << sphereRad << " / " << spacing << std::endl;
       return EXIT_FAILURE;
    }
 
@@ -584,14 +587,13 @@ int main( int argc, char** argv )
                if( world->ownsPoint( gpos ) ) {
                   BodyID particle;
                   if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-                  else particle = createBox( id, gpos, Vec3(radius, radius, radius), elastic);
+                  else particle = createBox( id, gpos, Vec3(radiusx, radius, radius), elastic);
                   particle->setLinearVel( vel );
                }
             }
          }
       }
    }
-
    // Weak scaling initialization
    else
    {
@@ -617,7 +619,7 @@ int main( int argc, char** argv )
 
                BodyID particle;
                if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-               else particle = createGranularParticle( id, gpos, radius, elastic );
+               else particle = createBox( id, gpos, Vec3(radius, radius, radius), elastic);
                particle->setLinearVel( vel );
             }
          }
