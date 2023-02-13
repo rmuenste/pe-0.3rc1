@@ -98,7 +98,7 @@ int main( int argc, char* argv[] )
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
-   bool povray  ( true );
+   bool povray  ( false );
    bool irrlicht( true );
    bool vtk( true );
 
@@ -123,14 +123,15 @@ int main( int argc, char* argv[] )
    // Setup of the ground plane
    PlaneID plane = createPlane( 0, 0.0, 0.0, 1.0, 0.0, granite );
 
-   real boxHeight = 8.0;
+   real boxHeight = 2.0;
+   //CapsuleID particle = createCapsule( id, Vec3(0,0,10), 1.0, 2.0, iron);
    // Setup of the wooden box stack
    for( unsigned int i=H; i>0; --i ) {
       for( unsigned int j=0; j<i; ++j )
       {
          const Vec3 pos( -2.5*(i-1)+j*5.0, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
-         BoxID box = createBox( ++id, pos, 4.0, 4.0, boxHeight, oak );
-         box->rotate( 0.0, 0.0, angle() );
+         CapsuleID cap = createCapsule( ++id, pos, 1.0, 2.0, oak );
+         cap->rotate( 0.0, 0.0, angle() );
       }
    }
 
@@ -141,7 +142,7 @@ int main( int argc, char* argv[] )
 
    // Setup of the VTK visualization
    if( vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 400, 0, timesteps, false);
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 10, 0, timesteps, false);
    }
 
 
