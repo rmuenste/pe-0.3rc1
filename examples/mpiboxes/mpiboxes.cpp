@@ -68,6 +68,25 @@ pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2);
 //
 //=================================================================================================
 
+
+
+//=================================================================================================
+//
+//  UTILITY FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Returns a random angle between \f$ [-\frac{\pi}{20}..\frac{\pi}{20}] \f$.
+ *
+ * \return The random angle (radian measure).
+ */
+real angle()
+{
+   return rand<real>( -M_PI/real(20), M_PI/real(20) );
+}
+//*************************************************************************************************
+
 //*************************************************************************************************
 /*!\brief Main function for the mpinano example.
  *
@@ -90,16 +109,19 @@ int main( int argc, char** argv )
 
    const real   radius    (  0.5  );  // The radius of spherical particles
    const real   spacing   (  2.5  );  // Initial spacing inbetween two spherical particles
+   const real   spacingx   (  2.5  );  // Initial spacing inbetween two spherical particles
+   const real   spacingy   (  1.5  );  // Initial spacing inbetween two spherical particles
+   const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 30000 );  // Total number of time steps
-   const real   stepsize  (  0.01 );  // Size of a single time step
+   const size_t timesteps ( 120000 );  // Total number of time steps
+   const real   stepsize  (  0.0025 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
    bool   povray    ( false );        // Switches the POV-Ray visualization on and off
    bool   vtk( true );
-   const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
+   const size_t visspacing(    40 );  // Number of time steps inbetween two POV-Ray files
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
@@ -179,15 +201,17 @@ int main( int argc, char** argv )
       pe::exit(EXIT_FAILURE);
    }
 
-   const real lx( nx * spacing );  // Length of the simulation domain in x-dimension
-   const real ly( ny * spacing );  // Length of the simulation domain in y-dimension
-   const real lz( nz * spacing );  // Length of the simulation domain in z-dimension
+   const real lx( nx * spacingx );  // Length of the simulation domain in x-dimension
+   const real ly( ny * spacingy );  // Length of the simulation domain in y-dimension
+   const real lz( nz * spacingz );  // Length of the simulation domain in z-dimension
 
    setSeed( seed );  // Setup of the random number generation
 
-   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   MaterialID elastic = createMaterial( "elastic", 1.0, 0.5, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    WorldID     world     = theWorld();
+   world->setGravity( 0.0, 0.0, -0.4 );
+   world->setDamping(0.90);
    MPISystemID mpisystem = theMPISystem();
 
 
@@ -577,9 +601,9 @@ int main( int argc, char** argv )
             for( int x=0; x<nx; ++x )
             {
                ++id;
-               gpos.set( ( x+real(0.5) ) * spacing,
-                         ( y+real(0.5) ) * spacing,
-                         ( z+real(0.5) ) * spacing );
+               gpos.set( ( x+real(0.5) ) * spacingx,
+                         ( y+real(0.5) ) * spacingy,
+                         ( z+real(0.5) ) * spacingz );
                vel.set( rand<real>( -velocity, velocity ),
                         rand<real>( -velocity, velocity ),
                         rand<real>( -velocity, velocity ) );
@@ -589,6 +613,7 @@ int main( int argc, char** argv )
                   if( spheres ) particle = createSphere( id, gpos, radius, elastic );
                   else particle = createBox( id, gpos, Vec3(radiusx, radius, radius), elastic);
                   particle->setLinearVel( vel );
+                  particle->rotate( 0.0, 0.0, angle() );
                }
             }
          }
@@ -602,9 +627,9 @@ int main( int argc, char** argv )
             for( int x=0; x<nxpp; ++x )
             {
                ++id;
-               gpos.set( ( center[0]*nxpp+x+real(0.5) )*spacing,
-                         ( center[1]*nypp+y+real(0.5) )*spacing,
-                         ( center[2]*nzpp+z+real(0.5) )*spacing );
+               gpos.set( ( center[0]*nxpp+x+real(0.5) )*spacingx,
+                         ( center[1]*nypp+y+real(0.5) )*spacingy,
+                         ( center[2]*nzpp+z+real(0.5) )*spacingz );
                vel.set( rand<real>( -velocity, velocity ),
                         rand<real>( -velocity, velocity ),
                         rand<real>( -velocity, velocity ) );
@@ -619,8 +644,9 @@ int main( int argc, char** argv )
 
                BodyID particle;
                if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-               else particle = createBox( id, gpos, Vec3(radius, radius, radius), elastic);
+               else particle = createBox( id, gpos, Vec3(radiusx, radius, radius), elastic);
                particle->setLinearVel( vel );
+               particle->rotate( 0.0, 0.0, angle() );
             }
          }
       }
@@ -661,21 +687,24 @@ int main( int argc, char** argv )
    MPI_Reduce( &localTime, &globalMin, 1, MPI_DOUBLE, MPI_MIN, 0, cartcomm );
    MPI_Reduce( &localTime, &globalMax, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
 
-   pe_EXCLUSIVE_SECTION( 0 ) {
-      std::cout << "\n--" << pe_BROWN << "SETUP RESULTS" << pe_OLDCOLOR << "---------------------------------------------------------------\n"
-                << " Minimum total WC-Time = " << globalMin << "\n"
-                << " Maximum total WC-Time = " << globalMax << "\n"
-                << "------------------------------------------------------------------------------" << std::endl;
-   }
-
-
    /////////////////////////////////////////////////////
    // Simulation loop
 
    WcTimer simTime;
    simTime.start();
-   world->run( timesteps, stepsize );
+   //world->run( timesteps, stepsize );
+
+   for( unsigned int timestep=0; timestep < timesteps; ++timestep ) {
+     pe_EXCLUSIVE_SECTION( 0 ) {
+      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+     }
+     world->simulationStep( stepsize );
+   }
+
+
+
    simTime.end();
+
 
 
    /////////////////////////////////////////////////////
