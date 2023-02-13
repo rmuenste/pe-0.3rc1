@@ -144,6 +144,9 @@ private:
 
    virtual void writeBoxDataAscii(std::ostream& out) const;
    virtual void writeBoxDataBinary(std::ostream& out) const;
+
+   virtual void writeCapsuleDataAscii(std::ostream& out) const;
+   virtual void writeCapsuleDataBinary(std::ostream& out) const;
    //@}
    //**********************************************************************************************
 

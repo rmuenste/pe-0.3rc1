@@ -1,1 +1,3 @@
 add_subdirectory(triangle_mesh)
+add_subdirectory(mpicapsules)
+add_subdirectory(mpiboxes)
