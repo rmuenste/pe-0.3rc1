@@ -40,11 +40,9 @@
 #include <iostream>
 #include <vector>
 #include <pe/vtk.h>
-#include <boost/filesystem.hpp>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
-using boost::filesystem::path;
 
 
 
@@ -62,52 +60,6 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR,
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2);
 
 
-class Checkpointer {
-
-public:
-
-   Checkpointer( path checkpointsPath = path( "checkpoints/" ) ) : checkpointsPath_( checkpointsPath ) {
-   }
-
-   void setPath( path checkpointsPath = path( "checkpoints/" ) ) {
-      checkpointsPath_ = checkpointsPath;
-   }
-
-   void write( std::string name ) {
-      boost::filesystem::create_directories( checkpointsPath_ );
-      bbwriter_.writeFileAsync( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
-      pe_PROFILING_SECTION {
-         timing::WcTimer timeWait;
-         timeWait.start();
-         bbwriter_.wait();
-         timeWait.end();
-         MPI_Barrier( MPI_COMM_WORLD );
-
-         pe_LOG_INFO_SECTION( log ) {
-            log << "BodyBinaryWriter::wait() took " << timeWait.total() << "s on rank " << MPISettings::rank() << ".\n";
-         }
-      }
-
-   }
-
-   void read( std::string name ) {
-      std::cout << "reading " << (checkpointsPath_ / ( name + ".peb" ) ).string().c_str() << std::endl;
-      bbreader_.readFile( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
-
-   }
-
-   void flush() {
-      bbwriter_.wait();
-   }
-
-private:
-
-   BodyBinaryWriter bbwriter_;
-   BodyBinaryReader bbreader_;
-   path             checkpointsPath_;
-};
-//*************************************************************************************************
-
 
 
 //=================================================================================================
@@ -115,25 +67,6 @@ private:
 //  MAIN FUNCTION
 //
 //=================================================================================================
-
-
-
-//=================================================================================================
-//
-//  UTILITY FUNCTIONS
-//
-//=================================================================================================
-
-//*************************************************************************************************
-/*!\brief Returns a random angle between \f$ [-\frac{\pi}{20}..\frac{\pi}{20}] \f$.
- *
- * \return The random angle (radian measure).
- */
-real angle()
-{
-   return rand<real>( -M_PI/real(20), M_PI/real(20) );
-}
-//*************************************************************************************************
 
 //*************************************************************************************************
 /*!\brief Main function for the mpinano example.
@@ -156,36 +89,29 @@ int main( int argc, char** argv )
    // Simulation parameters
 
    const real   radius    (  0.5  );  // The radius of spherical particles
-   const real   spacing   (  2.5  );  // Initial spacing inbetween two spherical particles
-   const real   spacingx   (  2.5  );  // Initial spacing inbetween two spherical particles
-   const real   spacingy   (  1.5  );  // Initial spacing inbetween two spherical particles
-   const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
+   const real   spacing   (  2.0  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 500000 );  // Total number of time steps
-   const real   stepsize  (  0.0005 );  // Size of a single time step
+   const size_t timesteps ( 30000 );  // Total number of time steps
+   const real   stepsize  (  0.01 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
    bool   povray    ( false );        // Switches the POV-Ray visualization on and off
    bool   vtk( true );
-   const size_t visspacing(    40 );  // Number of time steps inbetween two POV-Ray files
+   const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
-   const bool spheres     ( false );  // Switch between spheres and granular particles
-   const bool resume     ( false );
+   const bool spheres     ( true );  // Switch between spheres and granular particles
 
 
    /////////////////////////////////////////////////////
    // Initial setups
-   real radiusx = 4 * radius;
-   real sphereRad = Vec3(0.5 * radiusx, 0.5 * radius, 0.5 * radius).length();
 
    // Checking the ratio of the particle radius and the spacing
-   if( real(2.1)*sphereRad >= spacing ) {
+   if( real(2.1)*radius >= spacing ) {
       std::cerr << pe_RED << "\n Invalid particle/spacing ratio!\n\n" << pe_OLDCOLOR;
-      std::cout << "Bounding sphere radius, spacing: " << sphereRad << " / " << spacing << std::endl;
       return EXIT_FAILURE;
    }
 
@@ -250,28 +176,15 @@ int main( int argc, char** argv )
       pe::exit(EXIT_FAILURE);
    }
 
-   const real lx( nx * spacingx );  // Length of the simulation domain in x-dimension
-   const real ly( ny * spacingy );  // Length of the simulation domain in y-dimension
-   const real lz( nz * spacingz );  // Length of the simulation domain in z-dimension
+   const real lx( nx * spacing );  // Length of the simulation domain in x-dimension
+   const real ly( ny * spacing );  // Length of the simulation domain in y-dimension
+   const real lz( nz * spacing );  // Length of the simulation domain in z-dimension
 
    setSeed( seed );  // Setup of the random number generation
 
-   // Creates the material "myMaterial" with the following material properties:
-   //  - material density               : 2.54
-   //  - coefficient of restitution     : 0.8
-   //  - coefficient of static friction : 0.1
-   //  - coefficient of dynamic friction: 0.05
-   //  - Poisson's ratio                : 0.2
-   //  - Young's modulus                : 80
-   //  - Contact stiffness              : 100
-   //  - dampingN                       : 10
-   //  - dampingT                       : 11
-   //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    WorldID     world     = theWorld();
-   world->setGravity( 0.0, 0.0, -0.4 );
-   world->setDamping(0.90);
    MPISystemID mpisystem = theMPISystem();
 
 
@@ -624,9 +537,6 @@ int main( int argc, char** argv )
       pov->setTexturePolicy( DefaultTexture( CustomTexture( texture.str() ) ) );
    }
 
-   Checkpointer         checkpointer;
-   bool                 checkpoint_next( false );                     // Write out checkpoint in next iteration
-   path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
 
    /////////////////////////////////////////////////////
    // Setup of the simulation domain
@@ -656,74 +566,62 @@ int main( int argc, char** argv )
    WcTimer setupTime;
    setupTime.start();
 
-   if (!resume) {
-     // Strong scaling initialization
-     if( strong )
-     {
-        for( int z=0; z<nz; ++z ) {
-           for( int y=0; y<ny; ++y ) {
-              for( int x=0; x<nx; ++x )
-              {
-                 ++id;
-                 gpos.set( ( x+real(0.5) ) * spacingx,
-                           ( y+real(0.5) ) * spacingy,
-                           ( z+real(0.5) ) * spacingz );
-                 vel.set( rand<real>( -velocity, velocity ),
-                          rand<real>( -velocity, velocity ),
-                          rand<real>( -velocity, velocity ) );
+   // Strong scaling initialization
+   if( strong )
+   {
+      for( int z=0; z<nz; ++z ) {
+         for( int y=0; y<ny; ++y ) {
+            for( int x=0; x<nx; ++x )
+            {
+               ++id;
+               gpos.set( ( x+real(0.5) ) * spacing,
+                         ( y+real(0.5) ) * spacing,
+                         ( z+real(0.5) ) * spacing );
+               vel.set( rand<real>( -velocity, velocity ),
+                        rand<real>( -velocity, velocity ),
+                        rand<real>( -velocity, velocity ) );
 
-                 if( world->ownsPoint( gpos ) ) {
-                    BodyID particle;
-                    if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-                    else particle = createBox( id, gpos, Vec3(radiusx, radius, radius), elastic);
-                    particle->setLinearVel( vel );
-                    particle->rotate( 0.0, 0.0, angle() );
-                 }
-              }
-           }
-        }
-     }
-     // Weak scaling initialization
-     else
-     {
-        for( int z=0; z<nzpp; ++z ) {
-           for( int y=0; y<nypp; ++y ) {
-              for( int x=0; x<nxpp; ++x )
-              {
-                 ++id;
-                 gpos.set( ( center[0]*nxpp+x+real(0.5) )*spacingx,
-                           ( center[1]*nypp+y+real(0.5) )*spacingy,
-                           ( center[2]*nzpp+z+real(0.5) )*spacingz );
-                 vel.set( rand<real>( -velocity, velocity ),
-                          rand<real>( -velocity, velocity ),
-                          rand<real>( -velocity, velocity ) );
-
-                 if( !world->ownsPoint( gpos ) ) {
-                    std::cerr << " Invalid particle position on process " << mpisystem->getRank() << "\n"
-                              << "   Coordinates     = (" << center[0] << "," << center[1] << "," << center[2] << ")\n"
-                              << "   Global position = " << gpos << "\n"
-                              << std::endl;
-                    pe::exit( EXIT_FAILURE );
-                 }
-
-                 BodyID particle;
-                 if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-                 else particle = createBox( id, gpos, Vec3(radiusx, radius, radius), elastic);
-                 particle->setLinearVel( vel );
-                 particle->rotate( 0.0, 0.0, angle() );
-              }
-           }
-        }
-     }
-   } 
-   else {
-      // Resume from checkpoint
-      pe_EXCLUSIVE_SECTION( 0 ) {
-         std::cout << "Resuming checkpoint ..." << std::endl;
+               if( world->ownsPoint( gpos ) ) {
+                  BodyID particle;
+                  if( spheres ) particle = createSphere( id, gpos, radius, elastic );
+                  else particle = createGranularParticle( id, gpos, radius, elastic );
+                  particle->setLinearVel( vel );
+               }
+            }
+         }
       }
+   }
 
-      checkpointer.read( "checkpoint" );
-      // PovRay textures are reassigned through texture policy
+   // Weak scaling initialization
+   else
+   {
+      for( int z=0; z<nzpp; ++z ) {
+         for( int y=0; y<nypp; ++y ) {
+            for( int x=0; x<nxpp; ++x )
+            {
+               ++id;
+               gpos.set( ( center[0]*nxpp+x+real(0.5) )*spacing,
+                         ( center[1]*nypp+y+real(0.5) )*spacing,
+                         ( center[2]*nzpp+z+real(0.5) )*spacing );
+               vel.set( rand<real>( -velocity, velocity ),
+                        rand<real>( -velocity, velocity ),
+                        rand<real>( -velocity, velocity ) );
+
+               if( !world->ownsPoint( gpos ) ) {
+                  std::cerr << " Invalid particle position on process " << mpisystem->getRank() << "\n"
+                            << "   Coordinates     = (" << center[0] << "," << center[1] << "," << center[2] << ")\n"
+                            << "   Global position = " << gpos << "\n"
+                            << std::endl;
+                  pe::exit( EXIT_FAILURE );
+               }
+
+               BodyID particle;
+               if( spheres ) particle = createSphere( id, gpos, radius, elastic );
+               else particle = createGranularParticle( id, gpos, radius, elastic );
+               particle->setLinearVel( vel );
+            }
+         }
+      }
    }
 
    // Synchronization of the MPI processes
@@ -733,12 +631,19 @@ int main( int argc, char** argv )
    setupTime.end();
 
 
-   /////////////////////////////////////////////////////
-   // Output of the simulation settings
+   const real lx( nx * spacing );  // Length of the simulation domain in x-dimension
+   const real ly( ny * spacing );  // Length of the simulation domain in y-dimension
+   const real lz( nz * spacing );  // Length of the simulation domain in z-dimension
+
+   const real dx( lx / px );
+   const real dy( ly / py );
+   const real dz( lz / pz );
+
 
    pe_EXCLUSIVE_SECTION( 0 ) {
       std::cout << "\n--" << pe_BROWN << "SIMULATION SETUP" << pe_OLDCOLOR
                 << "------------------------------------------------------------\n"
+                << " Size calculation                        = number in x,y,z * spacing\n"
                 << " Size of the domain                      = (" << lx << "," << ly << "," << lz << ")\n"
                 << " Number of MPI processes                 = (" << px << "," << py << "," << pz << ")\n"
                 << " Total number of particles               = " << nx*ny*nz << "\n"
@@ -761,30 +666,21 @@ int main( int argc, char** argv )
    MPI_Reduce( &localTime, &globalMin, 1, MPI_DOUBLE, MPI_MIN, 0, cartcomm );
    MPI_Reduce( &localTime, &globalMax, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
 
+   pe_EXCLUSIVE_SECTION( 0 ) {
+      std::cout << "\n--" << pe_BROWN << "SETUP RESULTS" << pe_OLDCOLOR << "---------------------------------------------------------------\n"
+                << " Minimum total WC-Time = " << globalMin << "\n"
+                << " Maximum total WC-Time = " << globalMax << "\n"
+                << "------------------------------------------------------------------------------" << std::endl;
+   }
+
+
    /////////////////////////////////////////////////////
    // Simulation loop
 
    WcTimer simTime;
    simTime.start();
-   //world->run( timesteps, stepsize );
-
-   for( unsigned int timestep=0; timestep < timesteps; ++timestep ) {
-     pe_EXCLUSIVE_SECTION( 0 ) {
-      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-     }
-     world->simulationStep( stepsize );
-
-     if(timestep % 5000 == 0) {
-       // Write out checkpoint
-       checkpointer.setPath( checkpoint_path );
-       checkpointer.write( "checkpoint");
-     }
-   }
-
-
-
+   world->run( timesteps, stepsize );
    simTime.end();
-
 
 
    /////////////////////////////////////////////////////

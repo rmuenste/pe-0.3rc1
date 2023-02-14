@@ -104,24 +104,24 @@ int main( int argc, char** argv )
 
 
 
-   // Parsing the command line arguments
-   CommandLineInterface& cli = CommandLineInterface::getInstance();
-   cli.getDescription().add_options()
-      ("particles", value< std::vector<int> >()->multitoken()->required(), "number of particles in x-, y- and z-dimension")
-      ("processes", value< std::vector<int> >()->multitoken()->required(), "number of processes in x-, y- and z-dimension")
-   ;
-   cli.parse( argc, argv );
-   cli.evaluateOptions();
-   variables_map& vm = cli.getVariablesMap();
-   if( vm.count( "no-povray" ) > 0 )
-      povray = false;
+//   // Parsing the command line arguments
+//   CommandLineInterface& cli = CommandLineInterface::getInstance();
+//   cli.getDescription().add_options()
+//      ("particles", value< std::vector<int> >()->multitoken()->required(), "number of particles in x-, y- and z-dimension")
+//      ("processes", value< std::vector<int> >()->multitoken()->required(), "number of processes in x-, y- and z-dimension")
+//   ;
+//   cli.parse( argc, argv );
+//   cli.evaluateOptions();
+//   variables_map& vm = cli.getVariablesMap();
+//   if( vm.count( "no-povray" ) > 0 )
+//      povray = false;
 
-   const int nx( vm[ "particles" ].as< std::vector<int> >()[0] );
-   const int ny( vm[ "particles" ].as< std::vector<int> >()[1] );
-   const int nz( vm[ "particles" ].as< std::vector<int> >()[2] );
-   const int px( vm[ "processes" ].as< std::vector<int> >()[0] );
-   const int py( vm[ "processes" ].as< std::vector<int> >()[1] );
-   const int pz( vm[ "processes" ].as< std::vector<int> >()[2] );
+   const int nx( 2 );
+   const int ny( 1 );
+   const int nz( 1 );
+   const int px( 2 );
+   const int py( 1 );
+   const int pz( 1 );
 
    if( nx <= 0 ) {
       std::cerr << " Invalid number of particles in x-dimension!\n";
