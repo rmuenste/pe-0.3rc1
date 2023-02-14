@@ -70,7 +70,94 @@ namespace vtk {
 bool Writer::active_( false );
 boost::mutex Writer::instanceMutex_;
 
+Vec3 evalSphere(real radius, real phi, real theta) 
+{
+  return Vec3(
+              radius * sin(phi),
+              radius * cos(phi) * sin(theta), 
+              radius * cos(phi) * cos(theta)
+  );
+}
 
+//===================================================================================================
+// In this function we produce a hemisphere with center at (0,0,0), a top on the x-axis
+// and a radius of s. The hemisphere has 65 Vertices and 112 triangles
+std::pair< std::vector<Vec3>, std::vector<Vector3<size_t>> >
+triangulateSphere(real s) {
+  //-Pi/2 to Pi/2
+  real phi;
+  //0 to 2Pi
+  real theta;
+  //points on the sphere
+  //x=x0+r*cos(theta)*cos(phi)
+  //y=y0+r*cos(theta)*sin(phi)
+  //z=z0+r*sin(theta)
+
+  std::vector< Vec3 > vVertices;
+  std::vector< Vector3<size_t> > vFaces;
+
+  int lat = 8;
+  int longi = 8;
+
+  real dphi   = M_PI / (real)longi;
+  real dtheta = M_PI / (real)lat;
+  real halfpi = M_PI / 2.0;
+
+  Vec3 vTop = evalSphere(s, halfpi, 0);
+  Vec3 vBottom = evalSphere(s, -halfpi, 0);
+  vVertices.push_back(vTop);
+
+  phi = halfpi - dphi;
+  for( int j = 1; j < longi-3; j++ )
+  {
+
+    theta = 0.0f;
+    for( int i = 0; i < 2 * lat; i++ )
+    {
+      Vec3 vNext = evalSphere(s, phi, theta);
+      vVertices.push_back(vNext);
+      theta += dtheta;
+    }//end for i
+    phi -= dphi;
+  }//end for j
+
+  int lat2 = 2 * lat;
+  //add upper triangle fan
+  for( int i = 0; i < lat2; i++ )
+  {
+    Vector3<size_t> verts;
+    verts[0] = 0;
+    verts[1] = 1 + i;
+    verts[2] = 1 + ( i + 1 ) % lat2;
+    vFaces.push_back(verts);
+  }
+
+  //add body
+  for( int i = 0; i < longi - 5; i++ )
+  {
+    int index = 1 + i * lat2;
+    for( int j = 0; j < lat2; j++ )
+    {
+      Vector3<size_t> verts;
+      verts[0] = index + j;
+      verts[1] = index + lat2 + j;
+      verts[2] = index + ( j + 1 ) % lat2;
+
+      vFaces.push_back(verts);
+      verts[0] = index + ( j + 1 ) % lat2;
+      verts[1] = index + lat2 + j;
+      verts[2] = index + lat2 + ( j + 1 ) % lat2;
+
+      vFaces.push_back(verts);
+    }
+  }
+
+  std::pair < std::vector<Vec3>, std::vector<Vector3<size_t>> > mypair;
+  mypair.first = vVertices;
+  mypair.second = vFaces;
+  return mypair;
+
+}
 
 
 //=================================================================================================
@@ -1561,12 +1648,12 @@ void Writer::writeCapsules(const boost::filesystem::path& filename) const
 void Writer::writeCapsuleDataAscii(std::ostream& out) const {
    // write grid
    int verticalsegments = 2;
-   int pointsoncircle   = 24;
+   int pointsoncircle   = 16;
    out << "<?xml version=\"1.0\"?>\n";
    out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
    out << " <UnstructuredGrid>\n";
-   out << "  <Piece NumberOfPoints=\"" << capsules_.size() * 2 * pointsoncircle <<
-        "\" NumberOfCells=\"" << capsules_.size() * 2 * pointsoncircle << "\">\n";
+   out << "  <Piece NumberOfPoints=\"" << capsules_.size() * 2 * pointsoncircle + capsules_.size() * (2. * 65) <<
+        "\" NumberOfCells=\"" << capsules_.size() * (2 * pointsoncircle + 224)  << "\">\n";
    out << "   <Points>\n";
    out << "    <DataArray type=\"" << "Float32" <<
         "\" NumberOfComponents=\"" << 3 <<
@@ -1599,6 +1686,13 @@ void Writer::writeCapsuleDataAscii(std::ostream& out) const {
      {
        
        Vec3 center = s->getPosition();
+       
+       std::pair < std::vector<Vec3>, std::vector<Vector3<size_t>> > mypair = triangulateSphere(s->getRadius());
+
+       // 65 vertices
+       std::vector<Vec3>& hemisVerts = mypair.first;
+       // 112 cells
+       std::vector<Vector3<size_t>>& hemisFaces = mypair.second;
 
        std::vector<Vec3> points;
        
@@ -1639,6 +1733,16 @@ void Writer::writeCapsuleDataAscii(std::ostream& out) const {
          out << "\t" << points[idx][0] << "\t" << points[idx][1] << "\t" << points[idx][2] << "\n";
        }
 
+       for (std::vector<Vec3>::size_type idx = 0; idx < hemisVerts.size(); ++idx) {
+         Vec3 point = (rot * (hemisVerts[idx] + Vec3(height2,0,0))) + s->getPosition();
+         out << "\t" << point[0] << "\t" << point[1] << "\t" << point[2] << "\n";
+       }
+
+       for (std::vector<Vec3>::size_type idx = 0; idx < hemisVerts.size(); ++idx) {
+         Vec3 point = (rot * (-hemisVerts[idx] - Vec3(height2,0,0))) + s->getPosition();
+         out << "\t" << point[0] << "\t" << point[1] << "\t" << point[2] << "\n";
+       }
+
      }
 
      // Write each capsule as a set of faces 
@@ -1648,28 +1752,47 @@ void Writer::writeCapsuleDataAscii(std::ostream& out) const {
      out << "    <DataArray type=\"Int32\" Name=\"connectivity\">\n";
      unsigned int voff = 0;
      for (unsigned int i = 0; i < capsules_.size(); i++) {
-        // face bottom 
+
+       ConstCapsuleID s = capsules_[i];
+       std::pair < std::vector<Vec3>, std::vector<Vector3<size_t>> > mypair = triangulateSphere(s->getRadius());
+
+       // 65 vertices
+       std::vector<Vec3>& hemisVerts = mypair.first;
+       // 112 cells
+       std::vector<Vector3<size_t>>& hemisFaces = mypair.second;
+
+       // Connectivity of the cylinder faces 
        for( unsigned int j = 0; j < faces.size(); j++ ) {
           out << " " << faces[j][0] + voff << " " << faces[j][1] + voff << " " << faces[j][2] + voff << "\n";
-        }
-        voff += 2 * pointsoncircle;
+       }
+       voff += 2 * pointsoncircle;
+       // Connectivity of the 1st hemisphere faces 
+       for( unsigned int j = 0; j < hemisFaces.size(); j++ ) {
+          out << " " << hemisFaces[j][0] + voff << " " << hemisFaces[j][1] + voff << " " << hemisFaces[j][2] + voff << "\n";
+       }
+       voff += hemisVerts.size();;
+
+       // Connectivity of the 2nd hemisphere faces 
+       for( unsigned int j = 0; j < hemisFaces.size(); j++ ) {
+          out << " " << hemisFaces[j][0] + voff << " " << hemisFaces[j][1] + voff << " " << hemisFaces[j][2] + voff << "\n";
+       }
+       voff += hemisVerts.size();;
      }
      out << "    </DataArray>\n";
      out << "    <DataArray type=\"Int32\" Name=\"offsets\">\n";
      voff = 0;
      for( unsigned int i = 0; i < capsules_.size(); i++ ) {
-       for( unsigned int j = 0; j < faces.size(); j++ ) {
+       for( unsigned int j = 0; j < faces.size() + 224; j++ ) {
          voff += 3;
          out << " " << voff << "\n";
        }
-       //voff += 2 * pointsoncircle;
      }
      out << "    </DataArray>\n";
      out << "    <DataArray type=\"UInt8\" Name=\"types\">\n";
 
      // Every capsule has 2 * pointsoncircle triangles 
      for (unsigned int i = 0; i < capsules_.size(); i++)
-       for( unsigned int j = 0; j < faces.size(); j++ ) {
+       for( unsigned int j = 0; j < faces.size() + 224; j++ ) {
          out << " " << 5 << "\n";
        }
      out << "    </DataArray>\n";

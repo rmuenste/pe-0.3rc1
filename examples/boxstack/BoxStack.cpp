@@ -93,7 +93,7 @@ int main( int argc, char* argv[] )
 {
    // Constants and variables
    const unsigned int timesteps ( 60000 );  // Total number of time steps
-   const unsigned int visspacing(   400 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int visspacing(   1000 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
@@ -129,8 +129,8 @@ int main( int argc, char* argv[] )
    for( unsigned int i=H; i>0; --i ) {
       for( unsigned int j=0; j<i; ++j )
       {
-         const Vec3 pos( -2.5*(i-1)+j*5.0, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
-         CapsuleID cap = createCapsule( ++id, pos, 1.0, 2.0, oak );
+         const Vec3 pos( -2.5*(i-1)+j*10.0, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
+         CapsuleID cap = createCapsule( ++id, pos, 1.0, 8.0, oak );
          cap->rotate( 0.0, 0.0, angle() );
       }
    }
@@ -142,7 +142,7 @@ int main( int argc, char* argv[] )
 
    // Setup of the VTK visualization
    if( vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 10, 0, timesteps, false);
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
    }
 
 
