@@ -93,8 +93,8 @@ int main( int argc, char* argv[] )
 {
    // Constants and variables
    const unsigned int timesteps ( 60000 );  // Total number of time steps
-   const unsigned int visspacing(   1000 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-   const unsigned int H ( 4 );              // Height of the box stack
+   const unsigned int visspacing(   400 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int H ( 16 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
@@ -123,14 +123,18 @@ int main( int argc, char* argv[] )
    // Setup of the ground plane
    PlaneID plane = createPlane( 0, 0.0, 0.0, 1.0, 0.0, granite );
 
-   real boxHeight = 2.0;
+   
+   real cylinderRadius = 0.25;
+   real length = 8.0;
+   real totalLength = length + 2. * cylinderRadius;
+   real boxHeight = 2. * cylinderRadius;
    //CapsuleID particle = createCapsule( id, Vec3(0,0,10), 1.0, 2.0, iron);
    // Setup of the wooden box stack
    for( unsigned int i=H; i>0; --i ) {
       for( unsigned int j=0; j<i; ++j )
       {
-         const Vec3 pos( -2.5*(i-1)+j*10.0, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
-         CapsuleID cap = createCapsule( ++id, pos, 1.0, 8.0, oak );
+         const Vec3 pos( -2.5*(i-1)+j*totalLength, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
+         CapsuleID cap = createCapsule( ++id, pos, cylinderRadius, length, oak );
          cap->rotate( 0.0, 0.0, angle() );
       }
    }
