@@ -60,7 +60,504 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR,
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2);
 
+std::vector<HalfSpace> generateDomainHalfPlanes(int pX, int pY, int row, int col, int my_rank) {
 
+  Vec3 normalsY[] = { Vec3(-1, 0, 0), Vec3( 1, 0, 0) };
+  Vec3 normalsX[] = { Vec3( 0,-1, 0), Vec3( 0, 1, 0) };
+
+  std::vector<real> distanceX = {0, 70, 140};
+  std::vector<real> distanceY = {0, 70, 140};
+
+  int processesY = pY;
+  int processesX = pX;
+
+  std::vector<HalfSpace> spaces;
+
+  // First row
+  if (row == 0) {
+
+      // The first element in a row
+      // Here we will have 2 normals
+      if (col == 0) {
+        std::cout << "Half-Space coordinates: (0, 0)" << std::endl;
+        spaces.push_back(HalfSpace(normalsY[0], -distanceY[col]));
+        spaces.push_back(HalfSpace(normalsX[1], distanceX[0]));
+      }
+      // The last element in a row
+      // Here we will have 2 normals
+      else if (col == processesY - 1) {
+        std::cout << "Half-Space coordinates: (0, pY-1)" << std::endl;
+        spaces.push_back(HalfSpace(normalsY[1], distanceY[col-1]));
+        spaces.push_back(HalfSpace(normalsX[1], distanceX[0]));
+      }
+      // The inner elements in a row
+      // Here we will have 3 normals (2Y + 1X)
+      else {
+        std::cout << "Half-Space coordinates: (0, 1:pY-2)" << std::endl;
+        spaces.push_back(HalfSpace(normalsY[1], distanceY[col - 1]));
+        spaces.push_back(HalfSpace(normalsY[0], -distanceY[col]));
+        spaces.push_back(HalfSpace(normalsX[1], distanceX[0]));
+      }
+
+  }//========================================================================
+
+  // Inner PX rows
+  if( row >= 1 && row < processesX - 1) {
+
+    // First element in row
+    // This domain has 3 half-planes
+    if (col == 0) {
+      spaces.push_back(HalfSpace(normalsY[0],-distanceY[0]));
+      spaces.push_back(HalfSpace(normalsX[0], distanceX[row - 1]));
+      spaces.push_back(HalfSpace(normalsX[1],-distanceX[row]));
+      std::cout << "Half-Space coordinates: (1:pX-1, 0)" << std::endl;
+    }
+    // Inner row elements
+    // These domains have 4 half-planes
+    else if (col >= 1 && col < processesY - 1) {
+        std::cout << "Half-Space coordinates: (1:pX-1, 1:pY-1)" << std::endl;
+        spaces.push_back(HalfSpace(normalsY[1], distanceY[col - 1]));
+        spaces.push_back(HalfSpace(normalsY[0],-distanceY[col]));
+        spaces.push_back(HalfSpace(normalsX[0], distanceX[row - 1]));
+        spaces.push_back(HalfSpace(normalsX[1],-distanceX[row]));
+    }
+    // Last element in row
+    // This domain has 3 half-planes
+    else if (col == processesY - 1) {
+      std::cout << "Half-Space coordinates: (1:pX-1, 1:pY-1)" << std::endl;
+      spaces.push_back(HalfSpace(normalsY[1], distanceY[col - 1]));
+      spaces.push_back(HalfSpace(normalsX[0], distanceX[row - 1]));
+      spaces.push_back(HalfSpace(normalsX[1],-distanceX[row]));
+    }
+    else {
+      std::cout << "Invalid column index: " << col << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
+  // last row
+  if (row == processesX - 1) {
+
+    // The first element in a row
+    // Here we will have 2 normals
+    if (col == 0) {
+      std::cout << "Half-Space coordinates: (pX-1, 0)" << std::endl;
+      spaces.push_back(HalfSpace(normalsY[0], -distanceY[col]));
+      spaces.push_back(HalfSpace(normalsX[0], distanceX[processesX-2]));
+    }
+    // The last element in a row
+    // Here we will have 2 normals
+    else if (col == processesY - 1) {
+      std::cout << "Half-Space coordinates: (pX-1, pY-1)" << std::endl;
+      spaces.push_back(HalfSpace(normalsY[1], distanceY[col-1]));
+      spaces.push_back(HalfSpace(normalsX[0], distanceX[processesX-2]));
+    }
+    // The inner elements in a row
+    // Here we will have 3 normals (2Y + 1X)
+    else {
+      std::cout << "Half-Space coordinates: (pX-1, 1:pY-2)" << std::endl;
+      spaces.push_back(HalfSpace(normalsY[1], distanceY[col - 1]));
+      spaces.push_back(HalfSpace(normalsY[0], -distanceY[col]));
+      spaces.push_back(HalfSpace(normalsX[0], distanceX[processesX-2]));
+    }
+  }
+
+  return spaces;
+}
+
+void addDomainNeighbor(std::vector<HalfSpace> &spaces, int my_rank) {
+
+  size_t size = spaces.size();
+  switch (size) {
+    case 2:
+    connect( my_rank, intersect(
+      spaces[0],
+      spaces[1])
+    );
+    break;
+    case 3:
+    connect( my_rank, intersect(
+      spaces[0],
+      spaces[1],
+      spaces[2])
+    );
+    break;
+    case 4:
+    connect( my_rank, intersect(
+      spaces[0],
+      spaces[1],
+      spaces[2],
+      spaces[3])
+    );
+    break;
+    default:
+      std::cout << "Invalid number of domain half-planes: " << size << std::endl;
+      std::exit(EXIT_FAILURE);
+      break;
+  }
+
+}
+
+void defineLocalHalfPlanes(std::vector<HalfSpace> &spaces, int my_rank) {
+
+  size_t size = spaces.size();
+  switch (size) {
+    case 2:
+    defineLocalDomain(intersect(
+      spaces[0],
+      spaces[1])
+    );
+    break;
+    case 3:
+    defineLocalDomain(intersect(
+      spaces[0],
+      spaces[1],
+      spaces[2])
+    );
+    break;
+    case 4:
+    defineLocalDomain(intersect(
+      spaces[0],
+      spaces[1],
+      spaces[2],
+      spaces[3])
+    );
+    break;
+    default:
+      std::cout << "Invalid number of domain half-planes: " << size << std::endl;
+      std::exit(EXIT_FAILURE);
+      break;
+  }
+
+}
+
+void generateDomainNeighbors(int pX, int pY, int row, int col, int my_rank, MPI_Comm &cartcomm) {
+
+  int center[] = { row, col };
+  int west     [] = { center[0]  , center[1]-1 };
+  int east     [] = { center[0]  , center[1]+1 };
+  int south    [] = { center[0]+1, center[1]   };
+  int north    [] = { center[0]-1, center[1]   };
+  int southwest[] = { center[0]+1, center[1]-1 };
+  int southeast[] = { center[0]+1, center[1]+1 };
+  int northwest[] = { center[0]-1, center[1]-1 };
+  int northeast[] = { center[0]-1, center[1]+1 };
+
+  int processesY = pY;
+  int processesX = pX;
+
+  int rank = -1;
+
+  std::cout << "Center: (" << row << "," << col << ")" << std::endl;
+  // First row
+  if (row == 0) {
+
+      // The first element in a row
+      // Here we will have 3 neighbors
+      if (col == 0) {
+        std::cout << "Half-Space coordinates: (0, 0), #n = 3" << std::endl;
+
+        // east     
+        std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, east[0], east[1], my_rank);
+        MPI_Cart_rank( cartcomm, east, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // south    
+        spaces = generateDomainHalfPlanes(pX, pY, south[0], south[1], my_rank);
+        MPI_Cart_rank( cartcomm, south, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // southeast
+        spaces = generateDomainHalfPlanes(pX, pY, southeast[0], southeast[1], my_rank);
+        MPI_Cart_rank( cartcomm, southeast, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+      }
+      // The last element in a row
+      // Here we will have 3 neighbors
+      else if (col == processesY - 1) {
+        std::cout << "Half-Space coordinates: (0, pY-1), #n = 3" << std::endl;
+        // west     
+        std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, west[0], west[1], my_rank);
+        MPI_Cart_rank( cartcomm, west, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // south    
+        spaces = generateDomainHalfPlanes(pX, pY, south[0], south[1], my_rank);
+        MPI_Cart_rank( cartcomm, south, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // southwest
+        spaces = generateDomainHalfPlanes(pX, pY, southwest[0], southwest[1], my_rank);
+        MPI_Cart_rank( cartcomm, southwest, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+      }
+      // The inner elements in a row
+      // Here we will have 5 neighbors
+      else {
+        std::cout << "Half-Space coordinates: (0, 1:pY-2), #n = 5" << std::endl;
+        // west     
+        std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, west[0], west[1], my_rank);
+        MPI_Cart_rank( cartcomm, west, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // east     
+        spaces = generateDomainHalfPlanes(pX, pY, east[0], east[1], my_rank);
+        MPI_Cart_rank( cartcomm, east, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // south    
+        spaces = generateDomainHalfPlanes(pX, pY, south[0], south[1], my_rank);
+        MPI_Cart_rank( cartcomm, south, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // southwest
+        spaces = generateDomainHalfPlanes(pX, pY, southwest[0], southwest[1], my_rank);
+        MPI_Cart_rank( cartcomm, southwest, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+
+        // southeast
+        spaces = generateDomainHalfPlanes(pX, pY, southeast[0], southeast[1], my_rank);
+        MPI_Cart_rank( cartcomm, southeast, &rank );
+        addDomainNeighbor(spaces, rank);
+        spaces.clear();
+      }
+
+  }//========================================================================
+
+  // Inner PX rows
+  if( row >= 1 && row < processesX - 1) {
+
+    // First element in row
+    // This domain has 5 neighbors
+    if (col == 0) {
+      std::cout << "Half-Space coordinates: (1:pX-1, 0), #n = 5" << std::endl;
+      // east     
+      std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, east[0], east[1], my_rank);
+      MPI_Cart_rank( cartcomm, east, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // south    
+      spaces = generateDomainHalfPlanes(pX, pY, south[0], south[1], my_rank);
+      MPI_Cart_rank( cartcomm, south, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // north    
+      spaces = generateDomainHalfPlanes(pX, pY, north[0], north[1], my_rank);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // southeast
+      spaces = generateDomainHalfPlanes(pX, pY, southeast[0], southeast[1], my_rank);
+      MPI_Cart_rank( cartcomm, southeast, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northeast
+      spaces = generateDomainHalfPlanes(pX, pY, northeast[0], northeast[1], my_rank);
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+    }
+    // Inner row elements
+    // These domains have 8 neighbors
+    else if (col >= 1 && col < processesY - 1) {
+      std::cout << "Half-Space coordinates: (1:pX-1, 1:pY-1), #n = 5" << std::endl;
+      // west     
+      std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, west[0], west[1], my_rank);
+      MPI_Cart_rank( cartcomm, west, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+      // east     
+      spaces = generateDomainHalfPlanes(pX, pY, east[0], east[1], my_rank);
+      MPI_Cart_rank( cartcomm, east, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // south    
+      spaces = generateDomainHalfPlanes(pX, pY, south[0], south[1], my_rank);
+      MPI_Cart_rank( cartcomm, south, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // north    
+      spaces = generateDomainHalfPlanes(pX, pY, north[0], north[1], my_rank);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // southwest
+      spaces = generateDomainHalfPlanes(pX, pY, southwest[0], southwest[1], my_rank);
+      MPI_Cart_rank( cartcomm, southwest, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // southeast
+      spaces = generateDomainHalfPlanes(pX, pY, southeast[0], southeast[1], my_rank);
+      MPI_Cart_rank( cartcomm, southeast, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northwest
+      spaces = generateDomainHalfPlanes(pX, pY, northwest[0], northwest[1], my_rank);
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northeast
+      spaces = generateDomainHalfPlanes(pX, pY, northeast[0], northeast[1], my_rank);
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+    }
+    // Last element in row
+    // This domain has 5 neighbors
+    else if (col == processesY - 1) {
+      std::cout << "Half-Space coordinates: (1:pX-1, 1:pY-1), #n = 8" << std::endl;
+      // west     
+      std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, west[0], west[1], my_rank);
+      MPI_Cart_rank( cartcomm, west, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // south    
+      spaces = generateDomainHalfPlanes(pX, pY, south[0], south[1], my_rank);
+      MPI_Cart_rank( cartcomm, south, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // north    
+      spaces = generateDomainHalfPlanes(pX, pY, north[0], north[1], my_rank);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // southwest
+      spaces = generateDomainHalfPlanes(pX, pY, southwest[0], southwest[1], my_rank);
+      MPI_Cart_rank( cartcomm, southwest, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northwest
+      spaces = generateDomainHalfPlanes(pX, pY, northwest[0], northwest[1], my_rank);
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+    }
+  }
+
+  // last row
+  if (row == processesX - 1) {
+
+    // The first element in a row
+    // Here we will have 3 neighbors
+    if (col == 0) {
+      std::cout << "Half-Space coordinates: (pX-1, 0), #n = 3" << std::endl;
+      // east     
+      std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, east[0], east[1], my_rank);
+      MPI_Cart_rank( cartcomm, east, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // north    
+      spaces = generateDomainHalfPlanes(pX, pY, north[0], north[1], my_rank);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northeast
+      spaces = generateDomainHalfPlanes(pX, pY, northeast[0], northeast[1], my_rank);
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+    }
+    // The last element in a row
+    // Here we will have 3 neighbors
+    else if (col == processesY - 1) {
+      std::cout << "Half-Space coordinates: (pX-1, pY-1), #n = 3" << std::endl;
+      // west     
+      std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, west[0], west[1], my_rank);
+      MPI_Cart_rank( cartcomm, west, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // north    
+      spaces = generateDomainHalfPlanes(pX, pY, north[0], north[1], my_rank);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northwest
+      spaces = generateDomainHalfPlanes(pX, pY, northwest[0], northwest[1], my_rank);
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+    }
+    // The inner elements in a row
+    // Here we will have 5 neighbors
+    else {
+      std::cout << "Half-Space coordinates: (pX-1, 1:pY-2), #n = 5" << std::endl;
+      // west     
+      std::vector<HalfSpace> spaces = generateDomainHalfPlanes(pX, pY, west[0], west[1], my_rank);
+      MPI_Cart_rank( cartcomm, west, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // east     
+      spaces = generateDomainHalfPlanes(pX, pY, east[0], east[1], my_rank);
+      MPI_Cart_rank( cartcomm, east, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // north    
+      spaces = generateDomainHalfPlanes(pX, pY, north[0], north[1], my_rank);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northwest
+      spaces = generateDomainHalfPlanes(pX, pY, northwest[0], northwest[1], my_rank);
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+
+      // northeast
+      spaces = generateDomainHalfPlanes(pX, pY, northeast[0], northeast[1], my_rank);
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+      addDomainNeighbor(spaces, rank);
+      spaces.clear();
+    }
+  }
+}
+
+//=================================================================================================
+//
+//  UTILITY FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Returns a random angle between \f$ [-\frac{\pi}{20}..\frac{\pi}{20}] \f$.
+ *
+ * \return The random angle (radian measure).
+ */
+real angle()
+{
+   return rand<real>( -M_PI/real(20), M_PI/real(20) );
+}
+//*************************************************************************************************
 
 
 //=================================================================================================
@@ -68,6 +565,7 @@ pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2);
 //  MAIN FUNCTION
 //
 //=================================================================================================
+
 
 //*************************************************************************************************
 /*!\brief Main function for the mpinano example.
@@ -91,16 +589,17 @@ int main( int argc, char** argv )
 
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 10000 );  // Total number of time steps
-   const real   stepsize  (  0.01 );  // Size of a single time step
+   const size_t timesteps ( 60000 );  // Total number of time steps
+   const real   stepsize  (  0.0004 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
    bool   povray    ( true );        // Switches the POV-Ray visualization on and off
    bool vtk( true );
-   const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
+   const size_t visspacing(    400 );  // Number of time steps inbetween two POV-Ray files
 
    const bool spheres     ( false );  // Switch between spheres and capsules particles
+   const unsigned int H ( 16 );              // Height of the capsule stack
 
 
 
@@ -117,11 +616,11 @@ int main( int argc, char** argv )
 //      povray = false;
 
    const int nx( 2 );
-   const int ny( 1 );
-   const int nz( 1 );
+   const int ny( 2 );
+   const int nz( 2 );
    const int px( 2 );
-   const int py( 1 );
-   const int pz( 1 );
+   const int py( 2 );
+   const int pz( 2 );
 
    if( nx <= 0 ) {
       std::cerr << " Invalid number of particles in x-dimension!\n";
@@ -129,10 +628,6 @@ int main( int argc, char** argv )
    }
    if( ny <= 0 ) {
       std::cerr << " Invalid number of particles in y-dimension!\n";
-      pe::exit( EXIT_FAILURE );
-   }
-   if( nz <= 0 ) {
-      std::cerr << " Invalid number of particles in z-dimension!\n";
       pe::exit( EXIT_FAILURE );
    }
    if( px <= 0 ) {
@@ -143,10 +638,6 @@ int main( int argc, char** argv )
       std::cerr << " Invalid number of processes in y-dimension!\n";
       pe::exit( EXIT_FAILURE );
    }
-   if( pz <= 0 ) {
-      std::cerr << " Invalid number of processes in z-dimension!\n";
-      pe::exit( EXIT_FAILURE );
-   }
    if( nx % px != 0 ) {
       std::cerr << " Bad ratio between number of particles and number of processes in x-dimension!\n";
       pe::exit( EXIT_FAILURE );
@@ -155,12 +646,8 @@ int main( int argc, char** argv )
       std::cerr << " Bad ratio between number of particles and number of processes in y-dimension!\n";
       pe::exit( EXIT_FAILURE );
    }
-   if( nz % pz != 0 ) {
-      std::cerr << " Bad ratio between number of particles and number of processes in z-dimension!\n";
-      pe::exit( EXIT_FAILURE );
-   }
 
-   if( MPISettings::size() < px*py*pz ) {
+   if( MPISettings::size() < px*py ) {
       std::cerr << " Number of available processes is smaller than the number of processes specified on the command line." << std::endl;
       pe::exit(EXIT_FAILURE);
    }
@@ -187,6 +674,7 @@ int main( int argc, char** argv )
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    WorldID     world     = theWorld();
+   world->setGravity( 0.0, 0.0, -0.4 );
    MPISystemID mpisystem = theMPISystem();
 
 
@@ -201,306 +689,39 @@ int main( int argc, char** argv )
    int periods[] = { false, false, false };
 
    int rank;           // Rank of the neighboring process
-   int center[3];      // Definition of the coordinates array 'center'
+   int center[2];      // Definition of the coordinates array 'center'
    MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
 
-   MPI_Cart_create( MPI_COMM_WORLD, 3, dims, periods, false, &cartcomm );
+   MPI_Cart_create( MPI_COMM_WORLD, 2, dims, periods, false, &cartcomm );
    if( cartcomm == MPI_COMM_NULL ) {
       MPI_Finalize();
       return 0;
    }
 
    mpisystem->setComm( cartcomm );
-   MPI_Cart_coords( cartcomm, mpisystem->getRank(), 3, center );
+   MPI_Cart_coords( cartcomm, mpisystem->getRank(), 2, center );
+   rank = mpisystem->getRank();
 
-   int west           [] = { center[0]-1, center[1]  , center[2]   };
-   int east           [] = { center[0]+1, center[1]  , center[2]   };
-   int south          [] = { center[0]  , center[1]-1, center[2]   };
-   int north          [] = { center[0]  , center[1]+1, center[2]   };
-   int southwest      [] = { center[0]-1, center[1]-1, center[2]   };
-   int southeast      [] = { center[0]+1, center[1]-1, center[2]   };
-   int northwest      [] = { center[0]-1, center[1]+1, center[2]   };
-   int northeast      [] = { center[0]+1, center[1]+1, center[2]   };
+  for (int i(0); i < px; ++i) {
 
-   int bottom         [] = { center[0]  , center[1]  , center[2]-1 };
-   int bottomwest     [] = { center[0]-1, center[1]  , center[2]-1 };
-   int bottomeast     [] = { center[0]+1, center[1]  , center[2]-1 };
-   int bottomsouth    [] = { center[0]  , center[1]-1, center[2]-1 };
-   int bottomnorth    [] = { center[0]  , center[1]+1, center[2]-1 };
-   int bottomsouthwest[] = { center[0]-1, center[1]-1, center[2]-1 };
-   int bottomsoutheast[] = { center[0]+1, center[1]-1, center[2]-1 };
-   int bottomnorthwest[] = { center[0]-1, center[1]+1, center[2]-1 };
-   int bottomnortheast[] = { center[0]+1, center[1]+1, center[2]-1 };
+    for (int j(0); j < py; ++j) {
 
-   int top            [] = { center[0]  , center[1]  , center[2]+1 };
-   int topwest        [] = { center[0]-1, center[1]  , center[2]+1 };
-   int topeast        [] = { center[0]+1, center[1]  , center[2]+1 };
-   int topsouth       [] = { center[0]  , center[1]-1, center[2]+1 };
-   int topnorth       [] = { center[0]  , center[1]+1, center[2]+1 };
-   int topsouthwest   [] = { center[0]-1, center[1]-1, center[2]+1 };
-   int topsoutheast   [] = { center[0]+1, center[1]-1, center[2]+1 };
-   int topnorthwest   [] = { center[0]-1, center[1]+1, center[2]+1 };
-   int topnortheast   [] = { center[0]+1, center[1]+1, center[2]+1 };
+      pe_EXCLUSIVE_SECTION(i * py + j) {
+        std::vector<HalfSpace> spaces = generateDomainHalfPlanes(px, py, i, j, rank);
+        std::cout << rank << ")Rank: " << i * py + j << " Spaces size: " << spaces.size() << std::endl;
 
-   // Specify local domain
-   defineLocalDomain( intersect(
-      intersect(
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ),
-      HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-      HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
-      HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-      HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
+        defineLocalHalfPlanes(spaces, rank);
 
-   // Connecting the west neighbor
-   if( west[0] >= 0 ) {
-      MPI_Cart_rank( cartcomm, west, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
+      }
+    }
+  }
 
-   // Connecting the east neighbor
-   if( east[0] < px ) {
-      MPI_Cart_rank( cartcomm, east, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
+  generateDomainNeighbors(px, py, center[0], center[1], rank, cartcomm);
 
-   // Connecting the south neighbor
-   if( south[1] >= 0 ) {
-      MPI_Cart_rank( cartcomm, south, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
 
-   // Connecting the north neighbor
-   if( north[1] < py ) {
-      MPI_Cart_rank( cartcomm, north, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
+   /////////////////////////////////////////////////////
+   // MPI Finalization
 
-   // Connecting the bottom neighbor
-   if( bottom[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottom, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,0,-1), -center[2]*dz ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ) ) );
-   }
-
-   // Connecting the top neighbor
-   if( top[2] < pz ) {
-      MPI_Cart_rank( cartcomm, top, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,0,+1), +top[2]*dz ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ) ) );
-   }
-
-   // Connecting the south-west neighbor
-   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
-      MPI_Cart_rank( cartcomm, southwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
-
-   // Connecting the south-east neighbor
-   if( southeast[0] < px && southeast[1] >= 0 ) {
-      MPI_Cart_rank( cartcomm, southeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
-         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
-
-   // Connecting the north-west neighbor
-   if( northwest[0] >= 0 && northwest[1] < py ) {
-      MPI_Cart_rank( cartcomm, northwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
-
-   // Connecting the north-east neighbor
-   if( northeast[0] < px && northeast[1] < py ) {
-      MPI_Cart_rank( cartcomm, northeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
-         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
-         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
-         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-   }
-
-   // Connecting the bottom-west neighbor
-   if( bottomwest[0] >= 0 && bottomwest[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-         HalfSpace( Vec3(0,0,-1), -center[2]*dz ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ) ) );
-   }
-
-   // Connecting the bottom-east neighbor
-   if( bottomeast[0] < px && bottomeast[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
-         HalfSpace( Vec3(0,0,-1), -center[2]*dz ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ) ) );
-   }
-
-   // Connecting the bottom-south neighbor
-   if( bottomsouth[1] >= 0 && bottomsouth[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomsouth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-         HalfSpace( Vec3(0,0,-1), -center[2]*dz ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ) );
-   }
-
-   // Connecting the bottom-north neighbor
-   if( bottomnorth[1] < py && bottomnorth[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomnorth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
-         HalfSpace( Vec3(0,0,-1), -center[2]*dz ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ) );
-   }
-
-   // Connecting the bottom-south-west neighbor
-   if( bottomsouthwest[0] >= 0 && bottomsouthwest[1] >= 0 && bottomsouthwest[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomsouthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-                                HalfSpace( Vec3(0,0,-1), -center[2]*dz ) ) );
-   }
-
-   // Connecting the bottom-south-east neighbor
-   if( bottomsoutheast[0] < px && bottomsoutheast[1] >= 0 && bottomsoutheast[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomsoutheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
-                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-                                HalfSpace( Vec3(0,0,-1), -center[2]*dz ) ) );
-   }
-
-   // Connecting the bottom-north-west neighbor
-   if( bottomnorthwest[0] >= 0 && bottomnorthwest[1] < py && bottomnorthwest[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomnorthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
-                                HalfSpace( Vec3(0,0,-1), -center[2]*dz ) ) );
-   }
-
-   // Connecting the bottom-north-east neighbor
-   if( bottomnortheast[0] < px && bottomnortheast[1] < py && bottomnortheast[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomnortheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
-                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
-                                HalfSpace( Vec3(0,0,-1), -center[2]*dz ) ) );
-   }
-
-   // Connecting the top-west neighbor
-   if( topwest[0] >= 0 && topwest[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-         HalfSpace( Vec3(0,0,1), top[2]*dz ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ) ) );
-   }
-
-   // Connecting the top-east neighbor
-   if( topeast[0] < px && topeast[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(1,0,0), east[0]*dx ),
-         HalfSpace( Vec3(0,0,1), top[2]*dz ),
-         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
-         HalfSpace( Vec3(0,-1,0), -north[1]*dy ) ) );
-   }
-
-   // Connecting the top-south neighbor
-   if( topsouth[1] >= 0 && topsouth[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topsouth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-         HalfSpace( Vec3(0,0,1), top[2]*dz ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ) );
-   }
-
-   // Connecting the top-north neighbor
-   if( topnorth[1] < py && topnorth[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topnorth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,1,0), north[1]*dy ),
-         HalfSpace( Vec3(0,0,1), top[2]*dz ),
-         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
-         HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ) );
-   }
-
-   // Connecting the top-south-west neighbor
-   if( topsouthwest[0] >= 0 && topsouthwest[1] >= 0 && topsouthwest[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topsouthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-                                HalfSpace( Vec3(0,0,1), top[2]*dz ) ) );
-   }
-
-   // Connecting the top-south-east neighbor
-   if( topsoutheast[0] < px && topsoutheast[1] >= 0 && topsoutheast[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topsoutheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
-                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
-                                HalfSpace( Vec3(0,0,1), top[2]*dz ) ) );
-   }
-
-   // Connecting the top-north-west neighbor
-   if( topnorthwest[0] >= 0 && topnorthwest[1] < py && topnorthwest[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topnorthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
-                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
-                                HalfSpace( Vec3(0,0,1), top[2]*dz ) ) );
-   }
-
-   // Connecting the top-north-east neighbor
-   if( topnortheast[0] < px && topnortheast[1] < py && topnortheast[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topnortheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
-                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
-                                HalfSpace( Vec3(0,0,1), top[2]*dz ) ) );
-   }
 
 #ifndef NDEBUG
    // Checking the process setup
@@ -545,12 +766,7 @@ int main( int argc, char** argv )
 
    pe_GLOBAL_SECTION
    {
-      createPlane( 0,  1.0,  0.0,  0.0, 0.0, elastic );
-      createPlane( 0, -1.0,  0.0,  0.0, -lx, elastic );
-      createPlane( 0,  0.0,  1.0,  0.0, 0.0, elastic, false );
-      createPlane( 0,  0.0, -1.0,  0.0, -ly, elastic );
-      createPlane( 0,  0.0,  0.0,  1.0, 0.0, elastic );
-      createPlane( 0,  0.0,  0.0, -1.0, -lz, elastic );
+      createPlane( 0,  0.0,  0.0,  1.0, 0.0, granite );
    }
 
 
@@ -582,29 +798,36 @@ int main( int argc, char** argv )
 //                                   real length, MaterialID material, bool visible )
 //
 
-   // Min spacing = 2. * (length + radius) + spaceBetween
+   real cylinderRadius = 0.25;
+   real length = 8.0;
+   real totalLength = length + 2. * cylinderRadius;
+   real boxHeight = 2. * cylinderRadius;
 
-   // Strong scaling initialization
-   for( int z=0; z<nz; ++z ) {
-      for( int y=0; y<ny; ++y ) {
-         for( int x=0; x<nx; ++x )
-         {
-            ++id;
-            gpos.set( ( x+real(0.5) ) * spacing,
-                      ( y+real(0.5) ) * spacing,
-                      ( z+real(0.5) ) * spacing );
-            vel.set( rand<real>( -velocity, velocity ),
-                     rand<real>( -velocity, velocity ),
-                     rand<real>( -velocity, velocity ) );
-
-            if( world->ownsPoint( gpos ) ) {
-               BodyID particle;
-               if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-               else particle = createCapsule( id, gpos, cradius, clength, elastic );
-               particle->setLinearVel( vel );
-            }
+   // Setup of the wooden box stack
+   for (unsigned int k = 0; k < 8; ++k) {
+     for (unsigned int i = H; i > 0; --i) {
+       for (unsigned int j = 0; j < i; ++j)
+       {
+         Vec3 pos(0, 0, 0);
+         if(k % 2 == 0)
+           pos = Vec3( -2.5 * (i - 1) + j * totalLength - 27, -8 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
+         else {
+           pos = Vec3(-2.5 * (i - 1) + j * totalLength, -8 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
+           pos[0] = -pos[0] + 53. - 27;
          }
-      }
+         if (world->ownsPoint(pos)) {
+           CapsuleID cap = createCapsule(++id, pos, cylinderRadius, length, oak);
+           cap->rotate(0.0, 0.0, angle());
+         }
+       }
+     }
+   }
+
+   Vec3 spos(0.0, -25.0, 7.5);
+   if (world->ownsPoint(spos)) {
+     // Setup of the metal sphere
+     SphereID s = createSphere(++id, spos, 1.5, iron);
+     s->setLinearVel(0.0, 5.5, 0.1);
    }
 
    // Synchronization of the MPI processes

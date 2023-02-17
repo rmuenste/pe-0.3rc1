@@ -40,6 +40,7 @@
 #include <pe/povray.h>
 #include <pe/vtk.h>
 #include <pe/util.h>
+#include <pe/core/rigidbody/Capsule.h>
 using namespace pe;
 using namespace pe::povray;
 
@@ -92,8 +93,8 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 60000 );  // Total number of time steps
-   const unsigned int visspacing(   400 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int timesteps ( 20 );  // Total number of time steps
+   const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 16 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
@@ -128,15 +129,23 @@ int main( int argc, char* argv[] )
    real length = 8.0;
    real totalLength = length + 2. * cylinderRadius;
    real boxHeight = 2. * cylinderRadius;
-   //CapsuleID particle = createCapsule( id, Vec3(0,0,10), 1.0, 2.0, iron);
+
    // Setup of the wooden box stack
-   for( unsigned int i=H; i>0; --i ) {
-      for( unsigned int j=0; j<i; ++j )
-      {
-         const Vec3 pos( -2.5*(i-1)+j*totalLength, 0.0, 0.5 * boxHeight + (H-i) * boxHeight );
-         CapsuleID cap = createCapsule( ++id, pos, cylinderRadius, length, oak );
-         cap->rotate( 0.0, 0.0, angle() );
-      }
+   for (unsigned int k = 0; k < 2; ++k) {
+     for (unsigned int i = H; i > 0; --i) {
+       for (unsigned int j = 0; j < i; ++j)
+       {
+         Vec3 pos(0, 0, 0);
+         if(k % 2 == 0)
+           pos = Vec3(-2.5 * (i - 1) + j * totalLength + 42., 2 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
+         else {
+           pos = Vec3(-2.5 * (i - 1) + j * totalLength, 2 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
+           pos[0] = -pos[0] + 53. + 42.;
+         }
+         CapsuleID cap = createCapsule(++id, pos, cylinderRadius, length, oak);
+         cap->rotate(0.0, 0.0, angle());
+       }
+     }
    }
 
    // Setup of the metal sphere
