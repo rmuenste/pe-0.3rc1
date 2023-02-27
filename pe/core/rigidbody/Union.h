@@ -1212,6 +1212,12 @@ inline    UnionID createStellaOctangula( id_t uid, real x, real y, real z, real 
                                          MaterialID material, povray::WriterID pov, bool visible=true );
 PE_PUBLIC UnionID createStellaOctangula( id_t uid, const Vec3& gpos, real radius,
                                          MaterialID material, povray::WriterID pov, bool visible=true );
+
+
+//inline    UnionID createBipyramid( id_t uid, const Vec3& gpos, real radius,
+//                                          MaterialID material, povray::WriterID pov, bool visible=true );
+PE_PUBLIC UnionID createBipyramid( id_t uid, const Vec3& gpos, real radius,
+                                          MaterialID material, povray::WriterID pov, bool visible=true );
 //@}
 //*************************************************************************************************
 

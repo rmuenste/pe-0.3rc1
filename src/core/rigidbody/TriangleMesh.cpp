@@ -2794,6 +2794,9 @@ TriangleMeshID createRegularTetrahedron(id_t uid, const Vec3& gpos, real radius,
    vertices[2] = hundertzwanzig.rotate(vertices[1]); //hinten rechts
    vertices[3] = hundertzwanzig.rotate(vertices[2]); //hinten links
 
+   std::cout << "oben: " << vertices[0] << std::endl;
+   std::cout << "vorne: " << vertices[1] << std::endl;
+   std::cout << "hinten rechts: " << vertices[2] << std::endl;
 
    //assemble faces
    faceIndices[0] = Vector3< size_t >(0, 1, 2); //vorne rechts

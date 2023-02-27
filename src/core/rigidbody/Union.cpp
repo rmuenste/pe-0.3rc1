@@ -2758,6 +2758,53 @@ PE_PUBLIC UnionID createStellaOctangula( id_t uid, const Vec3& gpos, real radius
 
 
 
+//*************************************************************************************************
+/*!\brief Setup of a Bipyramid
+ * \ingroup union
+ *
+ * \param uid The user-specific ID of the particle.
+ * \param gpos The global position of the center of the particle.
+ * \param radius Radius of the Bipyramid \f$ (0..\infty) \f$.
+ * \param material The material of the particle.
+ * \param pov Handel to the povray writer if setColoredTriangleTexture() should be called for the tetraheadrons. Otherwise NULL
+ * \param visible Specifies if the particle is visible in a visualization.
+ * \return Handle for the new Bipyramid.
+ *
+ *
+ * This function creates a union containing two tetrahedron arranged as an bipyramid,
+ * meaning that the tetrahedron are aranged in a way that all tip penetrats a face of the
+ * the other tetrahedron in its centre
+ */
+PE_PUBLIC UnionID createBipyramid( id_t uid, const Vec3& gpos, real radius,
+                                          MaterialID material, povray::WriterID pov, bool visible )
+{
+   // Creating a new union
+   UnionID u( 0 );
+   pe_CREATE_UNION( newunion, uid )
+   {
+
+      TriangleMeshID utet1 = createRegularTetrahedron(uid, Vec3(0.0, 0.0, 0.0), radius, material);
+      TriangleMeshID utet2 = createRegularTetrahedron(uid, Vec3(0.0, 0.0, 0.0), radius, material);
+      utet2->translate(Vec3(0,0,-1.0));
+      utet2->rotate(0.0, M_PI, 0);
+
+      utet1->setColoredTriangleTexture(pov);
+      utet2->setColoredTriangleTexture(pov);
+
+
+      // Setting the global position and the visibility of the union
+      newunion->setPosition( gpos    );
+      newunion->setVisible ( visible );
+
+      u = newunion;
+   }
+
+   return u;
+}
+//*************************************************************************************************
+
+
+
 //=================================================================================================
 //
 //  GLOBAL OPERATORS
