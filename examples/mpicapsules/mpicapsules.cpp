@@ -65,8 +65,14 @@ std::vector<HalfSpace> generateDomainHalfPlanes(int pX, int pY, int row, int col
   Vec3 normalsY[] = { Vec3(-1, 0, 0), Vec3( 1, 0, 0) };
   Vec3 normalsX[] = { Vec3( 0,-1, 0), Vec3( 0, 1, 0) };
 
-  std::vector<real> distanceX = {0, 70, 140};
-  std::vector<real> distanceY = {0, 70, 140};
+  std::vector<real> distanceX;// = {0, 70, 140};
+  distanceX.push_back(0);
+  distanceX.push_back(70);
+  distanceX.push_back(140);
+  std::vector<real> distanceY;// = {0, 70, 140};
+  distanceY.push_back(0);
+  distanceY.push_back(70);
+  distanceY.push_back(140);
 
   int processesY = pY;
   int processesX = pX;
@@ -599,7 +605,7 @@ int main( int argc, char** argv )
    const size_t visspacing(    400 );  // Number of time steps inbetween two POV-Ray files
 
    const bool spheres     ( false );  // Switch between spheres and capsules particles
-   const unsigned int H ( 16 );              // Height of the capsule stack
+   const unsigned int H ( 24 );              // Height of the capsule stack
 
 
 
@@ -615,12 +621,12 @@ int main( int argc, char** argv )
 //   if( vm.count( "no-povray" ) > 0 )
 //      povray = false;
 
-   const int nx( 2 );
-   const int ny( 2 );
-   const int nz( 2 );
-   const int px( 2 );
-   const int py( 2 );
-   const int pz( 2 );
+   const int nx( 3 );
+   const int ny( 3 );
+   const int nz( 3 );
+   const int px( 3 );
+   const int py( 3 );
+   const int pz( 3 );
 
    if( nx <= 0 ) {
       std::cerr << " Invalid number of particles in x-dimension!\n";
@@ -804,16 +810,16 @@ int main( int argc, char** argv )
    real boxHeight = 2. * cylinderRadius;
 
    // Setup of the wooden box stack
-   for (unsigned int k = 0; k < 8; ++k) {
+   for (unsigned int k = 0; k < 48; ++k) {
      for (unsigned int i = H; i > 0; --i) {
        for (unsigned int j = 0; j < i; ++j)
        {
          Vec3 pos(0, 0, 0);
          if(k % 2 == 0)
-           pos = Vec3( -2.5 * (i - 1) + j * totalLength - 27, -8 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
+           pos = Vec3( -2.5 * (i - 1) + j * totalLength - 27 + 50, -90 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
          else {
-           pos = Vec3(-2.5 * (i - 1) + j * totalLength, -8 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
-           pos[0] = -pos[0] + 53. - 27;
+           pos = Vec3( -2.5 * (i - 1) + j * totalLength, -90 + k * 12 * cylinderRadius, 0.5 * boxHeight + (H - i) * boxHeight);
+           pos[0] = -pos[0] + 53. - 27 + 70;
          }
          if (world->ownsPoint(pos)) {
            CapsuleID cap = createCapsule(++id, pos, cylinderRadius, length, oak);
@@ -823,7 +829,7 @@ int main( int argc, char** argv )
      }
    }
 
-   Vec3 spos(0.0, -25.0, 7.5);
+   Vec3 spos(0.0, -120.0, 7.5);
    if (world->ownsPoint(spos)) {
      // Setup of the metal sphere
      SphereID s = createSphere(++id, spos, 1.5, iron);
@@ -836,6 +842,10 @@ int main( int argc, char** argv )
    // Ending the time measurement for the setup
    setupTime.end();
 
+   unsigned long primitivesTotal(0);
+   int numBodies = theCollisionSystem()->getBodyStorage().size();
+   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
+   MPI_Reduce(&bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
 
    /////////////////////////////////////////////////////
    // Output of the simulation settings
@@ -845,7 +855,7 @@ int main( int argc, char** argv )
                 << "------------------------------------------------------------\n"
                 << " Size of the domain                      = (" << lx << "," << ly << "," << lz << ")\n"
                 << " Number of MPI processes                 = (" << px << "," << py << "," << pz << ")\n"
-                << " Total number of particles               = " << nx*ny*nz << "\n"
+                << " Total number of particles               = " << primitivesTotal << "\n"
                 << " World gravity                           = " << world->getGravity() << "\n"
                 << " Number of particles on each process     = " << nxpp*nypp*nzpp << "\n"
                 << " Radius of a single particle             = " << radius << "\n"

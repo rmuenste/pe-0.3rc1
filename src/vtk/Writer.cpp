@@ -82,7 +82,7 @@ Vec3 evalSphere(real radius, real phi, real theta)
 //===================================================================================================
 // In this function we produce a hemisphere with center at (0,0,0), a top on the x-axis
 // and a radius of s. The hemisphere has 65 Vertices and 112 triangles
-std::pair< std::vector<Vec3>, std::vector<Vector3<size_t>> >
+std::pair< std::vector<Vec3>, std::vector<Vector3<size_t> > >
 triangulateSphere(real s) {
   //-Pi/2 to Pi/2
   real phi;
@@ -152,7 +152,7 @@ triangulateSphere(real s) {
     }
   }
 
-  std::pair < std::vector<Vec3>, std::vector<Vector3<size_t>> > mypair;
+  std::pair < std::vector<Vec3>, std::vector<Vector3<size_t> > > mypair;
   mypair.first = vVertices;
   mypair.second = vFaces;
   return mypair;
@@ -1687,12 +1687,12 @@ void Writer::writeCapsuleDataAscii(std::ostream& out) const {
        
        Vec3 center = s->getPosition();
        
-       std::pair < std::vector<Vec3>, std::vector<Vector3<size_t>> > mypair = triangulateSphere(s->getRadius());
+       std::pair < std::vector<Vec3>, std::vector<Vector3<size_t> > > mypair = triangulateSphere(s->getRadius());
 
        // 65 vertices
        std::vector<Vec3>& hemisVerts = mypair.first;
        // 112 cells
-       std::vector<Vector3<size_t>>& hemisFaces = mypair.second;
+       std::vector<Vector3<size_t> >& hemisFaces = mypair.second;
 
        std::vector<Vec3> points;
        
@@ -1754,12 +1754,12 @@ void Writer::writeCapsuleDataAscii(std::ostream& out) const {
      for (unsigned int i = 0; i < capsules_.size(); i++) {
 
        ConstCapsuleID s = capsules_[i];
-       std::pair < std::vector<Vec3>, std::vector<Vector3<size_t>> > mypair = triangulateSphere(s->getRadius());
+       std::pair < std::vector<Vec3>, std::vector<Vector3<size_t> > > mypair = triangulateSphere(s->getRadius());
 
        // 65 vertices
        std::vector<Vec3>& hemisVerts = mypair.first;
        // 112 cells
-       std::vector<Vector3<size_t>>& hemisFaces = mypair.second;
+       std::vector<Vector3<size_t> >& hemisFaces = mypair.second;
 
        // Connectivity of the cylinder faces 
        for( unsigned int j = 0; j < faces.size(); j++ ) {
