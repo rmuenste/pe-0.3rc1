@@ -157,7 +157,7 @@ int main( int argc, char** argv )
 
    const real   radius    (  0.5  );  // The radius of spherical particles
    const real   spacing   (  2.5  );  // Initial spacing inbetween two spherical particles
-   const real   spacingx   (  2.5  );  // Initial spacing inbetween two spherical particles
+   const real   spacingx   (  1.5  );  // Initial spacing inbetween two spherical particles
    const real   spacingy   (  1.5  );  // Initial spacing inbetween two spherical particles
    const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
@@ -675,7 +675,7 @@ int main( int argc, char** argv )
                  if( world->ownsPoint( gpos ) ) {
                     BodyID particle;
                     if( spheres ) particle = createSphere( id, gpos, radius, elastic );
-                    else particle = createBox( id, gpos, Vec3(radiusx, radius, radius), elastic);
+                    else particle = createBox( id, gpos, Vec3(radius, radius, radius), elastic);
                     particle->setLinearVel( vel );
                     particle->rotate( 0.0, 0.0, angle() );
                  }
