@@ -726,6 +726,8 @@ int main( int argc, char** argv )
       // PovRay textures are reassigned through texture policy
    }
 
+
+   theCollisionSystem()->setErrorReductionParameter(0.1);
    // Synchronization of the MPI processes
    world->synchronize();
 
