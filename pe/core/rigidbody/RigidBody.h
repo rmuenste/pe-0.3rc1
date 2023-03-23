@@ -269,6 +269,7 @@ public:
            inline void        addForceAtRelPos   ( const Vec3& f, const Vec3& rpos );
            inline void        addForceAtPos      ( real fx, real fy, real fz, real px, real py, real pz );
            inline void        addForceAtPos      ( const Vec3& f, const Vec3& gpos );
+           inline void        applyForces        ( real dt );
 
            inline void        addTorque( real tx, real ty, real tz );
            inline void        addTorque( const Vec3& t );
@@ -1584,6 +1585,29 @@ inline void RigidBody::addForce( const Vec3& f )
 }
 //*************************************************************************************************
 
+
+
+//*************************************************************************************************
+/*!\brief Increases the force acting in the body's center of mass.
+ *
+ * \param f The acting force.
+ * \return void
+ *
+ * The function DIRECTLY applies a global force to the rigid body. The given force is acting directly
+ * in the body's center of mass and increases the total acting force on the body. If the rigid
+ * body is part of a superordinate body, the force is also acting on the superordinate body.
+ * Depending on the position of the superordinate body's center of mass, the force can also
+ * cause a torque in the superordinate body.
+ *
+ * \b Note: If the pe::pe_GAMES_MODE is active and the body is part of a union, the force is
+ * directly added to the union.
+ */
+inline void RigidBody::applyForces( real dt )
+{
+   v_ += invMass_ * dt * force_;
+   w_ += dt * ( getInvInertia() * torque_ );  
+}
+//*************************************************************************************************
 
 //*************************************************************************************************
 /*!\brief Increases the force acting in the body's center of mass.

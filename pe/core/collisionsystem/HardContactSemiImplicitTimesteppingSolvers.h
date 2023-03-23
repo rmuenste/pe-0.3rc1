@@ -201,7 +201,9 @@ public:
    inline CoarseDetector& getCoarseDetector();
    inline ContactSolver&  getContactSolver();
    inline const BS&       getBodyStorage()        const;
+   inline BS&             getBodyStorage();
    inline const BS&       getBodyShadowCopyStorage() const;
+   inline BS&             getBodyShadowCopyStorage();
    inline const PS&       getProcessStorage()     const;
    inline const AS&       getAttachableStorage()  const;
    inline const Domain&   getDomain()             const;
@@ -235,6 +237,7 @@ public:
    inline void            clearShadowCopies();
    //@}
    //**********************************************************************************************
+   void synchronizeForces();
 
 private:
    //**Add/remove functions************************************************************************
@@ -615,6 +618,27 @@ inline const typename CollisionSystem< C<CD,FD,BG,response::HardContactSemiImpli
 
 
 //*************************************************************************************************
+/*!\brief Returns a reference to the body storage.
+ *
+ * \return reference to the body storage.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline typename CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::BS&
+   CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getBodyStorage() 
+{
+   return bodystorage_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Returns a constant reference to the body storage.
  *
  * \return Constant reference to the body storage.
@@ -629,6 +653,27 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 inline const typename CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::BS&
    CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getBodyShadowCopyStorage() const
+{
+   return bodystorageShadowCopies_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns a constant reference to the body storage.
+ *
+ * \return Constant reference to the body storage.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline typename CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::BS&
+   CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getBodyShadowCopyStorage() 
 {
    return bodystorageShadowCopies_;
 }
@@ -3900,6 +3945,173 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 }
 //*************************************************************************************************
 
+
+
+//*************************************************************************************************
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::synchronizeForces() {
+#if HAVE_MPI
+  // Skip synchronization if we compute on a single process 
+  if ( MPISettings::size() <= 1 )
+    return;
+
+  MPI_Comm cartComm = MPISettings::comm();
+
+  pe_PROFILING_SECTION {
+//      timeForceSync_.start();
+//      memForceSync_.start();
+//      timeForceSyncAssembling_.start();
+//      memForceSyncAssembling_.start();
+  }
+
+  pe_LOG_DEBUG_SECTION( log ) {
+    log << "Assembling of force synchronization message starts...\n";
+  }
+
+  for( BodyIterator bodyIt = bodystorageShadowCopies_.begin(); bodyIt != bodystorageShadowCopies_.end(); ++bodyIt ) {
+      BodyID body = *bodyIt;
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "__Processing shadow copy of body " << body->getSystemID() << ".\n";
+      }
+
+      if( !body->hasForce() ) {
+         // If we did not apply any forces do not send anything.
+         continue;
+      }
+
+      ProcessID process( body->getOwnerHandle() );
+      Process::SendBuff& buffer( process->getSendBuffer() );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "__Sending force contribution " << body->getForce() << ", " << body->getTorque() << " of body " << body->getSystemID() << " to owner process " << process->getRank() << ".\n";
+      }
+      marshal( buffer, notificationType<RigidBodyForceNotification>() );
+      marshal( buffer, RigidBodyForceNotification( *body ) );
+   }
+
+   pe_PROFILING_SECTION {
+//      timeForceSyncAssembling_.end();
+//      memForceSyncAssembling_.stop();
+//
+//      for( ProcessIterator process = processstorage_.begin(); process != processstorage_.end(); ++process )
+//         sentForceSync_.transfered( (*process)->getSendBuffer().size() );
+//
+//      MPI_Barrier( cartComm );
+//
+//      timeForceSyncCommunicate_.start();
+//      memForceSyncCommunicate_.start();
+   }
+
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "Communication of force synchronization messages starts...\n";
+   }
+
+   communicate( mpitagDEMSynchronizeForces );
+
+   pe_PROFILING_SECTION {
+//      timeForceSyncCommunicate_.end();
+//      memForceSyncCommunicate_.stop();
+//
+//      for( ProcessIterator process = processstorage_.begin(); process != processstorage_.end(); ++process )
+//         receivedForceSync_.transfered( (*process)->getRecvBuffer().size() );
+//
+//      MPI_Barrier( cartComm );
+//
+//      timeForceSyncParsing_.start();
+//      memForceSyncParsing_.start();
+   }
+
+   // Receiving force and torque contributions
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "Parsing of force synchronization response starts...\n";
+   }
+
+   for( ProcessIterator processIt = processstorage_.begin(); processIt != processstorage_.end(); ++processIt ) {
+      ProcessID process = *processIt;
+      Process::RecvBuff& buffer( process->getRecvBuffer() );
+      NotificationType notificationType;
+
+      // Receiving rigid body force/torque contribution notifications [DN] from neighbors (N) and distant processes (D)
+      while( !buffer.isEmpty() ) {
+         unmarshal( buffer, notificationType );
+
+         switch( notificationType ) {
+            case rigidBodyForceNotification: {
+               RigidBodyForceNotification::Parameters objparam;
+               unmarshal( buffer, objparam );
+
+               BodyID b( *bodystorage_.find( objparam.sid_ ) );
+               pe_INTERNAL_ASSERT( !b->isRemote(), "Update notification must only concern local bodies." );
+
+               b->addForce( objparam.f_ );
+               b->addTorque( objparam.tau_ );
+
+               pe_LOG_DEBUG_SECTION( log ) {
+                  log << "Received rigid body force contribution from neighboring process with rank " << process->getRank() << ":\nf = " << objparam.f_ << "\ntau = " << objparam.tau_ << "\nf_total = " << b->getForce() << "\ntau_total = " << b->getTorque() << "\n";
+               }
+               break;
+            }
+            default:
+               throw std::runtime_error( "Received invalid notification type." );
+         }
+      }
+   }
+
+   pe_PROFILING_SECTION {
+//      timeForceSyncParsing_.end();
+//      memForceSyncParsing_.stop();
+//
+//      MPI_Barrier( cartComm );
+//
+//      timeForceSyncGlobals_.start();
+//      memForceSyncGlobals_.start();
+   }
+
+  if( globalNonfixedBodies_.size() > 0 ) {
+     size_t i;
+     reductionBuffer_.resize( globalNonfixedBodies_.size() * 6 );
+
+     i = 0;
+     for( typename std::set<BodyID,LessSystemID>::iterator it = globalNonfixedBodies_.begin(); it != globalNonfixedBodies_.end(); ++it ) {
+        const Vec3 f( (*it)->getForce() ), tau( (*it)->getTorque() );
+
+        reductionBuffer_[i++] = f[0];
+        reductionBuffer_[i++] = f[1];
+        reductionBuffer_[i++] = f[2];
+        reductionBuffer_[i++] = tau[0];
+        reductionBuffer_[i++] = tau[1];
+        reductionBuffer_[i++] = tau[2];
+     }
+
+     MPI_Allreduce( MPI_IN_PLACE, &reductionBuffer_[0], reductionBuffer_.size(), MPITrait<real>::getType(), MPI_SUM, MPISettings::comm() );
+
+     i = 0;
+     for( typename std::set<BodyID,LessSystemID>::iterator it = globalNonfixedBodies_.begin(); it != globalNonfixedBodies_.end(); ++it, i += 6 ) {
+        (*it)->setForce ( Vec3( reductionBuffer_[i], reductionBuffer_[i + 1], reductionBuffer_[i + 2] ) );
+        (*it)->setTorque( Vec3( reductionBuffer_[i + 3], reductionBuffer_[i + 4], reductionBuffer_[i + 5] ) );
+     }
+  }
+
+  pe_PROFILING_SECTION {
+//     timeForceSyncGlobals_.end();
+//     memForceSyncGlobals_.stop();
+//
+//     MPI_Barrier( cartComm );
+//
+//     timeForceSync_.end();
+//     memForceSync_.stop();
+  }
+
+#endif
+}
+//*************************************************************************************************
 
 
 

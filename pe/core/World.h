@@ -179,6 +179,8 @@ public:
                           inline BodyID               getBody( unsigned int index );
                           inline ConstBodyID          getBody( unsigned int index ) const;
 
+                          inline BodyID               getShadowBody( unsigned int index );
+                          inline ConstBodyID          getShadowBody( unsigned int index ) const;
                           inline Iterator             begin();
                           inline ConstIterator        begin() const;
    template< typename C > inline Bodies::CastIterator<C>      begin();
@@ -428,6 +430,39 @@ inline BodyID World::getBody( unsigned int index )
    return theCollisionSystem()->bodystorage_.at( index );
 }
 //*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns a handle to the indexed shadow body.
+ *
+ * \param index Access index. The index has to be in the range \f$[0..size-1]\f$.
+ * \return Handle to the accessed rigid body.
+ *
+ * \b Note: No runtime check is performed to ensure the validity of the access index.
+ */
+inline BodyID World::getShadowBody( unsigned int index )
+{
+   // WARNING: Using friend relationship to get non-constant BodyID from body storage.
+   return theCollisionSystem()->bodystorageShadowCopies_.at( index );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns a handle to the indexed shadow body.
+ *
+ * \param index Access index. The index has to be in the range \f$[0..size-1]\f$.
+ * \return Handle to the accessed rigid body.
+ *
+ * \b Note: No runtime check is performed to ensure the validity of the access index.
+ */
+inline ConstBodyID World::getShadowBody( unsigned int index ) const
+{
+   // WARNING: Using friend relationship to get non-constant BodyID from body storage.
+   return theCollisionSystem()->bodystorageShadowCopies_.at( index );
+}
+//*************************************************************************************************
+
 
 
 //*************************************************************************************************
