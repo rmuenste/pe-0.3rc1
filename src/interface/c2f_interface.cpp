@@ -102,7 +102,7 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    //setupDraftKissTumbBench(CcommEx0);
+    setupDraftKissTumbBench(CcommEx0);
   } 
 }
 
