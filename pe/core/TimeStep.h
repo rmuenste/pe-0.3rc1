@@ -71,6 +71,7 @@ public:
    /*!\name Set functions */
    //@{
    static inline void         step( unsigned int step );
+   static inline void         stepsize( real size );
    //@}
    //**********************************************************************************************
 
@@ -134,6 +135,19 @@ inline real TimeStep::size()
 inline void TimeStep::step( unsigned int step )
 {
    step_ = step;
+}
+//*************************************************************************************************
+
+
+
+//*************************************************************************************************
+/*!\brief Sets the current time step.
+ *
+ * \param step The time step number.
+ */
+inline void TimeStep::stepsize( real size )
+{
+   size_ = size;
 }
 //*************************************************************************************************
 
