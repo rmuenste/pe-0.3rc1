@@ -199,6 +199,7 @@ public:
    inline void setAutoForceReset( bool reset );
    inline void setLiquidSolid( bool ls );
    inline void setDamping( real damping );
+   inline void setLiquidDensity( real liquidDensity );
    inline void setGravity( real gx, real gy, real gz );
    inline void setGravity( const Vec3& gravity );
    inline void setLiquidDensity( real damping );
@@ -809,9 +810,22 @@ inline void World::setGravity( const Vec3& gravity )
 
 
 //*************************************************************************************************
+/*!\brief Switching the liquid-solid simulation on or off.
+ *
+ * \param ls on/off switch 
+ * \return void
+ */
+inline void World::setLiquidSolid( bool ls )
+{
+   Settings::liquidSolid_ = ls;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Setting the density of the liquid in the simulation world.
  *
- * \param gravity The liquid density.
+ * \param The liquid density.
  * \return void
  */
 inline void World::setLiquidDensity( real liquidDensity )
@@ -821,18 +835,6 @@ inline void World::setLiquidDensity( real liquidDensity )
 //*************************************************************************************************
 
 
-//*************************************************************************************************
-/*!\brief Switching the liquid-solid simulation on or off.
- *
- * \param reset \a true to switch the liquid-solid sim on, \a false to switch it off.
- * \return void
- *
- */
-inline void World::setLiquidSolid( bool ls )
-{
-   Settings::liquidSolid_ = ls;
-}
-//*************************************************************************************************
 
 
 //=================================================================================================

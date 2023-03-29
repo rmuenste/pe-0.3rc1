@@ -3,8 +3,6 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
 
   world = theWorld();
   world->setGravity( 0.0, 0.0, -98.1 );
-//  world->setGravity( 0.0, 0.0, 0 );
-  // TODO: enable this
   world->setLiquidSolid(true);
   world->setLiquidDensity(1.0);
 

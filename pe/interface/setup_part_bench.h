@@ -4,7 +4,6 @@ void setupParticleBench(MPI_Comm ex0) {
   world = theWorld();
   world->setGravity( 0.0, 0.0, -9.81 );
 
-  // TODO: enable this!!
   world->setLiquidSolid(true);
   world->setLiquidDensity(962);
 

@@ -69,11 +69,11 @@ private:
    //**Member variables****************************************************************************
    /*!\name Member variables */
    //@{
-   static bool forceReset_;  //!< Flag for the automatic force resetting after a simulation step.
-   static real damping_;     //!< Damping factor of the simulation world.
-   static Vec3 gravity_;     //!< Gravity of the simulated system.
-   static real liquidDensity_;   //!< Damping factor of the simulation world.
-   static bool liquidSolid_;     //!< Damping factor of the simulation world.
+   static bool forceReset_;    //!< Flag for the automatic force resetting after a simulation step.
+   static bool liquidSolid_;   //!< Flag liquid solid simulations
+   static real damping_;       //!< Damping factor of the simulation world.
+   static real liquidDensity_; //!< Density of the surrounding fluid
+   static Vec3 gravity_;       //!< Gravity of the simulated system.
    //@}
    //**********************************************************************************************
 
