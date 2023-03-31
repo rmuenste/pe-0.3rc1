@@ -30,12 +30,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.01 );  // Size of a single time step
+const real   stepsize      (  0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
-const int    processesY( 3 );    // Number of processes in y-direction
-const int    processesZ( 3 );    // Number of processes in y-direction
+const int    processesX( 1 );    // Number of processes in x-direction
+const int    processesY( 1 );    // Number of processes in y-direction
+const int    processesZ( 16 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -66,7 +66,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 
 bool g_povray  ( false );
 bool g_vtk( true );
-const unsigned int visspacing( 10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 50 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -110,64 +110,64 @@ extern "C" void step_simulation_() {
 
 void stepSimulation() {
 
-//  static int timestep = 0;
-//  unsigned long particlesTotalBefore = 0;
-//  int numBodies =  theCollisionSystem()->getBodyStorage().size();
-//  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-//  unsigned long particlesTotal ( 0 );
-//  MPI_Comm cartcomm = theMPISystem()->getComm();
+  static int timestep = 0;
+  unsigned long particlesTotalBefore = 0;
+  int numBodies =  theCollisionSystem()->getBodyStorage().size();
+  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
+  unsigned long particlesTotal ( 0 );
+  MPI_Comm cartcomm = theMPISystem()->getComm();
+
+  /*
+   * The first argument to MPI_Reduce is the communicated value
+   * The 2nd argument to MPI_Reduce is cummulative value
+   */
+//  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+//  particlesTotalBefore = particlesTotal;
 //
-//  /*
-//   * The first argument to MPI_Reduce is the communicated value
-//   * The 2nd argument to MPI_Reduce is cummulative value
-//   */
-////  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-////  particlesTotalBefore = particlesTotal;
-////
-////    fc2_EXCLUSIVE_SECTION(0) {
-////     std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::endl;
-////    }
-//
-//
-////  particlesTotalBefore = particlesTotal;
-//  world->simulationStep( stepsize );
-//  //world->simulationStepDebug( stepsize );
-////#define OUTPUT_LEVEL2
-//#ifdef OUTPUT_LEVEL2
-//  unsigned int i(0);
-//  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
-//    World::SizeType widx = static_cast<World::SizeType>(i);
-//    BodyID body = world->getBody(static_cast<unsigned int>(widx));
-//    if(body->getType() == sphereType) {
-//      std::cout << "Position: " << body->getSystemID() << " " << body->getPos().x() << " "<< body->getPos().y() << " "<< body->getPos().z() << " " << timestep * stepsize << std::endl;
-//      std::cout << "Velocity: " << body->getSystemID() << " "<< body->getLinVel().x() << " "<< body->getLinVel().y() << " "<< body->getLinVel().z() << " " << timestep * stepsize << std::endl;
+//    fc2_EXCLUSIVE_SECTION(0) {
+//     std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::endl;
 //    }
-//  }
-//#endif 
-//
-//  fc2_EXCLUSIVE_SECTION(0) {
-//    std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << std::endl;
-//  }
+
+
+//  particlesTotalBefore = particlesTotal;
+  world->simulationStep( stepsize );
+  //world->simulationStepDebug( stepsize );
+#define OUTPUT_LEVEL2
+#ifdef OUTPUT_LEVEL2
+  unsigned int i(0);
+  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+    World::SizeType widx = static_cast<World::SizeType>(i);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    if(body->getType() == sphereType) {
+      std::cout << "Position: " << body->getSystemID() << body->getPosition()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " "<< body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+    }
+  }
+#endif 
+
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << std::endl;
+  }
 //  checkpointer.trigger();
 //  checkpointer.flush();
-//  timestep++;
-////
-//  numBodies = theCollisionSystem()->getBodyStorage().size();
-//  bodiesUpdate = static_cast<unsigned long>(numBodies);
-//  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-//  fc2_EXCLUSIVE_SECTION(0) {
-//   std::cout << "Num particles: " << bodiesUpdate << "   " << std::endl;
+  timestep++;
+//
+  numBodies = theCollisionSystem()->getBodyStorage().size();
+  bodiesUpdate = static_cast<unsigned long>(numBodies);
+  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  pe_EXCLUSIVE_SECTION(0) {
+   std::cout << "Num particles: " << bodiesUpdate << "   " << std::endl;
+  }
+
+//  if (particlesTotal != particlesTotalBefore) {
+//    std::cout << " We have lost particles: " << particlesTotal << " != " << particlesTotalBefore << "\n" << std::endl;
+//    std::exit(EXIT_FAILURE);
 //  }
-//
-////  if (particlesTotal != particlesTotalBefore) {
-////    std::cout << " We have lost particles: " << particlesTotal << " != " << particlesTotalBefore << "\n" << std::endl;
-////    std::exit(EXIT_FAILURE);
-////  }
-//
-//
-//  /////////////////////////////////////////////////////
-//  // MPI Finalization
-//  MPI_Barrier(cartcomm);
+
+
+  /////////////////////////////////////////////////////
+  // MPI Finalization
+  MPI_Barrier(cartcomm);
 
 }
 

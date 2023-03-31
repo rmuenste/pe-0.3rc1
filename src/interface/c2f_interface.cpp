@@ -22,8 +22,6 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
     int status;
     MPI_Comm CcommEx0;
     Ccomm = MPI_Comm_f2c(*Fcomm); // Convert Fortran->C communicator
-//    status = CFunction(*something,*Ccomm); // Call original function
-//    return status;
 
     int remRank = *remoteRank;
     int rank, size;

@@ -34,15 +34,15 @@ void synchronizeForces() {
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
     if (body->getType() == sphereType) {
-      body->applyForces(stepsize);
-//      std::cout << rank << ")" << body << std::endl;
+      body->applyFluidForces(stepsize);
+//      std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
     }
   }
 
   for (std::size_t i=0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
     BodyID body = world->getShadowBody(i);
     if (body->getType() == sphereType) {
-      body->applyForces(stepsize);
+      body->applyFluidForces(stepsize);
 //      std::cout << rank << ")" << body << std::endl;
     }
   }

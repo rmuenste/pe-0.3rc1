@@ -5,8 +5,8 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, -98.1 );
 //  world->setGravity( 0.0, 0.0, 0 );
   // TODO: enable this
-  //world->setLiquidSolid(true);
-  //world->setLiquidDensity(1.0);
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(1.0);
 
   world->setDamping( 1.0 );
 
@@ -26,7 +26,7 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   // Checking the total number of MPI processes
   if( processesX*processesY*processesZ != mpisystem->getSize() ) {
      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
-     return;
+     std::exit(EXIT_FAILURE);
   }
 
   /////////////////////////////////////////////////////

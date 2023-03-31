@@ -5,8 +5,8 @@ void setupParticleBench(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, -9.81 );
 
   // TODO: enable this!!
-  //world->setLiquidSolid(true);
-  //world->setLiquidDensity(962);
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(962);
 
   world->setDamping( 1.0 );
 
@@ -18,7 +18,9 @@ void setupParticleBench(MPI_Comm ex0) {
   const real dy( 0.05 );
   //const real dz( 0.08 ) 2 subs;
   //const real dz( 0.08 ) 2 subs;
-  const real dz( 0.1333333333333334 );
+//  const real dx( -0.05 );
+//  const real dy( -0.05 );
+  const real dz( 0.013333333 );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -82,7 +84,7 @@ void setupParticleBench(MPI_Comm ex0) {
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "3D coordinates were created" << std::endl;
-    std::cout << Vec3(center[0], center[1], center[2]) << std::endl;
+    std::cout << "Rank:" << my_rank  << "->" << Vec3(center[0], center[1], center[2]) << std::endl;
   }
 
   int west     [] = { center[0]-1, center[1]  , center[2] };
@@ -116,9 +118,6 @@ void setupParticleBench(MPI_Comm ex0) {
   int topnorthwest[] = { center[0]-1, center[1]+1, center[2]+1 };
   int topnortheast[] = { center[0]+1, center[1]+1, center[2]+1 };
 
-//  const real dx( -0.05 );
-//  const real dy( -0.05 );
-//  const real dz( 0.013333333 );
 
   // Specify local domain
   defineLocalDomain( intersect(

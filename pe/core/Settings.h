@@ -58,7 +58,9 @@ public:
    /*!\name Get functions */
    //@{
    static inline bool        forceReset();
+   static inline bool        liquidSolid();
    static inline real        damping();
+   static inline real        liquidDensity();
    static inline const Vec3& gravity();
    //@}
    //**********************************************************************************************
@@ -70,6 +72,8 @@ private:
    static bool forceReset_;  //!< Flag for the automatic force resetting after a simulation step.
    static real damping_;     //!< Damping factor of the simulation world.
    static Vec3 gravity_;     //!< Gravity of the simulated system.
+   static real liquidDensity_;   //!< Damping factor of the simulation world.
+   static bool liquidSolid_;     //!< Damping factor of the simulation world.
    //@}
    //**********************************************************************************************
 
@@ -125,6 +129,29 @@ inline const Vec3& Settings::gravity()
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns the density of the liquid.
+ *
+ * \return The density of the liquid
+ */
+inline real Settings::liquidDensity()
+{
+   return liquidDensity_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns true for a liquid-solid simulation and false otherwise
+ *
+ * \return true for a liquid-solid simulation and false otherwise
+ */
+inline bool Settings::liquidSolid()
+{
+   return liquidSolid_;
+}
+//*************************************************************************************************
 } // namespace pe
 
 #endif

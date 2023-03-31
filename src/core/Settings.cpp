@@ -46,5 +46,7 @@ namespace pe {
 bool Settings::forceReset_( true );
 real Settings::damping_( 1 );
 Vec3 Settings::gravity_;
+bool Settings::liquidSolid_( false );
+real Settings::liquidDensity_( 0.0 );
 
 } // namespace pe

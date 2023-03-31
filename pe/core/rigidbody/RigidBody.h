@@ -270,6 +270,7 @@ public:
            inline void        addForceAtPos      ( real fx, real fy, real fz, real px, real py, real pz );
            inline void        addForceAtPos      ( const Vec3& f, const Vec3& gpos );
            inline void        applyForces        ( real dt );
+           inline void        applyFluidForces   ( real dt );
 
            inline void        addTorque( real tx, real ty, real tz );
            inline void        addTorque( const Vec3& t );
@@ -1608,6 +1609,17 @@ inline void RigidBody::applyForces( real dt )
    w_ += dt * ( getInvInertia() * torque_ );  
 }
 //*************************************************************************************************
+
+
+//*************************************************************************************************
+inline void RigidBody::applyFluidForces( real dt )
+{
+   v_ += invMass_ * dt * force_;
+   w_ += dt * ( getInvInertia() * torque_ );  
+   resetForce();
+}
+//*************************************************************************************************
+
 
 //*************************************************************************************************
 /*!\brief Increases the force acting in the body's center of mass.

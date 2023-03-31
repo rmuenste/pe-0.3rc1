@@ -221,8 +221,8 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
       pvd << "<Collection>" << std::endl;
 
       // write filenames of datasets
-      int timeCount=1;  // for numbering of the files
-      for(unsigned int t=tstart_; t<tend_; t+=tspacing_,timeCount++)
+      int timeCount=0;  // for numbering of the files
+      for(unsigned int t=tstart_; t<=tend_; t+=tspacing_,timeCount++)
       {
          for(int proc=0; proc<MPISettings::size(); proc++)
          {
@@ -632,7 +632,7 @@ void Writer::removeSpring( ConstSpringID /*spring*/ )
 void Writer::trigger()
 {
    // Skipping the visualization for intermediate time steps
-   if( ++steps_ < tspacing_ ) return;
+   if(( ++steps_ < tspacing_ ) && (!counter_ == 0)) return;
 
    // Adjusing the counters
    steps_ = 0;
