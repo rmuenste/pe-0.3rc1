@@ -68,6 +68,7 @@ ENDIF()
 # Setting compiler flags analogously to the configure script (and clear default compiler flags set
 # by cmake for all compilers supported by the configure script to ensure compatibility)
 IF( CMAKE_COMPILER_IS_GNUCXX )
+   set (CMAKE_CXX_STANDARD 11)
    SET( CMAKE_CXX_FLAGS "-DMOBILE_INFINITE=1 -Wall -Wextra -Wshadow -Wfatal-errors -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
 ENDIF()
 

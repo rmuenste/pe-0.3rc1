@@ -202,7 +202,6 @@ public:
    inline void setLiquidDensity( real liquidDensity );
    inline void setGravity( real gx, real gy, real gz );
    inline void setGravity( const Vec3& gravity );
-   inline void setLiquidDensity( real damping );
    //@}
    //**********************************************************************************************
 

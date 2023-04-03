@@ -5,6 +5,7 @@
  *
  *  Copyright (C) 2009 Klaus Iglberger
  *                2012 Tobias Preclik
+ *                2023 Raphael Münster
  *
  *  This file is part of pe.
  *
@@ -42,6 +43,7 @@ template<typename,typename,typename> class DEMSolverObsolete;
 template<typename,typename,typename> class FFDSolver;
 template<typename,typename,typename> class FrictionlessSolver;
 template<typename,typename,typename> class HardContactSemiImplicitTimesteppingSolvers;
+template<typename,typename,typename> class HardContactAndFluid;
 template<typename,typename,typename> class OpenCLSolver;
 template<typename,typename,typename> class PolyhedralFrictionSolver;
 

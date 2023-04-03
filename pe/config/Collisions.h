@@ -77,8 +77,9 @@
  *   - pe::response::DEMSolver
  *   - pe::response::DEMSolverObsolete
  *   - pe::response::FFDSolver
- *   - pe::response::HardContactTimesteppingSolvers
+ *   - pe::response::HardContactSemiImplicitTimesteppingSolvers
+ *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver
  */
-#define pe_CONSTRAINT_SOLVER  pe::response::HardContactSemiImplicitTimesteppingSolvers
+#define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
 //*************************************************************************************************

@@ -35,6 +35,7 @@
 #include <pe/core/response/FFDSolver.h>
 #include <pe/core/response/FrictionlessSolver.h>
 #include <pe/core/response/HardContactSemiImplicitTimesteppingSolvers.h>
+#include <pe/core/response/HardContactAndFluid.h>
 #if HAVE_OPENCL
 #include <pe/core/response/OpenCLSolver.h>
 #endif
