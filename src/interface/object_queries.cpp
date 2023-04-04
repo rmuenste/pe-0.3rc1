@@ -376,6 +376,14 @@ bool isInsideObject(int idx, double pos[3]) {
     BodyID body;
     body = world->getBody(static_cast<unsigned int>(widx));
     return static_cast<Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  } 
+  else if(isCapsuleType(idx)) {
+
+    WorldID world = theWorld();
+    World::SizeType widx = static_cast<World::SizeType>(idx);
+    BodyID body;
+    body = world->getBody(static_cast<unsigned int>(widx));
+    return static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
   } else {
     return false;
   } 
@@ -449,6 +457,33 @@ int getNumRemParts() {
 
 //=================================================================================================
 /*
+ *!\brief We return whether the object with id idx is a plane
+ *
+ * \param idx The id of the local particle
+ */
+bool isPlaneType(int idx) {
+
+  WorldID world = theWorld();
+  World::SizeType widx = static_cast<World::SizeType>(idx);
+
+  BodyID body;
+  if ( widx < world->size() ) {
+    body = world->getBody(static_cast<unsigned int>(widx));
+    return (body->getType() == planeType) ? true : false;
+  }
+  else {
+    std::stringstream msg;
+    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
+    throw std::out_of_range(msg.str());
+  }
+
+} 
+//=================================================================================================
+
+
+
+//=================================================================================================
+/*
  *!\brief We return whether the object with id idx is a sphere
  *
  * \param idx The id of the local particle
@@ -461,11 +496,33 @@ bool isSphereType(int idx) {
   BodyID body;
   if ( widx < world->size() ) {
     body = world->getBody(static_cast<unsigned int>(widx));
-    if (body->getType() == sphereType) {
-      return true;
-    } else {
-      return false;
-    }
+    return (body->getType() == sphereType) ? true : false;
+  }
+  else {
+    std::stringstream msg;
+    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
+    throw std::out_of_range(msg.str());
+  }
+
+} 
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief We return whether the object with id idx is a capsule
+ *
+ * \param idx The id of the local particle
+ */
+bool isCapsuleType(int idx) {
+
+  WorldID world = theWorld();
+  World::SizeType widx = static_cast<World::SizeType>(idx);
+
+  BodyID body;
+  if ( widx < world->size() ) {
+    body = world->getBody(static_cast<unsigned int>(widx));
+    return (body->getType() == capsuleType) ? true : false;
   }
   else {
     std::stringstream msg;

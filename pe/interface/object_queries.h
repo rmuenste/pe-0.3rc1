@@ -116,10 +116,21 @@ bool pointInsideParticles(int* inpr, double pos[3]);
 double getObjRadius(int idx);
 
 /*
- *!\brief The function returns the number of particles in the domain
+ *!\brief The function returns if the object is a sphere
  */
 bool isSphereType(int idx);
 
+
+/*
+ *!\brief The function returns if the object is a plane
+ */
+bool isPlaneType(int idx);
+
+
+/*
+ *!\brief The function returns if the object is a plane
+ */
+bool isCapsuleType(int idx);
 /*
  *!\brief We return whether the object with id idx is a sphere
  *
