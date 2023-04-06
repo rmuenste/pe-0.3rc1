@@ -66,7 +66,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 
 bool g_povray  ( false );
 bool g_vtk( true );
-const unsigned int visspacing( 50 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -138,9 +138,10 @@ void stepSimulation() {
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType) {
+    if(body->getType() == sphereType || body->getType() == capsuleType) {
       std::cout << "Position: " << body->getSystemID() << body->getPosition()  << " " << timestep * stepsize << std::endl;
       std::cout << "Velocity: " << body->getSystemID() << " "<< body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
     }
   }
 #endif 
