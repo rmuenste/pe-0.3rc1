@@ -6,6 +6,7 @@
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
+#include <pe/util/Checkpointer.h>
 
 //using namespace fc2::povray;
 using boost::filesystem::path;
@@ -84,7 +85,7 @@ MPISystemID mpisystem;
 
 // The Checkpointer
 path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
-//Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
+Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
 
 real degreesToRadians(real deg) {
   return deg * M_PI / 180.0;

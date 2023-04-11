@@ -41,6 +41,7 @@
 #include <vector>
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
+#include <pe/util/Checkpointer.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -57,56 +58,9 @@ using boost::filesystem::path;
       >::value > \
    pe_JOIN( CONSTRAINT_MUST_BE_SAME_TYPE_TYPEDEF, __LINE__ );
 
-typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::FFDSolver>::Config TargetConfig1;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
-pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2);
-
-
-class Checkpointer {
-
-public:
-
-   Checkpointer( path checkpointsPath = path( "checkpoints/" ) ) : checkpointsPath_( checkpointsPath ) {
-   }
-
-   void setPath( path checkpointsPath = path( "checkpoints/" ) ) {
-      checkpointsPath_ = checkpointsPath;
-   }
-
-   void write( std::string name ) {
-      boost::filesystem::create_directories( checkpointsPath_ );
-      bbwriter_.writeFileAsync( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
-      pe_PROFILING_SECTION {
-         timing::WcTimer timeWait;
-         timeWait.start();
-         bbwriter_.wait();
-         timeWait.end();
-         MPI_Barrier( MPI_COMM_WORLD );
-
-         pe_LOG_INFO_SECTION( log ) {
-            log << "BodyBinaryWriter::wait() took " << timeWait.total() << "s on rank " << MPISettings::rank() << ".\n";
-         }
-      }
-
-   }
-
-   void read( std::string name ) {
-      std::cout << "reading " << (checkpointsPath_ / ( name + ".peb" ) ).string().c_str() << std::endl;
-      bbreader_.readFile( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
-
-   }
-
-   void flush() {
-      bbwriter_.wait();
-   }
-
-private:
-
-   BodyBinaryWriter bbwriter_;
-   BodyBinaryReader bbreader_;
-   path             checkpointsPath_;
-};
-//*************************************************************************************************
+typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
+pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 
 
 
@@ -162,14 +116,14 @@ int main( int argc, char** argv )
    const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 500000 );  // Total number of time steps
+   const size_t timesteps ( 100 );  // Total number of time steps
    const real   stepsize  (  0.0005 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
    bool   povray    ( false );        // Switches the POV-Ray visualization on and off
    bool   vtk( true );
-   const size_t visspacing(    40 );  // Number of time steps inbetween two POV-Ray files
+   const size_t visspacing(    20 );  // Number of time steps inbetween two POV-Ray files
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
@@ -624,9 +578,9 @@ int main( int argc, char** argv )
       pov->setTexturePolicy( DefaultTexture( CustomTexture( texture.str() ) ) );
    }
 
-   Checkpointer         checkpointer;
-   bool                 checkpoint_next( false );                     // Write out checkpoint in next iteration
+   // The Checkpointer
    path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
+   Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
 
    /////////////////////////////////////////////////////
    // Setup of the simulation domain
