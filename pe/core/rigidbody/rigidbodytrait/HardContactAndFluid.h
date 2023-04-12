@@ -76,6 +76,8 @@ protected:
 public:
 
    size_t index_;
+   Vec3 oldForce_;
+   Vec3 oldTorque_;
 };
 //*************************************************************************************************
 
@@ -96,6 +98,8 @@ template< template<typename> class CD                           // Type of the c
 RigidBodyTrait< C<CD,FD,BG,response::HardContactAndFluid> >::RigidBodyTrait( BodyID body )
    : MPIRigidBodyTrait( body )  // Initialization of the parent class
    , index_( 0 )
+   , oldForce_()
+   , oldTorque_()
 {}
 //*************************************************************************************************
 

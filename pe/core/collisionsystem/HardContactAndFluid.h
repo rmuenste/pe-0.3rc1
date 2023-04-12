@@ -4238,9 +4238,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::initializeVel
 {
    if( body->awake_ ) {
       if( !body->isFixed() ) {
-         dv = ( body->getInvMass() * dt ) * body->getForce();
+         dv = ( body->getInvMass() * dt ) * ( (body->getForce() + body->oldForce_) * 0.5 );
 //         std::cout << "Force: " << (body->getForce()) << std::endl;
-         dw = dt * ( body->getInvInertia() * body->getTorque() );
+         dw = dt * ( body->getInvInertia() * ( ( body->getTorque() + body->oldTorque_) * 0.5 ) );
+         body->oldForce_ = body->getForce();
+         body->oldTorque_ = body->getTorque();
       }
    }
    else {
