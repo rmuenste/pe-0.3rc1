@@ -77,6 +77,7 @@ public:
    //@{
    inline real getRadius() const;
    inline real getLength() const;
+   inline real getVolume() const;
    //@}
    //**********************************************************************************************
 
@@ -145,6 +146,18 @@ inline real CapsuleBase::getRadius() const
 inline real CapsuleBase::getLength() const
 {
    return length_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the volume of the capsule
+ *
+ * \return The volume of the capsule
+ */
+inline real CapsuleBase::getVolume() const
+{
+   return M_PI*radius_*radius_*( ( static_cast<real>( 4 ) / static_cast<real>( 3 ) )*radius_ + length_ );
 }
 //*************************************************************************************************
 

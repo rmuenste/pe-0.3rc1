@@ -6,6 +6,7 @@
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
+#include <pe/util/Checkpointer.h>
 
 //using namespace fc2::povray;
 using boost::filesystem::path;
@@ -66,7 +67,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 
 bool g_povray  ( false );
 bool g_vtk( true );
-const unsigned int visspacing( 50 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -84,7 +85,7 @@ MPISystemID mpisystem;
 
 // The Checkpointer
 path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
-//Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
+Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
 
 real degreesToRadians(real deg) {
   return deg * M_PI / 180.0;
@@ -138,9 +139,10 @@ void stepSimulation() {
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType) {
+    if(body->getType() == sphereType || body->getType() == capsuleType) {
       std::cout << "Position: " << body->getSystemID() << body->getPosition()  << " " << timestep * stepsize << std::endl;
       std::cout << "Velocity: " << body->getSystemID() << " "<< body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
     }
   }
 #endif 

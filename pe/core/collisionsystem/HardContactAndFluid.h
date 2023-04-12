@@ -1842,7 +1842,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              mat = s->getMaterial();
              real rho = Material::getDensity( mat );
              real rad = s->getRadius();
-             real vol = real(4.0)/real(3.0) * M_PI * rad * rad * rad;
+             real vol = s->getVolume();
              real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
              // TODO: find out what happens here
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
@@ -1854,6 +1854,32 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 //             std::cout << "invMass : " << body->getInvMass() << std::endl;
 //             std::cout << "buoyancy : " << buoyancy  << std::endl;
 //             std::cout << "==========================================================" << std::endl;
+             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
+           }
+           else if(body->getType() == capsuleType) {
+             BodyID b( *body );
+             CapsuleID s = static_body_cast<Capsule>(b);
+             mat = s->getMaterial();
+             real rho = Material::getDensity( mat );
+
+             real vol = s->getVolume();
+
+             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
+             // TODO: find out what happens here
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
+             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
+           }
+           else if(body->getType() == boxType) {
+             BodyID b( *body );
+             BoxID s = static_body_cast<Box>(b);
+             mat = s->getMaterial();
+             real rho = Material::getDensity( mat );
+
+             real vol = s->getVolume();
+
+             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
+             // TODO: find out what happens here
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
            else {

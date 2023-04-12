@@ -75,6 +75,10 @@ void getParticlesIndexMap(int *idxMap) {
       idxMap[count] = i;
       count++;
     }
+    else if(body->getType() == capsuleType) {
+      idxMap[count] = i;
+      count++;
+    }
   }
 
 }
@@ -103,6 +107,11 @@ void getRemoteParticlesIndexMap(int *idxMap) {
 //      std::cout << " " << i << " " << body->getSystemID();
       count++;
     }
+    else if(body->getType() == capsuleType) {
+      idxMap[count] = i;
+//      std::cout << " " << i << " " << body->getSystemID();
+      count++;
+    }
   }
 //  std::cout  << std::endl;
 }
@@ -124,6 +133,9 @@ void particleMapping() {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
     if(body->getType() == sphereType) {
+      particleMap[static_cast<unsigned int>(i)] = body->getSystemID();
+    }
+    else if(body->getType() == capsuleType) {
       particleMap[static_cast<unsigned int>(i)] = body->getSystemID();
     }
   }
@@ -190,6 +202,11 @@ void debug_output_force_() {
 //      std::cout << rank << ")force: " << vec3ToString(s->getForce())<< std::endl;
 //      std::cout << rank << ")VelUp: " << vec3ToString(s->getLinVel())<< std::endl;
     }
+    else if(body->getType() == capsuleType) {
+      Capsule* s = static_cast<Capsule*>(body); 
+      std::cout << rank << ")force: " << (s->getForce())<< std::endl;
+      std::cout << rank << ")VelUp: " << (s->getLinearVel())<< std::endl;
+    }
   }
   for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++, i++) {
 
@@ -203,6 +220,11 @@ void debug_output_force_() {
       Sphere* s = static_cast<Sphere*>(body); 
 //      std::cout << rank << ")Remforce: " << vec3ToString(s->getForce())<<  std::endl;
 //      std::cout << rank << ")RemVelUp: " << vec3ToString(s->getLinVel())<< std::endl;
+    }
+    else if(body->getType() == capsuleType) {
+      Capsule* s = static_cast<Capsule*>(body); 
+      std::cout << rank << ")force: " << (s->getForce())<< std::endl;
+      std::cout << rank << ")VelUp: " << (s->getLinearVel())<< std::endl;
     }
   }
 }
@@ -269,6 +291,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         return true;
       }
     }
+    else if(body->getType() == capsuleType) {
+      if(static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
   }
   for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++) {
 
@@ -285,6 +315,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
 
         *inpr = val;
         i++;
+        return true;
+      }
+    }
+    else if(body->getType() == capsuleType) {
+      if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
         return true;
       }
     }
@@ -435,6 +473,9 @@ int getNumParts() {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
     if(body->getType() == sphereType) {
+      numBodies++;
+    }
+    else if(body->getType() == capsuleType) {
       numBodies++;
     }
   }
