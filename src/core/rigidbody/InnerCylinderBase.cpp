@@ -1,6 +1,6 @@
 //=================================================================================================
 /*!
- *  \file src/core/rigidbody/CylinderBase.cpp
+ *  \file src/core/rigidbody/InnerCylinderBase.cpp
  *  \brief Base class for the cylinder geometry
  *
  *  Copyright (C) 2009 Klaus Iglberger
@@ -34,7 +34,7 @@
 //*************************************************************************************************
 
 #include <cmath>
-#include <pe/core/rigidbody/CylinderBase.h>
+#include <pe/core/rigidbody/InnerCylinderBase.h>
 #include <pe/core/Materials.h>
 #include <pe/core/MPI.h>
 #include <pe/core/Thresholds.h>
@@ -52,7 +52,7 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Constructor for the CylinderBase class.
+/*!\brief Constructor for the InnerCylinderBase class.
  *
  * \param sid Unique system-specific ID for the cylinder.
  * \param uid User-specific ID for the cylinder.
@@ -64,7 +64,7 @@ namespace pe {
  *
  * The cylinder is created lying along the x-axis.
  */
-CylinderBase::CylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
+InnerCylinderBase::InnerCylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
                             real length, MaterialID material, bool visible )
    : GeomPrimitive( cylinderType, true, visible, sid, uid, material )  // Initializing the base object
    , radius_(radius)                                                   // Radius of the cylinder
@@ -88,7 +88,7 @@ CylinderBase::CylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
    calcInertia();
 
    // Setting the axis-aligned bounding box
-   CylinderBase::calcBoundingBox();
+   InnerCylinderBase::calcBoundingBox();
 }
 //*************************************************************************************************
 
@@ -96,9 +96,9 @@ CylinderBase::CylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
 
 
 //*************************************************************************************************
-/*!\brief Destructor for the CylinderBase class.
+/*!\brief Destructor for the InnerCylinderBase class.
  */
-CylinderBase::~CylinderBase()
+InnerCylinderBase::~InnerCylinderBase()
 {}
 //*************************************************************************************************
 
@@ -121,7 +121,7 @@ CylinderBase::~CylinderBase()
  * all dimensions by pe::contactThreshold to guarantee that rigid bodies in close proximity of
  * the cylinder are also considered during the collision detection process.
  */
-void CylinderBase::calcBoundingBox()
+void InnerCylinderBase::calcBoundingBox()
 {
    using std::fabs;
 
@@ -174,7 +174,7 @@ void CylinderBase::calcBoundingBox()
  *
  * \return void
  */
-void CylinderBase::calcInertia()
+void InnerCylinderBase::calcInertia()
 {
    // 'Ia' represent the moment of inertia along the x-axis. For a solid cylinder it is
    // calculated by  I = (1/2)*mass*radius^2

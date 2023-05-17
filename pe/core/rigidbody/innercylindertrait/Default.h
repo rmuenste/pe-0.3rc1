@@ -1,7 +1,7 @@
 //=================================================================================================
 /*!
  *  \file pe/core/rigidbody/cylindertrait/Default.h
- *  \brief Header file for the default implementation of the CylinderTrait class template.
+ *  \brief Header file for the default implementation of the InnerCylinderTrait class template.
  *
  *  Copyright (C) 2009 Klaus Iglberger
  *
@@ -28,7 +28,7 @@
 // Includes
 //*************************************************************************************************
 
-#include <pe/core/rigidbody/CylinderBase.h>
+#include <pe/core/rigidbody/InnerCylinderBase.h>
 #include <pe/math/Vector3.h>
 #include <pe/system/Precision.h>
 #include <pe/util/Types.h>
@@ -43,25 +43,25 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Cylinder customization class for the collision response.
+/*!\brief InnerCylinder customization class for the collision response.
  * \ingroup cylinder
  *
- * The CylinderTrait class template is a customization class for the cylinder geometry.
- * Its main purpose is the customization of the Cylinder class for the selected collision
+ * The InnerCylinderTrait class template is a customization class for the cylinder geometry.
+ * Its main purpose is the customization of the InnerCylinder class for the selected collision
  * response algorithm (see pe::pe_CONSTRAINT_SOLVER).
  */
 template< typename C >  // Type of the configuration
-class CylinderTrait : public CylinderBase
+class InnerCylinderTrait : public InnerCylinderBase
 {
 protected:
    //**Type definitions****************************************************************************
-   typedef CylinderBase  Parent;  //!< The type of the parent class.
+   typedef InnerCylinderBase  Parent;  //!< The type of the parent class.
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
    /*!\name Constructor */
    //@{
-   explicit CylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
+   explicit InnerCylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
                            real length, MaterialID material, bool visible );
    //@}
    //**********************************************************************************************
@@ -69,7 +69,7 @@ protected:
    //**Destructor**********************************************************************************
    /*!\name Destructor */
    //@{
-   virtual ~CylinderTrait() = 0;
+   virtual ~InnerCylinderTrait() = 0;
    //@}
    //**********************************************************************************************
 
@@ -93,7 +93,7 @@ public:
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Default implementation of the CylinderTrait constructor.
+/*!\brief Default implementation of the InnerCylinderTrait constructor.
  *
  * \param sid Unique system-specific ID for the cylinder.
  * \param uid User-specific ID for the cylinder.
@@ -104,7 +104,7 @@ public:
  * \param visible Specifies if the cylinder is visible in a visualization.
  */
 template< typename C >  // Type of the configuration
-CylinderTrait<C>::CylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
+InnerCylinderTrait<C>::InnerCylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
                                  real length, MaterialID material, bool visible )
    : Parent( sid, uid, gpos, radius, length, material, visible )  // Initialization of the parent class
 {}
@@ -120,10 +120,10 @@ CylinderTrait<C>::CylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radi
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Default implementation of the CylinderTrait destructor.
+/*!\brief Default implementation of the InnerCylinderTrait destructor.
  */
 template< typename C >  // Type of the configuration
-CylinderTrait<C>::~CylinderTrait()
+InnerCylinderTrait<C>::~InnerCylinderTrait()
 {}
 //*************************************************************************************************
 
@@ -147,7 +147,7 @@ CylinderTrait<C>::~CylinderTrait()
  * the acting forces and the current velocities.
  */
 template< typename C >  // Type of the configuration
-void CylinderTrait<C>::move( real dt )
+void InnerCylinderTrait<C>::move( real dt )
 {
    // Checking the state of the cylinder
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid cylinder state detected" );
@@ -207,7 +207,7 @@ void CylinderTrait<C>::move( real dt )
       }
 
       // Setting the axis-aligned bounding box
-      CylinderBase::calcBoundingBox();
+      InnerCylinderBase::calcBoundingBox();
 
       // Calculating the current motion of the cylinder
       calcMotion();

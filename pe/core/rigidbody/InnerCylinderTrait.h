@@ -1,7 +1,7 @@
 //=================================================================================================
 /*!
- *  \file pe/core/rigidbody/CylinderTrait.h
- *  \brief Cylinder geometry customization class for the collision response.
+ *  \file pe/core/rigidbody/InnerCylinderTrait.h
+ *  \brief InnerCylinder geometry customization class for the collision response.
  *
  *  Copyright (C) 2009 Klaus Iglberger
  *
@@ -20,8 +20,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDERTRAIT_H_
-#define _PE_CORE_RIGIDBODY_CYLINDERTRAIT_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_H_
 
 
 //*************************************************************************************************

@@ -1,7 +1,7 @@
 //=================================================================================================
 /*!
- *  \file pe/core/rigidbody/Cylinder.h
- *  \brief Header file for the Cylinder class
+ *  \file pe/core/rigidbody/InnerCylinder.h
+ *  \brief Header file for the InnerCylinder class
  *
  *  Copyright (C) 2009 Klaus Iglberger
  *
@@ -20,8 +20,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDER_H_
-#define _PE_CORE_RIGIDBODY_CYLINDER_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDER_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDER_H_
 
 
 //*************************************************************************************************
@@ -31,7 +31,7 @@
 #include <cmath>
 #include <iosfwd>
 #include <pe/core/Configuration.h>
-#include <pe/core/rigidbody/CylinderTrait.h>
+#include <pe/core/rigidbody/InnerCylinderTrait.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Types.h>
 #include <pe/math/Vector3.h>
@@ -49,19 +49,19 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\defgroup cylinder Cylinder
+/*!\defgroup cylinder InnerCylinder
  * \ingroup geometric_primitive
  *
- * The cylinder module combines all necessary functionality for the geometric primitive Cylinder.
- * A detailed description of the cylinder primitive can be found with the class Cylinder. This
+ * The cylinder module combines all necessary functionality for the geometric primitive InnerCylinder.
+ * A detailed description of the cylinder primitive can be found with the class InnerCylinder. This
  * description also containes examples for the setup and destruction of a cylinder.
  */
-/*!\brief Cylinder geometry.
+/*!\brief InnerCylinder geometry.
  * \ingroup cylinder
  *
  * \section cylinder_general General
  *
- * The Cylinder class represents the geometric primitive cylinder, which is one of the basic
+ * The InnerCylinder class represents the geometric primitive cylinder, which is one of the basic
  * geometric primitives of the \b pe physics engine. The class is derived from the GeomPrimitive
  * base class, which makes the cylinder both a geometric primitive and a rigid body.\n
  * In order to setup a cylinder, it is only necessary to specify its radius (the thickness) and
@@ -69,7 +69,7 @@ namespace pe {
  * parallel to the x-axis).
  *
  * \image html cylinder.png
- * \image latex cylinder.eps "Cylinder geometry" width=200pt
+ * \image latex cylinder.eps "InnerCylinder geometry" width=200pt
  *
  *
  * \section cylinder_setup Creating and destroying a cylinder primitive
@@ -93,7 +93,7 @@ namespace pe {
    // the cylinder is automatically added to the simulation world and is immediately part
    // of the entire simulation. The function returns a handle to the newly created cylinder,
    // which can be used to for instance rotate the cylinder around the global y-axis.
-   CylinderID cylinder = createCylinder( 1, 4.2, 3.7, -0.6, 1.6, 6.4, iron );
+   InnerCylinderID cylinder = createCylinder( 1, 4.2, 3.7, -0.6, 1.6, 6.4, iron );
    cylinder->rotate( 0.0, PI/3.0, 0.0 );
 
    // Rigid body simulation
@@ -108,7 +108,7 @@ namespace pe {
  * section, the cylinder is automatically added to the newly created union:
 
    \code
-   CylinderID cylinder;
+   InnerCylinderID cylinder;
 
    pe_CREATE_UNION( newunion, 1 )
    {
@@ -130,19 +130,19 @@ namespace pe {
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-class Cylinder : public CylinderTrait<Config>
+class InnerCylinder : public InnerCylinderTrait<Config>
 {
 protected:
    //**Type definitions****************************************************************************
-   typedef CylinderTrait<Config>  Parent;  //!< The type of the parent class.
+   typedef InnerCylinderTrait<Config>  Parent;  //!< The type of the parent class.
    //**********************************************************************************************
 
    //**Constructors********************************************************************************
    /*!\name Constructors */
    //@{
-   explicit Cylinder( id_t sid, id_t uid, const Vec3& gpos, real radius,
+   explicit InnerCylinder( id_t sid, id_t uid, const Vec3& gpos, real radius,
                       real length, MaterialID material, bool visible );
-   explicit Cylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
+   explicit InnerCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
                       real radius, real length, MaterialID material, bool visible, bool fixed );
    //@}
    //**********************************************************************************************
@@ -150,7 +150,7 @@ protected:
    //**Destructor**********************************************************************************
    /*!\name Destructor */
    //@{
-   virtual ~Cylinder();
+   virtual ~InnerCylinder();
    //@}
    //**********************************************************************************************
 
@@ -241,9 +241,9 @@ protected:
 private:
    //**Sphere setup functions**********************************************************************
    /*! \cond PE_INTERNAL */
-   friend CylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
+   friend InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
                                      real length, MaterialID material, bool visible );
-   friend CylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+   friend InnerCylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                                           const Quat& q, real radius, real length, MaterialID material,
                                           bool visible, bool fixed, bool reg );
    /*! \endcond */
@@ -271,7 +271,7 @@ private:
  * Returns a positive value, if the point lies inside the cylinder and a negative value,
  * if the point lies outside the cylinder.
  */
-inline real Cylinder::getDepth( real px, real py, real pz ) const
+inline real InnerCylinder::getDepth( real px, real py, real pz ) const
 {
    return getRelDepth( pointFromWFtoBF( px, py, pz ) );
 }
@@ -287,7 +287,7 @@ inline real Cylinder::getDepth( real px, real py, real pz ) const
  * Returns a positive value, if the point lies inside the cylinder and a negative value,
  * if the point lies outside the cylinder.
  */
-inline real Cylinder::getDepth( const Vec3& gpos ) const
+inline real InnerCylinder::getDepth( const Vec3& gpos ) const
 {
    return getRelDepth( pointFromWFtoBF( gpos ) );
 }
@@ -305,7 +305,7 @@ inline real Cylinder::getDepth( const Vec3& gpos ) const
  * Returns a positive value, if the point lies outside the cylinder and a negative value,
  * if the point lies inside the cylinder.
  */
-inline real Cylinder::getRelDistance( real px, real py, real pz ) const
+inline real InnerCylinder::getRelDistance( real px, real py, real pz ) const
 {
    return -getRelDepth( px, py, pz );
 }
@@ -321,7 +321,7 @@ inline real Cylinder::getRelDistance( real px, real py, real pz ) const
  * Returns a positive value, if the point lies outside the cylinder and a negative value,
  * if the point lies inside the cylinder.
  */
-inline real Cylinder::getRelDistance( const Vec3& rpos ) const
+inline real InnerCylinder::getRelDistance( const Vec3& rpos ) const
 {
    return -getRelDepth( rpos );
 }
@@ -339,7 +339,7 @@ inline real Cylinder::getRelDistance( const Vec3& rpos ) const
  * Returns a positive value, if the point lies outside the cylinder and a negative value,
  * if the point lies inside the cylinder.
  */
-inline real Cylinder::getDistance( real px, real py, real pz ) const
+inline real InnerCylinder::getDistance( real px, real py, real pz ) const
 {
    return -getRelDepth( pointFromWFtoBF( px, py, pz ) );
 }
@@ -355,7 +355,7 @@ inline real Cylinder::getDistance( real px, real py, real pz ) const
  * Returns a positive value, if the point lies outside the cylinder and a negative value,
  * if the point lies inside the cylinder.
  */
-inline real Cylinder::getDistance( const Vec3& gpos ) const
+inline real InnerCylinder::getDistance( const Vec3& gpos ) const
 {
    return -getRelDepth( pointFromWFtoBF( gpos ) );
 }
@@ -371,13 +371,13 @@ inline real Cylinder::getDistance( const Vec3& gpos ) const
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\name Cylinder setup functions */
+/*!\name InnerCylinder setup functions */
 //@{
-inline CylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
+inline InnerCylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
                                   real length, MaterialID material, bool visible=true );
-       CylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
+       InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
                                   real length, MaterialID material, bool visible=true );
-       CylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+       InnerCylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                                        const Quat& q, real radius, real length, MaterialID material,
                                        bool visible, bool fixed, bool reg=true );
 //@}
@@ -407,7 +407,7 @@ inline CylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
  * the cylinder (in-)visible in all visualizations.
  *
  * \image html cylinder.png
- * \image latex cylinder.eps "Cylinder geometry" width=200pt
+ * \image latex cylinder.eps "InnerCylinder geometry" width=200pt
  *
  * The following code example illustrates the setup of a cylinder:
 
@@ -418,7 +418,7 @@ inline CylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
    // part of the entire simulation. The function returns a handle to the newly created
    // cylinder, which can be used to for instance rotate the cylinder around the global
    // y-axis.
-   CylinderID cylinder = createCylinder( 1, 2.0, 3.0, 4.0, 0.9, 2.5, iron );
+   InnerCylinderID cylinder = createCylinder( 1, 2.0, 3.0, 4.0, 0.9, 2.5, iron );
    cylinder->rotate( 0.0, PI/3.0, 0.0 );
    \endcode
 
@@ -443,7 +443,7 @@ inline CylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-inline CylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
+inline InnerCylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
                                   real length, MaterialID material, bool visible )
 {
    return createCylinder( uid, Vec3(x,y,z), radius, length, material, visible );
@@ -460,9 +460,9 @@ inline CylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\name Cylinder operators */
+/*!\name InnerCylinder operators */
 //@{
-std::ostream& operator<<( std::ostream& os, const Cylinder& c );
+std::ostream& operator<<( std::ostream& os, const InnerCylinder& c );
 std::ostream& operator<<( std::ostream& os, ConstCylinderID c );
 //@}
 //*************************************************************************************************
@@ -485,14 +485,14 @@ std::ostream& operator<<( std::ostream& os, ConstCylinderID c );
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (Cylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers to
+ * (InnerCylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers to
  * rigid bodies and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<Cylinder>( RigidBody *const * first,
+inline size_t polymorphicCount<InnerCylinder>( RigidBody *const * first,
                                           RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, RigidBody );
 
    size_t count( 0 );
    for( RigidBody *const * it=first; it!=last; ++it )
@@ -512,14 +512,14 @@ inline size_t polymorphicCount<Cylinder>( RigidBody *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (const Cylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
+ * (const InnerCylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
  * to rigid bodies and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<const Cylinder>( RigidBody *const * first,
+inline size_t polymorphicCount<const InnerCylinder>( RigidBody *const * first,
                                                 RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, RigidBody );
 
    size_t count( 0 );
    for( RigidBody *const * it=first; it!=last; ++it )
@@ -539,14 +539,14 @@ inline size_t polymorphicCount<const Cylinder>( RigidBody *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (Cylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
+ * (InnerCylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
  * to rigid bodies and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<Cylinder>( const RigidBody *const * first,
+inline size_t polymorphicCount<InnerCylinder>( const RigidBody *const * first,
                                           const RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, const RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, const RigidBody );
 
    size_t count( 0 );
    for( const RigidBody *const * it=first; it!=last; ++it )
@@ -566,14 +566,14 @@ inline size_t polymorphicCount<Cylinder>( const RigidBody *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (const Cylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of
+ * (const InnerCylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of
  * pointers to rigid bodies and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<const Cylinder>( const RigidBody *const * first,
+inline size_t polymorphicCount<const InnerCylinder>( const RigidBody *const * first,
                                                 const RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, const RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, const RigidBody );
 
    size_t count( 0 );
    for( const RigidBody *const * it=first; it!=last; ++it )
@@ -593,14 +593,14 @@ inline size_t polymorphicCount<const Cylinder>( const RigidBody *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (Cylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of pointers to
+ * (InnerCylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of pointers to
  * geometric primitives and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<Cylinder>( GeomPrimitive *const * first,
+inline size_t polymorphicCount<InnerCylinder>( GeomPrimitive *const * first,
                                           GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, GeomPrimitive );
 
    size_t count( 0 );
    for( GeomPrimitive *const * it=first; it!=last; ++it )
@@ -620,14 +620,14 @@ inline size_t polymorphicCount<Cylinder>( GeomPrimitive *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (const Cylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
+ * (const InnerCylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
  * pointers to geometric primitives and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<const Cylinder>( GeomPrimitive *const * first,
+inline size_t polymorphicCount<const InnerCylinder>( GeomPrimitive *const * first,
                                                 GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, GeomPrimitive );
 
    size_t count( 0 );
    for( GeomPrimitive *const * it=first; it!=last; ++it )
@@ -647,14 +647,14 @@ inline size_t polymorphicCount<const Cylinder>( GeomPrimitive *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (Cylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
+ * (InnerCylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
  * pointers to geometric primitives and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<Cylinder>( const GeomPrimitive *const * first,
+inline size_t polymorphicCount<InnerCylinder>( const GeomPrimitive *const * first,
                                           const GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, const GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, const GeomPrimitive );
 
    size_t count( 0 );
    for( const GeomPrimitive *const * it=first; it!=last; ++it )
@@ -674,14 +674,14 @@ inline size_t polymorphicCount<Cylinder>( const GeomPrimitive *const * first,
  * \return The number of cylinders.
  *
  * This function is a specialization of the polymorphicCount() function for the type combination
- * (const Cylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
+ * (const InnerCylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
  * pointers to geometric primitives and counts all pointers to cylinders.
  */
 template<>
-inline size_t polymorphicCount<const Cylinder>( const GeomPrimitive *const * first,
+inline size_t polymorphicCount<const InnerCylinder>( const GeomPrimitive *const * first,
                                                 const GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, const GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, const GeomPrimitive );
 
    size_t count( 0 );
    for( const GeomPrimitive *const * it=first; it!=last; ++it )
@@ -709,14 +709,14 @@ inline size_t polymorphicCount<const Cylinder>( const GeomPrimitive *const * fir
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (Cylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers to
+ * (InnerCylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers to
  * rigid bodies until it finds the next pointer to a cylinder.
  */
 template<>
-inline RigidBody *const * polymorphicFind<Cylinder>( RigidBody *const * first,
+inline RigidBody *const * polymorphicFind<InnerCylinder>( RigidBody *const * first,
                                                      RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, RigidBody );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -734,14 +734,14 @@ inline RigidBody *const * polymorphicFind<Cylinder>( RigidBody *const * first,
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (const Cylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
+ * (const InnerCylinder,RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
  * to rigid bodies until it finds the next pointer to a cylinder.
  */
 template<>
-inline RigidBody *const * polymorphicFind<const Cylinder>( RigidBody *const * first,
+inline RigidBody *const * polymorphicFind<const InnerCylinder>( RigidBody *const * first,
                                                           RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, RigidBody );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -759,14 +759,14 @@ inline RigidBody *const * polymorphicFind<const Cylinder>( RigidBody *const * fi
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (Cylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
+ * (InnerCylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of pointers
  * to rigid bodies until it finds the next pointer to a cylinder.
  */
 template<>
-inline const RigidBody *const * polymorphicFind<Cylinder>( const RigidBody *const * first,
+inline const RigidBody *const * polymorphicFind<InnerCylinder>( const RigidBody *const * first,
                                                            const RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, const RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, const RigidBody );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -784,14 +784,14 @@ inline const RigidBody *const * polymorphicFind<Cylinder>( const RigidBody *cons
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (const Cylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of
+ * (const InnerCylinder,const RigidBody). The function traverses the range \f$ [first,last) \f$ of
  * pointers to rigid bodies until it finds the next pointer to a cylinder.
  */
 template<>
-inline const RigidBody *const * polymorphicFind<const Cylinder>( const RigidBody *const * first,
+inline const RigidBody *const * polymorphicFind<const InnerCylinder>( const RigidBody *const * first,
                                                                  const RigidBody *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, const RigidBody );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, const RigidBody );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -809,14 +809,14 @@ inline const RigidBody *const * polymorphicFind<const Cylinder>( const RigidBody
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (Cylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of pointers
+ * (InnerCylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of pointers
  * to geometric primitives until it finds the next pointer to a cylinder.
  */
 template<>
-inline GeomPrimitive *const * polymorphicFind<Cylinder>( GeomPrimitive *const * first,
+inline GeomPrimitive *const * polymorphicFind<InnerCylinder>( GeomPrimitive *const * first,
                                                          GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, GeomPrimitive );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -834,14 +834,14 @@ inline GeomPrimitive *const * polymorphicFind<Cylinder>( GeomPrimitive *const * 
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (const Cylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
+ * (const InnerCylinder,GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
  * pointers to geometric primitives until it finds the next pointer to a cylinder.
  */
 template<>
-inline GeomPrimitive *const * polymorphicFind<const Cylinder>( GeomPrimitive *const * first,
+inline GeomPrimitive *const * polymorphicFind<const InnerCylinder>( GeomPrimitive *const * first,
                                                                GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, GeomPrimitive );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -859,14 +859,14 @@ inline GeomPrimitive *const * polymorphicFind<const Cylinder>( GeomPrimitive *co
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (Cylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
+ * (InnerCylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$ of
  * pointers to geometric primitives until it finds the next pointer to a cylinder.
  */
 template<>
-inline const GeomPrimitive *const * polymorphicFind<Cylinder>( const GeomPrimitive *const * first,
+inline const GeomPrimitive *const * polymorphicFind<InnerCylinder>( const GeomPrimitive *const * first,
                                                                const GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Cylinder, const GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, const GeomPrimitive );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;
@@ -884,14 +884,14 @@ inline const GeomPrimitive *const * polymorphicFind<Cylinder>( const GeomPrimiti
  * \return The next pointer to a cylinder.
  *
  * This function is a specialization of the polymorphicFind() function for the type combination
- * (const Cylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$
+ * (const InnerCylinder,const GeomPrimitive). The function traverses the range \f$ [first,last) \f$
  * of pointers to geometric primitives until it finds the next pointer to a cylinder.
  */
 template<>
-inline const GeomPrimitive *const * polymorphicFind<const Cylinder>( const GeomPrimitive *const * first,
+inline const GeomPrimitive *const * polymorphicFind<const InnerCylinder>( const GeomPrimitive *const * first,
                                                                      const GeomPrimitive *const * last )
 {
-   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Cylinder, const GeomPrimitive );
+   pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, const GeomPrimitive );
 
    while( first != last && (*first)->getType() != cylinderType ) ++first;
    return first;

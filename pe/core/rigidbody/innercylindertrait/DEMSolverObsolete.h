@@ -1,7 +1,7 @@
 //=================================================================================================
 /*!
  *  \file pe/core/rigidbody/cylindertrait/DEMSolverObsolete.h
- *  \brief Specialization of the CylinderTrait class template for the discrete element solver
+ *  \brief Specialization of the InnerCylinderTrait class template for the discrete element solver
  *
  *  Copyright (C) 2009 Klaus Iglberger
  *
@@ -28,7 +28,7 @@
 // Includes
 //*************************************************************************************************
 
-#include <pe/core/rigidbody/CylinderBase.h>
+#include <pe/core/rigidbody/InnerCylinderBase.h>
 #include <pe/core/rigidbody/cylindertrait/Default.h>
 #include <pe/core/response/Types.h>
 #include <pe/core/Settings.h>
@@ -48,10 +48,10 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Specialization of the CylinderTrait class template for the discrete element solver.
+/*!\brief Specialization of the InnerCylinderTrait class template for the discrete element solver.
  * \ingroup cylinder
  *
- * This specialization of the CylinderTrait class template adapts the cylinder geometry to the
+ * This specialization of the InnerCylinderTrait class template adapts the cylinder geometry to the
  * requirements of the discrete element solver.
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
@@ -62,17 +62,17 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename> class                    // Template signature of the batch generation algorithm
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
-class CylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> > : public CylinderBase
+class InnerCylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> > : public InnerCylinderBase
 {
 protected:
    //**Type definitions****************************************************************************
-   typedef CylinderBase  Parent;  //!< The type of the parent class.
+   typedef InnerCylinderBase  Parent;  //!< The type of the parent class.
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
    /*!\name Constructor */
    //@{
-   explicit CylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
+   explicit InnerCylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
                            real length, MaterialID material, bool visible );
    //@}
    //**********************************************************************************************
@@ -80,7 +80,7 @@ protected:
    //**Destructor**********************************************************************************
    /*!\name Destructor */
    //@{
-   virtual ~CylinderTrait() = 0;
+   virtual ~InnerCylinderTrait() = 0;
    //@}
    //**********************************************************************************************
 
@@ -104,7 +104,7 @@ public:
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Constructor for the DEMSolverObsolete specialization of the CylinderTrait class template.
+/*!\brief Constructor for the DEMSolverObsolete specialization of the InnerCylinderTrait class template.
  *
  * \param sid Unique system-specific ID for the cylinder.
  * \param uid User-specific ID for the cylinder.
@@ -122,7 +122,7 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename> class                    // Template signature of the batch generation algorithm
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
-CylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::CylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
+InnerCylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::InnerCylinderTrait( id_t sid, id_t uid, const Vec3& gpos, real radius,
                                                                  real length, MaterialID material, bool visible )
    : Parent( sid, uid, gpos, radius, length, material, visible )  // Initialization of the parent class
 {}
@@ -138,7 +138,7 @@ CylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::CylinderTrait( id_t si
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Destructor for the DEMSolverObsolete specialization of the CylinderTrait class template.
+/*!\brief Destructor for the DEMSolverObsolete specialization of the InnerCylinderTrait class template.
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
         , typename FD                                           // Type of the fine collision detection algorithm
@@ -148,7 +148,7 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename> class                    // Template signature of the batch generation algorithm
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
-CylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::~CylinderTrait()
+InnerCylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::~InnerCylinderTrait()
 {}
 //*************************************************************************************************
 
@@ -179,7 +179,7 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename> class                    // Template signature of the batch generation algorithm
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
-void CylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::move( real dt )
+void InnerCylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::move( real dt )
 {
    // Checking the state of the object
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid object state detected" );
@@ -266,7 +266,7 @@ void CylinderTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::move( real dt )
       }
 
       // Setting the axis-aligned bounding box
-      CylinderBase::calcBoundingBox();
+      InnerCylinderBase::calcBoundingBox();
 
       // Calculating the current motion of the object
       calcMotion();

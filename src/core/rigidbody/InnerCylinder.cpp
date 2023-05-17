@@ -1,6 +1,6 @@
 //=================================================================================================
 /*!
- *  \file src/core/rigidbody/Cylinder.cpp
+ *  \file src/core/rigidbody/InnerCylinder.cpp
  *  \brief Source file for the cylinder class
  *
  *  Copyright (C) 2009 Klaus Iglberger
@@ -47,7 +47,7 @@
 #include <pe/core/Visualization.h>
 #include <pe/math/Matrix3x3.h>
 #include <pe/math/Quaternion.h>
-#include <pe/core/rigidbody/Cylinder.h>
+#include <pe/core/rigidbody/InnerCylinder.h>
 #include <pe/math/shims/Square.h>
 #include <pe/system/VerboseMode.h>
 #include <pe/util/Assert.h>
@@ -64,7 +64,7 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Constructor for the Cylinder class.
+/*!\brief Constructor for the InnerCylinder class.
  *
  * \param sid Unique system-specific ID for the cylinder.
  * \param uid User-specific ID for the cylinder.
@@ -76,7 +76,7 @@ namespace pe {
  *
  * The cylinder is created lying along the x-axis.
  */
-Cylinder::Cylinder( id_t sid, id_t uid, const Vec3& gpos, real radius,
+InnerCylinder::InnerCylinder( id_t sid, id_t uid, const Vec3& gpos, real radius,
                     real length, MaterialID material, bool visible )
    : Parent( sid, uid, gpos, radius, length, material, visible )  // Initialization of the parent class
 {
@@ -94,7 +94,7 @@ Cylinder::Cylinder( id_t sid, id_t uid, const Vec3& gpos, real radius,
 
 
 //*************************************************************************************************
-/*!\brief Instantiation constructor for the Cylinder class.
+/*!\brief Instantiation constructor for the InnerCylinder class.
  *
  * \param sid Unique system-specific ID for the cylinder.
  * \param uid User-specific ID for the cylinder.
@@ -109,7 +109,7 @@ Cylinder::Cylinder( id_t sid, id_t uid, const Vec3& gpos, real radius,
  *
  * The cylinder is created lying along the x-axis.
  */
-Cylinder::Cylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
+InnerCylinder::InnerCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
                     real radius, real length, MaterialID material, bool visible, bool fixed )
    : Parent( sid, uid, gpos, radius, length, material, visible )  // Initialization of the parent class
 {
@@ -147,9 +147,9 @@ Cylinder::Cylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, cons
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Destructor for the Cylinder class.
+/*!\brief Destructor for the InnerCylinder class.
  */
-Cylinder::~Cylinder()
+InnerCylinder::~InnerCylinder()
 {
    // Deregistering the cylinder from visualization
    Visualization::remove( this );
@@ -184,7 +184,7 @@ Cylinder::~Cylinder()
  * be used to update remote rigid bodies accordingly. Note that any changes on remote rigid
  * bodies are neglected and overwritten by the settings of the rigid body on its local process!
  */
-void Cylinder::setVisible( bool visible )
+void InnerCylinder::setVisible( bool visible )
 {
    if( visible ^ visible_ ) {
       visible_ = visible;
@@ -217,14 +217,14 @@ void Cylinder::setVisible( bool visible )
  *   to change the position from within an pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::setPosition( real px, real py, real pz )
+void InnerCylinder::setPosition( real px, real py, real pz )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid translation of a global cylinder inside an exclusive section" );
 
    gpos_ = Vec3( px, py, pz );
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -252,14 +252,14 @@ void Cylinder::setPosition( real px, real py, real pz )
  *   to change the position from within an pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::setPosition( const Vec3& gpos )
+void InnerCylinder::setPosition( const Vec3& gpos )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid translation of a global cylinder inside an exclusive section" );
 
    gpos_ = gpos;
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -290,7 +290,7 @@ void Cylinder::setPosition( const Vec3& gpos )
  *   allowed to change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this
  *   results in a \a std::logic_error.
  */
-void Cylinder::setOrientation( real r, real i, real j, real k )
+void InnerCylinder::setOrientation( real r, real i, real j, real k )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -298,7 +298,7 @@ void Cylinder::setOrientation( real r, real i, real j, real k )
    q_ = Quat( r, i, j, k );     // Setting the orientation of the cylinder
    R_ = q_.toRotationMatrix();  // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
    wake();             // Waking the cylinder from sleep mode
    signalRotation();   // Signaling the change of orientation to the superordinate body
 }
@@ -326,7 +326,7 @@ void Cylinder::setOrientation( real r, real i, real j, real k )
  *   allowed to change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this
  *   results in a \a std::logic_error.
  */
-void Cylinder::setOrientation( const Quat& q )
+void InnerCylinder::setOrientation( const Quat& q )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -334,7 +334,7 @@ void Cylinder::setOrientation( const Quat& q )
    q_ = q;                      // Setting the orientation of the cylinder
    R_ = q_.toRotationMatrix();  // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
    wake();             // Waking the cylinder from sleep mode
    signalRotation();   // Signaling the change of orientation to the superordinate body
 }
@@ -372,7 +372,7 @@ void Cylinder::setOrientation( const Quat& q )
  *   change the position from within a pe_EXCLUSIVE_SECTION. The attempt to do this results in
  *   a \a std::logic_error.
  */
-void Cylinder::translate( real dx, real dy, real dz )
+void InnerCylinder::translate( real dx, real dy, real dz )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid translation of a global cylinder inside an exclusive section" );
@@ -381,7 +381,7 @@ void Cylinder::translate( real dx, real dy, real dz )
    gpos_[1] += dy;
    gpos_[2] += dz;
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -408,14 +408,14 @@ void Cylinder::translate( real dx, real dy, real dz )
  *   change the position from within a pe_EXCLUSIVE_SECTION. The attempt to do this results in
  *   a \a std::logic_error.
  */
-void Cylinder::translate( const Vec3& dp )
+void InnerCylinder::translate( const Vec3& dp )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid translation of a global cylinder inside an exclusive section" );
 
    gpos_ += dp;
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -458,7 +458,7 @@ void Cylinder::translate( const Vec3& dp )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotate( real x, real y, real z, real angle )
+void InnerCylinder::rotate( real x, real y, real z, real angle )
 {
    rotate( Vec3( x, y, z ), angle );
 }
@@ -491,7 +491,7 @@ void Cylinder::rotate( real x, real y, real z, real angle )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotate( const Vec3& axis, real angle )
+void InnerCylinder::rotate( const Vec3& axis, real angle )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -499,7 +499,7 @@ void Cylinder::rotate( const Vec3& axis, real angle )
    q_ = Quat( axis, angle ) * q_;  // Updating the orientation of the cylinder
    R_ = q_.toRotationMatrix();     // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
    wake();             // Waking the cylinder from sleep mode
    signalRotation();   // Signaling the change of orientation to the superordinate body
 }
@@ -533,7 +533,7 @@ void Cylinder::rotate( const Vec3& axis, real angle )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotate( real xangle, real yangle, real zangle )
+void InnerCylinder::rotate( real xangle, real yangle, real zangle )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -545,7 +545,7 @@ void Cylinder::rotate( real xangle, real yangle, real zangle )
 
    R_ = q_.toRotationMatrix();  // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
    wake();             // Waking the cylinder from sleep mode
    signalRotation();   // Signaling the change of orientation to the superordinate body
 }
@@ -577,7 +577,7 @@ void Cylinder::rotate( real xangle, real yangle, real zangle )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotate( const Vec3& euler )
+void InnerCylinder::rotate( const Vec3& euler )
 {
    rotate( euler[0], euler[1], euler[2] );
 }
@@ -608,7 +608,7 @@ void Cylinder::rotate( const Vec3& euler )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotate( const Quat& dq )
+void InnerCylinder::rotate( const Quat& dq )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -616,7 +616,7 @@ void Cylinder::rotate( const Quat& dq )
    q_ = dq * q_;                // Updating the orientation of the cylinder
    R_ = q_.toRotationMatrix();  // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();  // Updating the axis-aligned bounding box of the cylinder
    wake();             // Waking the cylinder from sleep mode
    signalRotation();   // Signaling the change of orientation to the superordinate body
 }
@@ -651,7 +651,7 @@ void Cylinder::rotate( const Quat& dq )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotateAroundOrigin( real x, real y, real z, real angle )
+void InnerCylinder::rotateAroundOrigin( real x, real y, real z, real angle )
 {
    rotateAroundOrigin( Vec3( x, y, z ), angle );
 }
@@ -684,7 +684,7 @@ void Cylinder::rotateAroundOrigin( real x, real y, real z, real angle )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotateAroundOrigin( const Vec3& axis, real angle )
+void InnerCylinder::rotateAroundOrigin( const Vec3& axis, real angle )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -695,7 +695,7 @@ void Cylinder::rotateAroundOrigin( const Vec3& axis, real angle )
    q_    = dq * q_;                // Updating the orientation of the cylinder
    R_    = q_.toRotationMatrix();  // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -730,7 +730,7 @@ void Cylinder::rotateAroundOrigin( const Vec3& axis, real angle )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotateAroundOrigin( real xangle, real yangle, real zangle )
+void InnerCylinder::rotateAroundOrigin( real xangle, real yangle, real zangle )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -741,7 +741,7 @@ void Cylinder::rotateAroundOrigin( real xangle, real yangle, real zangle )
    q_    = dq * q_;                // Updating the orientation of the cylinder
    R_    = q_.toRotationMatrix();  // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -774,7 +774,7 @@ void Cylinder::rotateAroundOrigin( real xangle, real yangle, real zangle )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotateAroundOrigin( const Vec3& euler )
+void InnerCylinder::rotateAroundOrigin( const Vec3& euler )
 {
    rotateAroundOrigin( euler[0], euler[1], euler[2] );
 }
@@ -808,7 +808,7 @@ void Cylinder::rotateAroundOrigin( const Vec3& euler )
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotateAroundPoint( const Vec3& point, const Vec3& axis, real angle )
+void InnerCylinder::rotateAroundPoint( const Vec3& point, const Vec3& axis, real angle )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -820,7 +820,7 @@ void Cylinder::rotateAroundPoint( const Vec3& point, const Vec3& axis, real angl
    q_    = dq * q_;                  // Updating the orientation of the cylinder
    R_    = q_.toRotationMatrix();    // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -854,7 +854,7 @@ void Cylinder::rotateAroundPoint( const Vec3& point, const Vec3& axis, real angl
  *   change the orientation from within a pe_EXCLUSIVE_SECTION. The attempt to do this results
  *   in a \a std::logic_error.
  */
-void Cylinder::rotateAroundPoint( const Vec3& point, const Vec3& euler )
+void InnerCylinder::rotateAroundPoint( const Vec3& point, const Vec3& euler )
 {
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global cylinder inside an exclusive section" );
@@ -866,7 +866,7 @@ void Cylinder::rotateAroundPoint( const Vec3& point, const Vec3& euler )
    q_    = dq * q_;                  // Updating the orientation of the cylinder
    R_    = q_.toRotationMatrix();    // Updating the rotation of the cylinder
 
-   Cylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
+   InnerCylinder::calcBoundingBox();    // Updating the axis-aligned bounding box of the cylinder
    wake();               // Waking the cylinder from sleep mode
    signalTranslation();  // Signaling the position change to the superordinate body
 }
@@ -889,10 +889,10 @@ void Cylinder::rotateAroundPoint( const Vec3& point, const Vec3& euler )
  * \param pz The z-component of the relative coordinate.
  * \return \a true if the point lies inside the cylinder, \a false if not.
  */
-bool Cylinder::containsRelPoint( real px, real py, real pz ) const
+bool InnerCylinder::containsRelPoint( real px, real py, real pz ) const
 {
    const real xabs( std::fabs( px ) );         // Absolute x-distance
-   const real hlength( real(0.5) * length_ );  // Cylinder half length
+   const real hlength( real(0.5) * length_ );  // InnerCylinder half length
 
    return ( xabs <= hlength ) && ( sq(py) + sq(pz) ) <= ( radius_ * radius_ );
 }
@@ -905,7 +905,7 @@ bool Cylinder::containsRelPoint( real px, real py, real pz ) const
  * \param rpos The relative coordinate.
  * \return \a true if the point lies inside the cylinder, \a false if not.
  */
-bool Cylinder::containsRelPoint( const Vec3& rpos ) const
+bool InnerCylinder::containsRelPoint( const Vec3& rpos ) const
 {
    const real xabs( std::fabs( rpos[0] ) );    // Absolute x-distance
    const real hlength( real(0.5) * length_ );  // Capsule half length
@@ -923,7 +923,7 @@ bool Cylinder::containsRelPoint( const Vec3& rpos ) const
  * \param pz The z-component of the global coordinate.
  * \return \a true if the point lies inside the cylinder, \a false if not.
  */
-bool Cylinder::containsPoint( real px, real py, real pz ) const
+bool InnerCylinder::containsPoint( real px, real py, real pz ) const
 {
    return containsRelPoint( pointFromWFtoBF( px, py, pz ) );
 }
@@ -936,7 +936,7 @@ bool Cylinder::containsPoint( real px, real py, real pz ) const
  * \param gpos The global coordinate.
  * \return \a true if the point lies inside the cylinder, \a false if not.
  */
-bool Cylinder::containsPoint( const Vec3& gpos ) const
+bool InnerCylinder::containsPoint( const Vec3& gpos ) const
 {
    return containsRelPoint( pointFromWFtoBF( gpos ) );
 }
@@ -953,7 +953,7 @@ bool Cylinder::containsPoint( const Vec3& gpos ) const
  *
  * The tolerance level of the check is pe::surfaceThreshold.
  */
-bool Cylinder::isSurfaceRelPoint( real px, real py, real pz ) const
+bool InnerCylinder::isSurfaceRelPoint( real px, real py, real pz ) const
 {
    const real xabs( std::fabs( px ) );         // Absolute x-distance
    const real hlength( real(0.5) * length_ );  // Capsule half length
@@ -978,7 +978,7 @@ bool Cylinder::isSurfaceRelPoint( real px, real py, real pz ) const
  *
  * The tolerance level of the check is pe::surfaceThreshold.
  */
-bool Cylinder::isSurfaceRelPoint( const Vec3& rpos ) const
+bool InnerCylinder::isSurfaceRelPoint( const Vec3& rpos ) const
 {
    const real xabs( std::fabs( rpos[0] ) );    // Absolute x-distance
    const real hlength( real(0.5) * length_ );  // Capsule half length
@@ -1005,7 +1005,7 @@ bool Cylinder::isSurfaceRelPoint( const Vec3& rpos ) const
  *
  * The tolerance level of the check is pe::surfaceThreshold.
  */
-bool Cylinder::isSurfacePoint( real px, real py, real pz ) const
+bool InnerCylinder::isSurfacePoint( real px, real py, real pz ) const
 {
    return isSurfaceRelPoint( pointFromWFtoBF( px, py, pz ) );
 }
@@ -1020,7 +1020,7 @@ bool Cylinder::isSurfacePoint( real px, real py, real pz ) const
  *
  * The tolerance level of the check is pe::surfaceThreshold.
  */
-bool Cylinder::isSurfacePoint( const Vec3& gpos ) const
+bool InnerCylinder::isSurfacePoint( const Vec3& gpos ) const
 {
    return isSurfaceRelPoint( pointFromWFtoBF( gpos ) );
 }
@@ -1038,7 +1038,7 @@ bool Cylinder::isSurfacePoint( const Vec3& gpos ) const
  * Returns a positive value, if the point lies inside the cylinder and a negative value,
  * if the point lies outside the cylinder.
  */
-real Cylinder::getRelDepth( real px, real py, real pz ) const
+real InnerCylinder::getRelDepth( real px, real py, real pz ) const
 {
    const real xdist  ( real(0.5) * length_ - std::fabs( px ) );   // Distance from the caps
    const real yzdist ( radius_ - std::sqrt( sq(py) + sq(pz) ) );  // Distance from the x-axis
@@ -1063,7 +1063,7 @@ real Cylinder::getRelDepth( real px, real py, real pz ) const
  * Returns a positive value, if the point lies inside the cylinder and a negative value,
  * if the point lies outside the cylinder.
  */
-real Cylinder::getRelDepth( const Vec3& rpos ) const
+real InnerCylinder::getRelDepth( const Vec3& rpos ) const
 {
    const real xdist  ( real(0.5) * length_ - std::fabs( rpos[0] ) );        // Distance from the caps
    const real yzdist ( radius_ - std::sqrt( sq(rpos[1]) + sq(rpos[2]) ) );  // Distance from the x-axis
@@ -1097,7 +1097,7 @@ real Cylinder::getRelDepth( const Vec3& rpos ) const
  * movement. This movement involves a change in the global position and the axis-aligned
  * bounding box.
  */
-void Cylinder::update( const Vec3& dp )
+void InnerCylinder::update( const Vec3& dp )
 {
    // Checking the state of the cylinder
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid cylinder state detected" );
@@ -1107,7 +1107,7 @@ void Cylinder::update( const Vec3& dp )
    gpos_ += dp;
 
    // Setting the axis-aligned bounding box
-   Cylinder::calcBoundingBox();
+   InnerCylinder::calcBoundingBox();
 
    // Checking the state of the cylinder
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid cylinder state detected" );
@@ -1125,7 +1125,7 @@ void Cylinder::update( const Vec3& dp )
  * This movement involves a change in the global position, the orientation/rotation and the
  * axis-aligned bounding box of the cylinder.
  */
-void Cylinder::update( const Quat& dq )
+void InnerCylinder::update( const Quat& dq )
 {
    // Checking the state of the cylinder
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid cylinder state detected" );
@@ -1139,7 +1139,7 @@ void Cylinder::update( const Quat& dq )
    R_ = q_.toRotationMatrix();
 
    // Setting the axis-aligned bounding box
-   Cylinder::calcBoundingBox();
+   InnerCylinder::calcBoundingBox();
 
    // Checking the state of the cylinder
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid cylinder state detected" );
@@ -1162,11 +1162,11 @@ void Cylinder::update( const Quat& dq )
  * \param tab Indentation in front of every line of the cylinder output.
  * \return void
  */
-void Cylinder::print( std::ostream& os, const char* tab ) const
+void InnerCylinder::print( std::ostream& os, const char* tab ) const
 {
    using std::setw;
 
-   os << tab << " Cylinder " << uid_ << " with radius " << radius_ << " and length " << length_ << "\n";
+   os << tab << " InnerCylinder " << uid_ << " with radius " << radius_ << " and length " << length_ << "\n";
 
    if( verboseMode ) {
       os << tab << "   Fixed: " << fixed_ << " , sleeping: " << !awake_ << "\n";
@@ -1227,7 +1227,7 @@ void Cylinder::print( std::ostream& os, const char* tab ) const
  * the cylinder (in-)visible in all visualizations.
  *
  * \image html cylinder.png
- * \image latex cylinder.eps "Cylinder geometry" width=200pt
+ * \image latex cylinder.eps "InnerCylinder geometry" width=200pt
  *
  * The following code example illustrates the setup of a cylinder:
 
@@ -1238,7 +1238,7 @@ void Cylinder::print( std::ostream& os, const char* tab ) const
    // part of the entire simulation. The function returns a handle to the newly created
    // cylinder, which can be used to for instance rotate the cylinder around the global
    // y-axis.
-   CylinderID cylinder = createCylinder( 1, Vec3( 2.0, 3.0, 4.0 ), 0.9, 2.5, iron );
+   InnerCylinderID cylinder = createCylinder( 1, Vec3( 2.0, 3.0, 4.0 ), 0.9, 2.5, iron );
    cylinder->rotate( 0.0, PI/3.0, 0.0 );
    \endcode
 
@@ -1263,7 +1263,7 @@ void Cylinder::print( std::ostream& os, const char* tab ) const
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-PE_PUBLIC CylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
+PE_PUBLIC InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
                            real length, MaterialID material, bool visible )
 {
    const bool global( GlobalSection::isActive() );
@@ -1278,7 +1278,7 @@ PE_PUBLIC CylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
 
    // Creating a new cylinder
    const id_t sid( global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create() );
-   CylinderID cylinder = new Cylinder( sid, uid, gpos, radius, length, material, visible );
+   InnerCylinderID cylinder = new InnerCylinder( sid, uid, gpos, radius, length, material, visible );
 
    // Checking if the cylinder is created inside a global section
    if( global )
@@ -1334,7 +1334,7 @@ PE_PUBLIC CylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
  * MPI process. This function must NOT be called explicitly, but is reserved for internal
  * use only!
  */
-CylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
+InnerCylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
                                 real radius, real length, MaterialID material, bool visible, bool fixed, bool reg )
 {
    // Checking the radius and the length
@@ -1342,7 +1342,7 @@ CylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3
    pe_INTERNAL_ASSERT( length > real(0), "Invalid cylinder length" );
 
    // Instantiating the cylinder
-   CylinderID cylinder = new Cylinder( sid, uid, gpos, rpos, q, radius, length, material, visible, fixed );
+   InnerCylinderID cylinder = new InnerCylinder( sid, uid, gpos, rpos, q, radius, length, material, visible, fixed );
 
    // Registering the cylinder with the default body manager
    if( reg ) {
@@ -1386,7 +1386,7 @@ CylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3
  * \param c Reference to a constant cylinder object.
  * \return Reference to the output stream.
  */
-std::ostream& operator<<( std::ostream& os, const Cylinder& c )
+std::ostream& operator<<( std::ostream& os, const InnerCylinder& c )
 {
    os << "--" << pe_BROWN << "CYLINDER PARAMETERS" << pe_OLDCOLOR
       << "-----------------------------------------------------------\n";

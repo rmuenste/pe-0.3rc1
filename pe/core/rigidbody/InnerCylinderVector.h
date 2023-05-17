@@ -1,6 +1,6 @@
 //=================================================================================================
 /*!
- *  \file pe/core/rigidbody/CylinderVector.h
+ *  \file pe/core/rigidbody/InnerCylinderVector.h
  *  \brief Implementation of a vector for cylinder handles
  *
  *  Copyright (C) 2009 Klaus Iglberger
@@ -20,8 +20,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDERVECTOR_H_
-#define _PE_CORE_RIGIDBODY_CYLINDERVECTOR_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDERVECTOR_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDERVECTOR_H_
 
 
 //*************************************************************************************************
@@ -40,7 +40,7 @@ namespace pe {
 //
 //=================================================================================================
 
-class Cylinder;
+class InnerCylinder;
 
 
 
@@ -55,24 +55,24 @@ class Cylinder;
 /*!\brief Implementation of a vector for cylinder handles.
  * \ingroup core
  *
- * The CylinderVector class is a special PtrVector for cylinder handles (pe::CylinderID). It
+ * The InnerCylinderVector class is a special PtrVector for cylinder handles (pe::InnerCylinderID). It
  * offers easy and fast access to the contained cylinders:
 
    \code
-   pe::CylinderVector cylinders;
+   pe::InnerCylinderVector cylinders;
 
    // Calculating the total number of cylinders contained in the cylinder vector.
-   pe::CylinderVector::SizeType num = cylinders.size();
+   pe::InnerCylinderVector::SizeType num = cylinders.size();
 
    // Loop over all cylinders contained in the cylinder vector.
-   pe::CylinderVector::Iterator begin = cylinders.begin();
-   pe::CylinderVector::Iterator end   = cylinders.end();
+   pe::InnerCylinderVector::Iterator begin = cylinders.begin();
+   pe::InnerCylinderVector::Iterator end   = cylinders.end();
 
    for( ; begin!=end; ++begin )
       ...
    \endcode
  */
-typedef PtrVector<Cylinder,NoDelete>  CylinderVector;
+typedef PtrVector<InnerCylinder,NoDelete>  InnerCylinderVector;
 //*************************************************************************************************
 
 } // namespace pe

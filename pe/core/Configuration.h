@@ -36,6 +36,7 @@ class Box;
 class Capsule;
 class Contact;
 class Cylinder;
+class InnerCylinder;
 class FixedJoint;
 class Gravity;
 class HingeJoint;

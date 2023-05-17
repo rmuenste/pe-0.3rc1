@@ -1,6 +1,6 @@
 //=================================================================================================
 /*!
- *  \file pe/core/rigidbody/CylinderBase.h
+ *  \file pe/core/rigidbody/InnerCylinderBase.h
  *  \brief Base class for the cylinder geometry
  *
  *  Copyright (C) 2009 Klaus Iglberger
@@ -21,8 +21,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDERBASE_H_
-#define _PE_CORE_RIGIDBODY_CYLINDERBASE_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDERBASE_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDERBASE_H_
 
 
 //*************************************************************************************************
@@ -49,17 +49,17 @@ namespace pe {
 /*!\brief Base class for the cylinder geometry.
  * \ingroup cylinder
  *
- * The CylinderBase class represents the base class for the cylinder geometry. It provides
+ * The InnerCylinderBase class represents the base class for the cylinder geometry. It provides
  * the basic functionality of a cylinder. For a full description of the cylinder geometry,
- * see the Cylinder class description.
+ * see the InnerCylinder class description.
  */
-class CylinderBase : public GeomPrimitive
+class InnerCylinderBase : public GeomPrimitive
 {
 protected:
    //**Constructor*********************************************************************************
    /*!\name Constructor */
    //@{
-   explicit CylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
+   explicit InnerCylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
                           real length, MaterialID material, bool visible );
    //@}
    //**********************************************************************************************
@@ -67,7 +67,7 @@ protected:
    //**Destructor**********************************************************************************
    /*!\name Destructor */
    //@{
-   virtual ~CylinderBase() = 0;
+   virtual ~InnerCylinderBase() = 0;
    //@}
    //**********************************************************************************************
 
@@ -130,7 +130,7 @@ protected:
  *
  * \return The radius of the cylinder.
  */
-inline real CylinderBase::getRadius() const
+inline real InnerCylinderBase::getRadius() const
 {
    return radius_;
 }
@@ -142,7 +142,7 @@ inline real CylinderBase::getRadius() const
  *
  * \return The length of the cylinder part.
  */
-inline real CylinderBase::getLength() const
+inline real InnerCylinderBase::getLength() const
 {
    return length_;
 }
@@ -164,7 +164,7 @@ inline real CylinderBase::getLength() const
  * \param length The length of the cylinder.
  * \return The volume of the cylinder.
  */
-inline real CylinderBase::calcVolume( real radius, real length )
+inline real InnerCylinderBase::calcVolume( real radius, real length )
 {
    return M_PI*radius*radius*length;
 }
@@ -179,7 +179,7 @@ inline real CylinderBase::calcVolume( real radius, real length )
  * \param density The density of the cylinder.
  * \return The total mass of the cylinder.
  */
-inline real CylinderBase::calcMass( real radius, real length, real density )
+inline real InnerCylinderBase::calcMass( real radius, real length, real density )
 {
    return M_PI*radius*radius*length*density;
 }
@@ -194,7 +194,7 @@ inline real CylinderBase::calcMass( real radius, real length, real density )
  * \param mass The total mass of the cylinder.
  * \return The density of the cylinder.
  */
-inline real CylinderBase::calcDensity( real radius, real length, real mass )
+inline real InnerCylinderBase::calcDensity( real radius, real length, real mass )
 {
    return mass / ( M_PI*radius*radius*length );
 }
@@ -207,7 +207,7 @@ inline real CylinderBase::calcDensity( real radius, real length, real mass )
  * \param d The normalized search direction in world-frame coordinates.
  * \return The support point in world-frame coordinates in direction a\ d.
  */
-inline Vec3 CylinderBase::support( const Vec3& d ) const
+inline Vec3 InnerCylinderBase::support( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised");
@@ -231,7 +231,7 @@ inline Vec3 CylinderBase::support( const Vec3& d ) const
  * \return The support point in world-frame coordinates in direction a\ d extended by a vector in
  *         direction \a d of length \a pe::contactThreshold.
  */
-inline Vec3 CylinderBase::supportContactThreshold( const Vec3& d ) const
+inline Vec3 InnerCylinderBase::supportContactThreshold( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised");
