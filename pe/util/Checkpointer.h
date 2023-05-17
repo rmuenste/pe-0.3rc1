@@ -52,6 +52,7 @@ public:
    {
    }
 
+   ~Checkpointer();  
 
    void trigger();
 

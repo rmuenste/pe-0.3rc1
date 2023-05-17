@@ -6,7 +6,7 @@ void setupCyl(MPI_Comm ex0) {
   world = theWorld();
   world->setGravity( 0.0, 0.0, -98.1 );
   world->setLiquidSolid(true);
-  world->setLiquidDensity(1.0);
+  world->setLiquidDensity(1000.0);
 
   world->setDamping( 1.0 );
 
@@ -408,10 +408,7 @@ void setupCyl(MPI_Comm ex0) {
   if( g_vtk ) {
      vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
   }
-
-//  if(g_povray) {
-//    povraySetup();
-//  }
+  
 
   const real lx = px * dx;
   const real ly = py * dy;
@@ -431,7 +428,7 @@ void setupCyl(MPI_Comm ex0) {
   int idx = 0;
 
   // Create a custom material for the benchmark
-  MaterialID myMaterial = createMaterial("Bench", 1.1, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID myMaterial = createMaterial("Bench", 1100, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   Vec3 position( 0.99,  1.0, 6.9);
 //  0.123597
 
@@ -475,6 +472,8 @@ void setupCyl(MPI_Comm ex0) {
       << " particles x              = " << nx << "\n" 
       << " particles y              = " << ny << "\n" 
       << " particles z              = " << nz << "\n" 
+      << " Stepsize  dt             = " << stepsize << "\n" 
+      << " visspacing               = " << visspacing << "\n" 
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;

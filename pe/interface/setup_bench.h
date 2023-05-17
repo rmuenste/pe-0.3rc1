@@ -80,8 +80,8 @@ void setupBench(MPI_Comm ex0) {
 
 //===========================================================================================================
 
-  real bx = 0.0;
-  real by = 0.0;
+  real bx =-0.4;
+  real by =-0.4;
   real bz = 0.0;
 
   int west     [] = { center[0]-1, center[1]  , center[2] };
@@ -384,19 +384,19 @@ void setupBench(MPI_Comm ex0) {
    theMPISystem()->checkProcesses();
 //#endif
 
-  MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  std::cout << "[Creating a plane] " << std::endl;
-  pe_GLOBAL_SECTION
-  {
-     // Creating the ground plane
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
-     createPlane( 1779,-1.0, 0.0, 0.0,-2.0, granite, false ); // left border
- 
-     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
-     createPlane( 1781, 0.0,-1.0, 0.0,-2, granite, false ); // front border
-
-  }
+//  MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+//  std::cout << "[Creating a plane] " << std::endl;
+//  pe_GLOBAL_SECTION
+//  {
+//     // Creating the ground plane
+//     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
+//     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
+//     createPlane( 1779,-1.0, 0.0, 0.0,-2.0, granite, false ); // left border
+// 
+//     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
+//     createPlane( 1781, 0.0,-1.0, 0.0,-2, granite, false ); // front border
+//
+//  }
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "#==================================================================================" << std::endl;
@@ -442,7 +442,6 @@ void setupBench(MPI_Comm ex0) {
 //    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
     ++idx;
   }
-
 
   // Synchronization of the MPI processes
   world->synchronize();

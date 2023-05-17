@@ -204,8 +204,8 @@ void debug_output_force_() {
     }
     else if(body->getType() == capsuleType) {
       Capsule* s = static_cast<Capsule*>(body); 
-      std::cout << rank << ")force: " << (s->getForce())<< std::endl;
-      std::cout << rank << ")VelUp: " << (s->getLinearVel())<< std::endl;
+      std::cout << rank << ")force(" << s->getSystemID() << ", " << s->getForce()[0] << ", " << s->getForce()[1] << ", " << s->getForce()[2] << std::endl;
+//      std::cout << rank << ")VelUp(" << s->getSystemID() << ", " << (s->getLinearVel())<< std::endl;
     }
   }
   for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++, i++) {
