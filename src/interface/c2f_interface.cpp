@@ -81,6 +81,26 @@ extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
   } 
 }
 
+extern "C" void commf2c_bench_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{   
+  int remRank = *remoteRank;
+
+  if(remRank != 0) { 
+    int rank, size;
+
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
+    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
+    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
+
+    printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
+    if( CcommEx0 == MPI_COMM_NULL ) {
+      printf( "%d> C)Error converting fortran communicator\n", rank);
+       return;
+    }
+    setupBench(CcommEx0);
+  } 
+}
+
 extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   // force 4.0 multiplier take it out

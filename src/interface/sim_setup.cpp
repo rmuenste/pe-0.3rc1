@@ -177,6 +177,7 @@ void stepSimulation() {
 #include <pe/interface/setup_nxnxn.h>
 #include <pe/interface/setup_cyl.h>
 #include <pe/interface/setup_dkt.h>
+#include <pe/interface/setup_bench.h>
 //
 //=================================================================================================
 //

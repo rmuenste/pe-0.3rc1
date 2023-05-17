@@ -61,6 +61,7 @@ public:
    static inline int         px();
    static inline int         py();
    static inline int         pz();
+   static inline int         visspacing();
    static inline real        stepsize();
 //   static inline const Vec3& gravity();
    //@}
@@ -101,7 +102,7 @@ private:
  *
  * \return \a The time step size
  */
-inline real Settings::stepsize()
+inline real SimSettings::stepsize()
 {
    return stepSize_;
 }
@@ -113,7 +114,7 @@ inline real Settings::stepsize()
  *
  * \return \a The number of processes in x
  */
-inline real Settings::px()
+inline int SimSettings::px()
 {
    return px_;
 }
@@ -125,7 +126,7 @@ inline real Settings::px()
  *
  * \return \a The number of processes in y
  */
-inline real Settings::py()
+inline int SimSettings::py()
 {
    return py_;
 }
@@ -137,7 +138,7 @@ inline real Settings::py()
  *
  * \return \a The number of processes in z
  */
-inline real Settings::pz()
+inline int SimSettings::pz()
 {
    return pz_;
 }
@@ -149,7 +150,7 @@ inline real Settings::pz()
  *
  * \return \a The visualization spacing
  */
-inline real Settings::visspacing()
+inline int SimSettings::visspacing()
 {
    return visspacing_;
 }
