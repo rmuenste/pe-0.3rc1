@@ -43,6 +43,7 @@
 #include <pe/core/rigidbody/Box.h>
 #include <pe/core/rigidbody/Capsule.h>
 #include <pe/core/rigidbody/Cylinder.h>
+#include <pe/core/rigidbody/InnerCylinder.h>
 #include <pe/core/rigidbody/Plane.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/rigidbody/Sphere.h>
@@ -94,34 +95,35 @@ public:
    //**Contact generation functions****************************************************************
    /*!\name Contact generation functions */
    //@{
-   template< typename CC > static        void collide                ( BodyID b1    , BodyID b2    , CC& contacts );
-   template< typename CC > static inline void collideSphereSphere    ( SphereID s1  , SphereID s2  , CC& contacts );
-   template< typename CC > static        void collideSphereBox       ( SphereID s   , BoxID b      , CC& contacts );
-   template< typename CC > static        void collideSphereCapsule   ( SphereID s   , CapsuleID c  , CC& contacts );
-   template< typename CC > static        void collideSphereCylinder  ( SphereID s   , CylinderID c , CC& contacts );
-   template< typename CC > static inline void collideSpherePlane     ( SphereID s   , PlaneID p    , CC& contacts );
-   template< typename CC > static        void collideSphereTMesh     ( SphereID s   , TriangleMeshID m     , CC& contacts );
-   template< typename CC > static inline void collideSphereUnion     ( SphereID s   , UnionID u    , CC& contacts );
-   template< typename CC > static        void collideBoxBox          ( BoxID b1     , BoxID b2     , CC& contacts );
-   template< typename CC > static        void collideBoxCapsule      ( BoxID b      , CapsuleID c  , CC& contacts );
-   template< typename CC > static        void collideBoxCylinder     ( BoxID b      , CylinderID c , CC& contacts );
-   template< typename CC > static        void collideBoxPlane        ( BoxID b      , PlaneID p    , CC& contacts );
-   template< typename CC > static        void collideBoxTMesh        ( BoxID b      , TriangleMeshID m     , CC& contacts );
-   template< typename CC > static inline void collideBoxUnion        ( BoxID b      , UnionID u    , CC& contacts );
-   template< typename CC > static        void collideCapsuleCapsule  ( CapsuleID c1 , CapsuleID c2 , CC& contacts );
-   template< typename CC > static        void collideCapsuleCylinder ( CapsuleID ca , CylinderID cy, CC& contacts );
-   template< typename CC > static        void collideCapsulePlane    ( CapsuleID c  , PlaneID p    , CC& contacts );
-   template< typename CC > static        void collideCapsuleTMesh    ( CapsuleID c  , TriangleMeshID m     , CC& contacts );
-   template< typename CC > static inline void collideCapsuleUnion    ( CapsuleID c  , UnionID u    , CC& contacts );
-   template< typename CC > static        void collideCylinderCylinder( CylinderID c1, CylinderID c2, CC& contacts );
-   template< typename CC > static        void collideCylinderPlane   ( CylinderID c , PlaneID p    , CC& contacts );
-   template< typename CC > static        void collideCylinderTMesh   ( CylinderID c , TriangleMeshID m     , CC& contacts );
-   template< typename CC > static inline void collideCylinderUnion   ( CylinderID c , UnionID u    , CC& contacts );
-   template< typename CC > static inline void collidePlaneTMesh      ( PlaneID p    , TriangleMeshID  u    , CC& contacts );
-   template< typename CC > static inline void collidePlaneUnion      ( PlaneID p    , UnionID u    , CC& contacts );
-   template< typename CC > static inline void collideTMeshTMesh      ( TriangleMeshID  m1   , TriangleMeshID m2    , CC& contacts );
-   template< typename CC > static inline void collideTMeshUnion      ( TriangleMeshID  m    , UnionID u    , CC& contacts );
-   template< typename CC > static inline void collideUnionUnion      ( UnionID u1   , UnionID u2   , CC& contacts );
+   template< typename CC > static        void collide                     ( BodyID b1    , BodyID b2    , CC& contacts );
+   template< typename CC > static inline void collideSphereSphere         ( SphereID s1  , SphereID s2  , CC& contacts );
+   template< typename CC > static        void collideSphereBox            ( SphereID s   , BoxID b      , CC& contacts );
+   template< typename CC > static        void collideSphereCapsule        ( SphereID s   , CapsuleID c  , CC& contacts );
+   template< typename CC > static        void collideSphereCylinder       ( SphereID s   , CylinderID c , CC& contacts );
+   template< typename CC > static        void collideSphereInnerCylinder  ( SphereID s   , CylinderID c , CC& contacts );
+   template< typename CC > static inline void collideSpherePlane          ( SphereID s   , PlaneID p    , CC& contacts );
+   template< typename CC > static        void collideSphereTMesh          ( SphereID s   , TriangleMeshID m     , CC& contacts );
+   template< typename CC > static inline void collideSphereUnion          ( SphereID s   , UnionID u    , CC& contacts );
+   template< typename CC > static        void collideBoxBox               ( BoxID b1     , BoxID b2     , CC& contacts );
+   template< typename CC > static        void collideBoxCapsule           ( BoxID b      , CapsuleID c  , CC& contacts );
+   template< typename CC > static        void collideBoxCylinder          ( BoxID b      , CylinderID c , CC& contacts );
+   template< typename CC > static        void collideBoxPlane             ( BoxID b      , PlaneID p    , CC& contacts );
+   template< typename CC > static        void collideBoxTMesh             ( BoxID b      , TriangleMeshID m     , CC& contacts );
+   template< typename CC > static inline void collideBoxUnion             ( BoxID b      , UnionID u    , CC& contacts );
+   template< typename CC > static        void collideCapsuleCapsule       ( CapsuleID c1 , CapsuleID c2 , CC& contacts );
+   template< typename CC > static        void collideCapsuleCylinder      ( CapsuleID ca , CylinderID cy, CC& contacts );
+   template< typename CC > static        void collideCapsulePlane         ( CapsuleID c  , PlaneID p    , CC& contacts );
+   template< typename CC > static        void collideCapsuleTMesh         ( CapsuleID c  , TriangleMeshID m     , CC& contacts );
+   template< typename CC > static inline void collideCapsuleUnion         ( CapsuleID c  , UnionID u    , CC& contacts );
+   template< typename CC > static        void collideCylinderCylinder     ( CylinderID c1, CylinderID c2, CC& contacts );
+   template< typename CC > static        void collideCylinderPlane        ( CylinderID c , PlaneID p    , CC& contacts );
+   template< typename CC > static        void collideCylinderTMesh        ( CylinderID c , TriangleMeshID m     , CC& contacts );
+   template< typename CC > static inline void collideCylinderUnion        ( CylinderID c , UnionID u    , CC& contacts );
+   template< typename CC > static inline void collidePlaneTMesh           ( PlaneID p    , TriangleMeshID  u    , CC& contacts );
+   template< typename CC > static inline void collidePlaneUnion           ( PlaneID p    , UnionID u    , CC& contacts );
+   template< typename CC > static inline void collideTMeshTMesh           ( TriangleMeshID  m1   , TriangleMeshID m2    , CC& contacts );
+   template< typename CC > static inline void collideTMeshUnion           ( TriangleMeshID  m    , UnionID u    , CC& contacts );
+   template< typename CC > static inline void collideUnionUnion           ( UnionID u1   , UnionID u2   , CC& contacts );
    //@}
    //**********************************************************************************************
 
@@ -262,6 +264,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
             case cylinderType:
                collideSphereCylinder( static_body_cast<Sphere>( b1 ),
                                       static_body_cast<Cylinder>( b2 ), contacts );
+               break;
+            case innerCylinderType:
+               collideSphereInnerCylinder( static_body_cast<Sphere>( b1 ),
+                                           static_body_cast<InnerCylinder>( b2 ), contacts );
                break;
             case planeType:
                collideSpherePlane( static_body_cast<Sphere>( b1 ),
@@ -750,6 +756,7 @@ void MaxContacts::collideSphereCylinder( SphereID s, CylinderID c, CC& contacts 
       //bodys possibly overlap
       //normal points form object2 (c) to object1 (s)
       contacts.addVertexFaceContact( s, c, contactPoint, normal, penetrationDepth );
+      std::cout << "Penetration depth: " << penetrationDepth << std::endl;
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      Contact created between sphere " << s->getID()
             << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";
@@ -759,6 +766,36 @@ void MaxContacts::collideSphereCylinder( SphereID s, CylinderID c, CC& contacts 
 //*************************************************************************************************
 
 
+//*************************************************************************************************
+/*!\brief Contact generation between a Sphere and a Cylinder.
+ * \ingroup contact_generation
+ *
+ * \param s The colliding sphere.
+ * \param c The colliding cylinder.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * TODO
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+//   if(gjkEPAcollideHybrid< SphereID, CylinderID >(s, c, normal, contactPoint, penetrationDepth)) {
+//      //bodys possibly overlap
+//      //normal points form object2 (c) to object1 (s)
+//      contacts.addVertexFaceContact( s, c, contactPoint, normal, penetrationDepth );
+//      std::cout << "Penetration depth: " << penetrationDepth << std::endl;
+//      pe_LOG_DEBUG_SECTION( log ) {
+//         log << "      Contact created between sphere " << s->getID()
+//            << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";
+//      }
+//   }
+}
+//*************************************************************************************************
 //*************************************************************************************************
 /*!\brief Contact generation between a Sphere and a Plane.
  * \ingroup contact_generation

@@ -43,13 +43,14 @@ namespace pe {
 //*************************************************************************************************
 //! Geometry types of the rigid bodies.
 enum GeomType {
-   sphereType       = 1,  //!< Code for Sphere geometries.
-   boxType          = 2,  //!< Code for Box geometries.
-   capsuleType      = 3,  //!< Code for Capsule geometries.
-   cylinderType     = 4,  //!< Code for Cylinder geometries.
-   planeType        = 5,  //!< Code for Plane geometries.
-   triangleMeshType = 6,  //!< Code for TriangleMesh geometries.
-   unionType        = 7   //!< Code for Union geometries.
+   sphereType        = 1,  //!< Code for Sphere geometries.
+   boxType           = 2,  //!< Code for Box geometries.
+   capsuleType       = 3,  //!< Code for Capsule geometries.
+   cylinderType      = 4,  //!< Code for Cylinder geometries.
+   planeType         = 5,  //!< Code for Plane geometries.
+   triangleMeshType  = 6,  //!< Code for TriangleMesh geometries.
+   unionType         = 7,  //!< Code for Union geometries.
+   innerCylinderType = 8   //!< Code for Union geometries.
 };
 //*************************************************************************************************
 

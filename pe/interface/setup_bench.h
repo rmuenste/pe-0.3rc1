@@ -157,7 +157,6 @@ void setupBench(MPI_Comm ex0) {
   CylinderID cyl(0);
   pe_GLOBAL_SECTION
   {
-
     cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.2, 0.8, iron );
     cyl->setFixed(true);
     cyl->rotate(M_PI/2.0, 0.0, 0.0);
