@@ -244,6 +244,21 @@ void Writer::addCylinder( ConstCylinderID /*cylinder*/ )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single cylinder for the OpenDX visualization.
+ *
+ * \param cylinder The cylinder to be registered.
+ * \return void
+ */
+void Writer::addInnerCylinder( ConstInnerCylinderID /*cylinder*/ )
+{
+   // The Writer is not able to visualize cylinders. Therefore the cylinder doesn't
+   // have to be registered.
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single plane for the OpenDX visualization.
  *
  * \param plane The plane to be registered.
@@ -352,6 +367,21 @@ void Writer::removeCapsule( ConstCapsuleID /*capsule*/ )
  * \return void
  */
 void Writer::removeCylinder( ConstCylinderID /*cylinder*/ )
+{
+   // The Writer is not able to visualize cylinders. Therefore the cylinder doesn't
+   // have to be deregistered.
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single cylinder from the OpenDX visualization.
+ *
+ * \param cylinder The cylinder to be removed.
+ * \return void
+ */
+void Writer::removeInnerCylinder( ConstInnerCylinderID /*cylinder*/ )
 {
    // The Writer is not able to visualize cylinders. Therefore the cylinder doesn't
    // have to be deregistered.

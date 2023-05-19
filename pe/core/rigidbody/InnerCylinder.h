@@ -241,9 +241,9 @@ protected:
 private:
    //**Sphere setup functions**********************************************************************
    /*! \cond PE_INTERNAL */
-   friend InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
+   friend InnerCylinderID createInnerCylinder( id_t uid, const Vec3& gpos, real radius,
                                      real length, MaterialID material, bool visible );
-   friend InnerCylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+   friend InnerCylinderID instantiateInnerCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                                           const Quat& q, real radius, real length, MaterialID material,
                                           bool visible, bool fixed, bool reg );
    /*! \endcond */
@@ -373,11 +373,11 @@ inline real InnerCylinder::getDistance( const Vec3& gpos ) const
 //*************************************************************************************************
 /*!\name InnerCylinder setup functions */
 //@{
-inline InnerCylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
+inline InnerCylinderID createInnerCylinder( id_t uid, real x, real y, real z, real radius,
                                   real length, MaterialID material, bool visible=true );
-       InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
+       InnerCylinderID createInnerCylinder( id_t uid, const Vec3& gpos, real radius,
                                   real length, MaterialID material, bool visible=true );
-       InnerCylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+       InnerCylinderID instantiateInnerCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                                        const Quat& q, real radius, real length, MaterialID material,
                                        bool visible, bool fixed, bool reg=true );
 //@}
@@ -443,10 +443,10 @@ inline InnerCylinderID createCylinder( id_t uid, real x, real y, real z, real ra
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-inline InnerCylinderID createCylinder( id_t uid, real x, real y, real z, real radius,
+inline InnerCylinderID createInnerCylinder( id_t uid, real x, real y, real z, real radius,
                                   real length, MaterialID material, bool visible )
 {
-   return createCylinder( uid, Vec3(x,y,z), radius, length, material, visible );
+   return createInnerCylinder( uid, Vec3(x,y,z), radius, length, material, visible );
 }
 //*************************************************************************************************
 

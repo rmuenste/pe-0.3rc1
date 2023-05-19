@@ -50,6 +50,7 @@ Visualization::Spheres   Visualization::spheres_;
 Visualization::Boxes     Visualization::boxes_;
 Visualization::Capsules  Visualization::capsules_;
 Visualization::Cylinders Visualization::cylinders_;
+Visualization::InnerCylinders Visualization::innerCylinders_;
 Visualization::Planes    Visualization::planes_;
 Visualization::Meshes    Visualization::meshes_;
 Visualization::Springs   Visualization::springs_;
@@ -165,6 +166,23 @@ void Visualization::add( ConstCylinderID cylinder )
 
    for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
       v->addCylinder( cylinder );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Registration function for a cylinder.
+ *
+ * \param cylinder The cylinder to be registered for visualization.
+ * \return void
+ */
+void Visualization::add( ConstInnerCylinderID cylinder )
+{
+   innerCylinders_.pushBack( cylinder );
+
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->addInnerCylinder( cylinder );
    }
 }
 //*************************************************************************************************
@@ -425,6 +443,21 @@ void Visualization::changeVisibility( ConstCylinderID cylinder )
 {
    for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
       v->changeCylinderVisibility( cylinder );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Signaling the change of the visibility of a cylinder primitive.
+ *
+ * \param cylinder The changed cylinder primitive.
+ * \return void
+ */
+void Visualization::changeVisibility( ConstInnerCylinderID cylinder )
+{
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->changeInnerCylinderVisibility( cylinder );
    }
 }
 //*************************************************************************************************
@@ -714,6 +747,17 @@ void Visualization::changeCapsuleVisibility( ConstCapsuleID /*capsule*/ )
  * \return void
  */
 void Visualization::changeCylinderVisibility( ConstCylinderID /*cylinder*/ )
+{}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Default implementation of the handle function for visibility changes of cylinders.
+ *
+ * \param cylinder The changed cylinder primitive.
+ * \return void
+ */
+void Visualization::changeInnerCylinderVisibility( ConstInnerCylinderID /*cylinder*/ )
 {}
 //*************************************************************************************************
 

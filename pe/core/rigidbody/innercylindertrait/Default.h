@@ -20,8 +20,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDERTRAIT_DEFAULT_H_
-#define _PE_CORE_RIGIDBODY_CYLINDERTRAIT_DEFAULT_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_DEFAULT_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_DEFAULT_H_
 
 
 //*************************************************************************************************

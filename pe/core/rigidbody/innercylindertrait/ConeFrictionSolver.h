@@ -20,8 +20,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDERTRAIT_CONEFRICTIONSOLVER_H_
-#define _PE_CORE_RIGIDBODY_CYLINDERTRAIT_CONEFRICTIONSOLVER_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_CONEFRICTIONSOLVER_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_CONEFRICTIONSOLVER_H_
 
 
 //*************************************************************************************************
@@ -30,7 +30,7 @@
 
 #include <cmath>
 #include <pe/core/rigidbody/InnerCylinderBase.h>
-#include <pe/core/rigidbody/cylindertrait/Default.h>
+#include <pe/core/rigidbody/innercylindertrait/Default.h>
 #include <pe/core/response/Types.h>
 #include <pe/core/Settings.h>
 #include <pe/core/Types.h>

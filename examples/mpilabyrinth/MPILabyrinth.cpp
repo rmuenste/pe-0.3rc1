@@ -43,16 +43,17 @@ using namespace pe::povray;
 
 
 // Assert statically that only the FFD solver or a hard contact solver is used since parameters are tuned for them.
-#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C) typedef \
+#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C, D) typedef \
    pe::CONSTRAINT_TEST< \
       pe::CONSTRAINT_MUST_BE_SAME_TYPE_FAILED< \
-         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value \
+         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value | pe::IsSame<A,D>::value \
       >::value > \
    pe_JOIN( CONSTRAINT_MUST_BE_SAME_TYPE_TYPEDEF, __LINE__ );
 
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::FFDSolver>::Config TargetConfig1;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
-pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2);
+typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
+pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2, TargetConfig3);
 
 
 

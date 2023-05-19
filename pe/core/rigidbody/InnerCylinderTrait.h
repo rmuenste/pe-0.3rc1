@@ -28,13 +28,13 @@
 // Includes
 //*************************************************************************************************
 
-#include <pe/core/rigidbody/cylindertrait/BoxFrictionSolver.h>
-#include <pe/core/rigidbody/cylindertrait/ConeFrictionSolver.h>
-#include <pe/core/rigidbody/cylindertrait/Default.h>
-#include <pe/core/rigidbody/cylindertrait/DEMSolverObsolete.h>
-#include <pe/core/rigidbody/cylindertrait/FFDSolver.h>
-#include <pe/core/rigidbody/cylindertrait/FrictionlessSolver.h>
-#include <pe/core/rigidbody/cylindertrait/OpenCLSolver.h>
-#include <pe/core/rigidbody/cylindertrait/PolyhedralFrictionSolver.h>
+#include <pe/core/rigidbody/innercylindertrait/BoxFrictionSolver.h>
+#include <pe/core/rigidbody/innercylindertrait/ConeFrictionSolver.h>
+#include <pe/core/rigidbody/innercylindertrait/Default.h>
+#include <pe/core/rigidbody/innercylindertrait/DEMSolverObsolete.h>
+#include <pe/core/rigidbody/innercylindertrait/FFDSolver.h>
+#include <pe/core/rigidbody/innercylindertrait/FrictionlessSolver.h>
+#include <pe/core/rigidbody/innercylindertrait/OpenCLSolver.h>
+#include <pe/core/rigidbody/innercylindertrait/PolyhedralFrictionSolver.h>
 
 #endif

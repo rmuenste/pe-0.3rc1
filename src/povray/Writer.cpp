@@ -344,6 +344,19 @@ void Writer::addCylinder( ConstCylinderID cylinder )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single cylinder for the POV-Ray visualization.
+ *
+ * \param cylinder The cylinder to be registered.
+ * \return void
+ */
+void Writer::addInnerCylinder( ConstInnerCylinderID cylinder )
+{
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single plane for the POV-Ray visualization.
  *
  * \param plane The plane to be registered.
@@ -462,6 +475,19 @@ void Writer::removeCylinder( ConstCylinderID cylinder )
       }
    }
    pe_INTERNAL_ASSERT( false, "Cylinder is not registered for the POV-Ray visualization" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single cylinder from the POV-Ray visualization.
+ *
+ * \param cylinder The cylinder to be removed.
+ * \return void
+ */
+void Writer::removeInnerCylinder( ConstInnerCylinderID cylinder )
+{
+   return;
 }
 //*************************************************************************************************
 

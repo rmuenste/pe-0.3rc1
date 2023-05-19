@@ -62,6 +62,7 @@ protected:
    typedef PtrVector<const Box,NoDelete>           Boxes;      //!< Container for visible boxes.
    typedef PtrVector<const Capsule,NoDelete>       Capsules;   //!< Container for visible capsules.
    typedef PtrVector<const Cylinder,NoDelete>      Cylinders;  //!< Container for visible cylinders.
+   typedef PtrVector<const InnerCylinder,NoDelete> InnerCylinders;  //!< Container for visible cylinders.
    typedef PtrVector<const Plane,NoDelete>         Planes;     //!< Container for visible planes.
    typedef PtrVector<const TriangleMesh,NoDelete>  Meshes;     //!< Container for visible meshes.
    typedef PtrVector<const Spring,NoDelete>        Springs;    //!< Container for visible springs.
@@ -71,39 +72,42 @@ public:
    //**Registration functions**********************************************************************
    /*!\name Registration functions */
    //@{
-   static void add( ConstSphereID       sphere   );
-   static void add( ConstBoxID          box      );
-   static void add( ConstCapsuleID      capsule  );
-   static void add( ConstCylinderID     cylinder );
-   static void add( ConstPlaneID        plane    );
-   static void add( ConstTriangleMeshID mesh     );
-   static void add( ConstSpringID       spring   );
+   static void add( ConstSphereID        sphere   );
+   static void add( ConstBoxID           box      );
+   static void add( ConstCapsuleID       capsule  );
+   static void add( ConstCylinderID      cylinder );
+   static void add( ConstInnerCylinderID cylinder );
+   static void add( ConstPlaneID         plane    );
+   static void add( ConstTriangleMeshID  mesh     );
+   static void add( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 
    //**Deregistration functions********************************************************************
    /*!\name Deregistration functions */
    //@{
-   static void remove( ConstSphereID       sphere   );
-   static void remove( ConstBoxID          box      );
-   static void remove( ConstCapsuleID      capsule  );
-   static void remove( ConstCylinderID     cylinder );
-   static void remove( ConstPlaneID        plane    );
-   static void remove( ConstTriangleMeshID mesh     );
-   static void remove( ConstSpringID       spring   );
+   static void remove( ConstSphereID        sphere   );
+   static void remove( ConstBoxID           box      );
+   static void remove( ConstCapsuleID       capsule  );
+   static void remove( ConstCylinderID      cylinder );
+   static void remove( ConstInnerCylinderID cylinder );
+   static void remove( ConstPlaneID         plane    );
+   static void remove( ConstTriangleMeshID  mesh     );
+   static void remove( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 
    //**Notification functions**********************************************************************
    /*!\name Notification functions */
    //@{
-   static void changeVisibility( ConstSphereID       sphere   );
-   static void changeVisibility( ConstBoxID          box      );
-   static void changeVisibility( ConstCapsuleID      capsule  );
-   static void changeVisibility( ConstCylinderID     cylinder );
-   static void changeVisibility( ConstPlaneID        plane    );
-   static void changeVisibility( ConstTriangleMeshID mesh     );
-   static void changeVisibility( ConstSpringID       spring   );
+   static void changeVisibility( ConstSphereID        sphere   );
+   static void changeVisibility( ConstBoxID           box      );
+   static void changeVisibility( ConstCapsuleID       capsule  );
+   static void changeVisibility( ConstCylinderID      cylinder );
+   static void changeVisibility( ConstInnerCylinderID cylinder );
+   static void changeVisibility( ConstPlaneID         plane    );
+   static void changeVisibility( ConstTriangleMeshID  mesh     );
+   static void changeVisibility( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 
@@ -125,39 +129,42 @@ protected:
    //**Add functions*******************************************************************************
    /*!\name Add functions */
    //@{
-   virtual void addSphere  ( ConstSphereID       sphere   ) = 0;
-   virtual void addBox     ( ConstBoxID          box      ) = 0;
-   virtual void addCapsule ( ConstCapsuleID      capsule  ) = 0;
-   virtual void addCylinder( ConstCylinderID     cylinder ) = 0;
-   virtual void addPlane   ( ConstPlaneID        plane    ) = 0;
-   virtual void addMesh    ( ConstTriangleMeshID mesh     ) = 0;
-   virtual void addSpring  ( ConstSpringID       spring   ) = 0;
+   virtual void addSphere  ( ConstSphereID                 sphere   ) = 0;
+   virtual void addBox     ( ConstBoxID                    box      ) = 0;
+   virtual void addCapsule ( ConstCapsuleID                capsule  ) = 0;
+   virtual void addCylinder( ConstCylinderID               cylinder ) = 0;
+   virtual void addInnerCylinder( ConstInnerCylinderID     cylinder ) = 0;
+   virtual void addPlane   ( ConstPlaneID                  plane    ) = 0;
+   virtual void addMesh    ( ConstTriangleMeshID           mesh     ) = 0;
+   virtual void addSpring  ( ConstSpringID                 spring   ) = 0;
    //@}
    //**********************************************************************************************
 
    //**Remove functions****************************************************************************
    /*!\name Remove functions */
    //@{
-   virtual void removeSphere  ( ConstSphereID       sphere   ) = 0;
-   virtual void removeBox     ( ConstBoxID          box      ) = 0;
-   virtual void removeCapsule ( ConstCapsuleID      capsule  ) = 0;
-   virtual void removeCylinder( ConstCylinderID     cylinder ) = 0;
-   virtual void removePlane   ( ConstPlaneID        plane    ) = 0;
-   virtual void removeMesh    ( ConstTriangleMeshID mesh     ) = 0;
-   virtual void removeSpring  ( ConstSpringID       spring   ) = 0;
+   virtual void removeSphere  ( ConstSphereID                 sphere   ) = 0;
+   virtual void removeBox     ( ConstBoxID                    box      ) = 0;
+   virtual void removeCapsule ( ConstCapsuleID                capsule  ) = 0;
+   virtual void removeCylinder( ConstCylinderID               cylinder ) = 0;
+   virtual void removeInnerCylinder( ConstInnerCylinderID     cylinder ) = 0;
+   virtual void removePlane   ( ConstPlaneID                  plane    ) = 0;
+   virtual void removeMesh    ( ConstTriangleMeshID           mesh     ) = 0;
+   virtual void removeSpring  ( ConstSpringID                 spring   ) = 0;
    //@}
    //**********************************************************************************************
 
    //**Handle functions****************************************************************************
    /*!\name Handle functions */
    //@{
-   virtual void changeSphereVisibility  ( ConstSphereID       sphere   );
-   virtual void changeBoxVisibility     ( ConstBoxID          box      );
-   virtual void changeCapsuleVisibility ( ConstCapsuleID      capsule  );
-   virtual void changeCylinderVisibility( ConstCylinderID     cylinder );
-   virtual void changePlaneVisibility   ( ConstPlaneID        plane    );
-   virtual void changeMeshVisibility    ( ConstTriangleMeshID mesh     );
-   virtual void changeSpringVisibility  ( ConstSpringID       spring   );
+   virtual void changeSphereVisibility  ( ConstSphereID                 sphere   );
+   virtual void changeBoxVisibility     ( ConstBoxID                    box      );
+   virtual void changeCapsuleVisibility ( ConstCapsuleID                capsule  );
+   virtual void changeCylinderVisibility( ConstCylinderID               cylinder );
+   virtual void changeInnerCylinderVisibility( ConstInnerCylinderID     cylinder );
+   virtual void changePlaneVisibility   ( ConstPlaneID                  plane    );
+   virtual void changeMeshVisibility    ( ConstTriangleMeshID           mesh     );
+   virtual void changeSpringVisibility  ( ConstSpringID                 spring   );
    //@}
    //**********************************************************************************************
 
@@ -179,6 +186,8 @@ protected:
    static inline Capsules::Iterator  endCapsules();
    static inline Cylinders::Iterator beginCylinders();
    static inline Cylinders::Iterator endCylinders();
+   static inline InnerCylinders::Iterator beginInnerCylinders();
+   static inline InnerCylinders::Iterator endInnerCylinders();
    static inline Planes::Iterator    beginPlanes();
    static inline Planes::Iterator    endPlanes();
    static inline Meshes::Iterator    beginMeshes();
@@ -197,6 +206,7 @@ private:
    static Boxes boxes_;          //!< The registered visible boxes.
    static Capsules capsules_;    //!< The registered visible capsules.
    static Cylinders cylinders_;  //!< The registered visible cylinders.
+   static InnerCylinders innerCylinders_;  //!< The registered visible cylinders.
    static Planes planes_;        //!< The registered visible planes.
    static Meshes meshes_;        //!< The registered visible triangle meshes.
    static Springs springs_;      //!< The registered visible springs.

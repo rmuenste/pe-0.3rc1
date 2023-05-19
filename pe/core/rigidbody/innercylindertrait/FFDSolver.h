@@ -20,8 +20,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_CYLINDERTRAIT_FFDSOLVER_H_
-#define _PE_CORE_RIGIDBODY_CYLINDERTRAIT_FFDSOLVER_H_
+#ifndef _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_FFDSOLVER_H_
+#define _PE_CORE_RIGIDBODY_INNERCYLINDERTRAIT_FFDSOLVER_H_
 
 
 //*************************************************************************************************
@@ -29,7 +29,7 @@
 //*************************************************************************************************
 
 #include <pe/core/rigidbody/InnerCylinderBase.h>
-#include <pe/core/rigidbody/cylindertrait/Default.h>
+#include <pe/core/rigidbody/innercylindertrait/Default.h>
 #include <pe/core/response/Types.h>
 #include <pe/core/Settings.h>
 #include <pe/core/Types.h>

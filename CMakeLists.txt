@@ -428,12 +428,6 @@ IF( EXAMPLES )
       SET_TARGET_PROPERTIES( mpistair PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpistair/ )
       SET_TARGET_PROPERTIES( mpistair PROPERTIES OUTPUT_NAME mpistair )
 
-      # MPI-Well example
-      ADD_EXECUTABLE( mpiwell examples/mpiwell/MPIWell.cpp )
-      FILE( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpiwell )
-      SET_TARGET_PROPERTIES( mpiwell PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpiwell/ )
-      SET_TARGET_PROPERTIES( mpiwell PROPERTIES OUTPUT_NAME mpiwell )
-
       # MPI-Impact example
       ADD_EXECUTABLE( mpiimpact examples/mpiimpact/MPIImpact.cpp )
       FILE( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpiimpact )
@@ -449,7 +443,6 @@ IF( EXAMPLES )
          ADD_DEPENDENCIES( mpilss       pe_static )
          ADD_DEPENDENCIES( mpinano      pe_static )
          ADD_DEPENDENCIES( mpistair     pe_static )
-         ADD_DEPENDENCIES( mpiwell      pe_static )
          ADD_DEPENDENCIES( mpiimpact    pe_static )
       ELSE()
          ADD_DEPENDENCIES( mpicube      pe_shared )

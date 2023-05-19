@@ -29,7 +29,7 @@
 //*************************************************************************************************
 
 #include <cmath>
-#include <pe/core/rigidbody/CylinderBase.h>
+#include <pe/core/rigidbody/InnerCylinderBase.h>
 #include <pe/core/rigidbody/cylindertrait/Default.h>
 #include <pe/core/response/Types.h>
 #include <pe/core/Settings.h>

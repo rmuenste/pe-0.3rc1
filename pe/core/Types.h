@@ -51,6 +51,7 @@ class ForceGenerator;
 class GeomPrimitive;
 class Gravity;
 class HingeJoint;
+class InnerCylinder;
 class Joint;
 class Link;
 class Material;
@@ -319,6 +320,7 @@ typedef const Contact*  ConstContactID;
  * the pe::ConstCylinderID handle refers to a constant cylinder primitive.
  */
 typedef Cylinder*  CylinderID;
+typedef InnerCylinder*  InnerCylinderID;
 //*************************************************************************************************
 
 
@@ -354,6 +356,7 @@ typedef Cylinder*  CylinderID;
  * the pe::CylinderID handle refers to a non-constant cylinder primitive.
  */
 typedef const Cylinder*  ConstCylinderID;
+typedef const InnerCylinder*  ConstInnerCylinderID;
 //*************************************************************************************************
 
 

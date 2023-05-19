@@ -1238,7 +1238,7 @@ void InnerCylinder::print( std::ostream& os, const char* tab ) const
    // part of the entire simulation. The function returns a handle to the newly created
    // cylinder, which can be used to for instance rotate the cylinder around the global
    // y-axis.
-   InnerCylinderID cylinder = createCylinder( 1, Vec3( 2.0, 3.0, 4.0 ), 0.9, 2.5, iron );
+   InnerCylinderID cylinder = createInnerCylinder( 1, Vec3( 2.0, 3.0, 4.0 ), 0.9, 2.5, iron );
    cylinder->rotate( 0.0, PI/3.0, 0.0 );
    \endcode
 
@@ -1253,7 +1253,7 @@ void InnerCylinder::print( std::ostream& os, const char* tab ) const
       // (-1,4,-5). Since the cylinder is created inside a pe_CREATE_UNION section, the cylinder
       // is directly added to the union 'newunion' and is henceforth considered to be part
       // of the union.
-      createCylinder( 2, Vec3( -1.0, 4.0, -5.0 ), 1.3, 2.4, iron );
+      createInnerCylinder( 2, Vec3( -1.0, 4.0, -5.0 ), 1.3, 2.4, iron );
       ...
    }
    \endcode
@@ -1263,7 +1263,7 @@ void InnerCylinder::print( std::ostream& os, const char* tab ) const
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-PE_PUBLIC InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radius,
+PE_PUBLIC InnerCylinderID createInnerCylinder( id_t uid, const Vec3& gpos, real radius,
                            real length, MaterialID material, bool visible )
 {
    const bool global( GlobalSection::isActive() );
@@ -1334,7 +1334,7 @@ PE_PUBLIC InnerCylinderID createCylinder( id_t uid, const Vec3& gpos, real radiu
  * MPI process. This function must NOT be called explicitly, but is reserved for internal
  * use only!
  */
-InnerCylinderID instantiateCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
+InnerCylinderID instantiateInnerCylinder( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
                                 real radius, real length, MaterialID material, bool visible, bool fixed, bool reg )
 {
    // Checking the radius and the length

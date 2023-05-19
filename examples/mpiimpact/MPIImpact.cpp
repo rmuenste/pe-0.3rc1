@@ -56,17 +56,18 @@ using boost::filesystem::path;
 
 
 // Assert statically that only DEM solvers or a hard contact solver is used since parameters are tuned for it.
-#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C, D) typedef \
+#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C, D, E) typedef \
    pe::CONSTRAINT_TEST< \
       pe::CONSTRAINT_MUST_BE_SAME_TYPE_FAILED< \
-         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value | pe::IsSame<A,D>::value \
+         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value | pe::IsSame<A,D>::value | pe::IsSame<A,E>::value \
       >::value > \
    pe_JOIN( CONSTRAINT_MUST_BE_SAME_TYPE_TYPEDEF, __LINE__ );
 
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::DEMSolverObsolete>::Config TargetConfig1;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config         TargetConfig2;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::DEMSolver>::Config         TargetConfig3;
-pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2, TargetConfig3);
+typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config         TargetConfig4;
+pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig1, TargetConfig2, TargetConfig3, TargetConfig4);
 
 
 
