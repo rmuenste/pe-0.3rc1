@@ -1406,7 +1406,7 @@ std::ostream& operator<<( std::ostream& os, const InnerCylinder& c )
  * \param c Constant cylinder handle.
  * \return Reference to the output stream.
  */
-std::ostream& operator<<( std::ostream& os, ConstCylinderID c )
+std::ostream& operator<<( std::ostream& os, ConstInnerCylinderID c )
 {
    os << "--" << pe_BROWN << "CYLINDER PARAMETERS" << pe_OLDCOLOR
       << "-----------------------------------------------------------\n";

@@ -324,6 +324,25 @@ void Visualization::remove( ConstCylinderID cylinder )
 
 
 //*************************************************************************************************
+/*!\brief Deregistration function for a cylinder.
+ *
+ * \param cylinder The cylinder to be deregistered from visualization.
+ * \return void
+ */
+void Visualization::remove( ConstInnerCylinderID cylinder )
+{
+   InnerCylinders::Iterator pos( std::find( innerCylinders_.begin(), innerCylinders_.end(), cylinder ) );
+   pe_INTERNAL_ASSERT( pos != innerCylinders_.end(), "Cylinder is not registered for visualization" );
+   innerCylinders_.erase( pos );
+
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->removeInnerCylinder( cylinder );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Deregistration function for a plane.
  *
  * \param plane The plane to be deregistered from visualization.

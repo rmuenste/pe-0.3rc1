@@ -100,7 +100,7 @@ public:
    template< typename CC > static        void collideSphereBox            ( SphereID s   , BoxID b      , CC& contacts );
    template< typename CC > static        void collideSphereCapsule        ( SphereID s   , CapsuleID c  , CC& contacts );
    template< typename CC > static        void collideSphereCylinder       ( SphereID s   , CylinderID c , CC& contacts );
-   template< typename CC > static        void collideSphereInnerCylinder  ( SphereID s   , CylinderID c , CC& contacts );
+   template< typename CC > static        void collideSphereInnerCylinder  ( SphereID s   , InnerCylinderID c , CC& contacts );
    template< typename CC > static inline void collideSpherePlane          ( SphereID s   , PlaneID p    , CC& contacts );
    template< typename CC > static        void collideSphereTMesh          ( SphereID s   , TriangleMeshID m     , CC& contacts );
    template< typename CC > static inline void collideSphereUnion          ( SphereID s   , UnionID u    , CC& contacts );
@@ -794,6 +794,73 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
 //            << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";
 //      }
 //   }
+   Rot3 R1( c->getRotation() );
+   R1.transpose();
+
+   // Position of sphere in cylinder frame
+   const Vec3 localCenter( R1 * c->getPosition());
+   const Vec3 localSphereCenter( R1 * s->getPosition());
+   const Vec3 rPos( R1 * (s->getPosition() - c->getPosition()) );
+   const Vec3 r2Pos( R1 * s->getPosition() );
+
+   // vLocal = rPos
+   real dist2 = std::sqrt(rPos[1] * rPos[1] + rPos[2] * rPos[2]);
+   normal = Vec3(0, rPos[1], rPos[2]);
+   normal.normalize();
+
+   real dist = c->getRadius() - ( dist2 + s->getRadius() );
+   std::cout << "Distance to outer cylinder: " << dist << " " << rPos << std::endl;
+   if( dist < contactThreshold ) {
+
+     const real k( dist2 + s->getRadius() + real(0.5) * dist );
+     Vec3 cPos = Vec3(r2Pos[0], 0, 0);
+
+     // lPos is the local position of the contact
+     const Vec3 lPos( cPos + normal * k );
+     normal = -(c->getRotation() * normal);
+     contactPoint = c->getRotation() * lPos;
+
+     // Negative dist mean penetration
+     contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
+   }
+
+   real hlength = c->getLength() * real(0.5);
+
+   //distance to bottom, check if sphere is closer to bottom
+   if(rPos[0] <= 0.0) {
+     dist = hlength + (rPos[0] - s->getRadius());
+
+     if( dist < contactThreshold ) {
+       normal = Vec3(1, 0, 0);
+       contactPoint = Vec3(0.5 * dist, rPos[1], rPos[2]);
+
+       // Transform to world frame
+       normal = c->getRotation() * normal;
+       contactPoint = c->getRotation() * contactPoint;
+
+       contacts.addVertexFaceContact(s, c, contactPoint, normal, dist);
+     }
+     std::cout << "Distance to outer cylinder bottom: " << dist << std::endl;
+   }
+
+   //distance to top, check if sphere is closer to top
+   if( rPos[0] > 0.0) {
+
+     dist = hlength - (rPos[0] + s->getRadius());
+
+     if( dist < contactThreshold ) {
+       normal = Vec3(-1, 0, 0);
+       contactPoint = Vec3(c->getLength() + 0.5 * dist, r2Pos[1], r2Pos[2]);
+
+       // Transform to world frame
+       normal = c->getRotation() * normal;
+       contactPoint = c->getRotation() * contactPoint;
+
+       contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
+     }
+     std::cout << "Distance to outer cylinder top: " << dist << std::endl;
+   }
+
 }
 //*************************************************************************************************
 //*************************************************************************************************

@@ -66,7 +66,7 @@ namespace pe {
  */
 InnerCylinderBase::InnerCylinderBase( id_t sid, id_t uid, const Vec3& gpos, real radius,
                             real length, MaterialID material, bool visible )
-   : GeomPrimitive( cylinderType, true, visible, sid, uid, material )  // Initializing the base object
+   : GeomPrimitive( innerCylinderType, true, visible, sid, uid, material )  // Initializing the base object
    , radius_(radius)                                                   // Radius of the cylinder
    , length_(length)                                                   // Length of the cylinder
 {

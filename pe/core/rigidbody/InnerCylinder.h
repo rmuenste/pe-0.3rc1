@@ -496,7 +496,7 @@ inline size_t polymorphicCount<InnerCylinder>( RigidBody *const * first,
 
    size_t count( 0 );
    for( RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -523,7 +523,7 @@ inline size_t polymorphicCount<const InnerCylinder>( RigidBody *const * first,
 
    size_t count( 0 );
    for( RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -550,7 +550,7 @@ inline size_t polymorphicCount<InnerCylinder>( const RigidBody *const * first,
 
    size_t count( 0 );
    for( const RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -577,7 +577,7 @@ inline size_t polymorphicCount<const InnerCylinder>( const RigidBody *const * fi
 
    size_t count( 0 );
    for( const RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -604,7 +604,7 @@ inline size_t polymorphicCount<InnerCylinder>( GeomPrimitive *const * first,
 
    size_t count( 0 );
    for( GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -631,7 +631,7 @@ inline size_t polymorphicCount<const InnerCylinder>( GeomPrimitive *const * firs
 
    size_t count( 0 );
    for( GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -658,7 +658,7 @@ inline size_t polymorphicCount<InnerCylinder>( const GeomPrimitive *const * firs
 
    size_t count( 0 );
    for( const GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -685,7 +685,7 @@ inline size_t polymorphicCount<const InnerCylinder>( const GeomPrimitive *const 
 
    size_t count( 0 );
    for( const GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == cylinderType ) ++count;
+      if( (*it)->getType() == innerCylinderType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -718,7 +718,7 @@ inline RigidBody *const * polymorphicFind<InnerCylinder>( RigidBody *const * fir
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, RigidBody );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -743,7 +743,7 @@ inline RigidBody *const * polymorphicFind<const InnerCylinder>( RigidBody *const
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, RigidBody );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -768,7 +768,7 @@ inline const RigidBody *const * polymorphicFind<InnerCylinder>( const RigidBody 
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, const RigidBody );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -793,7 +793,7 @@ inline const RigidBody *const * polymorphicFind<const InnerCylinder>( const Rigi
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, const RigidBody );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -818,7 +818,7 @@ inline GeomPrimitive *const * polymorphicFind<InnerCylinder>( GeomPrimitive *con
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, GeomPrimitive );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -843,7 +843,7 @@ inline GeomPrimitive *const * polymorphicFind<const InnerCylinder>( GeomPrimitiv
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, GeomPrimitive );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -868,7 +868,7 @@ inline const GeomPrimitive *const * polymorphicFind<InnerCylinder>( const GeomPr
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( InnerCylinder, const GeomPrimitive );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -893,7 +893,7 @@ inline const GeomPrimitive *const * polymorphicFind<const InnerCylinder>( const 
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const InnerCylinder, const GeomPrimitive );
 
-   while( first != last && (*first)->getType() != cylinderType ) ++first;
+   while( first != last && (*first)->getType() != innerCylinderType ) ++first;
    return first;
 }
 /*! \endcond */
