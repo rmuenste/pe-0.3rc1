@@ -809,7 +809,6 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
    normal.normalize();
 
    real dist = c->getRadius() - ( dist2 + s->getRadius() );
-   std::cout << "Distance to outer cylinder: " << dist << " " << rPos << std::endl;
    if( dist < contactThreshold ) {
 
      const real k( dist2 + s->getRadius() + real(0.5) * dist );
@@ -826,7 +825,6 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
 
    real hlength = c->getLength() * real(0.5);
 
-   //distance to bottom, check if sphere is closer to bottom
    if(rPos[0] <= 0.0) {
      dist = hlength + (rPos[0] - s->getRadius());
 
@@ -840,10 +838,8 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
 
        contacts.addVertexFaceContact(s, c, contactPoint, normal, dist);
      }
-     std::cout << "Distance to outer cylinder bottom: " << dist << std::endl;
    }
 
-   //distance to top, check if sphere is closer to top
    if( rPos[0] > 0.0) {
 
      dist = hlength - (rPos[0] + s->getRadius());
@@ -858,7 +854,6 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
 
        contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
      }
-     std::cout << "Distance to outer cylinder top: " << dist << std::endl;
    }
 
 }

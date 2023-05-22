@@ -129,7 +129,7 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0,-1.0 );
+   world->setGravity( 0.0, 0.0, 1.0 );
 
    // Setup of the metal sphere
    SphereID s = createSphere( ++id, -0.3, 0.0, 0.2, 0.05, iron );
