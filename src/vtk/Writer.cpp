@@ -475,11 +475,11 @@ void Writer::addPlane( ConstPlaneID /*plane*/ )
  * \param mesh The triangle mesh to be registered.
  * \return void
  */
-void Writer::addMesh( ConstTriangleMeshID /*mesh*/ )
+void Writer::addMesh( ConstTriangleMeshID mesh )
 {
    // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
    // have to be registered.
-   return;
+   meshes_.pushBack(mesh);
 }
 //*************************************************************************************************
 
@@ -619,10 +619,17 @@ void Writer::removePlane( ConstPlaneID /*plane*/ )
  * \param mesh The triangle mesh to be removed.
  * \return void
  */
-void Writer::removeMesh( ConstTriangleMeshID /*mesh*/ )
+void Writer::removeMesh( ConstTriangleMeshID mesh )
 {
    // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
    // have to be deregistered.
+	for( Meshes::Iterator pos=meshes_.begin(); pos!=meshes_.end(); ++pos ) {
+	   if( *pos == mesh ) {
+	      meshes_.erase( pos );
+	      return;
+	   }
+	}
+	pe_INTERNAL_ASSERT( false, "Mesh is not registered for the VTK visualization" );
    return;
 }
 //*************************************************************************************************
@@ -2127,6 +2134,87 @@ void Writer::writeCapsuleDataBinary(std::ostream& out) const {
    out << " </UnstructuredGrid>\n";
    out << "</VTKFile>\n";
 }
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+void Writer::writeMeshDataAscii(std::ostream& out) const {
+//   // Function to write a vector of doubles to the .vtu file
+//   void writeDoubles(std::ofstream& file, const std::vector<double>& data, const std::string& name, int numComponents) {
+//      file << "    <DataArray type=\"Float64\" Name=\"" << name << "\" NumberOfComponents=\"" << numComponents << "\" format=\"ascii\">\n";
+//      for (size_t i = 0; i < data.size(); ++i) {
+//         file << "      " << data[i] << "\n";
+//      }
+//      file << "    </DataArray>\n";
+//   }
+//
+//   // Function to write a vector of integers to the .vtu file
+//   void writeIntegers(std::ofstream& file, const std::vector<int>& data, const std::string& name, int numComponents) {
+//      file << "    <DataArray type=\"Int32\" Name=\"" << name << "\" NumberOfComponents=\"" << numComponents << "\" format=\"ascii\">\n";
+//      for (size_t i = 0; i < data.size(); ++i) {
+//         file << "      " << data[i] << "\n";
+//      }
+//      file << "    </DataArray>\n";
+//   }
+//
+//   // Open the output file
+//   std::ofstream outfile("mesh.vtu");
+//   if (!outfile.is_open()) {
+//       std::cerr << "Failed to open the output file." << std::endl;
+//       return 1;
+//   }
+
+   out << "<?xml version=\"1.0\"?>\n";
+   out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
+   out << " <UnstructuredGrid>\n";
+   out << "  <Piece NumberOfPoints=\"" << capsules_.size() * 2 * pointsoncircle + capsules_.size() * (2. * 65) <<
+        "\" NumberOfCells=\"" << capsules_.size() * (2 * pointsoncircle + 224)  << "\">\n";
+   out << "   <Points>\n";
+   out << "    <DataArray type=\"" << "Float32" <<
+        "\" NumberOfComponents=\"" << 3 <<
+        "\" format=\"ascii\">\n";
+
+   for (Meshes::ConstIterator m = meshes_.begin(); m != meshes_.end(); ++m) {
+   }
+
+   // Write the file header
+   out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
+   out << "  <UnstructuredGrid>\n";
+
+   // Write the points
+   out << "    <Piece NumberOfPoints=\"" << coordinates.size() / 3 << "\" NumberOfCells=\"" << faceIndices.size() / 3 << "\">\n";
+   out << "      <Points>\n";
+   writeDoubles(outfile, coordinates, "Coordinates", 3);
+   out << "      </Points>\n";
+
+   // Write the cells
+   out << "      <Cells>\n";
+   writeIntegers(outfile, faceIndices, "Connectivity", 3);
+   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 3), "Offsets", 1);
+   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 5), "Types", 1);
+   out << "      </Cells>\n";
+
+   // Write the cell data (if any)
+
+   out << "    </Piece>\n";
+   out << "  </UnstructuredGrid>\n";
+   out << "</VTKFile>\n";
+
+//   // Close the output file
+//   outfile.close();
+
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+void Writer::writeMeshDataBinary(std::ostream& out) const {
+}
+//*************************************************************************************************
+
+//   virtual void writeMeshDataAscii(std::ostream& out) const;
+//   virtual void writeMeshDataBinary(std::ostream& out) const;
+
 //=================================================================================================
 //
 //  OUTPUT FUNCTIONS

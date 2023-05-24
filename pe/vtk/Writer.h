@@ -141,6 +141,7 @@ private:
    virtual void writeSpheres(const boost::filesystem::path& filename) const;
    virtual void writeBoxes(const boost::filesystem::path& filename) const;
    virtual void writeCapsules(const boost::filesystem::path& filename) const;
+   virtual void writeMeshes(const boost::filesystem::path& filename) const;
 
    virtual void writeSphereDataAscii(std::ostream& out) const;
    virtual void writeSphereDataBinary(std::ostream& out) const;
@@ -150,6 +151,9 @@ private:
 
    virtual void writeCapsuleDataAscii(std::ostream& out) const;
    virtual void writeCapsuleDataBinary(std::ostream& out) const;
+
+   virtual void writeMeshDataAscii(std::ostream& out) const;
+   virtual void writeMeshDataBinary(std::ostream& out) const;
    //@}
    //**********************************************************************************************
 

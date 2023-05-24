@@ -94,13 +94,13 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 60000 );  // Total number of time steps
-   const unsigned int visspacing(   400 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int timesteps ( 1    );  // Total number of time steps
+   const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
-   bool povray  ( false );
+   bool povray  ( true );
    bool irrlicht( false );
    bool vtk( true );
 
@@ -134,16 +134,19 @@ int main( int argc, char* argv[] )
    // Setup of the ground plane
    PlaneID plane = createPlane( 0, 0.0, 0.0, 1.0, 0.0, granite );
 
-   TriangleMeshID meshSphere = createTriangleMesh(++id, Vec3(0, 0, 1.5), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+   TriangleMeshID meshSphere = createTriangleMesh(++id, Vec3(0, 0, 1.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+   meshSphere->setFixed(true);
+   std::cout << "Number of vertices: " << meshSphere->getWFVertices().size() << std::endl;
+   
 
    // Setup of the metal sphere
-   SphereID s = createSphere( ++id, 0.0, -25.0, 7.5, 1.5, iron );
-   s->setLinearVel( 0.0, 5.5, 0.1 );
+   SphereID s = createSphere( ++id, 0.0, 0.0, 3.0, 0.1, iron );
+   s->setLinearVel( 0.0, 0.0, -0.1 );
 
 
    // Setup of the VTK visualization
    if( vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", 400, 0, timesteps, false);
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
    }
 
 
@@ -185,16 +188,17 @@ int main( int argc, char* argv[] )
       }
 
       // Setting the sphere texture
-      pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
+//      pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
    }
 
    // Simulation loop
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
 
-   for( unsigned int timestep=0; timestep < timesteps; ++timestep ) {
+   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-      world->simulationStep( 0.0004 );
+      world->simulationStep( 0.004 );
+      std::cout << "[particle position]: " << s->getPosition() << std::endl;
    }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"
