@@ -4,6 +4,7 @@
  *  \brief OpenDX file writer for the OpenDX visualization
  *
  *  Copyright (C) 2009 Klaus Iglberger
+ *  Copyright (C) 2023 Raphael Münster
  *
  *  This file is part of pe.
  *
@@ -106,28 +107,30 @@ private:
    //**Add functions*******************************************************************************
    /*!\name Add functions */
    //@{
-   virtual void addSphere  ( ConstSphereID       sphere   );
-   virtual void addBox     ( ConstBoxID          box      );
-   virtual void addCapsule ( ConstCapsuleID      capsule  );
-   virtual void addCylinder( ConstCylinderID     cylinder );
-   virtual void addInnerCylinder( ConstInnerCylinderID     cylinder );
-   virtual void addPlane   ( ConstPlaneID        plane    );
-   virtual void addMesh    ( ConstTriangleMeshID mesh     );
-   virtual void addSpring  ( ConstSpringID       spring   );
+   virtual void addSphere       ( ConstSphereID        sphere   );
+   virtual void addBox          ( ConstBoxID           box      );
+   virtual void addCapsule      ( ConstCapsuleID       capsule  );
+   virtual void addCylinder     ( ConstCylinderID      cylinder );
+   virtual void addInnerCylinder( ConstInnerCylinderID cylinder );
+   virtual void addPlane        ( ConstPlaneID         plane    );
+   virtual void addMesh         ( ConstTriangleMeshID  mesh     );
+   virtual void addInnerMesh    ( ConstInnerMeshID     mesh     );
+   virtual void addSpring       ( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 
    //**Remove functions****************************************************************************
    /*!\name Remove functions */
    //@{
-   virtual void removeSphere  ( ConstSphereID       sphere   );
-   virtual void removeBox     ( ConstBoxID          box      );
-   virtual void removeCapsule ( ConstCapsuleID      capsule  );
-   virtual void removeCylinder( ConstCylinderID     cylinder );
-   virtual void removeInnerCylinder( ConstInnerCylinderID     cylinder );
-   virtual void removePlane   ( ConstPlaneID        plane    );
-   virtual void removeMesh    ( ConstTriangleMeshID mesh     );
-   virtual void removeSpring  ( ConstSpringID       spring   );
+   virtual void removeSphere       ( ConstSphereID        sphere   );
+   virtual void removeBox          ( ConstBoxID           box      );
+   virtual void removeCapsule      ( ConstCapsuleID       capsule  );
+   virtual void removeCylinder     ( ConstCylinderID      cylinder );
+   virtual void removeInnerCylinder( ConstInnerCylinderID cylinder );
+   virtual void removePlane        ( ConstPlaneID         plane    );
+   virtual void removeMesh         ( ConstTriangleMeshID  mesh     );
+   virtual void removeInnerMesh    ( ConstInnerMeshID     mesh     );
+   virtual void removeSpring       ( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 

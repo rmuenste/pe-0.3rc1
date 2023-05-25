@@ -43,6 +43,7 @@
 #include <pe/core/MPI.h>
 #include <pe/core/rigidbody/Sphere.h>
 #include <pe/core/rigidbody/Box.h>
+#include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/Serialization.h>
 #include <pe/core/TimeStep.h>
 #include <pe/math/Vector3.h>
@@ -485,6 +486,21 @@ void Writer::addMesh( ConstTriangleMeshID mesh )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single triangle mesh for the VTK visualization.
+ *
+ * \param mesh The triangle mesh to be registered.
+ * \return void
+ */
+void Writer::addInnerMesh( ConstInnerMeshID mesh )
+{
+   // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
+   // have to be registered.
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single spring for the VTK visualization.
  *
  * \param spring The spring to be registered.
@@ -630,6 +646,21 @@ void Writer::removeMesh( ConstTriangleMeshID mesh )
 	   }
 	}
 	pe_INTERNAL_ASSERT( false, "Mesh is not registered for the VTK visualization" );
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single triangle mesh from the VTK visualization.
+ *
+ * \param mesh The triangle mesh to be removed.
+ * \return void
+ */
+void Writer::removeInnerMesh( ConstInnerMeshID mesh )
+{
+   // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
+   // have to be deregistered.
    return;
 }
 //*************************************************************************************************
@@ -1589,6 +1620,9 @@ void Writer::writeBoxDataBinary(std::ostream& out) const {
    out << "</VTKFile>\n";
 }
 //*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Visualizing the current state of the registered spheres.
  *
  * \return void
@@ -1681,7 +1715,34 @@ void Writer::writeCapsules(const boost::filesystem::path& filename) const
 //*************************************************************************************************
 
 
+//*************************************************************************************************
+/*!\brief Visualizing the current state of the registered spheres.
+ *
+ * \return void
+ *
+ * This function creates a new file containing the sphere data of the current timestep
+ */
+void Writer::writeMeshes(const boost::filesystem::path& filename) const
+{
+      using namespace boost::filesystem;
+      using boost::lexical_cast;
 
+      // Checking if the function is called inside an exclusive section
+      if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
+         throw std::runtime_error( "Invalid function call inside exclusive section" );
+      }
+
+      // Determining the directory and the filename for the POV-Ray visualization
+      const path directory( filename.parent_path() );
+      const path file     ( filename.filename()    );
+
+      // Checking the directory and the filename
+      if( !directory.empty() && !exists( directory ) )
+         throw std::runtime_error( "Directory for VTK-Ray files does not exist" );
+      if( file.empty() )
+         throw std::runtime_error( "Invalid file name" );
+}
+//*************************************************************************************************
 
 //*************************************************************************************************
 void Writer::writeCapsuleDataAscii(std::ostream& out) const {
@@ -2164,11 +2225,18 @@ void Writer::writeMeshDataAscii(std::ostream& out) const {
 //       return 1;
 //   }
 
+   int numPoints = 0;
+   int numCells = 0;
+   for (Meshes::ConstIterator m = meshes_.begin(); m != meshes_.end(); ++m) {
+     numPoints += m->getBFVertices().size(); 
+     numCells += m->getFaceIndices().size(); 
+   }
+
    out << "<?xml version=\"1.0\"?>\n";
    out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
    out << " <UnstructuredGrid>\n";
-   out << "  <Piece NumberOfPoints=\"" << capsules_.size() * 2 * pointsoncircle + capsules_.size() * (2. * 65) <<
-        "\" NumberOfCells=\"" << capsules_.size() * (2 * pointsoncircle + 224)  << "\">\n";
+   out << "  <Piece NumberOfPoints=\"" << numPoints <<
+        "\" NumberOfCells=\"" << numCells  << "\">\n";
    out << "   <Points>\n";
    out << "    <DataArray type=\"" << "Float32" <<
         "\" NumberOfComponents=\"" << 3 <<
@@ -2177,21 +2245,14 @@ void Writer::writeMeshDataAscii(std::ostream& out) const {
    for (Meshes::ConstIterator m = meshes_.begin(); m != meshes_.end(); ++m) {
    }
 
-   // Write the file header
-   out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
-   out << "  <UnstructuredGrid>\n";
-
-   // Write the points
-   out << "    <Piece NumberOfPoints=\"" << coordinates.size() / 3 << "\" NumberOfCells=\"" << faceIndices.size() / 3 << "\">\n";
-   out << "      <Points>\n";
-   writeDoubles(outfile, coordinates, "Coordinates", 3);
+   //writeDoubles(outfile, coordinates, "Coordinates", 3);
    out << "      </Points>\n";
 
    // Write the cells
    out << "      <Cells>\n";
-   writeIntegers(outfile, faceIndices, "Connectivity", 3);
-   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 3), "Offsets", 1);
-   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 5), "Types", 1);
+//   writeIntegers(outfile, faceIndices, "Connectivity", 3);
+//   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 3), "Offsets", 1);
+//   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 5), "Types", 1);
    out << "      </Cells>\n";
 
    // Write the cell data (if any)

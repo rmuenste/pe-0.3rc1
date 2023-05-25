@@ -289,6 +289,21 @@ void Writer::addMesh( ConstTriangleMeshID /*mesh*/ )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single triangle mesh for the OpenDX visualization.
+ *
+ * \param mesh The triangle mesh to be registered.
+ * \return void
+ */
+void Writer::addInnerMesh( ConstInnerMeshID /*mesh*/ )
+{
+   // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
+   // have to be registered.
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single spring for the OpenDX visualization.
  *
  * \param spring The spring to be registered.
@@ -412,6 +427,21 @@ void Writer::removePlane( ConstPlaneID /*plane*/ )
  * \return void
  */
 void Writer::removeMesh( ConstTriangleMeshID /*mesh*/ )
+{
+   // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
+   // have to be deregistered.
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single triangle mesh from the OpenDX visualization.
+ *
+ * \param mesh The triangle mesh to be removed.
+ * \return void
+ */
+void Writer::removeInnerMesh( ConstInnerMeshID /*mesh*/ )
 {
    // The Writer is not able to visualize triangle meshes. Therefore the mesh doesn't
    // have to be deregistered.

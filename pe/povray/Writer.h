@@ -100,21 +100,23 @@ private:
    struct CylinderData;
    struct PlaneData;
    struct MeshData;
+   struct InnerMeshData;
    struct SpringData;
    //**********************************************************************************************
 
    //**Type definitions****************************************************************************
    /*! \cond PE_INTERNAL */
-   typedef Vector<std::string>   Includes;      //!< Vector of included files.
-   typedef Vector<Declaration>   Declarations;  //!< Vector for declared POV-Ray identifiers.
-   typedef Vector<LightSource>   LightSources;  //!< Vector of light sources.
-   typedef Vector<SphereData>    Spheres;       //!< Vector of textured spheres.
-   typedef Vector<BoxData>       Boxes;         //!< Vector of textured boxes.
-   typedef Vector<CapsuleData>   Capsules;      //!< Vector of textured capsules.
-   typedef Vector<CylinderData>  Cylinders;     //!< Vector of textured cylinders.
-   typedef Vector<PlaneData>     Planes;        //!< Vector of textured planes.
-   typedef Vector<MeshData>      Meshes;        //!< Vector of textured triangle meshes.
-   typedef Vector<SpringData>    Springs;       //!< Vector of visible springs.
+   typedef Vector<std::string>        Includes;           //!< Vector of included files.
+   typedef Vector<Declaration>        Declarations;       //!< Vector for declared POV-Ray identifiers.
+   typedef Vector<LightSource>        LightSources;       //!< Vector of light sources.
+   typedef Vector<SphereData>         Spheres;            //!< Vector of textured spheres.
+   typedef Vector<BoxData>            Boxes;              //!< Vector of textured boxes.
+   typedef Vector<CapsuleData>        Capsules;           //!< Vector of textured capsules.
+   typedef Vector<CylinderData>       Cylinders;          //!< Vector of textured cylinders.
+   typedef Vector<PlaneData>          Planes;             //!< Vector of textured planes.
+   typedef Vector<MeshData>           Meshes;             //!< Vector of textured triangle meshes.
+   typedef Vector<InnerMeshData>      InnerMeshes;        //!< Vector of textured triangle meshes.
+   typedef Vector<SpringData>         Springs;            //!< Vector of visible springs.
 
    //! Texture policy for the automatic assignment of initial textures.
    typedef std::auto_ptr<TexturePolicy>  Policy;
@@ -180,6 +182,7 @@ public:
                           void setTexture( ConstCylinderID cylinder, const Texture& texture );
                           void setTexture( ConstPlaneID plane, const Texture& texture );
                           void setTexture( ConstTriangleMeshID mesh, const Texture& texture );
+                          void setTexture( ConstInnerMeshID mesh, const Texture& texture );
                           void setTexture( ConstUnionID u, const Texture& texture );
    //@}
    //**********************************************************************************************
@@ -196,28 +199,30 @@ private:
    //**Add functions*******************************************************************************
    /*!\name Add functions */
    //@{
-   virtual void addSphere  ( ConstSphereID       sphere   );
-   virtual void addBox     ( ConstBoxID          box      );
-   virtual void addCapsule ( ConstCapsuleID      capsule  );
-   virtual void addCylinder( ConstCylinderID     cylinder );
-   virtual void addInnerCylinder( ConstInnerCylinderID     cylinder );
-   virtual void addPlane   ( ConstPlaneID        plane    );
-   virtual void addMesh    ( ConstTriangleMeshID mesh     );
-   virtual void addSpring  ( ConstSpringID       spring   );
+   virtual void addSphere       ( ConstSphereID        sphere   );
+   virtual void addBox          ( ConstBoxID           box      );
+   virtual void addCapsule      ( ConstCapsuleID       capsule  );
+   virtual void addCylinder     ( ConstCylinderID      cylinder );
+   virtual void addInnerCylinder( ConstInnerCylinderID cylinder );
+   virtual void addPlane        ( ConstPlaneID         plane    );
+   virtual void addMesh         ( ConstTriangleMeshID  mesh     );
+   virtual void addInnerMesh    ( ConstInnerMeshID     mesh     );
+   virtual void addSpring       ( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 
    //**Remove functions****************************************************************************
    /*!\name Remove functions */
    //@{
-   virtual void removeSphere  ( ConstSphereID       sphere   );
-   virtual void removeBox     ( ConstBoxID          box      );
-   virtual void removeCapsule ( ConstCapsuleID      capsule  );
-   virtual void removeCylinder( ConstCylinderID     cylinder );
-   virtual void removeInnerCylinder( ConstInnerCylinderID     cylinder );
-   virtual void removePlane   ( ConstPlaneID        plane    );
-   virtual void removeMesh    ( ConstTriangleMeshID mesh     );
-   virtual void removeSpring  ( ConstSpringID       spring   );
+   virtual void removeSphere       ( ConstSphereID        sphere   );
+   virtual void removeBox          ( ConstBoxID           box      );
+   virtual void removeCapsule      ( ConstCapsuleID       capsule  );
+   virtual void removeCylinder     ( ConstCylinderID      cylinder );
+   virtual void removeInnerCylinder( ConstInnerCylinderID cylinder );
+   virtual void removePlane        ( ConstPlaneID         plane    );
+   virtual void removeMesh         ( ConstTriangleMeshID  mesh     );
+   virtual void removeInnerMesh    ( ConstInnerMeshID     mesh     );
+   virtual void removeSpring       ( ConstSpringID        spring   );
    //@}
    //**********************************************************************************************
 
@@ -232,13 +237,14 @@ public:
    //**Output functions****************************************************************************
    /*!\name Output functions */
    //@{
-   static void writeSphere  ( std::ostream& os, ConstSphereID       sphere  , const Texture& texture );
-   static void writeBox     ( std::ostream& os, ConstBoxID          box     , const Texture& texture );
-   static void writeCapsule ( std::ostream& os, ConstCapsuleID      capsule , const Texture& texture );
-   static void writeCylinder( std::ostream& os, ConstCylinderID     cylinder, const Texture& texture );
-   static void writePlane   ( std::ostream& os, ConstPlaneID        plane   , const Texture& texture );
-   static void writeMesh    ( std::ostream& os, ConstTriangleMeshID mesh    , const Texture& texture );
-   static void writeSpring  ( std::ostream& os, ConstSpringID       spring                           );
+   static void writeSphere    ( std::ostream& os, ConstSphereID       sphere  , const Texture& texture );
+   static void writeBox       ( std::ostream& os, ConstBoxID          box     , const Texture& texture );
+   static void writeCapsule   ( std::ostream& os, ConstCapsuleID      capsule , const Texture& texture );
+   static void writeCylinder  ( std::ostream& os, ConstCylinderID     cylinder, const Texture& texture );
+   static void writePlane     ( std::ostream& os, ConstPlaneID        plane   , const Texture& texture );
+   static void writeMesh      ( std::ostream& os, ConstTriangleMeshID mesh    , const Texture& texture );
+   static void writeInnerMesh ( std::ostream& os, ConstInnerMeshID mesh       , const Texture& texture );
+   static void writeSpring    ( std::ostream& os, ConstSpringID       spring                           );
    //@}
    //**********************************************************************************************
 
@@ -272,6 +278,7 @@ private:
    Cylinders cylinders_;        //!< Registered capsules for the visualization.
    Planes planes_;              //!< Registered planes for the visualization.
    Meshes meshes_;              //!< Registered triangle meshes for the visualization.
+   InnerMeshes innerMeshes_;    //!< Registered triangle meshes for the visualization.
    Springs springs_;            //!< Registered springs for the visualization.
 
    static bool active_;                 //!< Active flag of the POV-Ray writer.
@@ -533,6 +540,45 @@ private:
    };
    /*! \endcond */
    //**********************************************************************************************
+
+
+   //**Private struct MeshData*********************************************************************
+   /*! \cond PE_INTERNAL */
+   /*!\brief A textured triangle mesh primitive. */
+   struct InnerMeshData
+   {
+    public:
+      //**Constructors*****************************************************************************
+      /*!\name Constructors */
+      //@{
+      explicit inline InnerMeshData( ConstInnerMeshID mesh, const Texture& texture );
+      // No explicitly declared copy constructor.
+      //@}
+      //*******************************************************************************************
+
+      //**Destructor*******************************************************************************
+      // No explicitly declared destructor.
+      //*******************************************************************************************
+
+      //**Copy assignment operator*****************************************************************
+      // No explicitly declared copy assignment operator.
+      //*******************************************************************************************
+
+      //**Member variables*************************************************************************
+      /*!\name Member variables */
+      //@{
+      bool default_;              //!< Default flag.
+                                  /*!< A value of \a true indicates the triangle mesh has not been
+                                       assigned an individual texture. In this case the texture
+                                       policy is applied to give the mesh an appearance. */
+      ConstInnerMeshID mesh_;  //!< Handle for the triangle mesh.
+      Texture texture_;           //!< The texture of the triangle mesh.
+      //@}
+      //*******************************************************************************************
+   };
+   /*! \endcond */
+   //**********************************************************************************************
+
 
    //**Private struct SpringData*******************************************************************
    /*! \cond PE_INTERNAL */

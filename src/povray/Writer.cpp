@@ -112,6 +112,7 @@ Writer::Writer()
    , cylinders_()                   // Registered cylinders
    , planes_()                      // Registered planes
    , meshes_()                      // Registered triangle meshes
+   , innerMeshes_()                 // Registered inner meshes
 {
    // Setting the active flag
    pe_INTERNAL_ASSERT( !active_, "Multiple constructor calls for a singleton class" );
@@ -383,6 +384,19 @@ void Writer::addMesh( ConstTriangleMeshID mesh )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single triangle mesh for the POV-Ray visualization.
+ *
+ * \param mesh The triangle mesh to be registered.
+ * \return void
+ */
+void Writer::addInnerMesh( ConstInnerMeshID mesh )
+{
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single spring for the POV-Ray visualization.
  *
  * \param spring The spring to be registered.
@@ -526,6 +540,19 @@ void Writer::removeMesh( ConstTriangleMeshID mesh )
       }
    }
    pe_INTERNAL_ASSERT( false, "Triangle mesh is not registered for the POV-Ray visualization" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single triangle mesh from the POV-Ray visualization.
+ *
+ * \param mesh The triangle mesh to be removed.
+ * \return void
+ */
+void Writer::removeInnerMesh( ConstInnerMeshID mesh )
+{
+   return;
 }
 //*************************************************************************************************
 
