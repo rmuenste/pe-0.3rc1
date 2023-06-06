@@ -45,15 +45,16 @@ namespace pe {
 //
 //=================================================================================================
 
-Visualization::Viewer    Visualization::viewer_;
-Visualization::Spheres   Visualization::spheres_;
-Visualization::Boxes     Visualization::boxes_;
-Visualization::Capsules  Visualization::capsules_;
-Visualization::Cylinders Visualization::cylinders_;
+Visualization::Viewer         Visualization::viewer_;
+Visualization::Spheres        Visualization::spheres_;
+Visualization::Boxes          Visualization::boxes_;
+Visualization::Capsules       Visualization::capsules_;
+Visualization::Cylinders      Visualization::cylinders_;
 Visualization::InnerCylinders Visualization::innerCylinders_;
-Visualization::Planes    Visualization::planes_;
-Visualization::Meshes    Visualization::meshes_;
-Visualization::Springs   Visualization::springs_;
+Visualization::Planes         Visualization::planes_;
+Visualization::Meshes         Visualization::meshes_;
+Visualization::InnerMeshes    Visualization::innerMeshes_;
+Visualization::Springs        Visualization::springs_;
 
 
 
@@ -223,6 +224,23 @@ void Visualization::add( ConstTriangleMeshID mesh )
 
 
 //*************************************************************************************************
+/*!\brief Registration function for a triangle mesh.
+ *
+ * \param mesh The triangle mesh to be registered for visualization.
+ * \return void
+ */
+void Visualization::add( ConstInnerMeshID mesh )
+{
+   innerMeshes_.pushBack( mesh );
+
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->addInnerMesh( mesh );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registration function for a spring.
  *
  * \param spring The spring to be registered for visualization.
@@ -381,6 +399,25 @@ void Visualization::remove( ConstTriangleMeshID mesh )
 
 
 //*************************************************************************************************
+/*!\brief Deregistration function for a triangle mesh.
+ *
+ * \param mesh The triangle mesh to be deregistered from visualization.
+ * \return void
+ */
+void Visualization::remove( ConstInnerMeshID mesh )
+{
+   InnerMeshes::Iterator pos( std::find( innerMeshes_.begin(), innerMeshes_.end(), mesh ) );
+   pe_INTERNAL_ASSERT( pos != innerMeshes_.end(), "Triangle mesh is not registered for visualization" );
+   innerMeshes_.erase( pos );
+
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->removeInnerMesh( mesh );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Deregistration function for a spring.
  *
  * \param spring The spring to be deregistered from visualization.
@@ -507,6 +544,21 @@ void Visualization::changeVisibility( ConstTriangleMeshID mesh )
 {
    for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
       v->changeMeshVisibility( mesh );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Signaling the change of the visibility of a triangle mesh primitive.
+ *
+ * \param mesh The changed triangle mesh primitive.
+ * \return void
+ */
+void Visualization::changeVisibility( ConstInnerMeshID mesh )
+{
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->changeInnerMeshVisibility( mesh );
    }
 }
 //*************************************************************************************************
@@ -799,6 +851,17 @@ void Visualization::changePlaneVisibility( ConstPlaneID /*plane*/ )
  * \return void
  */
 void Visualization::changeMeshVisibility( ConstTriangleMeshID /*mesh*/ )
+{}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Default implementation of the handle function for visibility changes of triangle meshes.
+ *
+ * \param mesh The changed triangle mesh primitive.
+ * \return void
+ */
+void Visualization::changeInnerMeshVisibility( ConstInnerMeshID /*mesh*/ )
 {}
 //*************************************************************************************************
 

@@ -52,6 +52,7 @@ class GeomPrimitive;
 class Gravity;
 class HingeJoint;
 class InnerCylinder;
+class InnerMesh;
 class Joint;
 class Link;
 class Material;
@@ -949,6 +950,7 @@ typedef const Spring* ConstSpringID;
  * \ingroup core
  */
 typedef TriangleMesh*  TriangleMeshID;
+typedef InnerMesh*  InnerMeshID;
 //*************************************************************************************************
 
 
@@ -957,6 +959,7 @@ typedef TriangleMesh*  TriangleMeshID;
  * \ingroup core
  */
 typedef const TriangleMesh*  ConstTriangleMeshID;
+typedef const InnerMesh*  ConstInnerMeshID;
 //*************************************************************************************************
 
 
