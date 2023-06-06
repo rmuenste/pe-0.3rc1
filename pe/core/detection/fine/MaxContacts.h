@@ -522,6 +522,24 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
          }
          break;
 
+      // Performing a collision test between an innerCylinder and the second rigid body
+      case innerCylinderType:
+         switch( b2->getType() ) {
+            case cylinderType:
+               break;
+            case sphereType:
+               collideSphereInnerCylinder( static_body_cast<Sphere>( b2 ),
+                                           static_body_cast<InnerCylinder>( b1 ), contacts );
+               break;
+            default:
+               std::ostringstream oss;
+               oss << "Unknown body type (" << b2->getType() << ")!";
+               throw std::runtime_error( oss.str() );
+               break;
+         }
+         break;
+
+
       // Treatment of unknown rigid body types
       default:
          std::ostringstream oss;
@@ -756,7 +774,7 @@ void MaxContacts::collideSphereCylinder( SphereID s, CylinderID c, CC& contacts 
       //bodys possibly overlap
       //normal points form object2 (c) to object1 (s)
       contacts.addVertexFaceContact( s, c, contactPoint, normal, penetrationDepth );
-      std::cout << "Penetration depth: " << penetrationDepth << std::endl;
+      //std::cout << "Penetration depth: " << penetrationDepth << std::endl;
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      Contact created between sphere " << s->getID()
             << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";

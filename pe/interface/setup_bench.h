@@ -1,4 +1,12 @@
 #include <pe/interface/decompose.h>
+#include <random>
+
+real generateRandomNumber() {
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<double> dis(0.0, 0.1);
+  return dis(gen);
+}
 
 using namespace pe::povray;
 
@@ -17,7 +25,7 @@ void setupBench(MPI_Comm ex0) {
 
   const real dx( 0.4 );
   const real dy( 0.4 );
-  const real dz( 0.2 );
+  const real dz( 0.1 );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -143,27 +151,123 @@ void setupBench(MPI_Comm ex0) {
   MaterialID myMaterial = createMaterial("Bench", 1.1, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
   real h = 0.0075;
+  //0.015
   real radius2 = 2. * h;
   Vec3 position( 0.25,-0.25, 0.2);
 
-  if (world->ownsPoint( position )) {
-    SphereID sphere = createSphere(idx, position, radius2, myMaterial, true);
-    std::cout << "[particle position]: " << position << std::endl;
-//    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-//    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
-    ++idx;
-  }
+  //=========================================================================================
+
+    const double initialRadius = 0.25;
+    const double distance = 0.03;
+    const int numIterations = 1;
+    const double radiusIncrement = 0.015 + distance;
+    
+    bool resume = true;
+    if(!resume) {
+      for (int iteration = 0; iteration < numIterations; ++iteration) {
+
+        double radius = initialRadius + iteration * radiusIncrement;
+        int numPoints = static_cast<int>(2 * M_PI * radius / distance);
+        double angleIncrement = 2 * M_PI / numPoints;        
+        real pos_z = radius2 + h;
+        real zinc = 2. * radius2 + 0.0015;
+
+        int j = 0;
+        for (; j < 11; ++j) {
+          for (int i = 0; i < numPoints; ++i) {
+            double angle = i * angleIncrement;
+            position[0] = radius * std::cos(angle);
+            position[1] = radius * std::sin(angle);
+            position[2] = pos_z + j * zinc;
+            real r = generateRandomNumber();
+            Vec3 add = r * position;
+            add[2] = 0.0;
+            position += add;
+
+            if (world->ownsPoint( position )) {
+              SphereID sphere = createSphere(idx, position, radius2, myMaterial, true);
+              ++idx;      
+            }
+          }
+        }        
+      }
+    }
+    else {
+      checkpointer.read( "../start.1" );
+    }
+
+  //=========================================================================================
+
+//  const double radius = 0.25;
+//  const double distance = 0.0315;
+//    
+//  int numPoints = static_cast<int>(2 * M_PI * radius / distance);
+//  double angleIncrement = 2 * M_PI / numPoints;
+//        
+//  real pos_z = radius2 + h;
+//  real zinc = 2. * radius2 + 0.0015;
+//
+//  bool resume = false;
+//  if(!resume) {
+//    std::cout << "Total height: " << zinc * 11 << std::endl;
+//    int j = 0;
+//    for (; j < 11; ++j) {
+//      for (int i = 0; i < numPoints; ++i) {
+//          double angle = i * angleIncrement;
+//          position[0] = radius * std::cos(angle);
+//          position[1] = radius * std::sin(angle);
+//          position[2] = pos_z + j * zinc;
+//          
+//          if (world->ownsPoint( position )) {
+//            SphereID sphere = createSphere(idx, position, radius2, myMaterial, true);
+//            ++idx;      
+//          }      
+//          
+//      }
+//    }
+//  }
+//  else {
+//    checkpointer.read( "../start.1" );
+//  }
+//
+//
+//  //=========================================================================================  
+
+//  if (world->ownsPoint( position )) {
+//    SphereID sphere = createSphere(idx, position, radius2, myMaterial, true);
+//    std::cout << "[particle position]: " << position << std::endl;
+////    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
+////    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
+//    ++idx;
+//  }
 
   CylinderID cyl(0);
   pe_GLOBAL_SECTION
   {
-    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.2, 0.8, iron );
+    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.2, 0.4, iron );
     cyl->setFixed(true);
-    cyl->rotate(M_PI/2.0, 0.0, 0.0);
+    cyl->rotate(0.0, M_PI/2.0 , 0.0);
+
+    InnerCylinderID cyl2(0);
+    cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.2, 0.4, 0.4, iron );
+    cyl2->setFixed(true);
+    cyl2->rotate(0.0, M_PI/2.0, 0.0);
   }
 
   // Synchronization of the MPI processes
   world->synchronize();
+
+  const real cylRad1 = 0.2;  
+  const real cylRad2 = 0.4;  
+  const real cylLength  = 0.4;
+
+  real domainVol = M_PI * std::pow(cylRad2, 2) * cylLength;
+  real cylVol = M_PI * std::pow(cylRad1, 2) * cylLength;
+  domainVol -= cylVol;
+  
+
+ 
+  //=========================================================================================  
 
   // Calculating the total number of particles and primitives
   unsigned long particlesTotal ( 0 );
@@ -174,6 +278,11 @@ void setupBench(MPI_Comm ex0) {
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
+  if (resume)
+    particlesTotal = primitivesTotal;
+
+  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
+
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
@@ -181,8 +290,10 @@ void setupBench(MPI_Comm ex0) {
       << " particles x              = " << nx << "\n" 
       << " particles y              = " << ny << "\n" 
       << " particles z              = " << nz << "\n" 
-      << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
+      << " Total particles          = " << particlesTotal << "\n"
+      << " Domain volume            = " << domainVol << "\n"
+      << " Volume fraction[%]       = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
+      << " Total objects            = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 

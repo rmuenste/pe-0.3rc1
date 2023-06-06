@@ -92,6 +92,10 @@ bool overlap_backend( ConstBodyID b1, ConstBodyID b2 )
             case cylinderType:
                return overlapSphereCylinder( static_body_cast<const Sphere>( b1 ),
                                              static_body_cast<const Cylinder>( b2 ) );
+            case innerCylinderType:
+               return overlapSphereCylinder( static_body_cast<const Sphere>( b1 ),
+                                             static_body_cast<const Cylinder>( b2 ) );
+               break;
                break;
             case planeType:
                return overlapSpherePlane( static_body_cast<const Sphere>( b1 ),
@@ -418,6 +422,26 @@ bool overlapSphereCapsule( ConstSphereID s, ConstCapsuleID c )
  * TODO
  */
 bool overlapSphereCylinder( ConstSphereID /*s*/, ConstCylinderID /*c*/ )
+{
+   // TODO: Overlap implementation
+
+   return false;
+}
+//*************************************************************************************************
+
+
+
+//*************************************************************************************************
+/*!\brief Overlap test between a Sphere and a Cylinder.
+ * \ingroup overlap_tests
+ *
+ * \param s The sphere.
+ * \param c The cylinder.
+ * \return \a true if the two rigid bodies are overlapping, \a false if no overlap is detected.
+ *
+ * TODO
+ */
+bool overlapSphereInnerCylinder( ConstSphereID /*s*/, ConstInnerCylinderID /*c*/ )
 {
    // TODO: Overlap implementation
 

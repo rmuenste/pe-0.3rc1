@@ -66,6 +66,7 @@ inline bool overlapSphereSphere    ( ConstSphereID s1  , ConstSphereID s2   );
        bool overlapSphereBox       ( ConstSphereID s   , ConstBoxID b       );
        bool overlapSphereCapsule   ( ConstSphereID s   , ConstCapsuleID c   );
        bool overlapSphereCylinder  ( ConstSphereID s   , ConstCylinderID c  );
+       bool overlapSphereInnerCylinder  ( ConstSphereID s   , ConstInnerCylinderID c  );
 inline bool overlapSpherePlane     ( ConstSphereID s   , ConstPlaneID p     );
 inline bool overlapSphereUnion     ( ConstSphereID s   , ConstUnionID u     );
        bool overlapBoxBox          ( ConstBoxID b1     , ConstBoxID b2      );

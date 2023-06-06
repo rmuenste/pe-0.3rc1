@@ -31,12 +31,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.400 );  // Size of a single time step
+const real   stepsize      (  0.200 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 2 );    // Number of processes in x-direction
 const int    processesY( 2 );    // Number of processes in y-direction
-const int    processesZ( 2 );    // Number of processes in y-direction
+const int    processesZ( 4 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -67,7 +67,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 
 bool g_povray  ( false );
 bool g_vtk( true );
-const unsigned int visspacing( 40 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 20 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -136,14 +136,35 @@ void stepSimulation() {
 #define OUTPUT_LEVEL2
 #ifdef OUTPUT_LEVEL2
   unsigned int i(0);
+  real maxV(0.0);
+  real maxA(0.0);
+  real totalV(0.0);
+  real totalA(0.0);
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
     if(body->getType() == sphereType || body->getType() == capsuleType) {
-      std::cout << "Position: " << body->getSystemID() << body->getPosition()  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " "<< body->getLinearVel()  << " " << timestep * stepsize << std::endl;
-      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+      Vec3 vel = body->getLinearVel();
+      Vec3 ang = body->getAngularVel();
+      real v = vel.length();
+      real a = ang.length();
+      if( maxV <= v) 
+        maxV = v;
+      if( maxA <= a) 
+        maxA = a;
+      
+//      std::cout << "Position: " << body->getSystemID() << body->getPosition()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Velocity: " << body->getSystemID() << " "<< body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+//
     }
+  }
+
+  MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
+  MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "Maximum Vp: " << totalV << std::endl;
+    std::cout << "Maximum Ap: " << totalA << std::endl;
   }
 #endif 
 
