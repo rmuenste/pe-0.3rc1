@@ -238,10 +238,10 @@ void setupBench(MPI_Comm ex0) {
     const double distance = 2.5 * radius2;
     const int numIterations = 3;
     const double radiusIncrement = radius2 + 0.5 * distance;
-    int hZ[] = {5, 9, 9};
+    int hZ[] = {9, 10, 10};
     
     int count(0);
-    bool resume = true;
+    bool resume = false;
     if(!resume) {
       for (int iteration = 0; iteration < numIterations; ++iteration) {
 
