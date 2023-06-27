@@ -261,25 +261,10 @@ void setupBench(MPI_Comm ex0) {
             position[0] = radius * std::cos(angle);
             position[1] = radius * std::sin(angle);
             position[2] = pos_z + j * zinc;
-////            if (i != numPoints -1) {
-//            real r = generateRandomNumber();
-//            Vec3 add = r * position;
-//            add[2] = 0.0;
-//            position += add;
-////            position[0] += r;
-////            r = generateRandomNumber();
-////            position[1] += r;
-////            r = generateRandomNumber();
-////            position[2] += r;
-////            }
-
-
-//            if(count < 112) {
               if (world->ownsPoint( position )) {
                 SphereID sphere = createSphere(idx, position, radius2, myMaterial, true);
                 ++idx;      
               }
-//            }
             count++;
           }
         }        
