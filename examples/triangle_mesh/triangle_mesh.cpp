@@ -94,8 +94,8 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 1    );  // Total number of time steps
-   const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int timesteps ( 3000    );  // Total number of time steps
+   const unsigned int visspacing(   30 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
@@ -124,7 +124,7 @@ int main( int argc, char* argv[] )
 //
 //   if( fileName.empty() ) {
 //     std::cout << "Need to enter a file via the --file command line parameter. Setting a default value." << std::endl;
-     std::string fileName = std::string("sphere.obj");
+     std::string fileName = std::string("schussel.obj");
 //   }
 
    // Simulation world setup
@@ -137,12 +137,10 @@ int main( int argc, char* argv[] )
    TriangleMeshID meshSphere = createTriangleMesh(++id, Vec3(0, 0, 1.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
    meshSphere->setFixed(true);
    std::cout << "Number of vertices: " << meshSphere->getWFVertices().size() << std::endl;
-   
 
    // Setup of the metal sphere
-   SphereID s = createSphere( ++id, 0.0, 0.0, 3.0, 0.1, iron );
-   s->setLinearVel( 0.0, 0.0, -0.1 );
-
+   SphereID s = createSphere( ++id, 0.1, 0.0, 4.0, 0.5, iron );
+   s->setLinearVel( 0.0, 0.0, 0.0 );
 
    // Setup of the VTK visualization
    if( vtk ) {
@@ -163,7 +161,7 @@ int main( int argc, char* argv[] )
 
       // Configuring the POV-Ray camera
       CameraID camera = theCamera();
-      camera->setLocation( 8.0, -25.0, 9.0 );
+      camera->setLocation( 8.0, -25.0, 2.0 );
       camera->setFocus   ( 0.0,   0.0, 7.5 );
 
       // Setting the ground plane texture

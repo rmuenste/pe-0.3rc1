@@ -125,7 +125,7 @@ int main( int argc, char** argv )
    const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 1000 );  // Total number of time steps
+   const size_t timesteps ( 53 );  // Total number of time steps
    const real   stepsize  (  0.005 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
@@ -137,12 +137,13 @@ int main( int argc, char** argv )
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
    const bool spheres     ( false );  // Switch between spheres and granular particles
-   const bool resume     ( false );
+   bool resume     ( false );
 
    //*************************************************************************************************
    // The Checkpointer
    path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
    Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
+   std::string startFile;
 
    /////////////////////////////////////////////////////
    // Initial setups
@@ -153,12 +154,19 @@ int main( int argc, char** argv )
    CommandLineInterface& cli = CommandLineInterface::getInstance();
    cli.getDescription().add_options()
       ("processes", value< std::vector<int> >()->multitoken()->required(), "number of processes in x-, y- and z-dimension")
+      ("startFile", value< std::string >(), "name of the start .peb file")
    ;
    cli.parse( argc, argv );
    cli.evaluateOptions();
    variables_map& vm = cli.getVariablesMap();
+
    if( vm.count( "no-povray" ) > 0 )
       povray = false;
+
+   if( vm.count( "startFile" ) ) {
+     startFile = vm["startFile"].as<std::string>();
+     resume = true;
+   }
 
    const int px( vm[ "processes" ].as< std::vector<int> >()[0] );
    const int py( vm[ "processes" ].as< std::vector<int> >()[1] );
@@ -199,6 +207,7 @@ int main( int argc, char** argv )
 
    WorldID     world     = theWorld();
    world->setGravity( 0.0, 0.0, 0.0 );
+   world->setDamping(0.50);
    MPISystemID mpisystem = theMPISystem();
 
 
@@ -259,14 +268,14 @@ int main( int argc, char** argv )
 
    int idx = 0;
    real h = 0.0075;
-   real radius2 = 0.02;
+   real radius2 = 0.019;
 
-   Vec3 position( 0.25,-0.25, 0.2);
+   Vec3 position( 0.25,-0.25, 0.19);
    const double initialRadius = 0.223;
    const double distance = 2.3 * radius2;
-   const double angDistance = 2.32 * radius2;
+   const double angDistance = 2.4 * radius2;
    const int numIterations = 5;
-   const double radiusIncrement = radius2 + 0.41 * distance;
+   const double radiusIncrement = radius2 + 0.42 * distance;
    int hZ[] = {10, 10, 10, 10, 10};
    
    int count(0);
@@ -277,7 +286,7 @@ int main( int argc, char** argv )
        int numPoints = static_cast<int>(2 * M_PI * radius / angDistance);
        double angleIncrement = 2 * M_PI / numPoints;        
        real pos_z = radius2 + h;
-       real zinc = 2. * radius2 + 0.002;
+       real zinc = 2. * radius2 + 0.001;
 
    pe_EXCLUSIVE_SECTION( 0 ) {
      std::cout << "\n--" << "numPoints" << numPoints << std::endl;
@@ -305,13 +314,26 @@ int main( int argc, char** argv )
     }
     else {
       checkpointer.read( "../start.1" );
+      int i(0);
+      for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+         World::SizeType widx = static_cast<World::SizeType>(i);
+         BodyID body = world->getBody(static_cast<unsigned int>(widx));
+         if(body->getType() == sphereType) {
+            body->setAngularVel(Vec3(0,0,0));
+            body->setLinearVel(Vec3(0,0,0));
+         }
+         else {
+            std::cout << "Found type: " << body->getType() << std::endl;
+         }
+      }
+
     }
 
   //=========================================================================================
   CylinderID cyl(0);
   pe_GLOBAL_SECTION
   {
-    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.19, 0.4, iron );
+    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.20, 0.4, iron );
     cyl->setFixed(true);
     cyl->rotate(0.0, M_PI/2.0 , 0.0);
 
@@ -322,6 +344,7 @@ int main( int argc, char** argv )
   }
   //=========================================================================================
 
+   theCollisionSystem()->setErrorReductionParameter(0.1);
    // Synchronization of the MPI processes
    world->synchronize();
 
@@ -381,9 +404,9 @@ int main( int argc, char** argv )
    simTime.start();
    //world->run( timesteps, stepsize );
 
-   for( unsigned int timestep=0; timestep < timesteps; ++timestep ) {
+   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
      pe_EXCLUSIVE_SECTION( 0 ) {
-      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+      std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
      }
      world->simulationStep( stepsize );
 
