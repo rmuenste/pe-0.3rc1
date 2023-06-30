@@ -235,9 +235,9 @@ int main( int argc, char** argv )
 
 //===========================================================================================================
 
-   const real dx( 0.4 );
-   const real dy( 0.4 );
-   const real dz( 0.4 );
+   const real dx( 0.4 / px );
+   const real dy( 0.4 / py );
+   const real dz( 0.4 / pz );
 
    real bx =-0.4;
    real by =-0.4;

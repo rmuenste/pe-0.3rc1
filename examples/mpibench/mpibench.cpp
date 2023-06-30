@@ -268,15 +268,24 @@ int main( int argc, char** argv )
 
    int idx = 0;
    real h = 0.0075;
-   real radius2 = 0.019;
+   real radius2 = 0.01;
+//   47
+//   real radius2 = 0.012;
+//   Vec3 position( 0.25,-0.25, 0.15);
+//   const double initialRadius = 0.22;
+//   const double distance = 2.3 * radius2;
+//   const double angDistance = 2.05 * radius2;
+//   const int numIterations = 8;
+//   const double radiusIncrement = radius2 + 0.42 * distance;
+//   int hZ[] = {16, 16, 16, 16, 16, 16, 16, 16, 16};
 
-   Vec3 position( 0.25,-0.25, 0.19);
-   const double initialRadius = 0.223;
+   Vec3 position( 0.25,-0.25, 0.15);
+   const double initialRadius = 0.212;
    const double distance = 2.3 * radius2;
-   const double angDistance = 2.4 * radius2;
-   const int numIterations = 5;
+   const double angDistance = 2.025 * radius2;
+   const int numIterations = 10;
    const double radiusIncrement = radius2 + 0.42 * distance;
-   int hZ[] = {10, 10, 10, 10, 10};
+   int hZ[] = {19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19};
    
    int count(0);
    if(!resume) {
@@ -285,7 +294,7 @@ int main( int argc, char** argv )
        double radius = initialRadius + iteration * radiusIncrement;
        int numPoints = static_cast<int>(2 * M_PI * radius / angDistance);
        double angleIncrement = 2 * M_PI / numPoints;        
-       real pos_z = radius2 + h;
+       real pos_z = radius2 + 0.1 * h;
        real zinc = 2. * radius2 + 0.001;
 
    pe_EXCLUSIVE_SECTION( 0 ) {
@@ -338,7 +347,7 @@ int main( int argc, char** argv )
     cyl->rotate(0.0, M_PI/2.0 , 0.0);
 
     InnerCylinderID cyl2(0);
-    cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.2, 0.4, 0.4, iron );
+    cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.2, 0.40, 0.4, iron );
     cyl2->setFixed(true);
     cyl2->rotate(0.0, M_PI/2.0, 0.0);
   }
