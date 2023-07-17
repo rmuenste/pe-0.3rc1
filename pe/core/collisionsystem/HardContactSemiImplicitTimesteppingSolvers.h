@@ -1706,6 +1706,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          }
       }
 
+      if( c->getDistance() > contactThreshold &&  c->getDistance() <= 1e-3 + 2. * contactThreshold) {
+
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
+          }
+
+      }
+
       contactsMask_[i] = true;
       ++numContactsMasked;
    }

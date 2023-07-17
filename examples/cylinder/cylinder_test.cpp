@@ -37,7 +37,6 @@
 #include <sstream>
 #include <pe/core.h>
 #include <pe/support.h>
-#include <pe/povray.h>
 #include <pe/vtk.h>
 #include <pe/util.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
@@ -94,7 +93,7 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 5000 );  // Total number of time steps
+   const unsigned int timesteps ( 1 );  // Total number of time steps
    const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
@@ -129,66 +128,30 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, 1.0 );
+   world->setGravity( 0.0, 0.0, -1.0 );
 
+   real radius = 0.05;
+   real dist = 2. * radius + 1e-3;
    // Setup of the metal sphere
-   SphereID s = createSphere( ++id, -0.3, 0.0, 0.2, 0.05, iron );
-   s->setLinearVel( 1.0, 0.0, 0.0 );
+   SphereID s = createSphere( ++id, 0.0, 0.0, 0.05, 0.05, iron );
+   s->setLinearVel( 0.1, 0.0, 0.0 );
 
-   CylinderID cyl(0);
-   cyl = createCylinder( 10011, 0.0, 0.0, 0.0, 0.2, 0.8, iron );
-   cyl->setFixed(true);
-   cyl->rotate(0.0, M_PI/2.0, 0.0);
+   SphereID s1 = createSphere( ++id, dist, 0.0, 0.05, 0.05, iron );
+   s->setLinearVel( 0.0, 0.0, 0.0 );
+
+//   CylinderID cyl(0);
+//   cyl = createCylinder( 10011, 0.0, 0.0, 0.0, 0.2, 0.8, iron );
+//   cyl->setFixed(true);
+//   cyl->rotate(0.0, M_PI/2.0, 0.0);
 
    InnerCylinderID cyl2(0);
-   cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.0, 0.4, 0.8, iron );
+   cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.4, 0.4, 0.8, iron );
    cyl2->setFixed(true);
    cyl2->rotate(0.0, M_PI/2.0, 0.0);
 
    // Setup of the VTK visualization
    if( vtk ) {
       vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
-   }
-
-   // Setup of the POV-Ray visualization
-   if( povray ) {
-      WriterID pov = activateWriter();
-      pov->setSpacing( visspacing );
-      pov->include( "colors.inc" );
-      pov->include( "woods.inc" );
-      pov->include( "metals.inc" );
-      pov->setFilename( "./video/box%.pov" );
-      pov->setBackground( 1.0, 1.0, 1.0 );
-      pov->addLightSource( PointLight( Vec3( 0.0, -10.0, 30.0 ), Color( 0.95, 0.95, 0.95 ) ) );
-
-      // Configuring the POV-Ray camera
-      CameraID camera = theCamera();
-      camera->setLocation( 0.0, -5.0, 0.0 );
-      camera->setFocus   ( 0.0,   0.0, 0.0 );
-
-      // Setting the ground plane texture
-      Finish grassFinish(
-         Ambient( 0.2 )
-      );
-      PlainTexture grassTexture(
-         ImagePigment( gif, "grass.gif", planar, true ),
-         grassFinish,
-         Scale( 20.0 ),
-         Rotation( M_PI/2.0, 0.0, 0.0 )
-      );
-      //pov->setTexture( plane, grassTexture );
-
-      // Setting the textures of the boxes
-      std::ostringstream oss;
-      for( World::Bodies::CastIterator<Box> b=world->begin<Box>(); b!=world->end<Box>(); ++b )
-      {
-         oss.str( "" );
-         oss << "T_Wood" << rand<unsigned int>( 1, 12 );
-         pov->setTexture( *b, CustomTexture( oss.str() ) );
-      }
-
-      // Setting the sphere texture
-      pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
    }
 
    // Simulation loop

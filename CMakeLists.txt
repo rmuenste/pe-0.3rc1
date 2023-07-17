@@ -26,7 +26,7 @@ PROJECT( pe )
 IF( POLICY CMP0015 )
    CMAKE_POLICY( SET CMP0015 NEW )
 ENDIF()
-
+cmake_policy(SET CMP0057 NEW)
 #==================================================================================================
 #
 # Definition of global options
@@ -119,7 +119,7 @@ ENDIF ( MSVC )
 SET( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-FIND_PACKAGE( Boost COMPONENTS thread system filesystem program_options random REQUIRED )
+FIND_PACKAGE( Boost COMPONENTS thread system filesystem program_options random REQUIRED HINTS "C:/local/boost_1_77_0/lib64-msvc-14.2/cmake")
 
 IF( NOT Boost_FOUND )
    MESSAGE( ERROR ": Boost library not found! " )
