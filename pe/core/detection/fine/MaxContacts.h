@@ -589,7 +589,7 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
 
       contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
    }
-   else if( dist < 1e-3 + contactThreshold ) {
+   else if( dist < 1e-2 + contactThreshold ) {
 
       normal.normalize();
       const real k( s2->getRadius() + real(0.5) * dist );

@@ -173,6 +173,7 @@ public:
    //@{
                           inline real                 getDamping() const;
                           inline const Vec3&          getGravity() const;
+                          inline real                 getViscosity() const;
 
                           inline SizeType             size()  const;
    template< typename C > inline SizeType             size()  const;
@@ -202,6 +203,7 @@ public:
    inline void setLiquidDensity( real liquidDensity );
    inline void setGravity( real gx, real gy, real gz );
    inline void setGravity( const Vec3& gravity );
+   inline void setViscosity(real visc);
    //@}
    //**********************************************************************************************
 
@@ -347,6 +349,7 @@ inline WorldID theWorld()
 //
 //=================================================================================================
 
+
 //*************************************************************************************************
 /*!\brief Returns the damping factor of the simulation world.
  *
@@ -362,6 +365,25 @@ inline WorldID theWorld()
 inline real World::getDamping() const
 {
    return Settings::damping();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the damping factor of the simulation world.
+ *
+ * \return The damping factor of the simulation world.
+ *
+ * The damping factor controls how the linear and angular velocity of a rigid body is reduced
+ * by drag forces. Every moving rigid body loses kinetic energy in every time step accoring to
+ * this factor. The value of damping is in the range \f$ [0..1] \f$. A damping factor of 0 will
+ * reduce the velocity to nothing. This would mean that the body could not sustain any motion
+ * without a force. A damping factor of 1 means that the body keeps all its velocity (which is
+ * equivalent to no damping).
+ */
+inline real World::getViscosity() const
+{
+   return Settings::liquidViscosity();
 }
 //*************************************************************************************************
 
@@ -776,6 +798,21 @@ inline void World::setDamping( real damping )
       throw std::invalid_argument( "Invalid damping factor" );
 
    Settings::damping_ = damping;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Setting the gravity in the simulation world.
+ *
+ * \param gx The x-component of the gravity.
+ * \param gy The y-component of the gravity.
+ * \param gz The z-component of the gravity.
+ * \return void
+ */
+inline void World::setViscosity( real visc )
+{
+   Settings::liquidViscosity_ = visc;
 }
 //*************************************************************************************************
 

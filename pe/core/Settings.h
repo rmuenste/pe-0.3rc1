@@ -61,6 +61,7 @@ public:
    static inline bool        liquidSolid();
    static inline real        damping();
    static inline real        liquidDensity();
+   static inline real        liquidViscosity();
    static inline const Vec3& gravity();
    //@}
    //**********************************************************************************************
@@ -73,6 +74,7 @@ private:
    static bool liquidSolid_;   //!< Flag liquid solid simulations
    static real damping_;       //!< Damping factor of the simulation world.
    static real liquidDensity_; //!< Density of the surrounding fluid
+   static real liquidViscosity_; //!< Viscosity of the surrounding fluid
    static Vec3 gravity_;       //!< Gravity of the simulated system.
    //@}
    //**********************************************************************************************
@@ -138,6 +140,18 @@ inline const Vec3& Settings::gravity()
 inline real Settings::liquidDensity()
 {
    return liquidDensity_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the viscosity of the liquid.
+ *
+ * \return The density of the liquid
+ */
+inline real Settings::liquidViscosity()
+{
+   return liquidViscosity_;
 }
 //*************************************************************************************************
 

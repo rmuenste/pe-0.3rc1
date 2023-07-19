@@ -257,11 +257,15 @@ private:
    //@{
    void simulationStep( real dt );
    void resolveContacts( const Contacts& contacts, real dt );
+   void addLubricationForce( const Contact& c, real dt );
    real relaxInelasticFrictionlessContacts( real dtinv );
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
    real relaxInelasticGeneralizedMaximumDissipationContacts( real dtinv );
+   Vec3 calculateLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateLubricationForceGorb(real R_b, real R_p, Vec3 U, real mu, real d);
    //@}
    //**********************************************************************************************
 
@@ -1501,6 +1505,7 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 //
 //=================================================================================================
 
+
 //*************************************************************************************************
 /*!\brief Implementation of the discrete element solver simulationStep() function.
  *
@@ -1577,6 +1582,138 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    }
 }
 //*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the discrete element solver simulationStep() function.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+Vec3 CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppingSolvers> >::calculateLubricationForceGorb(real R_b, real R_p, Vec3 U, real mu, real d) {
+
+    double rho = 2 * R_b * R_p / (R_b + R_p);
+
+    Vec3 force;
+    force[0] = U[0] * (M_PI * mu * rho) * std::log(rho * d);
+    force[1] = U[1] * (M_PI * mu * rho) * std::log(rho * d);
+    force[2] = U[2] * ((3 * M_PI * mu * rho * rho) / d + (9 / 2) * M_PI * mu * rho * std::log(rho * d));
+
+    return force;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the discrete element solver simulationStep() function.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::calculateLubricationSlidingForce(real eta_f, Vec3 vs, Vec3 n, real epsilon, real radius) {
+
+    const real pi = 3.14159265358979323846;
+    const real coefficient = -6 * pi * radius * eta_f;
+
+    Vec3 term2 = vs * (- 1.0 / 6.0 * std::log(epsilon));
+
+    return coefficient * (term2);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the discrete element solver simulationStep() function.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::calculateLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius) {
+
+    const real pi = 3.14159265358979323846;
+    const Vec3 coefficient = -6 * pi * radius * eta_f * v_r * n;
+
+    real term1 = 1.0 / 4.0 * std::pow(epsilon, -1);
+    real term2 = -9.0 / 40.0 * std::log(epsilon);
+    real term3 = -3.0 / 112.0 * epsilon * std::log(epsilon);
+
+    return coefficient * (term1 + term2 + term3);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the discrete element solver simulationStep() function.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppingSolvers> >::addLubricationForce(const Contact &c, real dt)
+{
+
+  BodyID b1( c.getBody1() );
+  BodyID b2( c.getBody2() );
+
+  Vec3 vr     ( b1->getLinearVel() - b2->getLinearVel() );
+  Vec3 normal = b1->getPosition() - b2->getPosition();
+  ;
+  normal.normalize();
+  real visc = theWorld()->getViscosity();
+
+  real dist = c.getDistance();
+
+  SphereID s1 = static_body_cast<Sphere>(b1);
+  SphereID s2 = static_body_cast<Sphere>(b2);
+  real rad = s1->getRadius();
+
+  real velNormal = trans(vr) * normal;
+  Vec3 vs = vr - velNormal * normal;
+
+  real eps = dist / rad;
+  Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
+  Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+  std::cout << "Lubrication force: " << lubricationForce << " | Normal vector: " << normal << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+  std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
+
+  b1->addForce(-lubricationForce );
+  b2->addForce( lubricationForce );
+}
 
 
 //*************************************************************************************************
@@ -1706,12 +1843,13 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          }
       }
 
-      if( c->getDistance() > contactThreshold &&  c->getDistance() <= 1e-3 + 2. * contactThreshold) {
+      if(c->getDistance() > contactThreshold &&  c->getDistance() <= 1e-3 + 2. * contactThreshold) {
 
          pe_LOG_DEBUG_SECTION( log ) {
             log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
-          }
-
+         }
+         addLubricationForce(*c, 1.0);
+         continue;
       }
 
       contactsMask_[i] = true;

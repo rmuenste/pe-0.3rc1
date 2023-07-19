@@ -93,7 +93,7 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 1 );  // Total number of time steps
+   const unsigned int timesteps ( 1000 );  // Total number of time steps
    const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
@@ -129,15 +129,33 @@ int main( int argc, char* argv[] )
    // Simulation world setup
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -1.0 );
+   world->setViscosity(3e-3);
 
    real radius = 0.05;
-   real dist = 2. * radius + 1e-3;
+   real dist = 3. * radius + 1e-3;
    // Setup of the metal sphere
-   SphereID s = createSphere( ++id, 0.0, 0.0, 0.05, 0.05, iron );
-   s->setLinearVel( 0.1, 0.0, 0.0 );
 
-   SphereID s1 = createSphere( ++id, dist, 0.0, 0.05, 0.05, iron );
-   s->setLinearVel( 0.0, 0.0, 0.0 );
+   int xmax = 2;
+   int ymax = 2;
+   int zmax = 4;
+   real dx = 2 * radius + 0.1 * radius;
+   real dy = 2 * radius + 0.1 * radius;
+   real dz = 2 * radius + 0.1 * radius;
+   Vec3 pos(-0.3, -0.3, radius);
+   for (int z = 0; z < zmax; ++z) {
+     for (int y = 0; y < ymax; ++y) {
+       for (int x = 0; x < xmax; ++x) {
+         Vec3 ppos = Vec3(pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz);
+         createSphere( ++id, pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz, 0.05, iron );
+       }
+     }
+   }
+
+//   SphereID s = createSphere( ++id, 0.0, 0.0, 0.05, 0.05, iron );
+//   s->setLinearVel( 1.1, 0.0, 0.0 );
+//
+//   SphereID s1 = createSphere( ++id, dist, 0.0, 0.05, 0.05, iron );
+//   s1->setLinearVel( 0.0, 0.0, 0.0 );
 
 //   CylinderID cyl(0);
 //   cyl = createCylinder( 10011, 0.0, 0.0, 0.0, 0.2, 0.8, iron );
@@ -145,7 +163,7 @@ int main( int argc, char* argv[] )
 //   cyl->rotate(0.0, M_PI/2.0, 0.0);
 
    InnerCylinderID cyl2(0);
-   cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.4, 0.4, 0.8, iron );
+   cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 2.4, 1.0, 4.8, iron );
    cyl2->setFixed(true);
    cyl2->rotate(0.0, M_PI/2.0, 0.0);
 
@@ -159,10 +177,13 @@ int main( int argc, char* argv[] )
              << "---------------------------------------------------------" << std::endl;
 
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
-      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+      std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
       world->simulationStep( 0.005 );
-      std::cout << "[particle position]: " << s->getPosition() << std::endl;
-      std::cout << "[particle velocity]: " << s->getLinearVel() << std::endl;
+//      std::cout << std::endl;
+//      std::cout << "[particle1 position]: " << s->getPosition() << std::endl;
+//      std::cout << "[particle1 velocity]: " << s->getLinearVel() << std::endl;
+//      std::cout << "[particle2 position]: " << s1->getPosition() << std::endl;
+//      std::cout << "[particle2 velocity]: " << s1->getLinearVel() << std::endl;
    }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"
