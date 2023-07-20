@@ -589,7 +589,7 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
 
       contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
    }
-   else if( dist < 1e-2 + contactThreshold ) {
+   else if( dist < lubricationThreshold + contactThreshold ) {
 
       normal.normalize();
       const real k( s2->getRadius() + real(0.5) * dist );
@@ -849,6 +849,20 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
      // Negative dist mean penetration
      contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
    }
+   else if( dist < wallThreshold + contactThreshold ) {
+
+     const real k( dist2 + s->getRadius() + real(0.5) * dist );
+     Vec3 cPos = Vec3(r2Pos[0], 0, 0);
+
+     // lPos is the local position of the contact
+     const Vec3 lPos( cPos + normal * k );
+     normal = -(c->getRotation() * normal);
+     contactPoint = c->getRotation() * lPos;
+
+     // Negative dist mean penetration
+     contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
+
+   }
 
    real hlength = c->getLength() * real(0.5);
 
@@ -864,6 +878,18 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
        contactPoint = c->getRotation() * contactPoint;
 
        contacts.addVertexFaceContact(s, c, contactPoint, normal, dist);
+     }
+     else if( dist < wallThreshold + contactThreshold ) {
+
+       normal = Vec3(1, 0, 0);
+       contactPoint = Vec3(0.5 * dist, rPos[1], rPos[2]);
+
+       // Transform to world frame
+       normal = c->getRotation() * normal;
+       contactPoint = c->getRotation() * contactPoint;
+
+       contacts.addVertexFaceContact(s, c, contactPoint, normal, dist);
+
      }
    }
 
@@ -881,6 +907,19 @@ void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC&
 
        contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
      }
+     else if( dist < wallThreshold + contactThreshold ) {
+
+       normal = Vec3(-1, 0, 0);
+       contactPoint = Vec3(c->getLength() + 0.5 * dist, r2Pos[1], r2Pos[2]);
+
+       // Transform to world frame
+       normal = c->getRotation() * normal;
+       contactPoint = c->getRotation() * contactPoint;
+
+       contacts.addVertexFaceContact( s, c, contactPoint, normal, dist );
+
+     }
+
    }
 
 }

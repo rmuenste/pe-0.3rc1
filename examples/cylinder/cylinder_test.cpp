@@ -135,27 +135,27 @@ int main( int argc, char* argv[] )
    real dist = 3. * radius + 1e-3;
    // Setup of the metal sphere
 
-   int xmax = 2;
-   int ymax = 2;
-   int zmax = 4;
-   real dx = 2 * radius + 0.1 * radius;
-   real dy = 2 * radius + 0.1 * radius;
-   real dz = 2 * radius + 0.1 * radius;
-   Vec3 pos(-0.3, -0.3, radius);
-   for (int z = 0; z < zmax; ++z) {
-     for (int y = 0; y < ymax; ++y) {
-       for (int x = 0; x < xmax; ++x) {
-         Vec3 ppos = Vec3(pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz);
-         createSphere( ++id, pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz, 0.05, iron );
-       }
-     }
-   }
+//   int xmax = 2;
+//   int ymax = 1;
+//   int zmax = 1;
+//   real dx = 2 * radius + 0.1 * radius;
+//   real dy = 2 * radius + 0.1 * radius;
+//   real dz = 2 * radius + 0.1 * radius;
+//   Vec3 pos(-0.3, -0.3, radius);
+//   for (int z = 0; z < zmax; ++z) {
+//     for (int y = 0; y < ymax; ++y) {
+//       for (int x = 0; x < xmax; ++x) {
+//         Vec3 ppos = Vec3(pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz);
+//         createSphere( ++id, pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz, 0.05, iron );
+//       }
+//     }
+//   }
 
-//   SphereID s = createSphere( ++id, 0.0, 0.0, 0.05, 0.05, iron );
-//   s->setLinearVel( 1.1, 0.0, 0.0 );
-//
-//   SphereID s1 = createSphere( ++id, dist, 0.0, 0.05, 0.05, iron );
-//   s1->setLinearVel( 0.0, 0.0, 0.0 );
+   SphereID s = createSphere( ++id, 0.0, 0.0, 0.05, 0.05, iron );
+   s->setLinearVel( 1.1, 0.0, 0.0 );
+
+   SphereID s1 = createSphere( ++id, dist, 0.0, 0.05, 0.05, iron );
+   s1->setLinearVel( 0.0, 0.0, 0.0 );
 
 //   CylinderID cyl(0);
 //   cyl = createCylinder( 10011, 0.0, 0.0, 0.0, 0.2, 0.8, iron );
@@ -178,7 +178,7 @@ int main( int argc, char* argv[] )
 
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
-      world->simulationStep( 0.005 );
+      world->simulationStep( 0.0005 );
 //      std::cout << std::endl;
 //      std::cout << "[particle1 position]: " << s->getPosition() << std::endl;
 //      std::cout << "[particle1 velocity]: " << s->getLinearVel() << std::endl;

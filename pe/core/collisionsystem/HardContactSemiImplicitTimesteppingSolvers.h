@@ -1690,29 +1690,48 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   BodyID b1( c.getBody1() );
   BodyID b2( c.getBody2() );
 
-  Vec3 vr     ( b1->getLinearVel() - b2->getLinearVel() );
   Vec3 normal = b1->getPosition() - b2->getPosition();
+
+  // Computation of relative velocity is the opposite order of normal calculation
+  Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
   ;
   normal.normalize();
-  real visc = theWorld()->getViscosity();
+  
+  real visc = Settings::liquidViscosity();
 
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
-  SphereID s2 = static_body_cast<Sphere>(b2);
-  real rad = s1->getRadius();
+  if (b2->getType() == sphereType) {
+   SphereID s2 = static_body_cast<Sphere>(b2);
+   real rad = s1->getRadius();
 
-  real velNormal = trans(vr) * normal;
-  Vec3 vs = vr - velNormal * normal;
+   real velNormal = trans(vr) * normal;
+   Vec3 vs = vr - velNormal * normal;
 
-  real eps = dist / rad;
-  Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
-  Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
-  std::cout << "Lubrication force: " << lubricationForce << " | Normal vector: " << normal << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
-  std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
+   real eps = dist / rad;
+   Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
+   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+   std::cout << "Lubrication force: " << lubricationForce << " | Normal vector: " << normal << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
 
-  b1->addForce(-lubricationForce );
-  b2->addForce( lubricationForce );
+   b1->addForce( lubricationForce );
+   b2->addForce(-lubricationForce );
+  }
+  else if(b2->getType() == innerCylinderType) {
+
+//   real rad = s1->getRadius();
+//
+//   real velNormal = trans(vr) * normal;
+//   Vec3 vs = vr - velNormal * normal;
+//
+//   real eps = dist / rad;
+//   Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
+//   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+//   std::cout << "Lubrication force: " << lubricationForce << " | Normal vector: " << normal << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+//   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
+    
+  }
 }
 
 

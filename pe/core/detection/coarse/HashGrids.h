@@ -120,6 +120,38 @@ private:
          offset_t*   neighborOffset_;   /*!< \brief Pointer to an array that is storing offsets that
                                              can be used to directly access all the neighboring
                                              cells in the hash grid. */
+         /* For an inner cell which has 26 neighbors we create an array of 27 offsets that has the Zero offset to itself and 
+            26 offsets to the neighbors.
+            The offsets look like this:
+            Lower z-level 9 neighbors
+         +------+------+------+
+         | -241 | -240 | -239 |
+         +------+------+------+
+         | -257 | -256 | -255 |
+         +------+------+------+
+         | -273 | -272 | -271 |
+         +------+------+------+
+
+
+            Neighbors on the same z-level
+         +------+------+------+
+         | -17  | -16  | -15  |
+         +------+------+------+
+         | -1   | 0    |   1  |
+         +------+------+------+
+         | 15   | 16   |  17  |
+         +------+------+------+
+
+
+            Higher z-level 9 neighbors
+         +------+------+------+
+         |  273 |  272 |  271 |
+         +------+------+------+
+         |  257 |  256 |  255 |
+         +------+------+------+
+         |  241 |  240 |  239 |
+         +------+------+------+
+         */
          size_t      occupiedCellsId_;  //!< The cell's index in the \a occupiedCells_ vector.
       };
       //*******************************************************************************************

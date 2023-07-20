@@ -117,6 +117,16 @@ public:
        surface point. */
    static inline float surfaceThreshold() { return 5E-7F; }
 
+   //! Threshold for all points/checks.
+   /*! Only points with a distance to the all smaller than this threshold are considered
+       surface point. */
+   static inline float wallThreshold() { return 1E-2F; }
+
+   //! Threshold for all points/checks.
+   /*! Only points with a distance to the all smaller than this threshold are considered
+       for lubrication. */
+   static inline float lubricationThreshold() { return 1E-2F; }
+
    //! Threshold for parallelism checks.
    /*! Scalar products smaller than this threshold value indicate parallel vectors. */
    static inline float parallelThreshold() { return 1E-8F; }
@@ -165,6 +175,16 @@ public:
        surface point. */
    static inline double surfaceThreshold() { return 5E-7; }
 
+   //! Threshold for all points/checks.
+   /*! Only points with a distance to the all smaller than this threshold are considered
+       surface point. */
+   static inline double wallThreshold() { return 1E-2; }
+
+   //! Threshold for all points/checks.
+   /*! Only points with a distance to the all smaller than this threshold are considered
+       for lubrication. */
+   static inline double lubricationThreshold() { return 1E-2; }
+
    //! Threshold for parallelism checks.
    /*! Scalar products smaller than this threshold value indicate parallel vectors. */
    static inline double parallelThreshold() { return 1E-8; }
@@ -212,6 +232,16 @@ public:
    /*! Only points with a distance to the surface smaller than this threshold are considered
        surface point. */
    static inline long double surfaceThreshold() { return 5E-7L; }
+
+   //! Threshold for all points/checks.
+   /*! Only points with a distance to the all smaller than this threshold are considered
+    */
+   static inline long double wallThreshold() { return 1E-2L; }
+
+   //! Threshold for all points/checks.
+   /*! Only points with a distance to the all smaller than this threshold are considered
+       for lubrication. */
+   static inline long double lubricationThreshold() { return 1E-2L; }
 
    //! Threshold for parallelism checks.
    /*! Scalar products smaller than this threshold value indicate parallel vectors. */
@@ -264,6 +294,22 @@ const real frictionThreshold = Thresholds<real>::frictionThreshold();
 /*! Only points with a distance to the surface smaller than this threshold are considered
     surface point. */
 const real surfaceThreshold = Thresholds<real>::surfaceThreshold();
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+//! Threshold for wall points/checks.
+/*! Only points with a distance to the all smaller than this threshold are considered
+    surface point. */
+const real wallThreshold = Thresholds<real>::wallThreshold();
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+//! Threshold for wall points/checks.
+/*! Only points with a distance to the all smaller than this threshold are considered
+    for lubrication. */
+const real lubricationThreshold = Thresholds<real>::lubricationThreshold();
 //*************************************************************************************************
 
 
