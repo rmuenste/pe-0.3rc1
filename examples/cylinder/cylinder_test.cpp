@@ -74,6 +74,12 @@ real angle()
 }
 //*************************************************************************************************
 
+real sign()
+{
+   real val = rand<real>( -M_PI/real(20), M_PI/real(20) );
+   return (val > 0) ? 1.0 : -1.0; 
+}
+
 
 
 
@@ -93,7 +99,7 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 1000 );  // Total number of time steps
+   const unsigned int timesteps ( 3000 );  // Total number of time steps
    const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
@@ -135,27 +141,28 @@ int main( int argc, char* argv[] )
    real dist = 3. * radius + 1e-3;
    // Setup of the metal sphere
 
-//   int xmax = 2;
-//   int ymax = 1;
-//   int zmax = 1;
-//   real dx = 2 * radius + 0.1 * radius;
-//   real dy = 2 * radius + 0.1 * radius;
-//   real dz = 2 * radius + 0.1 * radius;
-//   Vec3 pos(-0.3, -0.3, radius);
-//   for (int z = 0; z < zmax; ++z) {
-//     for (int y = 0; y < ymax; ++y) {
-//       for (int x = 0; x < xmax; ++x) {
-//         Vec3 ppos = Vec3(pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz);
-//         createSphere( ++id, pos[0] + x * dx, pos[1] + y * dy, pos[2] + z * dz, 0.05, iron );
-//       }
-//     }
-//   }
+   int xmax = 2;
+   int ymax = 2;
+   int zmax = 8;
+   real dx = 2 * radius + 0.1 * radius;
+   real dy = 2 * radius + 0.1 * radius;
+   real dz = 2 * radius + 0.1 * radius;
+   Vec3 pos(-0.3, -0.3, radius);
+   for (int z = 0; z < zmax; ++z) {
+     for (int y = 0; y < ymax; ++y) {
+       for (int x = 0; x < xmax; ++x) {
+         real jitter = sign() * 0.01 * radius;
 
-   SphereID s = createSphere( ++id, 0.0, 0.0, 0.05, 0.05, iron );
-   s->setLinearVel( 1.1, 0.0, 0.0 );
+         createSphere( ++id, pos[0] + x * dx + jitter, pos[1] + y * dy + jitter, pos[2] + z * dz, 0.05, iron );
+       }
+     }
+   }
 
-   SphereID s1 = createSphere( ++id, dist, 0.0, 0.05, 0.05, iron );
-   s1->setLinearVel( 0.0, 0.0, 0.0 );
+//   SphereID s = createSphere( ++id, 0.0, 0.0, 0.053, 0.05, iron );
+//   s->setLinearVel( 1.1, 0.0, 0.0 );
+//
+//   SphereID s1 = createSphere( ++id, dist, 0.0, 0.053, 0.05, iron );
+//   s1->setLinearVel( 0.0, 0.0, 0.0 );
 
 //   CylinderID cyl(0);
 //   cyl = createCylinder( 10011, 0.0, 0.0, 0.0, 0.2, 0.8, iron );

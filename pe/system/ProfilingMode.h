@@ -56,7 +56,7 @@ namespace pe {
 /*! \cond PE_INTERNAL */
 namespace {
 
-pe_STATIC_ASSERT( logging::loglevel >= logging::info );
+ pe_STATIC_ASSERT( logging::loglevel >= logging::info || !profilingMode);
 
 }
 /*! \endcond */

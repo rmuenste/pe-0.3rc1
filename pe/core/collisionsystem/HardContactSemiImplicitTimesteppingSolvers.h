@@ -1712,11 +1712,11 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real eps = dist / rad;
    Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
    Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
-   std::cout << "Lubrication force: " << lubricationForce << " | Normal vector: " << normal << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
-   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
+//   std::cout << "Lubrication force: " << lubricationForce << " | Normal vector: " << normal << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+//   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
 
    b1->addForce( lubricationForce );
-   b2->addForce(-lubricationForce );
+   b2->addForce( lubricationForce );
   }
   else if(b2->getType() == innerCylinderType) {
 
@@ -1869,6 +1869,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          }
          addLubricationForce(*c, 1.0);
          continue;
+      }
+      else if(c->getDistance() < contactThreshold &&  c->getDistance() > 1e-9) {
+         addLubricationForce(*c, 1.0);
       }
 
       contactsMask_[i] = true;
