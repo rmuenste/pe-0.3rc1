@@ -351,7 +351,7 @@ void World::simulationStep( real timestep )
 
    // Calculating a time step of the simulation world
    theCollisionSystem()->simulationStep( timestep );
-   std::cout << "Maximum penetration : " << theCollisionSystem()->getMaximumPenetration() << std::endl;
+   //std::cout << "Maximum penetration : " << theCollisionSystem()->getMaximumPenetration() << std::endl;
 
    // Triggering all registered trigger objects
    Trigger::triggerAll();
