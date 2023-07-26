@@ -1788,6 +1788,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real eps = dist / rad;
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
    //std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   lubricationForce *= fc;
    b1->addForce(-lubricationForce );
     
   }
