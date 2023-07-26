@@ -119,7 +119,7 @@ ENDIF ( MSVC )
 SET( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-FIND_PACKAGE( Boost COMPONENTS thread system filesystem program_options random REQUIRED HINTS "C:/local/boost_1_77_0/lib64-msvc-14.2/cmake")
+FIND_PACKAGE( Boost COMPONENTS thread system filesystem program_options random REQUIRED)
 
 IF( NOT Boost_FOUND )
    MESSAGE( ERROR ": Boost library not found! " )
