@@ -1753,7 +1753,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   normal.normalize();
   
   real visc = Settings::liquidViscosity();
-
+  real hc = 0.04;
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -1766,7 +1766,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    real eps = dist / rad;
    Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
-   real fc =  calculate_f_star(eps, 0.0025);
+   real fc =  calculate_f_star(eps, hc);
    lubricationForce *= fc;
    Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
    
@@ -1787,6 +1787,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    real eps = dist / rad;
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
+   real fc =  calculate_f_star(eps, hc);
    //std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
    lubricationForce *= fc;
    b1->addForce(-lubricationForce );
@@ -1924,7 +1925,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          }
       }
 
-      if(c->getDistance() > 1e-6 &&  c->getDistance() <= 1e-3 + 2. * contactThreshold) {
+      if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
 
          pe_LOG_DEBUG_SECTION( log ) {
             log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";

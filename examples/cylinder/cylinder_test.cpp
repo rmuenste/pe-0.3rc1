@@ -136,6 +136,7 @@ int main( int argc, char* argv[] )
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -1.0 );
    world->setViscosity(3e-3);
+   
 
    real radius = 0.05;
    real dist = 3. * radius + 1e-3;
@@ -158,10 +159,10 @@ int main( int argc, char* argv[] )
      }
    }
 
-//   SphereID s = createSphere( ++id, 0.0, 0.0, 0.053, 0.05, iron );
+//   SphereID s = createSphere( ++id, 0.0, 0.0, 0.054, 0.05, iron );
 //   s->setLinearVel( 1.1, 0.0, 0.0 );
 //
-//   SphereID s1 = createSphere( ++id, dist, 0.0, 0.053, 0.05, iron );
+//   SphereID s1 = createSphere( ++id, 0.2, 0.0, 0.054, 0.05, iron );
 //   s1->setLinearVel( 0.0, 0.0, 0.0 );
 
 //   CylinderID cyl(0);
@@ -183,6 +184,7 @@ int main( int argc, char* argv[] )
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
 
+   //theCollisionSystem()->setErrorReductionParameter(0.35);
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
       world->simulationStep( 0.0005 );

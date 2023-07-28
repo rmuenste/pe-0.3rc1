@@ -125,14 +125,14 @@ int main( int argc, char** argv )
    const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 53 );  // Total number of time steps
-   const real   stepsize  (  0.005 );  // Size of a single time step
+   const size_t timesteps ( 1000 );  // Total number of time steps
+   const real   stepsize  ( 0.0005 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
    bool   povray    ( false );        // Switches the POV-Ray visualization on and off
    bool   vtk( true );
-   const size_t visspacing(    1 );  // Number of time steps inbetween two POV-Ray files
+   const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
@@ -206,8 +206,9 @@ int main( int argc, char** argv )
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    WorldID     world     = theWorld();
-   world->setGravity( 0.0, 0.0, 0.0 );
+   world->setGravity( 0.0, 0.0,-1.0 );
    world->setDamping(0.50);
+   world->setViscosity(3e-3);
    MPISystemID mpisystem = theMPISystem();
 
 
@@ -268,7 +269,7 @@ int main( int argc, char** argv )
 
    int idx = 0;
    real h = 0.0075;
-   real radius2 = 0.01;
+   real radius2 = 0.02;
 //   47
 //   real radius2 = 0.012;
 //   Vec3 position( 0.25,-0.25, 0.15);
@@ -280,12 +281,12 @@ int main( int argc, char** argv )
 //   int hZ[] = {16, 16, 16, 16, 16, 16, 16, 16, 16};
 
    Vec3 position( 0.25,-0.25, 0.15);
-   const double initialRadius = 0.212;
+   const double initialRadius = 0.222;
    const double distance = 2.3 * radius2;
-   const double angDistance = 2.025 * radius2;
-   const int numIterations = 10;
-   const double radiusIncrement = radius2 + 0.42 * distance;
-   int hZ[] = {19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19};
+   const double angDistance = 2.125 * radius2;
+   const int numIterations = 3;
+   const double radiusIncrement = radius2 + 0.52 * distance;
+   int hZ[] = {9, 8, 7, 19, 19, 19, 19, 19, 19, 19, 19};
    
    int count(0);
    if(!resume) {
@@ -449,7 +450,7 @@ int main( int argc, char** argv )
 
    /////////////////////////////////////////////////////
    // MPI Finalization
-
+   MPI_Barrier(MPI_COMM_WORLD);
    MPI_Finalize();
 }
 //*************************************************************************************************
