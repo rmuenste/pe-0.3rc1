@@ -126,7 +126,7 @@ int main( int argc, char** argv )
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
    const size_t timesteps ( 1000 );  // Total number of time steps
-   const real   stepsize  ( 0.0005 );  // Size of a single time step
+   const real   stepsize  ( 0.005 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
