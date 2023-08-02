@@ -1774,6 +1774,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   // Computation of relative velocity is the opposite order of normal calculation
   Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
   normal.normalize();
+
+  bool limiting = false;
   
   real visc = Settings::liquidViscosity();
   real hc = 0.4;
@@ -1794,12 +1796,14 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
 
    real mag = lubricationForce.length();
-   if (mag > 0.001)
-     lubricationForce = 0.00098 * lubricationForce.getNormalized();
-   
+   if(limiting) {
+     if (mag > 0.001)
+       lubricationForce = 0.00098 * lubricationForce.getNormalized();
+   }
+
    //std::cout << "Lubrication force: " << lubricationForce << " | Distance: " << dist << std::endl;
-   if (lubricationForce.length() > maxLubrication_) 
-     maxLubrication_ = lubricationForce.length();
+   if (forceMag > maxLubrication_) 
+     maxLubrication_ = forceMag;
 //   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
 
    b1->addForce( lubricationForce );
@@ -1817,11 +1821,14 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real fc =  calculate_f_star(eps, hc);
    //std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
    lubricationForce *= fc;
+
    real mag = lubricationForce.length();
-   if (mag > 0.001)
-     lubricationForce = 0.00098 * lubricationForce.getNormalized();
+   if(limiting) {
+     if (mag > 0.001)
+       lubricationForce = 0.00098 * lubricationForce.getNormalized();
+   }
+
    b1->addForce(-lubricationForce );
-    
   }
 }
 
