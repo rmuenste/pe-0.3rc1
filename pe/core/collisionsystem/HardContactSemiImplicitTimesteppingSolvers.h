@@ -210,6 +210,7 @@ public:
    inline const AS&       getAttachableStorage()  const;
    inline const Domain&   getDomain()             const;
    inline real            getMaximumPenetration() const;
+   inline real            getMaximumLubrication() const;
    inline size_t          getNumberOfContacts()   const;
    //@}
    //**********************************************************************************************
@@ -318,6 +319,7 @@ private:
    RelaxationModel relaxationModel_; //!< The method used to relax unilateral contacts
    real relaxationParam_;     //!< Parameter specifying underrelaxation of velocity corrections for boundary bodies.
    real maximumPenetration_;
+   real maxLubrication_;
    size_t numContacts_;
    MPITag lastSyncTag_;
 
@@ -337,7 +339,6 @@ private:
    std::vector<real> diag_n_inv_;
    std::vector<Vec3> p_;
 
-   real maxLubrication_;
 
    //**********************************************************************************************
    /*! \cond PE_INTERNAL */
@@ -438,6 +439,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , relaxationModel_  ( ApproximateInelasticCoulombContactByDecoupling )
    , relaxationParam_  ( 0.9 )
    , maximumPenetration_ ( 0.0 )
+   , maxLubrication_( 0.0 )
    , numContacts_      ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
@@ -773,6 +775,27 @@ inline real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns the maximum penetration depth found in the last collision detection.
+ *
+ * \return The maximum penetration depth found in the last collision detection.
+ *
+ * Only contacts treated on the local process are considered.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getMaximumLubrication() const
+{
+   return maxLubrication_;
+}
+//************************************************************************************************
 
 //*************************************************************************************************
 /*!\brief Returns the number of contacts found by the last collision detection.
@@ -1753,7 +1776,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   normal.normalize();
   
   real visc = Settings::liquidViscosity();
-  real hc = 0.04;
+  real hc = 0.4;
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -1769,6 +1792,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real fc =  calculate_f_star(eps, hc);
    lubricationForce *= fc;
    Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+
+   real mag = lubricationForce.length();
+   if (mag > 0.001)
+     lubricationForce = 0.00098 * lubricationForce.getNormalized();
    
    //std::cout << "Lubrication force: " << lubricationForce << " | Distance: " << dist << std::endl;
    if (lubricationForce.length() > maxLubrication_) 
@@ -1790,6 +1817,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real fc =  calculate_f_star(eps, hc);
    //std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
    lubricationForce *= fc;
+   real mag = lubricationForce.length();
+   if (mag > 0.001)
+     lubricationForce = 0.00098 * lubricationForce.getNormalized();
    b1->addForce(-lubricationForce );
     
   }
@@ -1816,6 +1846,8 @@ template< template<typename> class CD                           // Type of the c
 void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::resolveContacts( const Contacts& contacts, real dt )
 {
    const real dtinv( real(1) / dt );
+
+   bool useLubrication = true;
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -1930,8 +1962,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          pe_LOG_DEBUG_SECTION( log ) {
             log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
-         numLubricationContacts++;
-         addLubricationForce(*c, 1.0);
+         if(useLubrication) {
+           numLubricationContacts++;
+           addLubricationForce(*c, 1.0);
+         }
          continue;
       }
 
@@ -2251,7 +2285,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       memCollisionResponse_.stop();
    }
 //   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
-   std::cout << "Max Lubrication : " << maxLubrication_ << std::endl;
+//
+   real allLub = 0.0;
+   MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+   pe_EXCLUSIVE_SECTION(0) {
+     std::cout << "Max Lubrication : " << allLub << std::endl;
+   }
 
 }
 //*************************************************************************************************
