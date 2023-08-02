@@ -1802,8 +1802,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
 
    //std::cout << "Lubrication force: " << lubricationForce << " | Distance: " << dist << std::endl;
-   if (forceMag > maxLubrication_) 
-     maxLubrication_ = forceMag;
+   if (mag > maxLubrication_) 
+     maxLubrication_ = mag;
 //   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
 
    b1->addForce( lubricationForce );
@@ -1854,7 +1854,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 {
    const real dtinv( real(1) / dt );
 
-   bool useLubrication = true;
+   bool useLubrication = false;
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -1972,8 +1972,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          if(useLubrication) {
            numLubricationContacts++;
            addLubricationForce(*c, 1.0);
+           continue;
          }
-         continue;
       }
 
       contactsMask_[i] = true;
@@ -2294,10 +2294,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 //   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
 //
    real allLub = 0.0;
-   MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-   pe_EXCLUSIVE_SECTION(0) {
-     std::cout << "Max Lubrication : " << allLub << std::endl;
+
+   if (useLubrication) {
+      MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+      pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "Max Lubrication : " << allLub << std::endl;
+      }
    }
+   
 
 }
 //*************************************************************************************************
