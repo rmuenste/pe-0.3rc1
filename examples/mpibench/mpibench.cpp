@@ -125,8 +125,8 @@ int main( int argc, char** argv )
    const real   spacingz   (  0.6  );  // Initial spacing inbetween two spherical particles
    const real   velocity  (  0.02 );  // Initial maximum velocity of the spherical particles
 
-   const size_t timesteps ( 53 );  // Total number of time steps
-   const real   stepsize  ( 0.005 );  // Size of a single time step
+   const size_t timesteps ( 60 );  // Total number of time steps
+   const real   stepsize  ( 0.001 );  // Size of a single time step
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
@@ -206,7 +206,7 @@ int main( int argc, char** argv )
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    WorldID     world     = theWorld();
-   world->setGravity( 0.0, 0.0, 0.0 );
+   world->setGravity( 0.0, 0.0,-0.4 );
    world->setDamping(0.50);
    MPISystemID mpisystem = theMPISystem();
 
@@ -280,10 +280,10 @@ int main( int argc, char** argv )
 //   int hZ[] = {16, 16, 16, 16, 16, 16, 16, 16, 16};
 
    Vec3 position( 0.25,-0.25, 0.15);
-   const double initialRadius = 0.212;
+   const double initialRadius = 0.211;
    const double distance = 2.3 * radius2;
    const double angDistance = 2.025 * radius2;
-   const int numIterations = 10;
+   const int numIterations = 9;
    const double radiusIncrement = radius2 + 0.52 * distance;
    int hZ[] = {19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19};
    
