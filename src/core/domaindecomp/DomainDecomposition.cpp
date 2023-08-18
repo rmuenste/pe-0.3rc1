@@ -37,6 +37,7 @@
 #include <pe/core/domaindecomp/HalfSpace.h>
 #include <pe/core/MPI.h>
 #include <pe/core/MPISystem.h>
+#include <sstream>
 
 
 namespace pe {
@@ -355,8 +356,11 @@ void connect_backend( int rank, std::auto_ptr<ProcessGeometry> geometry, const V
    const PS& processstorage( theCollisionSystem()->getProcessStorage() );
 
    // Checking if the remote process is already connected
-   if( processstorage.find( rank ) != processstorage.end() )
-      throw std::invalid_argument( "Remote process is already connected" );
+   if( processstorage.find( rank ) != processstorage.end() ) {
+      std::stringstream ss;
+      ss << "Remote process is already connected: local " << MPISettings::rank() << " -> " << rank;
+      throw std::invalid_argument( ss.str() );
+   }
 
    // Creating a new remote process
    ProcessID process = new Process( rank, geometry, offset );
