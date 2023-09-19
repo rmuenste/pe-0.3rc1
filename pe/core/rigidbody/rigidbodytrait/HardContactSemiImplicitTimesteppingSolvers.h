@@ -58,6 +58,11 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 class RigidBodyTrait< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> > : public MPIRigidBodyTrait
 {
+
+private:
+    // Private member variable
+    Vec3 tempForce_;
+
 protected:
    //**Constructor*********************************************************************************
    /*!\name Constructor */
@@ -74,6 +79,15 @@ protected:
    //**********************************************************************************************
 
 public:
+    // Public setter method for tempForce_
+    void setTempForce(const Vec3& force) {
+        tempForce_ = force;
+    }
+
+    // Public getter method for tempForce_
+    const Vec3& getTempForce() const {
+        return tempForce_;
+    }
 
    size_t index_;
 };
