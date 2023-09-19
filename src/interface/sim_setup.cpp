@@ -30,8 +30,8 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.200 );  // Size of a single time step
+const size_t timesteps     ( 300 );  // Number of time steps for the flowing granular media
+const real   stepsize      (  0.01 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 2 );    // Number of processes in x-direction
@@ -67,7 +67,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 
 bool g_povray  ( false );
 bool g_vtk( true );
-const unsigned int visspacing( 20 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 100 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -122,14 +122,14 @@ void stepSimulation() {
    * The first argument to MPI_Reduce is the communicated value
    * The 2nd argument to MPI_Reduce is cummulative value
    */
-//  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-//  particlesTotalBefore = particlesTotal;
+  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  particlesTotalBefore = particlesTotal;
 //
 //    fc2_EXCLUSIVE_SECTION(0) {
 //     std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::endl;
 //    }
 
-
+  real h = 0.0155;
 //  particlesTotalBefore = particlesTotal;
   world->simulationStep( stepsize );
   //world->simulationStepDebug( stepsize );
@@ -160,10 +160,12 @@ void stepSimulation() {
     }
   }
 
+  //real h = 0.0155;
   MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "Maximum Vp: " << totalV << std::endl;
+    std::cout << "Maximum CFL: " << (totalV * stepsize) / h << std::endl;
     std::cout << "Maximum Ap: " << totalA << std::endl;
   }
 #endif 
@@ -178,14 +180,29 @@ void stepSimulation() {
   numBodies = theCollisionSystem()->getBodyStorage().size();
   bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  pe_EXCLUSIVE_SECTION(0) {
-   std::cout << "Num particles: " << bodiesUpdate << "   " << std::endl;
-  }
-
-//  if (particlesTotal != particlesTotalBefore) {
-//    std::cout << " We have lost particles: " << particlesTotal << " != " << particlesTotalBefore << "\n" << std::endl;
-//    std::exit(EXIT_FAILURE);
+//  pe_EXCLUSIVE_SECTION(0) {
+//   std::cout << "Num particles: " << bodiesUpdate << "   " << std::endl;
 //  }
+
+  if (particlesTotal != particlesTotalBefore) {
+    std::cout << " We have lost particles: " << particlesTotal << " != " << particlesTotalBefore << "\n" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const real cylRad1 = 0.2;  
+  const real cylRad2 = 0.4;  
+  const real cylLength  = 0.4;
+
+  real domainVol = M_PI * std::pow(cylRad2, 2) * cylLength;
+  real cylVol = M_PI * std::pow(cylRad1, 2) * cylLength;
+  domainVol -= cylVol;
+  real radius2 = 0.02;
+  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
+  pe_EXCLUSIVE_SECTION(0) {
+   real volumeFraction = (particlesTotal * partVol)/domainVol * 100.0;
+   std::cout << " Volume fraction[%]       = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n" << std::endl;
+   if(volumeFraction < 20.0)
+     std::exit(EXIT_FAILURE);
+  }
 
 
   /////////////////////////////////////////////////////

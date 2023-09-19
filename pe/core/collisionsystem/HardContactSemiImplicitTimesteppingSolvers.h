@@ -1864,8 +1864,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    real mag = lubricationForce.length();
    if(limiting) {
-     if (mag > 8.2e-5)
-       lubricationForce = 8.2e-5 * lubricationForce.getNormalized();
+     if (mag > 1.2e-6) {
+       lubricationForce = 1.2e-6 * lubricationForce.getNormalized();
+       mag = 1.2e-6;
+     }
    }
 
    //std::cout << "Lubrication force: " << lubricationForce << " | Distance: " << dist << std::endl;
@@ -1897,9 +1899,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real mag = lubricationForce.length();
    bool wallLimiting = true;
    if(wallLimiting) {
-     if (mag > 3.3e-6)
-       lubricationForce = 3.3e-6 * lubricationForce.getNormalized();
-       //lubricationForce = 0.00098 * lubricationForce.getNormalized();
+     if (mag > 1.3e-6) {
+       lubricationForce = 1.3e-6 * lubricationForce.getNormalized();
+       mag = 1.3e-6;
+     }
    }
    if( (std::isnan(lubricationForce[0])) ||
        (std::isnan(lubricationForce[1])) ||

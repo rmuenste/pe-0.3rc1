@@ -72,7 +72,7 @@ void setupBench(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, 0.0 );
   world->setLiquidSolid(true);
   world->setLiquidDensity(1.0);
-
+  world->setViscosity( 8.37e-5 );
   world->setDamping( 1.0 );
 
   // Configuration of the MPI system
@@ -241,7 +241,7 @@ void setupBench(MPI_Comm ex0) {
     int hZ[] = {9, 10, 10};
     
     int count(0);
-    bool resume = false;
+    bool resume = true;
     if(!resume) {
       for (int iteration = 0; iteration < numIterations; ++iteration) {
 
@@ -322,7 +322,7 @@ void setupBench(MPI_Comm ex0) {
   CylinderID cyl(0);
   pe_GLOBAL_SECTION
   {
-    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.22, 0.4, iron );
+    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.21, 0.4, iron );
     cyl->setFixed(true);
     cyl->rotate(0.0, M_PI/2.0 , 0.0);
 
