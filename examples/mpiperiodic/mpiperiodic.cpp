@@ -200,7 +200,11 @@ int main( int argc, char** argv )
       // If we are dealing with the west neighbor, then set the x-offset to 24 
       const Vec3 offset( ( ( west[0] < 0 ) ? ( 24 ) : ( 0 ) ), 0, 0 );
 
-      std::cout << "west neighbor Rank: " << mpisystem->getRank() << " right: " << -center[0]*lpx << " front: " << +center[1]*lpz << " back " << -top[1]*lpz << " offset: " << offset << std::endl;
+
+      std::cout << "west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| -1,0,0: " << -center[0]*lpx 
+                            << "| 0,0,+1: " << +center[1]*lpz 
+                            << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << std::endl;
+
 
       connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
                                 HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
@@ -211,13 +215,15 @@ int main( int argc, char** argv )
    {
       MPI_Cart_rank( cartcomm, east, &rank );
 
-      // If we are dealing with the east neighbor, then set the x-offset to -24 
+      // If we are dealing with the east neighbor, then set the x-offset to -24 (which is -24 units to the left, in -x direction) 
       const Vec3 offset( ( ( east[0]==processesX )?( -24 ) : ( 0 ) ), 0, 0 );
       connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
                                 HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
                                 HalfSpace( Vec3(0,0,-1), -top[1]*lpz ) ), offset );
 
-      std::cout << "east neighbor Rank: " << mpisystem->getRank() << " offset: " << offset << std::endl;
+      std::cout << "east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| +1,0,0: " << +east[0]*lpx 
+                            << "| 0,0,+1: " << +center[1]*lpz 
+                            << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << std::endl;
    }
 
 //   // Connecting the bottom neighbor
@@ -299,6 +305,7 @@ int main( int argc, char** argv )
   if( world->ownsPoint( gpos ) ) {
     BodyID particle;
     particle = createSphere( id, gpos, radius, elastic );
+    particle->isFixed();
     particle->setLinearVel( vel );
   }
 

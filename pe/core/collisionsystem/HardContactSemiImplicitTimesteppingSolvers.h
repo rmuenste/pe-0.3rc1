@@ -1941,7 +1941,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 {
    const real dtinv( real(1) / dt );
 
-   bool useLubrication = true;
+   bool useLubrication = false;
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
