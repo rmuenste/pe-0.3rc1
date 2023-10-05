@@ -70,7 +70,7 @@ int main( int argc, char** argv )
 
    // Particle parameters
    const bool   spheres ( true   );  // Switch between spheres and granular particles
-   const real   radius  ( 0.24  );  // The radius of spheres of the granular media
+   const real   radius  ( 0.005  );  // The radius of spheres of the granular media
    const real   spacing ( 0.001  );  // Initial spacing in-between two spheres
    const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 
@@ -80,7 +80,7 @@ int main( int argc, char** argv )
    const real   stepsize      ( 0.01 );  // Size of a single time step
 
    // Process parameters
-   const int processesX( 4 );  // Number of processes in x-direction
+   const int processesX( 3 );  // Number of processes in x-direction
    const int processesZ( 1 );  // Number of processes in z-direction
 
    // Random number generator parameters
@@ -96,7 +96,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   50 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   10 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -226,75 +226,38 @@ int main( int argc, char** argv )
                             << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << std::endl;
    }
 
-<<<<<<< HEAD
-//   // Connecting the bottom neighbor
-//   {
-//      const Vec3 offset( ( ( west[0] < 0 ) ? ( lx ) : ( 0 ) ), 0, 0 );
-//      std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| 0,0,-1: " << -center[1]*lpz
-//               << "| +1,0,0: " << +center[0]*lpx
-//               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-//      MPI_Cart_rank( cartcomm, bottom, &rank );
-//
-//      connect( rank, intersect( HalfSpace( Vec3(0,0,-1), -center[1]*lpz ),
-//                                HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-//                                HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-//
-//      std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| 0,0,-1: " << -center[1]*lpz
-//               << "| +1,0,0: " << +center[0]*lpx
-//               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-//
-//
-//   }
-//
-//   // Connecting the top neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, top, &rank );
-//      const Vec3 offset( 0, 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(0,0,+1), +top[1]*lpz ),
-//                                HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-//                                HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-//
-//      std::cout << "top neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| 0,0,+1: " << +top[1]*lpz
-//               << "| +1,0,0: " << +center[0]*lpx
-//               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-//
-//
-//   }
-//
-=======
-   // Connecting the bottom neighbor
-   {
-      MPI_Cart_rank( cartcomm, bottom, &rank );
-      const Vec3 offset( 0, 0, ( ( bottom[1]<0 )?( 48 ):( 0 ) ) );
-      connect( rank, intersect( HalfSpace( Vec3(0,0,-1), -center[1]*lpz ),
-                                HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-                                HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
+   if (processesZ > 1) {
 
-      std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
-               << "| 0,0,-1: " << -center[1]*lpz 
-               << "| +1,0,0: " << +center[0]*lpx 
-               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
+      // Connecting the bottom neighbor
+      {
+         MPI_Cart_rank( cartcomm, bottom, &rank );
+         const Vec3 offset( 0, 0, ( ( bottom[1]<0 )?( 48 ):( 0 ) ) );
+         connect( rank, intersect( HalfSpace( Vec3(0,0,-1), -center[1]*lpz ),
+                                 HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
+                                 HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
+
+         std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
+                  << "| 0,0,-1: " << -center[1]*lpz 
+                  << "| +1,0,0: " << +center[0]*lpx 
+                  << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
+
+      }
+
+      // Connecting the top neighbor
+      {
+         MPI_Cart_rank( cartcomm, top, &rank );
+         const Vec3 offset( 0, 0, ( ( top[1]==processesZ )?( -48 ):( 0 ) ) );
+         connect( rank, intersect( HalfSpace( Vec3(0,0,+1), +top[1]*lpz ),
+                                 HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
+                                 HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
+
+         std::cout << "top neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
+                  << "| 0,0,+1: " << +top[1]*lpz 
+                  << "| +1,0,0: " << +center[0]*lpx 
+                  << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;                                
+      }
 
    }
-
-   // Connecting the top neighbor
-   {
-      MPI_Cart_rank( cartcomm, top, &rank );
-      const Vec3 offset( 0, 0, ( ( top[1]==processesZ )?( -48 ):( 0 ) ) );
-      connect( rank, intersect( HalfSpace( Vec3(0,0,+1), +top[1]*lpz ),
-                                HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-                                HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-
-      std::cout << "top neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
-               << "| 0,0,+1: " << +top[1]*lpz 
-               << "| +1,0,0: " << +center[0]*lpx 
-               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;                                
-   }
-
->>>>>>> github/ff-integration
 //   // Connecting the bottom-west neighbor
 //   {
 //      MPI_Cart_rank( cartcomm, bottomwest, &rank );
@@ -366,13 +329,12 @@ int main( int argc, char** argv )
    //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
-  Vec3 gpos(0.5 , 0.5, 0.5);
-  Vec3 vel(2, 0, 0);
+  BodyID particle;
+  Vec3 gpos(0.02 , 0.02, 0.02);
+  Vec3 vel(0.1, 0, 0);
   int id = 0;
   if( world->ownsPoint( gpos ) ) {
-    BodyID particle;
     particle = createSphere( id, gpos, radius, elastic );
-    particle->isFixed();
     particle->setLinearVel( vel );
   }
 
@@ -382,6 +344,7 @@ int main( int argc, char** argv )
   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
     pe_EXCLUSIVE_SECTION( 0 ) {
      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+     std::cout << particle->getPosition() << std::endl;
     }
     world->simulationStep( stepsize );
   }
