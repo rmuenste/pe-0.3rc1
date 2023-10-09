@@ -88,6 +88,7 @@
 #include <pe/util/Types.h>
 #include <pe/util/Vector.h>
 #include <set>
+#include <sstream>
 
 
 
@@ -1767,7 +1768,7 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
     real term2 = -1.0 / 5.0 * std::log(epsilon);
     real term3 = -1.0 / 21.0 * epsilon * std::log(epsilon);
 
-    return coefficient * (term1 + term2 + term3);
+    return -coefficient * (term1 + term2 + term3);
 }
 //*************************************************************************************************
 
@@ -1891,13 +1892,14 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    if (dist < 0.0) {
      return;
    }
+
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
    real fc =  calculate_f_star(eps, hc);
-   //std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
    lubricationForce *= fc;
 
    real mag = lubricationForce.length();
-   bool wallLimiting = true;
+   bool wallLimiting = false;
    if(wallLimiting) {
      if (mag > 1.3e-6) {
        lubricationForce = 1.3e-6 * lubricationForce.getNormalized();
@@ -1916,6 +1918,50 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
 
    b1->addForce(-lubricationForce );
+  }
+  else if(b2->getType() == planeType) {
+
+   std::cout << "Lubrication Wall force for a sphere and a plane " << std::endl;
+   real rad = s1->getRadius();
+
+   real velNormal = trans(vr) * c.getNormal();
+   Vec3 vs = vr - velNormal * c.getNormal();
+
+   real eps = dist / rad;
+   if (dist < 0.0) {
+     return;
+   }
+
+   Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
+   real fc =  calculate_f_star(eps, hc);
+   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   lubricationForce *= fc;
+
+   if (-velNormal > 0) {
+     std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+     return;
+   }
+
+   real mag = lubricationForce.length();
+   bool wallLimiting = false;
+   if(wallLimiting) {
+     if (mag > 1.3e-6) {
+       lubricationForce = 1.3e-6 * lubricationForce.getNormalized();
+       mag = 1.3e-6;
+     }
+   }
+   if( (std::isnan(lubricationForce[0])) ||
+       (std::isnan(lubricationForce[1])) ||
+       (std::isnan(lubricationForce[2])) ) {
+     std::cout << "NaN lubrication found with the wall distance: " << eps << std::endl;
+   }
+
+   if (mag > maxLubrication_) {
+     maxLubrication_ = mag;
+     lubricationDist_ = -1;
+   }
+
+   b1->addForce( lubricationForce );
   }
 }
 
@@ -2069,8 +2115,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       }
 
       //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
-      if(c->getDistance() <= 0.5 * lubricationThreshold) {
+      if(c->getDistance() <= lubricationThreshold && useLubrication) {
 
+         std::cout << "Found a lubrication contact." << std::endl;
          pe_LOG_DEBUG_SECTION( log ) {
             log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
@@ -2079,6 +2126,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
            addLubricationForce(*c, 1.0);
            continue;
          }
+      }
+      else {
+        std::cout << "Contact is not a lubrication contact." << std::endl;
       }
 
       contactsMask_[i] = true;
@@ -3951,9 +4001,15 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 
                   if( it != processstorage_.end() )
                      b->registerProcess( *it );
-                  else
+                  else {
+                     // The new domain has to have all neighbors of the old domain except itself
+                     std::ostringstream oss;
+
+                     oss << "Registering distant processes is not yet implemented." << " " << objparam.reglist_[i] << " not found in neighbors list."; // of process myrank
                      // TODO
-                     throw std::runtime_error( "Registering distant processes is not yet implemented." );
+                     //throw std::runtime_error( "Registering distant processes is not yet implemented." + oss.str() );
+                     throw std::runtime_error( oss.str() );
+                  }
                }
 
                pe_LOG_DEBUG_SECTION( log ) {

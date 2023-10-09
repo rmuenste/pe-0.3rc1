@@ -81,7 +81,7 @@ int main( int argc, char** argv )
 
    // Process parameters
    const int processesX( 3 );  // Number of processes in x-direction
-   const int processesZ( 1 );  // Number of processes in z-direction
+   const int processesZ( 3 );  // Number of processes in z-direction
 
    // Random number generator parameters
    const size_t seed( 12345 );
@@ -128,6 +128,7 @@ int main( int argc, char** argv )
    if( processesX < 2 || processesZ < 1 || processesX*processesZ != mpisystem->getSize() ) {
       std::cerr << pe_RED
                 << "\n Invalid number of MPI processes!\n\n"
+                << processesX*processesZ << " : " << mpisystem->getSize()
                 << pe_OLDCOLOR;
       return EXIT_FAILURE;
    }
@@ -159,10 +160,10 @@ int main( int argc, char** argv )
    // Setup of the MPI processes: Periodic 2D Regular Domain Decomposition
 
    const real lpx( lx / processesX );  // Size of a process subdomain in x-direction
-   const real lpz( lz );  // Size of a process subdomain in z-direction
+   const real lpz( lz / processesZ );  // Size of a process subdomain in z-direction
 
    int dims   [] = { processesX, processesZ };
-   int periods[] = { true      , false       };
+   int periods[] = { true      , true       };
 
    int rank;           // Rank of the neighboring process
    int center[2];      // Definition of the coordinates array 'center'
@@ -172,14 +173,25 @@ int main( int argc, char** argv )
    mpisystem->setComm( cartcomm );
    MPI_Cart_coords( cartcomm, mpisystem->getRank(), 2, center );
 
-   int west      [] = { center[0]-1, center[1]   };
-   int east      [] = { center[0]+1, center[1]   };
+   int west     [] = { center[0]-1, center[1]  , center[2] };
+   int east     [] = { center[0]+1, center[1]  , center[2] };
+   int south    [] = { center[0]  , center[1]-1, center[2] };
+   int north    [] = { center[0]  , center[1]+1, center[2] };
+   int southwest[] = { center[0]-1, center[1]-1, center[2] };
+   int southeast[] = { center[0]+1, center[1]-1, center[2] };
+   int northwest[] = { center[0]-1, center[1]+1, center[2] };
+   int northeast[] = { center[0]+1, center[1]+1, center[2] };
+
    int bottom    [] = { center[0]  , center[1]-1 };
-   int top       [] = { center[0]  , center[1]+1 };
    int bottomwest[] = { center[0]-1, center[1]-1 };
    int bottomeast[] = { center[0]+1, center[1]-1 };
+
+   int top       [] = { center[0]  , center[1]+1 };
    int topwest   [] = { center[0]-1, center[1]+1 };
    int topeast   [] = { center[0]+1, center[1]+1 };
+
+
+
 
    // Specify local subdomain (Since the domain is periodic we do not have to remove intersections at the border)
    // A displacement of a plane in the +x direction is expressed by a negative displacement -d
@@ -191,7 +203,9 @@ int main( int argc, char** argv )
       HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
       HalfSpace( Vec3(0,0,-1), -top[1]*lpz ) ) );
 
-   std::cout << "Rank: " << mpisystem->getRank() << " +1,0,0: " << +center[0]*lpx << "| -1,0,0: " << -east[0]*lpx << "| 0,0,+1: " << +center[1]*lpz << "| 0,0,-1: " << -top[1]*lpz << std::endl;
+   pe_LOG_DEBUG_SECTION( log ) {
+     log << "Rank: " << mpisystem->getRank() << " +1,0,0: " << +center[0]*lpx << "| -1,0,0: " << -east[0]*lpx << "| 0,0,+1: " << +center[1]*lpz << "| 0,0,-1: " << -top[1]*lpz << "\n";
+   }
 
 
    // Connecting the west neighbor
@@ -201,10 +215,12 @@ int main( int argc, char** argv )
       const Vec3 offset( ( ( west[0] < 0 ) ? ( lx ) : ( 0 ) ), 0, 0 );
 
 
-      std::cout << "west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| -1,0,0: " << -center[0]*lpx 
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| -1,0,0: " << -center[0]*lpx 
                             << "| 0,0,+1: " << +center[1]*lpz 
-                            << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << std::endl;
+                            << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << "\n";
 
+      }
 
       connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
                                 HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
@@ -221,95 +237,104 @@ int main( int argc, char** argv )
                                 HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
                                 HalfSpace( Vec3(0,0,-1), -top[1]*lpz ) ), offset );
 
-      std::cout << "east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| +1,0,0: " << +east[0]*lpx 
-                            << "| 0,0,+1: " << +center[1]*lpz 
-                            << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << std::endl;
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| +1,0,0: " << +east[0]*lpx 
+                               << "| 0,0,+1: " << +center[1]*lpz 
+                               << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << "\n";
+      }
    }
 
-   if (processesZ > 1) {
+   // Connecting the bottom neighbor
+   {
+     std::cout << "bottom:" << bottom[0]<< " " << bottom[1] << std::endl; 
+      MPI_Cart_rank( cartcomm, bottom, &rank );
+      const Vec3 offset( 0, 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
+      connect( rank, intersect( HalfSpace( Vec3(0,0,-1), -center[1]*lpz ),
+                              HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
+                              HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
 
-      // Connecting the bottom neighbor
-      {
-         MPI_Cart_rank( cartcomm, bottom, &rank );
-         const Vec3 offset( 0, 0, ( ( bottom[1]<0 )?( 48 ):( 0 ) ) );
-         connect( rank, intersect( HalfSpace( Vec3(0,0,-1), -center[1]*lpz ),
-                                 HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-                                 HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-
-         std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
-                  << "| 0,0,-1: " << -center[1]*lpz 
-                  << "| +1,0,0: " << +center[0]*lpx 
-                  << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-
+      pe_LOG_DEBUG_SECTION( log ) {
+            log << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
+                     << "| 0,0,-1: " << -center[1]*lpz 
+                     << "| +1,0,0: " << +center[0]*lpx 
+                     << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << "\n";
       }
-
-      // Connecting the top neighbor
-      {
-         MPI_Cart_rank( cartcomm, top, &rank );
-         const Vec3 offset( 0, 0, ( ( top[1]==processesZ )?( -48 ):( 0 ) ) );
-         connect( rank, intersect( HalfSpace( Vec3(0,0,+1), +top[1]*lpz ),
-                                 HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-                                 HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-
-         std::cout << "top neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
-                  << "| 0,0,+1: " << +top[1]*lpz 
-                  << "| +1,0,0: " << +center[0]*lpx 
-                  << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;                                
-      }
-
    }
-//   // Connecting the bottom-west neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, bottomwest, &rank );
-//      const Vec3 offset( ( ( west[0]<0 )?( lx ):( 0 ) ), 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,-1), -center[1]*lpz ) ), offset );
-//
-//      std::cout << "bottom-west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| -1,0,0: " << -center[0]*lpx
-//               << "| 0,0,-1: " << -center[1]*lpz << " offset: " << offset << std::endl;
-//   }
 
-//   // Connecting the bottom-east neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, bottomeast, &rank );
-//      const Vec3 offset( ( ( east[0]==processesX )?( -lx ):( 0 ) ), 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,-1), -center[1]*lpz ) ), offset );
-//
-//      std::cout << "bottom-east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| +1,0,0: " << +east[0]*lpx
-//               << "| 0,0,-1: " << -center[1]*lpz << " offset: " << offset << std::endl;
-//   }
-//
-//   // Connecting the top-west neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, topwest, &rank );
-//      const Vec3 offset( ( ( west[0]<0 )?( lx ):( 0 ) ), 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,+1), +top[1]*lpz ) ), offset );
-//
-//      std::cout << "top-west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| -1,0,0: " << -center[0]*lpx
-//               << "| 0,0,+1: " << +top[1]*lpz << " offset: " << offset << std::endl;
-//   }
-//
-//   // Connecting the top-east neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, topeast, &rank );
-//      const Vec3 offset( ( ( east[0]==processesX )?( -lx ):( 0 ) ), 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,+1), +top[1]*lpz ) ), offset );
-//
-//      std::cout << "top-east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| +1,0,0: " << +east[0]*lpx
-//               << "| 0,0,+1: " << +top[1]*lpz << " offset: " << offset << std::endl;
-//   }
+   // Connecting the top neighbor
+   {
+       MPI_Cart_rank( cartcomm, top, &rank );
+       const Vec3 offset( 0, 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
+       connect( rank, intersect( HalfSpace( Vec3(0,0,+1), +top[1]*lpz ),
+                               HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
+                               HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
 
-#ifndef NDEBUG
+       pe_LOG_DEBUG_SECTION( log ) {
+             log << "top neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() 
+                      << "| 0,0,+1: " << +top[1]*lpz 
+                      << "| +1,0,0: " << +center[0]*lpx 
+                      << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << "\n";                                
+       }
+   }
+
+   // Connecting the bottom-west neighbor
+   {
+       MPI_Cart_rank( cartcomm, bottomwest, &rank );
+       const Vec3 offset( ( ( west[0]<0 )?( lx ):( 0 ) ), 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
+       connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
+                                 HalfSpace( Vec3(0,0,-1), -center[1]*lpz ) ), offset );
+
+     pe_LOG_DEBUG_SECTION( log ) {
+       log << "bottom-west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
+                << "| -1,0,0: " << -center[0]*lpx
+                << "| 0,0,-1: " << -center[1]*lpz << " offset: " << offset << "\n";
+     }
+   }
+
+   // Connecting the bottom-east neighbor
+   {
+      MPI_Cart_rank( cartcomm, bottomeast, &rank );
+      const Vec3 offset( ( ( east[0]==processesX )?( -lx ):( 0 ) ), 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
+      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
+                                HalfSpace( Vec3(0,0,-1), -center[1]*lpz ) ), offset );
+
+     pe_LOG_DEBUG_SECTION( log ) {
+      log << "bottom-east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
+               << "| +1,0,0: " << +east[0]*lpx
+               << "| 0,0,-1: " << -center[1]*lpz << " offset: " << offset << "\n";
+     }
+   }
+
+   // Connecting the top-west neighbor
+   {
+      MPI_Cart_rank( cartcomm, topwest, &rank );
+      const Vec3 offset( ( ( west[0]<0 )?( lx ):( 0 ) ), 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
+      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
+                                HalfSpace( Vec3(0,0,+1), +top[1]*lpz ) ), offset );
+
+     pe_LOG_DEBUG_SECTION( log ) {
+        log << "top-west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
+                 << "| -1,0,0: " << -center[0]*lpx
+                 << "| 0,0,+1: " << +top[1]*lpz << " offset: " << offset << "\n";
+     }
+   }
+
+   // Connecting the top-east neighbor
+   {
+      MPI_Cart_rank( cartcomm, topeast, &rank );
+      const Vec3 offset( ( ( east[0]==processesX )?( -lx ):( 0 ) ), 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
+      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
+                                HalfSpace( Vec3(0,0,+1), +top[1]*lpz ) ), offset );
+
+     pe_LOG_DEBUG_SECTION( log ) {
+        log << "top-east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
+                 << "| +1,0,0: " << +east[0]*lpx
+                 << "| 0,0,+1: " << +top[1]*lpz << " offset: " << offset << "\n";
+     }
+   }
+
    //Checking the process setup
    theMPISystem()->checkProcesses();
-#endif
 
    // Setup of the VTK visualization
    if( vtk ) {
@@ -331,7 +356,7 @@ int main( int argc, char** argv )
 
   BodyID particle;
   Vec3 gpos(0.02 , 0.02, 0.02);
-  Vec3 vel(0.1, 0, 0);
+  Vec3 vel(0.0, 0, 0.1);
   int id = 0;
   if( world->ownsPoint( gpos ) ) {
     particle = createSphere( id, gpos, radius, elastic );
@@ -344,9 +369,21 @@ int main( int argc, char** argv )
   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
     pe_EXCLUSIVE_SECTION( 0 ) {
      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-     std::cout << particle->getPosition() << std::endl;
+//     std::cout << particle->getPosition() << std::endl;
+//     std::cout << particle->getLinearVel() << std::endl;
     }
     world->simulationStep( stepsize );
+
+    for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
+      World::SizeType widx = static_cast<World::SizeType>(i);
+      BodyID body = world->getBody(static_cast<unsigned int>(widx));
+      if(body->getType() == sphereType || body->getType() == capsuleType) {
+        Vec3 vel = body->getLinearVel();
+        Vec3 ang = body->getAngularVel();
+        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition() << std::endl;
+      }
+    }
+
   }
 
    /////////////////////////////////////////////////////

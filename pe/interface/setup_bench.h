@@ -79,9 +79,13 @@ void setupBench(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  const real dx( 0.4 );
-  const real dy( 0.4 );
-  const real dz( 0.1 );
+//  const real dx( 0.4 );
+//  const real dy( 0.4 );
+//  const real dz( 0.1 );
+
+  const real dx( 0.05 );
+  const real dy( 0.05 );
+  const real dz( 0.05 );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -145,8 +149,11 @@ void setupBench(MPI_Comm ex0) {
 
 //===========================================================================================================
 
-  real bx =-0.4;
-  real by =-0.4;
+//  real bx =-0.4;
+//  real by =-0.4;
+//  real bz = 0.0;
+  real bx = 0.0;
+  real by = 0.0;
   real bz = 0.0;
 
   decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
@@ -236,12 +243,12 @@ void setupBench(MPI_Comm ex0) {
   //=========================================================================================
     const double initialRadius = 0.262;
     const double distance = 2.5 * radius2;
-    const int numIterations = 3;
+    const int numIterations = 0;
     const double radiusIncrement = radius2 + 0.5 * distance;
     int hZ[] = {9, 10, 10};
     
     int count(0);
-    bool resume = true;
+    bool resume = false;
     if(!resume) {
       for (int iteration = 0; iteration < numIterations; ++iteration) {
 
@@ -311,26 +318,28 @@ void setupBench(MPI_Comm ex0) {
 //
 //  //=========================================================================================  
 
-//  if (world->ownsPoint( position )) {
-//    SphereID sphere = createSphere(idx, position, radius2, myMaterial, true);
-//    std::cout << "[particle position]: " << position << std::endl;
-////    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-////    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
-//    ++idx;
-//  }
+  position = Vec3(0.015, 0.015, 0.08);
+  if (world->ownsPoint( position )) {
+    BodyID sphere = createSphere(idx, position, 0.01, myMaterial, true);
+    sphere->isFixed();
+    std::cout << "[particle position]: " << position << std::endl;
+//    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
+//    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
+    ++idx;
+  }
 
   CylinderID cyl(0);
-  pe_GLOBAL_SECTION
-  {
-    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.21, 0.4, iron );
-    cyl->setFixed(true);
-    cyl->rotate(0.0, M_PI/2.0 , 0.0);
-
-    InnerCylinderID cyl2(0);
-    cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.2, 0.4, 0.4, iron );
-    cyl2->setFixed(true);
-    cyl2->rotate(0.0, M_PI/2.0, 0.0);
-  }
+//  pe_GLOBAL_SECTION
+//  {
+//    cyl = createCylinder( 10011, 0.0, 0.0, 0.2, 0.21, 0.4, iron );
+//    cyl->setFixed(true);
+//    cyl->rotate(0.0, M_PI/2.0 , 0.0);
+//
+//    InnerCylinderID cyl2(0);
+//    cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 0.2, 0.4, 0.4, iron );
+//    cyl2->setFixed(true);
+//    cyl2->rotate(0.0, M_PI/2.0, 0.0);
+//  }
 
   // Synchronization of the MPI processes
   world->synchronize();

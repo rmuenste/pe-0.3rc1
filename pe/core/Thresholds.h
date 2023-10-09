@@ -158,6 +158,7 @@ public:
 
    //! Threshold for the distance between two rigid bodies.
    /*! Rigid bodies with a distance smaller than this threshold are in contact. */
+   //static inline double contactThreshold() { return 33E-3; }
    static inline double contactThreshold() { return 1E-8; }
 
    //! Threshold for the restriction of the coefficient of restitution.
@@ -183,7 +184,8 @@ public:
    //! Threshold for all points/checks.
    /*! Only points with a distance to the all smaller than this threshold are considered
        for lubrication. */
-   static inline double lubricationThreshold() { return 1E-2; }
+   //static inline double lubricationThreshold() { return 33e-3; }
+   static inline double lubricationThreshold() { return 1e-8; }
 
    //! Threshold for parallelism checks.
    /*! Scalar products smaller than this threshold value indicate parallel vectors. */

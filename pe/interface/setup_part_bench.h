@@ -5,8 +5,8 @@ void setupParticleBench(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, -9.81 );
 
   world->setLiquidSolid(true);
-  world->setLiquidDensity(962);
-
+  world->setLiquidDensity(970);
+  world->setViscosity( 373e-3 );
   world->setDamping( 1.0 );
 
   // Configuration of the MPI system
@@ -431,6 +431,7 @@ void setupParticleBench(MPI_Comm ex0) {
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   Vec3 position(-0.0, -0.0, 0.1275);
+  //Vec3 position(-0.0, -0.0, 0.008);
 //  0.123597
 
   //==============================================================================================
@@ -439,6 +440,7 @@ void setupParticleBench(MPI_Comm ex0) {
   real radBench = 0.0075;
   if (world->ownsPoint( position )) {
     SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
+    //spear->setLinearVel(Vec3(0,0,-0.1));
     std::cout << "[Creating particle] at: " << position << " in domain: " << my_rank << std::endl;
     std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
     std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
