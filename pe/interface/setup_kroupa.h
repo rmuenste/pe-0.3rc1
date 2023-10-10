@@ -1,8 +1,83 @@
 #include <pe/interface/decompose.h>
 #include <random>
 #include <algorithm>
+#include <vector>
+#include <iostream>
 
 using namespace pe::povray;
+
+// Function to generate random positions within a cubic domain
+std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFraction) {
+    std::vector<Vec3> positions;
+
+    // Calculate the number of cells along one side of the cubic grid
+    int gridSize = static_cast<int>(L / cellSize);
+
+    // Calculate the total number of cells in the grid
+    int totalCells = gridSize * gridSize * gridSize;
+
+    // Initialize a vector to keep track of visited cells
+    std::vector<bool> cellVisited(totalCells, false);
+
+    // Initialize random number generator
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<real> dis(-cellSize / 2.0, cellSize / 2.0);
+
+    // Generate random positions until the grid is full or the volume fraction is reached
+    while (positions.size() < totalCells && (static_cast<real>(positions.size()) / totalCells) < volumeFraction) {
+        // Generate random cell indices
+        int x = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
+        int y = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
+        int z = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
+
+        int cellIndex = x + y * gridSize + z * gridSize * gridSize;
+        
+        // Calculate the position of the cell center
+        real posX = (x + 0.5) * cellSize;
+        real posY = (y + 0.5) * cellSize;
+        real posZ = (z + 0.5) * cellSize;
+
+        Vec3 gpos(posX, posY, posZ);
+
+        // Check if the cell has not been visited
+        if (!cellVisited[cellIndex] && world->ownsPoint( gpos ) ) {
+            // Mark the cell as visited
+            cellVisited[cellIndex] = true;
+
+            // Calculate the position of the cell center
+            double posX = (x + 0.5) * cellSize;
+            double posY = (y + 0.5) * cellSize;
+            double posZ = (z + 0.5) * cellSize;
+
+            // Create a Vec3 object for the position and add it to the positions vector
+            positions.push_back(Vec3(posX, posY, posZ));
+        }
+    }
+
+    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
+    real domainVol = L * L * L;
+    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
+    //std::cout << "Volume fraction:  " << solidFraction << std::endl;
+    std::cout << "local:  " << positions.size() << std::endl;
+    return positions;
+}
+
+//int main() {
+//    // Example usage
+//    double cubeSideLength = 10.0;  // Length of the cubic domain
+//    double cellSize = 1.0;         // Size of each cubic cell
+//    double volumeFraction = 0.5;   // Desired volume fraction
+//
+//    std::vector<Vec3> randomPositions = generateRandomPositions(cubeSideLength, cellSize, volumeFraction);
+//
+//    // Print the generated positions
+//    for (const Vec3& pos : randomPositions) {
+//        std::cout << "Position: (" << pos.x << ", " << pos.y << ", " << pos.z << ")\n";
+//    }
+//
+//    return 0;
+//}
 
 void setupKroupa(MPI_Comm ex0) {
 
@@ -142,22 +217,26 @@ void setupKroupa(MPI_Comm ex0) {
 
   real h = 0.0075;
 
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 0.01, 0.01); 
   //=========================================================================================
   BodyID particle;
   Vec3 gpos(0.02 , 0.02, 0.02);
   Vec3 vel(0.1, 0, 0.0);
 
-  real radius2 = 0.01;
+  real radius2 = 0.005;
   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-  if( world->ownsPoint( gpos ) ) {
-    particle = createSphere( idx, gpos, radius2, elastic );
-    particle->setLinearVel( vel );
-  }
-  //=========================================================================================  
 
-  pe_GLOBAL_SECTION
-  {
+  for (int i = 0; i < allPositions.size(); ++i) {
+    Vec3 &position = allPositions[i];
+    SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+    ++idx;      
   }
+
+//  if( world->ownsPoint( gpos ) ) {
+//    particle = createSphere( idx, gpos, radius2, elastic );
+//    particle->setLinearVel( vel );
+//  }
+  //=========================================================================================  
 
   // Synchronization of the MPI processes
   world->synchronize();
@@ -182,7 +261,8 @@ void setupKroupa(MPI_Comm ex0) {
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
-  particlesTotal = primitivesTotal;
+  if(resume)
+    particlesTotal = primitivesTotal;
 
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
 

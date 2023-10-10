@@ -139,40 +139,39 @@ void stepSimulation() {
 #define OUTPUT_LEVEL2
 #ifdef OUTPUT_LEVEL2
   unsigned int i(0);
-//  real maxV(0.0);
-//  real maxA(0.0);
-//  real totalV(0.0);
-//  real totalA(0.0);
+  real maxV(0.0);
+  real maxA(0.0);
+  real totalV(0.0);
+  real totalA(0.0);
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
     if(body->getType() == sphereType || body->getType() == capsuleType) {
       Vec3 vel = body->getLinearVel();
       Vec3 ang = body->getAngularVel();
-//      real v = vel.length();
-//      real a = ang.length();
-//      if( maxV <= v) 
-//        maxV = v;
-//      if( maxA <= a) 
-//        maxA = a;
+      real v = vel.length();
+      real a = ang.length();
+      if( maxV <= v) 
+        maxV = v;
+      if( maxA <= a) 
+        maxA = a;
       
 //      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+////      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
 //
     }
   }
 
-  //real h = 0.0155;
-//  MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
-//  MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
-//  pe_EXCLUSIVE_SECTION(0) {
-//    std::cout << "Maximum Vp: " << totalV << std::endl;
-//    std::cout << "Maximum CFL: " << (totalV * stepsize) / h << std::endl;
-//    std::cout << "Maximum Ap: " << totalA << std::endl;
-//  }
+  MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
+  MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "Maximum Vp: " << totalV << std::endl;
+    std::cout << "Maximum CFL: " << (totalV * stepsize) / h << std::endl;
+    std::cout << "Maximum Ap: " << totalA << std::endl;
+  }
 #endif 
 
   pe_EXCLUSIVE_SECTION(0) {

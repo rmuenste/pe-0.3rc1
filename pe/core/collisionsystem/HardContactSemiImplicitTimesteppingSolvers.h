@@ -2128,7 +2128,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          }
       }
       else {
-        std::cout << "Contact is not a lubrication contact." << std::endl;
+        //std::cout << "Contact is not a lubrication contact." << std::endl;
       }
 
       contactsMask_[i] = true;
