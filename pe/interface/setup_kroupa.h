@@ -59,7 +59,7 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
     real domainVol = L * L * L;
     real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
     //std::cout << "Volume fraction:  " << solidFraction << std::endl;
-    std::cout << "local:  " << positions.size() << std::endl;
+    //std::cout << "local:  " << positions.size() << std::endl;
     return positions;
 }
 
@@ -93,7 +93,7 @@ void setupKroupa(MPI_Comm ex0) {
   mpisystem->setComm(ex0);
 
   // Resume Simulation
-  bool resume ( false );
+  bool resume ( true );
 
 
   const real L( 0.1 );
@@ -186,20 +186,6 @@ void setupKroupa(MPI_Comm ex0) {
 //#endif
 
   MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-//  std::cout << "[Creating a plane] " << std::endl;
-  pe_GLOBAL_SECTION
-  {
-//     // Creating the ground plane
-//     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-//     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
-//     createPlane( 1779,-1.0, 0.0, 0.0,-2.0, granite, false ); // left border
-// 
-//     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
-//     createPlane( 1781, 0.0,-1.0, 0.0,-2, granite, false ); // front border
-//
-     createPlane( 20000, 0.0, 0.0, 1.0, 0.0, granite, false ); // bottom border
-     createPlane( 20004, 0.0, 0.0,-1.0, -lz, granite, false ); // top border
-  }
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "#==================================================================================" << std::endl;
@@ -226,17 +212,32 @@ void setupKroupa(MPI_Comm ex0) {
   real radius2 = 0.005;
   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
-  for (int i = 0; i < allPositions.size(); ++i) {
-    Vec3 &position = allPositions[i];
-    SphereID sphere = createSphere(idx, position, radius2, elastic, true);
-    ++idx;      
+  //=========================================================================================
+  if(!resume) {
+    for (int i = 0; i < allPositions.size(); ++i) {
+      Vec3 &position = allPositions[i];
+      SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+      ++idx;      
+    }
   }
+  else {
+    checkpointer.read( "../start.1" );
+  }
+  //=========================================================================================
+
+
 
 //  if( world->ownsPoint( gpos ) ) {
 //    particle = createSphere( idx, gpos, radius2, elastic );
 //    particle->setLinearVel( vel );
 //  }
   //=========================================================================================  
+  
+  pe_GLOBAL_SECTION
+  {
+     createPlane( 20000, 0.0, 0.0, 1.0, 0.0, granite, false ); // bottom border
+     createPlane( 20004, 0.0, 0.0,-1.0, -lz, granite, false ); // top border
+  }
 
   // Synchronization of the MPI processes
   world->synchronize();
@@ -256,13 +257,28 @@ void setupKroupa(MPI_Comm ex0) {
   unsigned long particlesTotal ( 0 );
   unsigned long primitivesTotal( 0 );
   unsigned long bla = idx;
-  int numBodies =  theCollisionSystem()->getBodyStorage().size();
-  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-  MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
-  if(resume)
-    particlesTotal = primitivesTotal;
+  int numBodies (0);
+  int numTotal (0);
+  unsigned int j(0);
+  for (; j < theCollisionSystem()->getBodyStorage().size(); j++) {
+    World::SizeType widx = static_cast<World::SizeType>(j);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    if(body->getType() == sphereType) {
+      numBodies++;
+      numTotal++;
+    } else {
+      numTotal++;
+    }
+  }
+
+  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
+  unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
+  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+
+//  if(resume)
+//    particlesTotal = primitivesTotal;
 
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
 
