@@ -142,7 +142,7 @@ void PlaneBase::calcBoundingBox()
    aabb_[4] = ( normal_[0] == real(0) && normal_[1] >  real(0) && normal_[2] == real(0) )
                  ? (  d_ + contactThreshold ) : (  inf );
    aabb_[5] = ( normal_[0] == real(0) && normal_[1] == real(0) && normal_[2] >  real(0) )
-                 ? (  d_ + contactThreshold ) : (  inf );
+                 ? (  d_ + lubricationThreshold ) : (  inf );
 
    pe_INTERNAL_ASSERT( aabb_.isValid(), "Invalid bounding box detected" );
 }

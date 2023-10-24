@@ -222,6 +222,7 @@ public:
    //@{
    inline void            setRelaxationParameter( real f );
    inline void            setMaxIterations( size_t n );
+   inline void            setLubrication( bool lub );
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
    //@}
@@ -325,6 +326,7 @@ private:
    real lubricationDist_;
    real maxForce_;
    Vec3 maxForceVector_;
+   bool useLubrication_;
 
    size_t numContacts_;
    MPITag lastSyncTag_;
@@ -447,6 +449,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , maximumPenetration_ ( 0.0 )
    , maxLubrication_( 0.0 )
    , maxForce_      ( 0.0 )
+   , useLubrication_ ( false )
    , maxForceVector_  ( )
    , lubricationDist_( 0.0 )
    , numContacts_      ( 0 )
@@ -924,6 +927,27 @@ template< template<typename> class CD                           // Type of the c
 inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setRelaxationModel( RelaxationModel relaxationModel )
 {
    relaxationModel_ = relaxationModel;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Set use of the lubrication model
+ *
+ * \param lub Use true for on, false for off
+ * \return void
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setLubrication( bool lub )
+{
+   useLubrication_ = lub;
 }
 //*************************************************************************************************
 
@@ -1765,10 +1789,10 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
     const Vec3 coefficient = -6 * pi * radius * eta_f * v_r * n;
 
     real term1 = 1.0 * std::pow(epsilon, -1);
-    real term2 = -1.0 / 5.0 * std::log(epsilon);
-    real term3 = -1.0 / 21.0 * epsilon * std::log(epsilon);
+    real term2 = 0.0; //-1.0 / 5.0 * std::log(epsilon);
+    real term3 = 0.0; //-1.0 / 21.0 * epsilon * std::log(epsilon);
 
-    return -coefficient * (term1 + term2 + term3);
+    return coefficient * (term1 + term2 + term3);
 }
 //*************************************************************************************************
 
@@ -1826,7 +1850,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   bool limiting = true;
   
   real visc = Settings::liquidViscosity();
-  real hc = 0.01;
+  real hc = 1.9;
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -1895,7 +1919,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
    real fc =  calculate_f_star(eps, hc);
-   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   std::cout << "Lubrication Wall force: " << lubricationForce[2] << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
    lubricationForce *= fc;
 
    real mag = lubricationForce.length();
@@ -1921,6 +1945,11 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   }
   else if(b2->getType() == planeType) {
 
+    if(b1->isRemote()) {
+     std::cout << "Not adding lubrication force for remote body" << std::endl;
+     return;
+    } 
+
    std::cout << "Lubrication Wall force for a sphere and a plane " << std::endl;
    real rad = s1->getRadius();
 
@@ -1932,10 +1961,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      return;
    }
 
-   Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
+   int t = TimeStep::step();
+   Vec3 lubricationForce = calculateWallLubricationForce(visc, -vr, c.getNormal(), eps, rad);
    real fc =  calculate_f_star(eps, hc);
-   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   std::cout << "Lubrication Wall force: " << lubricationForce[2] << " | global normal: " << c.getNormal() << " | Distance: " << dist << " | vr: "<< vr[0] << " "<< vr[1] << " " << vr[2] << std::endl;
    lubricationForce *= fc;
+   std::cout << "CorrectedWallForce: " << lubricationForce[2] << " h_eps:  " << eps  << " t:" << t << " plane: " <<  b2->getSystemID() << " sphere:" << b1->getSystemID() << " on rank:" << MPISettings::rank() << std::endl;
 
    if (-velNormal > 0) {
      std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
@@ -1986,8 +2017,7 @@ template< template<typename> class CD                           // Type of the c
 void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::resolveContacts( const Contacts& contacts, real dt )
 {
    const real dtinv( real(1) / dt );
-
-   bool useLubrication = false;
+   useLubrication_ = true;
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -2115,20 +2145,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       }
 
       //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
-      if(c->getDistance() <= lubricationThreshold && useLubrication) {
+      if(useLubrication_ && (c->getDistance() <= lubricationThreshold)) {
 
          std::cout << "Found a lubrication contact." << std::endl;
          pe_LOG_DEBUG_SECTION( log ) {
             log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
-         if(useLubrication) {
+         if(useLubrication_) {
            numLubricationContacts++;
            addLubricationForce(*c, 1.0);
            continue;
          }
       }
       else {
-        //std::cout << "Contact is not a lubrication contact." << std::endl;
+        std::cout << "Contact is not a lubrication contact." << c->getDistance() << " threshold: " << lubricationThreshold << std::endl;
       }
 
       contactsMask_[i] = true;
@@ -2453,14 +2483,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    real allForce = 0.0;
    real allPenetration = 0.0;
 
-   if (useLubrication) {
+   if (useLubrication_) {
       MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
       MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       MPI_Reduce( &maximumPenetration_, &allPenetration, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       pe_EXCLUSIVE_SECTION(0) {
       std::cout << "Max Lubrication : " << allLub << " at distance: " << allDist << std::endl;
-      std::cout << "Max Penetration : " << allPenetration << std::endl;
+      std::cout << "Max Penetration distance: " << allPenetration << std::endl;
       }
    }
    
@@ -4005,10 +4035,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
                      // The new domain has to have all neighbors of the old domain except itself
                      std::ostringstream oss;
 
-                     oss << "Registering distant processes is not yet implemented." << " " << objparam.reglist_[i] << " not found in neighbors list."; // of process myrank
+                     
+                     oss <<"Registering distant processes is not yet implemented." << myRank << ": "  << " " << objparam.reglist_[i] << " not found in neighbors list."; // of process myrank
                      // TODO
                      //throw std::runtime_error( "Registering distant processes is not yet implemented." + oss.str() );
-                     throw std::runtime_error( oss.str() );
+                     std::cout << oss.str() << std::endl;
+                     //throw std::runtime_error( oss.str() );
                   }
                }
 

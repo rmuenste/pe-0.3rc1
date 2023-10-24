@@ -31,12 +31,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.01 );  // Size of a single time step
+const real   stepsize      (  0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
-const int    processesY( 3 );    // Number of processes in y-direction
-const int    processesZ( 3 );    // Number of processes in y-direction
+const int    processesX( 1 );    // Number of processes in x-direction
+const int    processesY( 1 );    // Number of processes in y-direction
+const int    processesZ( 12 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -67,7 +67,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 
 bool g_povray  ( false );
 bool g_vtk( true );
-const unsigned int visspacing( 50 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 200 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -156,8 +156,8 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
 ////      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;

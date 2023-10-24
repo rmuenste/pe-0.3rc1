@@ -34,6 +34,12 @@ void synchronizeForces() {
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
     if (body->getType() == sphereType) {
+      real gravForceZ = -9.81 * 0.001972;
+      std::cout << "Fluid force: " << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
+      std::cout << "Gravity force: " << gravForceZ << std::endl;
+      std::cout << "F2G-Balance: " << body->getForce()[2] + gravForceZ << std::endl;
+
+  world->setGravity( 0.0, 0.0, -9.81 );
       body->applyFluidForces(stepsize);
 //      std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
     }

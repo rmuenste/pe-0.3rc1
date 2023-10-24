@@ -5,9 +5,11 @@ void setupParticleBench(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, -9.81 );
 
   world->setLiquidSolid(true);
-  world->setLiquidDensity(970);
+  world->setLiquidDensity(960);
   world->setViscosity( 373e-3 );
   world->setDamping( 1.0 );
+
+  bool useLubrication(false);
 
   // Configuration of the MPI system
   mpisystem = theMPISystem();
@@ -19,7 +21,7 @@ void setupParticleBench(MPI_Comm ex0) {
   //const real dz( 0.08 ) 2 subs;
 //  const real dx( -0.05 );
 //  const real dy( -0.05 );
-  const real dz( 0.013333333 );
+  const real dz( 0.16 / static_cast<real>(processesZ) );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -385,18 +387,6 @@ void setupParticleBench(MPI_Comm ex0) {
 //#endif
 
   MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  std::cout << "[Creating a plane] " << std::endl;
-  pe_GLOBAL_SECTION
-  {
-     // Creating the ground plane
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-//     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
-//     createPlane( 1779,-1.0, 0.0, 0.0,-10.0, granite, false ); // left border
-// 
-//     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
-//     createPlane( 1781, 0.0,-1.0, 0.0,-10, granite, false ); // front border
-
-  }
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "#==================================================================================" << std::endl;
@@ -430,22 +420,45 @@ void setupParticleBench(MPI_Comm ex0) {
 
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  Vec3 position(-0.0, -0.0, 0.1275);
   //Vec3 position(-0.0, -0.0, 0.008);
 //  0.123597
 
   //==============================================================================================
   // Bench Configuration
   //==============================================================================================
+  SphereID spear(nullptr);
   real radBench = 0.0075;
-  if (world->ownsPoint( position )) {
-    SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
-    //spear->setLinearVel(Vec3(0,0,-0.1));
-    std::cout << "[Creating particle] at: " << position << " in domain: " << my_rank << std::endl;
-    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
-    ++idx;
+  Vec3 position(-0.0, -0.0, 0.1275);
+  //Vec3 position(-0.0, -0.0, 0.03 + radBench);
+
+  bool resume = true;
+  //=========================================================================================
+  // Particle Setup
+  //=========================================================================================
+  if(!resume) {
+    if (world->ownsPoint( position )) {
+      spear = createSphere(idx, position, radBench, myMaterial, true);
+      //spear->setLinearVel(Vec3(0,0,-0.035));
+      std::cout << "[Creating particle] at: " << position << " in domain: " << my_rank << std::endl;
+      std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
+      ++idx;
+    }
   }
+  else {
+    checkpointer.read( "../start.1" );
+  }
+
+  //=========================================================================================
+  // Create the ground plane  
+  //=========================================================================================
+  std::cout << "[Creating a plane] " << std::endl;
+//  pe_GLOBAL_SECTION
+//  {
+//     // Creating the ground plane
+//     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
+//     std::cout << "[Plane box] : " << g_ground->getAABB()[5] << std::endl;
+//  }
+  //=========================================================================================
 
   // Synchronization of the MPI processes
   world->synchronize();
@@ -455,19 +468,33 @@ void setupParticleBench(MPI_Comm ex0) {
   unsigned long primitivesTotal( 0 );
   unsigned long bla = idx;
   int numBodies =  theCollisionSystem()->getBodyStorage().size();
+  theCollisionSystem()->setLubrication(useLubrication);
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+
+  real sphereVol(0);
+  real sphereMass(0);
+  if (spear != nullptr) {
+    sphereMass = spear->getMass();
+    sphereVol = real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench;
+  }
+
+  real totalMass(0);
+  real totalVol(0);
+  MPI_Reduce( &sphereMass, &totalMass, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &sphereVol, &totalVol, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " particles x              = " << nx << "\n" 
-      << " particles y              = " << ny << "\n" 
-      << " particles z              = " << nz << "\n" 
       << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
+      << " Total number of objects                 = " << primitivesTotal << "\n"
+      << " Particle starting position              = " << position << "\n"  
+      << " Particle mass                           = " << totalMass << "\n" 
+      << " Particle volume                         = " << totalVol << "\n" 
+      << " particles z                             = " << nz << "\n" << std::endl; 
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 
