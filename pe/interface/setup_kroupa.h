@@ -10,6 +10,11 @@ using namespace pe::povray;
 std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFraction) {
     std::vector<Vec3> positions;
 
+    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
+    real domainVol = L * L * L;
+
+    std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
+
     // Calculate the number of cells along one side of the cubic grid
     int gridSize = static_cast<int>(L / cellSize);
 
@@ -55,8 +60,6 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
         }
     }
 
-    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
-    real domainVol = L * L * L;
     real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
     //std::cout << "Volume fraction:  " << solidFraction << std::endl;
     //std::cout << "local:  " << positions.size() << std::endl;
@@ -203,13 +206,15 @@ void setupKroupa(MPI_Comm ex0) {
 
   real h = 0.0075;
 
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 0.01, 0.01); 
+  //real radius2 = 0.002;
+  real radius2 = 0.005;
+  //std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.4 / 14.0); 
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.001); 
   //=========================================================================================
   BodyID particle;
   Vec3 gpos(0.02 , 0.02, 0.02);
   Vec3 vel(0.1, 0, 0.0);
 
-  real radius2 = 0.005;
   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
   //=========================================================================================
@@ -224,8 +229,6 @@ void setupKroupa(MPI_Comm ex0) {
     checkpointer.read( "../start.1" );
   }
   //=========================================================================================
-
-
 
 //  if( world->ownsPoint( gpos ) ) {
 //    particle = createSphere( idx, gpos, radius2, elastic );
@@ -282,6 +285,8 @@ void setupKroupa(MPI_Comm ex0) {
 
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
 
+  std::string resOut = (resume) ? " resuming " : " not resuming ";
+
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
@@ -289,6 +294,7 @@ void setupKroupa(MPI_Comm ex0) {
       << " Total particles          = " << particlesTotal << "\n"
       << " particle volume          = " << partVol << "\n"
       << " Domain volume            = " << L * L * L << "\n"
+      << " Resume                   = " << resOut  << "\n"
       << " Volume fraction[%]       = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
       << " Total objects            = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
