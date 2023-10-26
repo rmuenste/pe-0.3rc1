@@ -1850,7 +1850,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   bool limiting = true;
   
   real visc = Settings::liquidViscosity();
-  real hc = 1.9;
+  real hc = 2.12;
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -1966,7 +1966,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real fc =  calculate_f_star(eps, hc);
    std::cout << "Lubrication Wall force: " << lubricationForce[2] << " | global normal: " << c.getNormal() << " | Distance: " << dist << " | vr: "<< vr[0] << " "<< vr[1] << " " << vr[2] << std::endl;
    lubricationForce *= fc;
-   std::cout << "CorrectedWallForce: " << lubricationForce[2] << " h_eps:  " << eps  << " t:" << t << " plane: " <<  b2->getSystemID() << " sphere:" << b1->getSystemID() << " on rank:" << MPISettings::rank() << std::endl;
+   std::cout << "CorrectedWallForce: " << lubricationForce[2] << " h_eps:  " << eps  << " t:" << t << " plane: " <<  b2->getSystemID() << " sphere:" << b1->getSystemID() << " on rank:" << MPISettings::rank() << " hc: " << hc << std::endl;
 
    if (-velNormal > 0) {
      std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;

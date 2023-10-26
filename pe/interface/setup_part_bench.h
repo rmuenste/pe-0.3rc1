@@ -431,7 +431,7 @@ void setupParticleBench(MPI_Comm ex0) {
   Vec3 position(-0.0, -0.0, 0.1275);
   //Vec3 position(-0.0, -0.0, 0.03 + radBench);
 
-  bool resume = true;
+  bool resume = false;
   //=========================================================================================
   // Particle Setup
   //=========================================================================================
@@ -452,12 +452,12 @@ void setupParticleBench(MPI_Comm ex0) {
   // Create the ground plane  
   //=========================================================================================
   std::cout << "[Creating a plane] " << std::endl;
-//  pe_GLOBAL_SECTION
-//  {
-//     // Creating the ground plane
-//     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-//     std::cout << "[Plane box] : " << g_ground->getAABB()[5] << std::endl;
-//  }
+  pe_GLOBAL_SECTION
+  {
+     // Creating the ground plane
+     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
+     std::cout << "[Plane box] : " << g_ground->getAABB()[5] << std::endl;
+  }
   //=========================================================================================
 
   // Synchronization of the MPI processes
