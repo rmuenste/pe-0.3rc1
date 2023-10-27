@@ -1727,11 +1727,13 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
     if( std::isnan(epsilon) ) { 
       std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
     }
-    real term2 = -9.0 / 40.0 * std::log(epsilon);
-    if( std::isnan(epsilon) ) { 
-      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
-    }
-    real term3 = -3.0 / 112.0 * epsilon * std::log(epsilon);
+    real term2 = 0.0;
+//    real term2 = -9.0 / 40.0 * std::log(epsilon);
+//    if( std::isnan(epsilon) ) { 
+//      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
+//    }
+//    real term3 = -3.0 / 112.0 * epsilon * std::log(epsilon);
+    real term3 = 0.0;
 
     if( (std::isnan(term1)) ||
         (std::isnan(term2)) ||
@@ -1823,10 +1825,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
   normal.normalize();
 
-  bool limiting = true;
+  bool limiting = false;
   
   real visc = Settings::liquidViscosity();
-  real hc = 0.01;
+  real hc = 5.0;
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -1838,12 +1840,22 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    Vec3 vs = vr - velNormal * normal;
 
    real eps1 = dist / rad;
+   // For penetration we do not add lubrication
    if (dist < 0.0) {
      return;
    }
+
+   // Also if the distance is too small we do not add lubrication
+   // to avoid a blow-up of the log functions
+   if (eps1 < 1.6e-6) {
+     return;
+   }
+
    if( std::isnan(eps1)) {
        std::cout << "NaN eps:  " << eps1 << "  " << dist << " / " << rad << std::endl;
    }
+
+   //================================================================================================================ 
    Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps1, rad);
 
    if( (std::isnan(lubricationForce[0])) ||
@@ -1852,8 +1864,54 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      std::cout << "NaN lubrication found with another particle, eps:  " << eps1 << " "<< vr << normal << std::endl;
    }
 
+   //================================================================================================================ 
+   std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
+                                               << " | pos: " 
+                                               << b1->getPosition() 
+                                               << " | and: " 
+                                               << b2->getSystemID() 
+                                               << " | pos: " 
+                                               << b2->getPosition() 
+                                               << " | global normal: " 
+                                               << c.getNormal() 
+                                               << " | Distance: " 
+                                               << dist 
+                                               << " | eps: " 
+                                               << eps1 
+                                               << std::endl;
+
+   std::cout << "Lubrication particle force: " << lubricationForce 
+                                               << " | vr: " 
+                                               << vr 
+                                               << " | normal velocity: " 
+                                               << velNormal 
+                                               << " | Distance: " 
+                                               << dist 
+                                               << " | eps: " 
+                                               << eps1 
+                                               << std::endl;
+   if (-velNormal > 0) {
+     std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+     return;
+   }
+   //================================================================================================================ 
+
    real fc =  calculate_f_star(eps1, hc);
    lubricationForce *= fc;
+   //================================================================================================================ 
+   std::cout << "Corrected particle force: "   << lubricationForce 
+                                               << " | correction fc: " 
+                                               << fc 
+                                               << " | eps: " 
+                                               << eps1 
+                                               << " | hc: " 
+                                               << hc 
+                                               << std::endl;
+   if (-velNormal > 0) {
+     std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+     return;
+   }
+   //================================================================================================================ 
 
    if( (std::isnan(lubricationForce[0])) ||
        (std::isnan(lubricationForce[1])) ||
@@ -1871,15 +1929,13 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      }
    }
 
-   //std::cout << "Lubrication force: " << lubricationForce << " | Distance: " << dist << std::endl;
    if (mag > maxLubrication_) {
      maxLubrication_ = mag;
      lubricationDist_ = eps1;
    }
-//   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
 
    b1->addForce( lubricationForce );
-   b2->addForce( lubricationForce );
+   b2->addForce(-lubricationForce );
   }
   else if(b2->getType() == innerCylinderType) {
 
@@ -1987,7 +2043,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 {
    const real dtinv( real(1) / dt );
 
-   bool useLubrication = false;
+   bool useLubrication = true;
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -2124,7 +2180,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          if(useLubrication) {
            numLubricationContacts++;
            addLubricationForce(*c, 1.0);
-           continue;
          }
       }
       else {
@@ -4005,10 +4060,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
                      // The new domain has to have all neighbors of the old domain except itself
                      std::ostringstream oss;
 
-                     oss << "Registering distant processes is not yet implemented." << " " << objparam.reglist_[i] << " not found in neighbors list."; // of process myrank
+                     oss << "Registering distant processes is not yet implemented." << " process: " << objparam.reglist_[i] << " not found in neighbors list of process:" << myRank; // of process myrank
                      // TODO
                      //throw std::runtime_error( "Registering distant processes is not yet implemented." + oss.str() );
-                     throw std::runtime_error( oss.str() );
+                     //throw std::runtime_error( oss.str() );
                   }
                }
 
