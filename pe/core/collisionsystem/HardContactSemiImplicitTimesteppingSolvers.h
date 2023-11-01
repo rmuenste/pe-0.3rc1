@@ -1847,10 +1847,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
   normal.normalize();
 
-  bool limiting = true;
+  bool limiting = false;
   
   real visc = Settings::liquidViscosity();
-  real hc = 2.12;
+  real hc = 0.5;
   real dist = c.getDistance();
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -1876,8 +1876,21 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      std::cout << "NaN lubrication found with another particle, eps:  " << eps1 << " "<< vr << normal << std::endl;
    }
 
+   //============================================================================================
    real fc =  calculate_f_star(eps1, hc);
+   std::cout << "sphere1:" << b1->getSystemID() << " pos: " << b1->getPosition() << "| sphere2: " <<  b2->getSystemID() << " pos: " << b2->getPosition() << " velNormal: " << velNormal << std::endl;
+   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << " | vr: "<< vr[0] << " "<< vr[1] << " " << vr[2] << std::endl;
    lubricationForce *= fc;
+   std::cout << "CorrectedWallForce: " << lubricationForce << " h_eps:  " << eps1  << " sphere2: " <<  b2->getSystemID() << " sphere1:" << b1->getSystemID() << " on rank:" << MPISettings::rank() << " hc: " << hc << std::endl;
+
+   if (-velNormal > 0) {
+     std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+     return;
+   }
+   //============================================================================================
+
+
+
 
    if( (std::isnan(lubricationForce[0])) ||
        (std::isnan(lubricationForce[1])) ||
@@ -1903,7 +1916,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 //   std::cout << "Sliding Lubrication force: " << slidingLubricationForce << " | Normal vector: " << normal << std::endl;
 
    b1->addForce( lubricationForce );
-   b2->addForce( lubricationForce );
+   b2->addForce(-lubricationForce );
   }
   else if(b2->getType() == innerCylinderType) {
 
@@ -2147,15 +2160,18 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
       if(useLubrication_ && (c->getDistance() <= lubricationThreshold)) {
 
-         std::cout << "Found a lubrication contact." << std::endl;
-         pe_LOG_DEBUG_SECTION( log ) {
-            log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
+
+         if(c->getDistance() > 8e-6) {
+            std::cout << "Found a lubrication contact." << std::endl;
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
+            }
+            if(useLubrication_) {
+            numLubricationContacts++;
+            addLubricationForce(*c, 1.0);
+            }
          }
-         if(useLubrication_) {
-           numLubricationContacts++;
-           addLubricationForce(*c, 1.0);
-           continue;
-         }
+
       }
       else {
         std::cout << "Contact is not a lubrication contact." << c->getDistance() << " threshold: " << lubricationThreshold << std::endl;
@@ -2484,14 +2500,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    real allPenetration = 0.0;
 
    if (useLubrication_) {
-      MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
-      MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      MPI_Reduce( &maximumPenetration_, &allPenetration, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      pe_EXCLUSIVE_SECTION(0) {
-      std::cout << "Max Lubrication : " << allLub << " at distance: " << allDist << std::endl;
-      std::cout << "Max Penetration distance: " << allPenetration << std::endl;
-      }
+//      MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
+//      MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      MPI_Reduce( &maximumPenetration_, &allPenetration, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      pe_EXCLUSIVE_SECTION(0) {
+//      std::cout << "Max Lubrication : " << allLub << " at distance: " << allDist << std::endl;
+//      std::cout << "Max Penetration distance: " << allPenetration << std::endl;
+//      }
    }
    
 

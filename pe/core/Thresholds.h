@@ -154,12 +154,12 @@ struct Thresholds<double>
 public:
    //! Threshold for the contact classification.
    /*! This threshold separates between separating, resting and colliding contacts. */
-   static inline double collisionThreshold() { return 4E-2; }
+   static inline double collisionThreshold() { return 1E-2; }
 
    //! Threshold for the distance between two rigid bodies.
    /*! Rigid bodies with a distance smaller than this threshold are in contact. */
    //static inline double contactThreshold() { return 33E-3; }
-   static inline double contactThreshold() { return 4E-2; }
+   static inline double contactThreshold() { return 1E-2; }
 
    //! Threshold for the restriction of the coefficient of restitution.
    /*! In case the relative velocity between two colliding rigid bodies is smaller than this

@@ -99,7 +99,7 @@ real sign()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 3000 );  // Total number of time steps
+   const unsigned int timesteps ( 1000 );  // Total number of time steps
    const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
@@ -134,30 +134,58 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, -1.0 );
+   world->setGravity( 0.0, 0.0, 0.0 );
    world->setViscosity(3e-3);
+   world->setViscosity( 373e-3 );
    
 
    real radius = 0.05;
    real dist = 3. * radius + 1e-3;
    // Setup of the metal sphere
 
-   int xmax = 2;
-   int ymax = 2;
-   int zmax = 8;
-   real dx = 2 * radius + 0.1 * radius;
-   real dy = 2 * radius + 0.1 * radius;
-   real dz = 2 * radius + 0.1 * radius;
-   Vec3 pos(-0.3, -0.3, radius);
-   for (int z = 0; z < zmax; ++z) {
-     for (int y = 0; y < ymax; ++y) {
-       for (int x = 0; x < xmax; ++x) {
-         real jitter = sign() * 0.01 * radius;
+//   int xmax = 2;
+//   int ymax = 2;
+//   int zmax = 8;
+//   real dx = 2 * radius + 0.1 * radius;
+//   real dy = 2 * radius + 0.1 * radius;
+//   real dz = 2 * radius + 0.1 * radius;
+//   Vec3 pos(-0.3, -0.3, radius);
+//   for (int z = 0; z < zmax; ++z) {
+//     for (int y = 0; y < ymax; ++y) {
+//       for (int x = 0; x < xmax; ++x) {
+//         real jitter = sign() * 0.01 * radius;
+//
+//         createSphere( ++id, pos[0] + x * dx + jitter, pos[1] + y * dy + jitter, pos[2] + z * dz, 0.05, iron );
+//       }
+//     }
+//   }
 
-         createSphere( ++id, pos[0] + x * dx + jitter, pos[1] + y * dy + jitter, pos[2] + z * dz, 0.05, iron );
-       }
-     }
-   }
+
+  //==============================================================================================
+  // Bench Configuration
+  //==============================================================================================
+  SphereID spear(nullptr);
+  real radBench = 0.0075;
+  Vec3 position(0.0, 0.0, 0.0);
+  Vec3 position2(3. * radBench, 0.0, 0.0);
+  //Vec3 position(-0.0, -0.0, 0.03 + radBench);
+
+  int idx(0);
+  bool resume = false;
+  MaterialID myMaterial = createMaterial("Bench", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  //=========================================================================================
+  // Particle Setup
+  //=========================================================================================
+  spear = createSphere(id++, position, radBench, myMaterial, true);
+  spear->setLinearVel(Vec3(0.035 ,0.0 , 0.0));
+  std::cout << "[Creating particle] at: " << position << std::endl;
+  std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
+  ++idx;
+  spear = createSphere(id++, position2, radBench, myMaterial, true);
+  //spear->setLinearVel(Vec3(0,0,-0.035));
+  std::cout << "[Creating particle] at: " << position << std::endl;
+  std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
+
 
 //   SphereID s = createSphere( ++id, 0.0, 0.0, 0.054, 0.05, iron );
 //   s->setLinearVel( 1.1, 0.0, 0.0 );
@@ -170,10 +198,10 @@ int main( int argc, char* argv[] )
 //   cyl->setFixed(true);
 //   cyl->rotate(0.0, M_PI/2.0, 0.0);
 
-   InnerCylinderID cyl2(0);
-   cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 2.4, 1.0, 4.8, iron );
-   cyl2->setFixed(true);
-   cyl2->rotate(0.0, M_PI/2.0, 0.0);
+//   InnerCylinderID cyl2(0);
+//   cyl2 = createInnerCylinder( 10012, 0.0, 0.0, 2.4, 1.0, 4.8, iron );
+//   cyl2->setFixed(true);
+//   cyl2->rotate(0.0, M_PI/2.0, 0.0);
 
    // Setup of the VTK visualization
    if( vtk ) {
