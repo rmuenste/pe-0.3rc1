@@ -1865,6 +1865,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
 
    //================================================================================================================ 
+#ifdef OUTPUT_LVL2
    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
                                                << " | pos: " 
                                                << b1->getPosition() 
@@ -1890,6 +1891,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                << " | eps: " 
                                                << eps1 
                                                << std::endl;
+#endif                                               
+
    if (-velNormal > 0) {
      std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
      return;
@@ -2088,8 +2091,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
         maxForceVector_ = b2->getForce();
       }
 
-
-
       contactsMask_[i] = false;
 
       pe_INTERNAL_ASSERT( !b1->isFixed() || !b2->isFixed(), "Invalid contact between two fixed objects." );
@@ -2173,13 +2174,15 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
       if(c->getDistance() <= lubricationThreshold && useLubrication) {
 
-         std::cout << "Found a lubrication contact." << std::endl;
-         pe_LOG_DEBUG_SECTION( log ) {
-            log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
-         if(useLubrication) {
+         if(c->getDistance() > 5e-6) {
            numLubricationContacts++;
            addLubricationForce(*c, 1.0);
+#ifdef OUTPUT_LVL2
+           std::cout << "Found a lubrication contact." << std::endl;
+#endif
+           pe_LOG_DEBUG_SECTION( log ) {
+              log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
       }
       else {

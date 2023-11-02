@@ -44,6 +44,69 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR,
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 
 
+// Function to generate random positions within a cubic domain
+std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFraction) {
+
+    WorldID world = theWorld();
+
+    std::vector<Vec3> positions;
+
+    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
+    real domainVol = L * L * L;
+
+    std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
+
+    // Calculate the number of cells along one side of the cubic grid
+    int gridSize = static_cast<int>(L / cellSize);
+
+    // Calculate the total number of cells in the grid
+    int totalCells = gridSize * gridSize * gridSize;
+
+    // Initialize a vector to keep track of visited cells
+    std::vector<bool> cellVisited(totalCells, false);
+
+    // Initialize random number generator
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<real> dis(-cellSize / 2.0, cellSize / 2.0);
+
+    // Generate random positions until the grid is full or the volume fraction is reached
+    while (positions.size() < totalCells && (static_cast<real>(positions.size()) / totalCells) < volumeFraction) {
+        // Generate random cell indices
+        int x = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
+        int y = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
+        int z = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
+
+        int cellIndex = x + y * gridSize + z * gridSize * gridSize;
+        
+        // Calculate the position of the cell center
+        real posX = (x + 0.5) * cellSize;
+        real posY = (y + 0.5) * cellSize;
+        real posZ = (z + 0.5) * cellSize;
+
+        Vec3 gpos(posX, posY, posZ);
+
+        // Check if the cell has not been visited
+        if (!cellVisited[cellIndex] && world->ownsPoint( gpos ) ) {
+            // Mark the cell as visited
+            cellVisited[cellIndex] = true;
+
+            // Calculate the position of the cell center
+            double posX = (x + 0.5) * cellSize;
+            double posY = (y + 0.5) * cellSize;
+            double posZ = (z + 0.5) * cellSize;
+
+            // Create a Vec3 object for the position and add it to the positions vector
+            positions.push_back(Vec3(posX, posY, posZ));
+        }
+    }
+
+    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
+    //std::cout << "Volume fraction:  " << solidFraction << std::endl;
+    //std::cout << "local:  " << positions.size() << std::endl;
+    return positions;
+}
+
 
 //=================================================================================================
 //
@@ -96,7 +159,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   10 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   100 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -359,13 +422,34 @@ int main( int argc, char** argv )
   Vec3 gpos2(0.02 + 3. * radius, 0.02, 0.02);
   Vec3 vel(0.025, 0.0, 0.0);
   int id = 0;
-  if( world->ownsPoint( gpos ) ) {
-    particle = createSphere( id++, gpos, radius, elastic );
-    particle->setLinearVel( vel );
+
+
+  //======================================================================================== 
+  // Here is how to create some random positions on a grid up to a certain
+  // volume fraction.
+  //======================================================================================== 
+  // const real   radius  ( 0.005  );
+  bool resume = false;
+  real radius2 = 0.002;
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.4 / 4.0); 
+  if(!resume) {
+    for (int i = 0; i < allPositions.size(); ++i) {
+      Vec3 &position = allPositions[i];
+      SphereID sphere = createSphere(id, position, radius2, elastic, true);
+      ++id;      
+    }
+  } else {
+   if( world->ownsPoint( gpos ) ) {
+      particle = createSphere( id++, gpos, radius, elastic );
+      particle->setLinearVel( vel );
+   }
+   if( world->ownsPoint( gpos2 ) ) {
+      particle = createSphere( id++, gpos2, radius, elastic );
+   }
   }
-  if( world->ownsPoint( gpos2 ) ) {
-    particle = createSphere( id++, gpos2, radius, elastic );
-  }
+  //======================================================================================== 
+
+
 
   // Synchronization of the MPI processes
   world->synchronize();
