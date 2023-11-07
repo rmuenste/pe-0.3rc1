@@ -139,7 +139,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 1000 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 2 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.001 );  // Size of a single time step
 
    // Process parameters
@@ -159,7 +159,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   100 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   1 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -430,18 +430,20 @@ int main( int argc, char** argv )
   //======================================================================================== 
   // const real   radius  ( 0.005  );
   bool resume = false;
-  real radius2 = 0.002;
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.4 / 4.0); 
+  real radius2 = 0.005;
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.1 / 4.0); 
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
       SphereID sphere = createSphere(id, position, radius2, elastic, true);
+      sphere->setLinearVel(0.01, 0.0, 0.0);
       ++id;      
     }
   } else {
    if( world->ownsPoint( gpos ) ) {
       particle = createSphere( id++, gpos, radius, elastic );
       particle->setLinearVel( vel );
+      particle->getID();
    }
    if( world->ownsPoint( gpos2 ) ) {
       particle = createSphere( id++, gpos2, radius, elastic );
@@ -449,10 +451,62 @@ int main( int argc, char** argv )
   }
   //======================================================================================== 
 
+  // Here we add some planes
+  pe_GLOBAL_SECTION
+  {
+     createPlane( 99999, 0.0, 0.0, 1.0, 1.0e-4, granite, false ); // bottom border
+     BodyID topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -L, granite, false ); // top border
+     std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
+  }
 
 
   // Synchronization of the MPI processes
   world->synchronize();
+
+  //======================================================================================== 
+  unsigned long particlesTotal ( 0 );
+  unsigned long primitivesTotal( 0 );
+  int numBodies (0);
+  int numTotal (0);
+  unsigned int j(0);
+  for (; j < theCollisionSystem()->getBodyStorage().size(); j++) {
+    World::SizeType widx = static_cast<World::SizeType>(j);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    if(body->getType() == sphereType) {
+      numBodies++;
+      numTotal++;
+    } else {
+      numTotal++;
+    }
+  }
+
+  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
+  unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
+  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  //======================================================================================== 
+
+  real domainVol = L * L * L;
+  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
+
+  std::string resOut = (resume) ? " resuming " : " not resuming ";
+
+  pe_EXCLUSIVE_SECTION( 0 ) {
+    std::cout << "\n--" << "SIMULATION SETUP"
+      << "--------------------------------------------------------------\n"
+      << " Total number of MPI processes           = " << processesX * processesZ << "\n"
+      << " Total timesteps                         = " << timesteps << "\n"
+      << " Timestep size                           = " << stepsize << "\n"
+      << " Total particles                         = " << particlesTotal << "\n"
+      << " particle volume                         = " << partVol << "\n"
+      << " Domain volume                           = " << L * L * L << "\n"
+      << " Resume                                  = " << resOut  << "\n"
+      << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
+      << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
+     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+
+
 
   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
     pe_EXCLUSIVE_SECTION( 0 ) {
@@ -462,6 +516,7 @@ int main( int argc, char** argv )
     }
     world->simulationStep( stepsize );
 
+#ifdef OUTPUT_LVL2
     for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
       World::SizeType widx = static_cast<World::SizeType>(i);
       BodyID body = world->getBody(static_cast<unsigned int>(widx));
@@ -472,12 +527,14 @@ int main( int argc, char** argv )
         std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel() << std::endl;
       }
     }
+#endif
+
   }
 
    /////////////////////////////////////////////////////
    // MPI Finalization
    MPI_Barrier(MPI_COMM_WORLD);
-   MPI_Finalize();
+   //MPI_Finalize();
 
 }
 //*************************************************************************************************

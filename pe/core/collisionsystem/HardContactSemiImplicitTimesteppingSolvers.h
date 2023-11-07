@@ -269,6 +269,7 @@ private:
    Vec3 calculateLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateWallLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateWallLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateLubricationForceGorb(real R_b, real R_p, Vec3 U, real mu, real d);
    real calculate_f_star(real h, real h_c); 
    //@}
@@ -323,6 +324,7 @@ private:
    real maximumPenetration_;
    real maxLubrication_;
    real lubricationDist_;
+   real totalWallLubrication_;
    real maxForce_;
    Vec3 maxForceVector_;
 
@@ -1745,7 +1747,6 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 }
 //*************************************************************************************************
 
-
 //*************************************************************************************************
 /*!\brief Implementation of the discrete element solver simulationStep() function.
  *
@@ -1771,6 +1772,37 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
     real term3 = -1.0 / 21.0 * epsilon * std::log(epsilon);
 
     return -coefficient * (term1 + term2 + term3);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Calculates the sliding lubrication force on a wall with a particle
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+
+Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::calculateWallLubricationSlidingForce(real eta_f, Vec3 vs, Vec3 n, real epsilon, real radius) {
+
+    const real pi = 3.14159265358979323846;
+    const real coefficient = -6 * pi * radius * eta_f;
+
+    Vec3 term1 = vs;
+    real term2 = (- 8.0 / 15.0 * std::log(epsilon));
+    real term3 = (- 64.0 / 375.0 * epsilon * std::log(epsilon));
+
+    return coefficient * (vs * (term2 - term3));
+
 }
 //*************************************************************************************************
 
@@ -1894,7 +1926,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 #endif                                               
 
    if (-velNormal > 0) {
-     std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+#ifdef OUTPUT_LVL2
+     std::cout << "Not adding lubrication s-s force because positive normal velocity: " << -velNormal  << std::endl;
+#endif                                               
      return;
    }
    //================================================================================================================ 
@@ -1902,6 +1936,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    real fc =  calculate_f_star(eps1, hc);
    lubricationForce *= fc;
    //================================================================================================================ 
+#ifdef OUTPUT_LVL2
    std::cout << "Corrected particle force: "   << lubricationForce 
                                                << " | correction fc: " 
                                                << fc 
@@ -1910,8 +1945,11 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                << " | hc: " 
                                                << hc 
                                                << std::endl;
+#endif                                               
    if (-velNormal > 0) {
+#ifdef OUTPUT_LVL2
      std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+#endif                                               
      return;
    }
    //================================================================================================================ 
@@ -1980,7 +2018,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   }
   else if(b2->getType() == planeType) {
 
-   std::cout << "Lubrication Wall force for a sphere and a plane " << std::endl;
+   //std::cout << "Lubrication Wall force for a sphere and a plane " << std::endl;
    real rad = s1->getRadius();
 
    real velNormal = trans(vr) * c.getNormal();
@@ -1992,12 +2030,32 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
 
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
+
+   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+   if(b2->getSystemID() == 9223372036854775809) {
+     totalWallLubrication_ += slidingLubricationForce[0];
+   }
+
+//   std::cout << "Lubrication wall sliding force: " << slidingLubricationForce 
+//                                                   << " | vr: " 
+//                                                   << vr 
+//                                                   << " | vs(tangential velocity): " 
+//                                                   << vs 
+//                                                   << " | normal velocity: " 
+//                                                   << velNormal 
+//                                                   << " | Distance: " 
+//                                                   << dist 
+//                                                   << " | eps: " 
+//                                                   << eps 
+//                                                   << std::endl;
+
    real fc =  calculate_f_star(eps, hc);
-   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+//   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
    lubricationForce *= fc;
 
    if (-velNormal > 0) {
      std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+
      return;
    }
 
@@ -2048,6 +2106,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 
    bool useLubrication = true;
 
+   totalWallLubrication_ = 0.0;
+
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
           << " (";
@@ -2068,6 +2128,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    size_t numContacts( contacts.size() );
    size_t numContactsMasked( 0 );
    size_t numLubricationContacts(0);
+   size_t numWallSphereContacts(0);
    maxLubrication_ = 0;
    maxForce_ = 0;
    maxForceVector_ = Vec3(0,0,0);
@@ -2174,7 +2235,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
       if(c->getDistance() <= lubricationThreshold && useLubrication) {
 
+         BodyID b1( c->getBody1() );
+         BodyID b2( c->getBody2() );
+
+         if(b2->getType() == planeType || b1->getType() == planeType) {
+           //std::cout << "Found a s-p contact with distance: " << c->getDistance() << std::endl;
+           numWallSphereContacts++;
          }
+
          if(c->getDistance() > 5e-6) {
            numLubricationContacts++;
            addLubricationForce(*c, 1.0);
@@ -2182,7 +2250,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
            std::cout << "Found a lubrication contact." << std::endl;
 #endif
            pe_LOG_DEBUG_SECTION( log ) {
-              log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
+            log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
+           }
          }
       }
       else {
@@ -2505,20 +2574,24 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       memCollisionResponse_.stop();
    }
 //   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
-//
+   std::cout << "Number of s-p lubrication contacts: " << numWallSphereContacts << std::endl;
+
    real allLub = 0.0;
    real allDist = 0.0;
    real allForce = 0.0;
    real allPenetration = 0.0;
+   real allWallLubriation = 0.0;
 
    if (useLubrication) {
       MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
       MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       MPI_Reduce( &maximumPenetration_, &allPenetration, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+      MPI_Reduce( &totalWallLubrication_, &allWallLubriation, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       pe_EXCLUSIVE_SECTION(0) {
       std::cout << "Max Lubrication : " << allLub << " at distance: " << allDist << std::endl;
       std::cout << "Max Penetration : " << allPenetration << std::endl;
+      std::cout << "Total Wall lubrication : " << allWallLubriation << std::endl;
       }
    }
    
