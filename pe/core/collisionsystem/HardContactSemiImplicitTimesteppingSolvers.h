@@ -325,6 +325,7 @@ private:
    real maxLubrication_;
    real lubricationDist_;
    real totalWallLubrication_;
+   int  numTopWallContacts_;
    real maxForce_;
    Vec3 maxForceVector_;
 
@@ -1851,6 +1852,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   BodyID b1( c.getBody1() );
   BodyID b2( c.getBody2() );
 
+
   Vec3 normal = b1->getPosition() - b2->getPosition();
 
   // Computation of relative velocity is the opposite order of normal calculation
@@ -1863,6 +1865,20 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   real hc = 5.0;
   real dist = c.getDistance();
 
+  //============================================================================
+  // limiting of the distance
+  // Also if the distance is too small we do not add lubrication
+  // to avoid a blow-up of the log functions
+  // We could do it like this
+  // if (eps1 < 1.6e-6) {
+  //   eps1 = 1.6e-6;
+  // }
+  //============================================================================
+
+  if(c.getDistance() < 5e-6) {
+   dist = 5e-6;
+  }
+
   SphereID s1 = static_body_cast<Sphere>(b1);
   if (b2->getType() == sphereType) {
    SphereID s2 = static_body_cast<Sphere>(b2);
@@ -1872,14 +1888,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    Vec3 vs = vr - velNormal * normal;
 
    real eps1 = dist / rad;
+
    // For penetration we do not add lubrication
    if (dist < 0.0) {
-     return;
-   }
-
-   // Also if the distance is too small we do not add lubrication
-   // to avoid a blow-up of the log functions
-   if (eps1 < 1.6e-6) {
      return;
    }
 
@@ -1978,6 +1989,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    b1->addForce( lubricationForce );
    b2->addForce(-lubricationForce );
   }
+  //===========================================================================================================
+  // Lubrication Force with between a sphere and an inner cylinder 
+  //===========================================================================================================
   else if(b2->getType() == innerCylinderType) {
 
    real rad = s1->getRadius();
@@ -2016,6 +2030,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    b1->addForce(-lubricationForce );
   }
+  //===========================================================================================================
+  // Lubrication Force with between a sphere and a plane
+  //===========================================================================================================
   else if(b2->getType() == planeType) {
 
    //std::cout << "Lubrication Wall force for a sphere and a plane " << std::endl;
@@ -2031,23 +2048,28 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
 
-   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+   Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
    if(b2->getSystemID() == 9223372036854775809) {
      totalWallLubrication_ += slidingLubricationForce[0];
+     numTopWallContacts_++;
+     std::cout << "Lubrication wall sliding force: " << slidingLubricationForce 
+                                                     << " | vr: " 
+                                                     << vr 
+                                                     << " | vs(tangential velocity): " 
+                                                     << vs 
+                                                     << " | normal velocity: " 
+                                                     << velNormal 
+                                                     << " | Distance: " 
+                                                     << dist 
+                                                     << " | eps: " 
+                                                     << eps 
+                                                     << std::endl;
+   }
+   else {
+
+     std::cout << "contact with wall: " << b2->getSystemID() << std::endl;
    }
 
-//   std::cout << "Lubrication wall sliding force: " << slidingLubricationForce 
-//                                                   << " | vr: " 
-//                                                   << vr 
-//                                                   << " | vs(tangential velocity): " 
-//                                                   << vs 
-//                                                   << " | normal velocity: " 
-//                                                   << velNormal 
-//                                                   << " | Distance: " 
-//                                                   << dist 
-//                                                   << " | eps: " 
-//                                                   << eps 
-//                                                   << std::endl;
 
    real fc =  calculate_f_star(eps, hc);
 //   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
@@ -2107,6 +2129,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    bool useLubrication = true;
 
    totalWallLubrication_ = 0.0;
+
+   numTopWallContacts_ = 0;
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -2243,15 +2267,13 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
            numWallSphereContacts++;
          }
 
-         if(c->getDistance() > 5e-6) {
-           numLubricationContacts++;
-           addLubricationForce(*c, 1.0);
-#ifdef OUTPUT_LVL2
-           std::cout << "Found a lubrication contact." << std::endl;
+         numLubricationContacts++;
+         addLubricationForce(*c, 1.0);
+#ifdef OUUT_LVL2
+         std::cout << "Found a lubrication contact." << std::endl;
 #endif
-           pe_LOG_DEBUG_SECTION( log ) {
-            log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
-           }
+         pe_LOG_DEBUG_SECTION( log ) {
+          log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
       }
       else {
@@ -2574,7 +2596,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       memCollisionResponse_.stop();
    }
 //   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
-   std::cout << "Number of s-p lubrication contacts: " << numWallSphereContacts << std::endl;
+   std::cout << "Number of s-p lubrication contacts: " << numTopWallContacts_ << std::endl;
 
    real allLub = 0.0;
    real allDist = 0.0;

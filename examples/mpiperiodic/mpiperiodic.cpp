@@ -139,7 +139,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 2 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 110 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.001 );  // Size of a single time step
 
    // Process parameters
@@ -159,7 +159,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   1 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   10 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -418,9 +418,9 @@ int main( int argc, char** argv )
   // particle is close in size to the size of a domain part!
   //======================================================================================== 
   BodyID particle;
-  Vec3 gpos (0.02 , 0.02, 0.02);
-  Vec3 gpos2(0.02 + 3. * radius, 0.02, 0.02);
-  Vec3 vel(0.025, 0.0, 0.0);
+  Vec3 gpos (0.02 , 0.02, 0.1 - 2.* radius);
+  Vec3 gpos2(0.02 + 5. * radius, 0.02, 0.1 -2. * radius);
+  Vec3 vel(0.025, 0.0, 0.1);
   int id = 0;
 
 
@@ -429,7 +429,7 @@ int main( int argc, char** argv )
   // volume fraction.
   //======================================================================================== 
   // const real   radius  ( 0.005  );
-  bool resume = false;
+  bool resume = true;
   real radius2 = 0.005;
   std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.1 / 4.0); 
   if(!resume) {
@@ -447,6 +447,7 @@ int main( int argc, char** argv )
    }
    if( world->ownsPoint( gpos2 ) ) {
       particle = createSphere( id++, gpos2, radius, elastic );
+      particle->setLinearVel( vel );
    }
   }
   //======================================================================================== 
@@ -455,7 +456,7 @@ int main( int argc, char** argv )
   pe_GLOBAL_SECTION
   {
      createPlane( 99999, 0.0, 0.0, 1.0, 1.0e-4, granite, false ); // bottom border
-     BodyID topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -L, granite, false ); // top border
+     BodyID topPlane = createPlane( 88888, 0.0, 0.0, -1.0, -L, granite, false ); // top border
      std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
   }
 
