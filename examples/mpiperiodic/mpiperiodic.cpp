@@ -139,7 +139,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 110 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 50 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.001 );  // Size of a single time step
 
    // Process parameters
@@ -440,11 +440,11 @@ int main( int argc, char** argv )
       ++id;      
     }
   } else {
-   if( world->ownsPoint( gpos ) ) {
-      particle = createSphere( id++, gpos, radius, elastic );
-      particle->setLinearVel( vel );
-      particle->getID();
-   }
+//   if( world->ownsPoint( gpos ) ) {
+//      particle = createSphere( id++, gpos, radius, elastic );
+//      particle->setLinearVel( vel );
+//      particle->getID();
+//   }
    if( world->ownsPoint( gpos2 ) ) {
       particle = createSphere( id++, gpos2, radius, elastic );
       particle->setLinearVel( vel );

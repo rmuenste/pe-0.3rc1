@@ -1877,6 +1877,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
   if(c.getDistance() < 5e-6) {
    dist = 5e-6;
+   //real eps1 = dist / rad;
   }
 
   SphereID s1 = static_body_cast<Sphere>(b1);
@@ -2050,6 +2051,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
    if(b2->getSystemID() == 9223372036854775809) {
+
+     real minEps = 5e-6 / rad;
+     //real eps1 = dist / rad;
+
+     // Computation of relative velocity is the opposite order of normal calculation
+     //Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
      totalWallLubrication_ += slidingLubricationForce[0];
      numTopWallContacts_++;
      std::cout << "Lubrication wall sliding force: " << slidingLubricationForce 
@@ -2063,6 +2070,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                      << dist 
                                                      << " | eps: " 
                                                      << eps 
+                                                     << " | minEps: " 
+                                                     << minEps 
                                                      << std::endl;
    }
    else {
@@ -2101,6 +2110,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
 
    b1->addForce( lubricationForce );
+   b1->addForce(-slidingLubricationForce );
   }
 }
 
@@ -4842,6 +4852,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    if( body->awake_ ) {
       if( !body->isFixed() ) {
          dv = ( body->getInvMass() * dt ) * body->getForce();
+         std::cout << "Corrected velocity: " << dv << std::endl;
          dw = dt * ( body->getInvInertia() * body->getTorque() );
       }
    }
