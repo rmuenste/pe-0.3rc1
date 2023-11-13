@@ -130,10 +130,12 @@ void stepSimulation() {
 
 //=================================================================================================
   int subSteps = 1;
+  TimeStep::stepsize(stepsize);
   real subStepSize = stepsize / static_cast<real>(subSteps);
   for (int istep(0); istep < subSteps; ++istep) {
     world->simulationStep( subStepSize );
   }
+  TimeStep::stepsize(stepsize);
 //=================================================================================================
 
   //world->simulationStepDebug( stepsize );

@@ -222,6 +222,7 @@ public:
    //@{
    inline void            setRelaxationParameter( real f );
    inline void            setMaxIterations( size_t n );
+   inline void            setSlipLength( real hc );
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
    //@}
@@ -325,6 +326,7 @@ private:
    real maxLubrication_;
    real lubricationDist_;
    real totalWallLubrication_;
+   real hc_;
    int  numTopWallContacts_;
    real maxForce_;
    Vec3 maxForceVector_;
@@ -450,6 +452,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , maximumPenetration_ ( 0.0 )
    , maxLubrication_( 0.0 )
    , maxForce_      ( 0.0 )
+   , hc_      ( 1.0 )
    , maxForceVector_  ( )
    , lubricationDist_( 0.0 )
    , numContacts_      ( 0 )
@@ -885,6 +888,27 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
    pe_INTERNAL_ASSERT( f > 0, "Relaxation parameter must be positive." );
 
    relaxationParam_ = f;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets slip length parameter hc_
+ *
+ * \param n The maximum  number of iterations.
+ * \return void
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setSlipLength( real hc )
+{
+   hc_ = hc;
 }
 //*************************************************************************************************
 
@@ -1862,7 +1886,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   bool limiting = false;
   
   real visc = Settings::liquidViscosity();
-  real hc = 5.0;
+  real hc = hc_;
   real dist = c.getDistance();
 
   //============================================================================
@@ -2047,23 +2071,26 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      return;
    }
 
+   real minEps = 5e-6 / rad;
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
 
    Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
    if(b2->getSystemID() == 9223372036854775809) {
 
-     real minEps = 5e-6 / rad;
      //real eps1 = dist / rad;
 
      // Computation of relative velocity is the opposite order of normal calculation
      //Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
      totalWallLubrication_ += slidingLubricationForce[0];
      numTopWallContacts_++;
+#ifdef OUTPUT_LVL2
      std::cout << "Lubrication wall sliding force: " << slidingLubricationForce 
                                                      << " | vr: " 
                                                      << vr 
                                                      << " | vs(tangential velocity): " 
                                                      << vs 
+                                                     << " | vx: " 
+                                                     << b1->getLinearVel()[0]
                                                      << " | normal velocity: " 
                                                      << velNormal 
                                                      << " | Distance: " 
@@ -2073,22 +2100,30 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                      << " | minEps: " 
                                                      << minEps 
                                                      << std::endl;
+#endif
    }
    else {
 
      std::cout << "contact with wall: " << b2->getSystemID() << std::endl;
    }
 
-
    real fc =  calculate_f_star(eps, hc);
-//   std::cout << "Lubrication Wall force: " << lubricationForce << " | global normal: " << c.getNormal() << " | Distance: " << dist << std::endl;
+   std::cout << "Lubrication wall normal force: "  << lubricationForce 
+                                                   << " | vr: " 
+                                                   << vr 
+                                                   << " | vz: " 
+                                                   << b1->getLinearVel()[2]
+                                                   << " | normal velocity: " 
+                                                   << velNormal 
+                                                   << " | Distance: " 
+                                                   << dist 
+                                                   << " | eps: " 
+                                                   << eps 
+                                                   << " | minEps: " 
+                                                   << minEps 
+                                                   << std::endl;
    lubricationForce *= fc;
-
-   if (-velNormal > 0) {
-     std::cout << "Not adding lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
-
-     return;
-   }
+   slidingLubricationForce *= fc; 
 
    real mag = lubricationForce.length();
    bool wallLimiting = false;
@@ -2109,8 +2144,13 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      lubricationDist_ = -1;
    }
 
-   b1->addForce( lubricationForce );
    b1->addForce(-slidingLubricationForce );
+   if (-velNormal > 0) {
+     std::cout << "Not adding normal lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+   } else {
+     b1->addForce(-lubricationForce );
+   }
+
   }
 }
 
@@ -4852,7 +4892,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    if( body->awake_ ) {
       if( !body->isFixed() ) {
          dv = ( body->getInvMass() * dt ) * body->getForce();
-         std::cout << "Corrected velocity: " << dv << std::endl;
+         std::cout << "Velocity correction: " << dv << " force: " << body->getForce() << " body: " << body->getSystemID() << " rank: " << MPISettings::rank() << std::endl;
          dw = dt * ( body->getInvInertia() * body->getTorque() );
       }
    }

@@ -139,8 +139,8 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 50 );  // Number of time steps for the flowing granular media
-   const real   stepsize      ( 0.001 );  // Size of a single time step
+   const size_t timesteps     ( 300 );  // Number of time steps for the flowing granular media
+   const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Process parameters
    const int processesX( 4 );  // Number of processes in x-direction
@@ -409,6 +409,7 @@ int main( int argc, char** argv )
    //  - dampingT                       : 11
    //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   theCollisionSystem()->setSlipLength(1.5);
 
   //======================================================================================== 
   // The way we atm include lubrication by increasing contact threshold
