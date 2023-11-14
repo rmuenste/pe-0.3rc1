@@ -443,8 +443,9 @@ void setupParticleBench(MPI_Comm ex0) {
   // Bench Configuration
   //==============================================================================================
   real radBench = 0.0075;
+  SphereID spear(nullptr);
   if (world->ownsPoint( position )) {
-    SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
+    spear = createSphere(idx, position, radBench, myMaterial, true);
     //spear->setLinearVel(Vec3(0,0,-0.1));
     std::cout << "[Creating particle] at: " << position << " in domain: " << my_rank << std::endl;
     std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
@@ -463,6 +464,19 @@ void setupParticleBench(MPI_Comm ex0) {
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+
+  real sphereVol(0);
+  real sphereMass(0);
+  if (spear != nullptr) {
+    sphereMass = spear->getMass();
+    sphereVol = real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench;
+  }
+
+  real totalMass(0);
+  real totalVol(0);
+  MPI_Reduce( &sphereMass, &totalMass, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &sphereVol, &totalVol, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
+
   TimeStep::stepsize( stepsize );
   std::string useLub = (useLubrication) ? "enabled" : "disabled";
 
@@ -474,8 +488,8 @@ void setupParticleBench(MPI_Comm ex0) {
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"
-      << " Fluid Density                           = " << simDensity << "\n"
-      << " Gravity constant                        = " << world->getGravity() << 
+      << " Fluid Density                           = " << simRho << "\n"
+      << " Gravity constant                        = " << world->getGravity()  
       << " Lubrication                             = " << useLub << "\n"
       << " Lubrication h_c                         = " << slipLength << "\n"
       << " Particle starting position              = " << position << "\n"  

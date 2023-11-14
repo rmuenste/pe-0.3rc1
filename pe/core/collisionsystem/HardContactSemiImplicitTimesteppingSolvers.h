@@ -211,6 +211,7 @@ public:
    inline const AS&       getAttachableStorage()  const;
    inline const Domain&   getDomain()             const;
    inline real            getMaximumPenetration() const;
+   inline real            getSlipLength( )        const;
    inline real            getMaximumLubrication() const;
    inline real            getLubricationDist()    const;
    inline size_t          getNumberOfContacts()   const;
@@ -809,6 +810,27 @@ template< template<typename> class CD                           // Type of the c
 inline real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getMaximumLubrication() const
 {
    return maxLubrication_;
+}
+//************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the slip length used for lubrication
+ *
+ * \return The hc parameter used in the lubrication model
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getSlipLength() const
+{
+   return hc_;
 }
 //************************************************************************************************
 
