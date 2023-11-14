@@ -4,9 +4,11 @@ void setupParticleBench(MPI_Comm ex0) {
   world = theWorld();
   world->setGravity( 0.0, 0.0, -9.81 );
 
+  real simViscosity( 373e-3 );
+  real simRho( 970 );
   world->setLiquidSolid(true);
-  world->setLiquidDensity(970);
-  world->setViscosity( 373e-3 );
+  world->setLiquidDensity(simRho);
+  world->setViscosity( simViscosity );
   world->setDamping( 1.0 );
 
   // Configuration of the MPI system
@@ -458,16 +460,22 @@ void setupParticleBench(MPI_Comm ex0) {
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  TimeStep::stepsize( stepsize );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
+      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " particles x              = " << nx << "\n" 
-      << " particles y              = " << ny << "\n" 
-      << " particles z              = " << nz << "\n" 
       << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
+      << " Total number of objects                 = " << primitivesTotal << "\n"
+      << " Fluid Viscosity                         = " << simViscosity << "\n"
+      << " Fluid Density                           = " << simDensity << "\n"
+      << " Gravity constant                        = " << world->getGravity() << 
+      << " Particle starting position              = " << position << "\n"  
+      << " Particle mass                           = " << totalMass << "\n" 
+      << " Particle volume                         = " << totalVol << "\n" 
+      << " particles z                             = " << nz << "\n" << std::endl; 
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 
