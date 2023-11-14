@@ -4,10 +4,14 @@ void setupParticleBench(MPI_Comm ex0) {
   world = theWorld();
   world->setGravity( 0.0, 0.0, -9.81 );
 
+  real simViscosity( 373e-3 );
+  real simRho( 970 );
+  real slipLength( 0.75 );
   world->setLiquidSolid(true);
-  world->setLiquidDensity(970);
-  world->setViscosity( 373e-3 );
+  world->setLiquidDensity(simRho);
+  world->setViscosity( simViscosity );
   world->setDamping( 1.0 );
+  bool useLubrication(true);
 
   // Configuration of the MPI system
   mpisystem = theMPISystem();
@@ -430,6 +434,7 @@ void setupParticleBench(MPI_Comm ex0) {
 
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  theCollisionSystem()->setSlipLength(slipLength);
   Vec3 position(-0.0, -0.0, 0.1275);
   //Vec3 position(-0.0, -0.0, 0.008);
 //  0.123597
@@ -458,16 +463,25 @@ void setupParticleBench(MPI_Comm ex0) {
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  TimeStep::stepsize( stepsize );
+  std::string useLub = (useLubrication) ? "enabled" : "disabled";
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
+      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " particles x              = " << nx << "\n" 
-      << " particles y              = " << ny << "\n" 
-      << " particles z              = " << nz << "\n" 
       << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
+      << " Total number of objects                 = " << primitivesTotal << "\n"
+      << " Fluid Viscosity                         = " << simViscosity << "\n"
+      << " Fluid Density                           = " << simDensity << "\n"
+      << " Gravity constant                        = " << world->getGravity() << 
+      << " Lubrication                             = " << useLub << "\n"
+      << " Lubrication h_c                         = " << slipLength << "\n"
+      << " Particle starting position              = " << position << "\n"  
+      << " Particle mass                           = " << totalMass << "\n" 
+      << " Particle volume                         = " << totalVol << "\n" 
+      << " particles z                             = " << nz << "\n" << std::endl; 
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 
