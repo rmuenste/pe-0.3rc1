@@ -464,6 +464,7 @@ void setupParticleBench(MPI_Comm ex0) {
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  TimeStep::stepsize( stepsize );
 
   real sphereVol(0);
   real sphereMass(0);
