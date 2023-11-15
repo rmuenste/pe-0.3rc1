@@ -30,13 +30,13 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.01 );  // Size of a single time step
+const size_t timesteps     ( 4500 );  // Number of time steps for the flowing granular media
+const real   stepsize      (  0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
-const int    processesY( 3 );    // Number of processes in y-direction
-const int    processesZ( 3 );    // Number of processes in y-direction
+const int    processesX( 1 );    // Number of processes in x-direction
+const int    processesY( 1 );    // Number of processes in y-direction
+const int    processesZ( 12 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -126,10 +126,10 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.0155;
+  real h = 0.000555;
 
 //=================================================================================================
-  int subSteps = 1;
+  int subSteps = 10;
   TimeStep::stepsize(stepsize);
   real subStepSize = stepsize / static_cast<real>(subSteps);
   for (int istep(0); istep < subSteps; ++istep) {
@@ -139,8 +139,8 @@ void stepSimulation() {
 //=================================================================================================
 
   //world->simulationStepDebug( stepsize );
-#define OUTPUT_LEVEL2
-#ifdef OUTPUT_LEVEL2
+#define OUTPUT_LEVEL3
+#ifdef OUTPUT_LEVEL3
   unsigned int i(0);
   real maxV(0.0);
   real maxA(0.0);
@@ -159,8 +159,9 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "==Single Particle Data========================================================" << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
 ////      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
@@ -171,14 +172,16 @@ void stepSimulation() {
   MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "Maximum Vp: " << totalV << std::endl;
-    std::cout << "Maximum CFL: " << (totalV * stepsize) / h << std::endl;
-    std::cout << "Maximum Ap: " << totalA << std::endl;
+      std::cout << "==Particle Group Data=========================================================" << std::endl;
+      std::cout << "Maximum Vp : " << totalV << std::endl;
+      std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
+      std::cout << "Maximum Ap : " << totalA << std::endl;
   }
 #endif 
 
   pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << " || substepping:  " << subSteps << std::endl;
+      std::cout << "==DEM Time Data===============================================================" << std::endl;
+      std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << " || substepping:  " << subSteps << std::endl;
   }
   checkpointer.trigger();
   checkpointer.flush();

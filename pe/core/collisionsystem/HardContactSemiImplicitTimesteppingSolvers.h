@@ -211,7 +211,8 @@ public:
    inline const AS&       getAttachableStorage()  const;
    inline const Domain&   getDomain()             const;
    inline real            getMaximumPenetration() const;
-   inline real            getSlipLength( )        const;
+   inline real            getSlipLength()         const;
+   inline real            getMinEps()             const;
    inline real            getMaximumLubrication() const;
    inline real            getLubricationDist()    const;
    inline size_t          getNumberOfContacts()   const;
@@ -224,6 +225,7 @@ public:
    inline void            setRelaxationParameter( real f );
    inline void            setMaxIterations( size_t n );
    inline void            setSlipLength( real hc );
+   inline void            setMinEps( real minEps );
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
    //@}
@@ -328,6 +330,7 @@ private:
    real lubricationDist_;
    real totalWallLubrication_;
    real hc_;
+   real minEps_;
    int  numTopWallContacts_;
    real maxForce_;
    Vec3 maxForceVector_;
@@ -451,9 +454,10 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , relaxationModel_  ( ApproximateInelasticCoulombContactByDecoupling )
    , relaxationParam_  ( 0.9 )
    , maximumPenetration_ ( 0.0 )
-   , maxLubrication_( 0.0 )
-   , maxForce_      ( 0.0 )
-   , hc_      ( 1.0 )
+   , maxLubrication_  ( 0.0 )
+   , maxForce_        ( 0.0 )
+   , hc_              ( 1.0 )
+   , minEps_          ( 0.1 )
    , maxForceVector_  ( )
    , lubricationDist_( 0.0 )
    , numContacts_      ( 0 )
@@ -836,6 +840,27 @@ inline real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 
 
 //*************************************************************************************************
+/*!\brief Sets minimum eps for the lubrication forces
+ *
+ * \param minEps The minimum eps for the lubrication forces.
+ * \return void
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::getMinEps() const
+{
+   return minEps_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Returns the maximum penetration depth found in the last collision detection.
  *
  * \return The maximum penetration depth found in the last collision detection.
@@ -931,6 +956,27 @@ template< template<typename> class CD                           // Type of the c
 inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setSlipLength( real hc )
 {
    hc_ = hc;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets minimum eps for the lubrication forces
+ *
+ * \param minEps The minimum eps for the lubrication forces.
+ * \return void
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setMinEps( real minEps )
+{
+   minEps_ = minEps;
 }
 //*************************************************************************************************
 
@@ -1818,7 +1864,7 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
     real term2 = -1.0 / 5.0 * std::log(epsilon);
     real term3 = -1.0 / 21.0 * epsilon * std::log(epsilon);
 
-    return -coefficient * (term1 + term2 + term3);
+    return coefficient * (term1 + term2 + term3);
 }
 //*************************************************************************************************
 
@@ -1898,6 +1944,26 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   BodyID b1( c.getBody1() );
   BodyID b2( c.getBody2() );
 
+  SphereID s1(nullptr);
+  SphereID s2(nullptr);
+  real rad(0.0);
+
+  if (b1->getType() == sphereType) {
+    s1 = static_body_cast<Sphere>(b1); 
+    rad = s1->getRadius();
+  }   
+  else if (b2->getType() == sphereType) {
+    std::cout << "WARNING: had to swap the order for lubrication contacts, check this!" << std::endl;
+    // swap the pointers
+    BodyID b_temp = b1;
+    b1 = c.getBody2(); 
+    b2 = c.getBody1(); 
+    s1 = static_body_cast<Sphere>(b1); 
+    rad = s1->getRadius();
+  }
+  else {
+    throw std::runtime_error( "Cannot add lubrication force for contacts without at least one sphere." );
+  }
 
   Vec3 normal = b1->getPosition() - b2->getPosition();
 
@@ -1912,49 +1978,56 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   real dist = c.getDistance();
 
   //============================================================================
-  // limiting of the distance
-  // Also if the distance is too small we do not add lubrication
-  // to avoid a blow-up of the log functions
-  // We could do it like this
-  // if (eps1 < 1.6e-6) {
-  //   eps1 = 1.6e-6;
-  // }
+  // SKIPPING PENETRATING CONTACTS
+  // In case of a negative distance, we are dealing with a penetrating 
+  // contact. In this case we skip the contact.
   //============================================================================
-
-  if(c.getDistance() < 5e-6) {
-   dist = 5e-6;
-   //real eps1 = dist / rad;
+  if (dist < 0.0) {
+    return;
   }
 
-  SphereID s1 = static_body_cast<Sphere>(b1);
+  //============================================================================
+  // LIMITING OF THE DISTANCE  
+  // Our strategy is to not let the distance drop below a certain threshold 
+  // to avoid a blow-up of the log functions.
+  // We could do it like this:
+  // if (eps < 1.6e-6) {
+  //   eps = 1.6e-6;
+  // }
+  // or
+  // if(c.getDistance() < 5e-6) {
+  //  dist = 5e-6;
+  // }
+  //============================================================================
+  real eps = dist / rad;
+
+  if(eps < minEps_) {
+    eps = minEps_;
+  }
+
+  //===========================================================================================================
+  // Lubrication Force with between a sphere and another sphere
+  //===========================================================================================================
   if (b2->getType() == sphereType) {
    SphereID s2 = static_body_cast<Sphere>(b2);
-   real rad = s1->getRadius();
 
    real velNormal = trans(vr) * normal;
    Vec3 vs = vr - velNormal * normal;
 
-   real eps1 = dist / rad;
-
-   // For penetration we do not add lubrication
-   if (dist < 0.0) {
-     return;
-   }
-
-   if( std::isnan(eps1)) {
-       std::cout << "NaN eps:  " << eps1 << "  " << dist << " / " << rad << std::endl;
+   if( std::isnan(eps)) {
+       std::cout << "NaN eps:  " << eps << "  " << dist << " / " << rad << std::endl;
    }
 
    //================================================================================================================ 
-   Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps1, rad);
+   Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
 
    if( (std::isnan(lubricationForce[0])) ||
        (std::isnan(lubricationForce[1])) ||
        (std::isnan(lubricationForce[2])) ) {
-     std::cout << "NaN lubrication found with another particle, eps:  " << eps1 << " "<< vr << normal << std::endl;
+     std::cout << "NaN lubrication found with another particle, eps:  " << eps << " "<< vr << normal << std::endl;
    }
-
    //================================================================================================================ 
+   
 #ifdef OUTPUT_LVL2
    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
                                                << " | pos: " 
@@ -1968,7 +2041,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                << " | Distance: " 
                                                << dist 
                                                << " | eps: " 
-                                               << eps1 
+                                               << eps 
                                                << std::endl;
 
    std::cout << "Lubrication particle force: " << lubricationForce 
@@ -1979,7 +2052,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                << " | Distance: " 
                                                << dist 
                                                << " | eps: " 
-                                               << eps1 
+                                               << eps 
                                                << std::endl;
 #endif                                               
 
@@ -1989,17 +2062,18 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 #endif                                               
      return;
    }
-   //================================================================================================================ 
 
-   real fc =  calculate_f_star(eps1, hc);
+   //================================================================================================================ 
+   real fc =  calculate_f_star(eps, hc);
    lubricationForce *= fc;
    //================================================================================================================ 
+   
 #ifdef OUTPUT_LVL2
    std::cout << "Corrected particle force: "   << lubricationForce 
                                                << " | correction fc: " 
                                                << fc 
                                                << " | eps: " 
-                                               << eps1 
+                                               << eps 
                                                << " | hc: " 
                                                << hc 
                                                << std::endl;
@@ -2015,10 +2089,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    if( (std::isnan(lubricationForce[0])) ||
        (std::isnan(lubricationForce[1])) ||
        (std::isnan(lubricationForce[2])) ) {
-     std::cout << "NaN fc* lubrication found with another particle, eps:  " << eps1 << std::endl;
+     std::cout << "NaN fc* lubrication found with another particle, eps:  " << eps << std::endl;
    }
 
-   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps1, rad);
+   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
 
    real mag = lubricationForce.length();
    if(limiting) {
@@ -2030,7 +2104,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    if (mag > maxLubrication_) {
      maxLubrication_ = mag;
-     lubricationDist_ = eps1;
+     lubricationDist_ = eps;
    }
 
    b1->addForce( lubricationForce );
@@ -2041,15 +2115,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   //===========================================================================================================
   else if(b2->getType() == innerCylinderType) {
 
-   real rad = s1->getRadius();
-
    real velNormal = trans(vr) * c.getNormal();
    Vec3 vs = vr - velNormal * c.getNormal();
-
-   real eps = dist / rad;
-   if (dist < 0.0) {
-     return;
-   }
 
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
    real fc =  calculate_f_star(eps, hc);
@@ -2082,24 +2149,14 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   //===========================================================================================================
   else if(b2->getType() == planeType) {
 
-   //std::cout << "Lubrication Wall force for a sphere and a plane " << std::endl;
-   real rad = s1->getRadius();
-
    real velNormal = trans(vr) * c.getNormal();
    Vec3 vs = vr - velNormal * c.getNormal();
 
-   real eps = dist / rad;
-   if (dist < 0.0) {
-     return;
-   }
-
-   real minEps = 5e-6 / rad;
+   real minEps = minEps_;
    Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
 
    Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
    if(b2->getSystemID() == 9223372036854775809) {
-
-     //real eps1 = dist / rad;
 
      // Computation of relative velocity is the opposite order of normal calculation
      //Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
@@ -2198,7 +2255,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 {
    const real dtinv( real(1) / dt );
 
-   bool useLubrication = true;
+   bool useLubrication = false;
 
    totalWallLubrication_ = 0.0;
 
@@ -2667,8 +2724,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       timeCollisionResponse_.end();
       memCollisionResponse_.stop();
    }
-//   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
+
+#ifdef OUTPUT_LVL2
+   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
    std::cout << "Number of s-p lubrication contacts: " << numTopWallContacts_ << std::endl;
+#endif
 
    real allLub = 0.0;
    real allDist = 0.0;
@@ -4914,7 +4974,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    if( body->awake_ ) {
       if( !body->isFixed() ) {
          dv = ( body->getInvMass() * dt ) * body->getForce();
-         std::cout << "Velocity correction: " << dv << " force: " << body->getForce() << " body: " << body->getSystemID() << " rank: " << MPISettings::rank() << std::endl;
+//#ifdef OUTPUT_LVL2
+//         std::cout << "Velocity correction: " << dv << " force: " << body->getForce() << " body: " << body->getSystemID() << " rank: " << MPISettings::rank() << std::endl;
+//#endif
          dw = dt * ( body->getInvInertia() * body->getTorque() );
       }
    }

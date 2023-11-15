@@ -4,8 +4,14 @@ void setupParticleBench(MPI_Comm ex0) {
   world = theWorld();
   world->setGravity( 0.0, 0.0, -9.81 );
 
-  real simViscosity( 373e-3 );
-  real simRho( 970 );
+  // Re 1.5 configuration
+  //real simViscosity( 373e-3 );
+  //real simRho( 970 );
+
+  // Re 31.9 configuration
+  real simViscosity( 58e-3 );
+  real simRho( 960 );
+
   real slipLength( 0.75 );
   world->setLiquidSolid(true);
   world->setLiquidDensity(simRho);
@@ -389,7 +395,7 @@ void setupParticleBench(MPI_Comm ex0) {
 //#endif
 
   MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  std::cout << "[Creating a plane] " << std::endl;
+  //std::cout << "[Creating a plane] " << std::endl;
   pe_GLOBAL_SECTION
   {
      // Creating the ground plane
@@ -432,24 +438,22 @@ void setupParticleBench(MPI_Comm ex0) {
 
   int idx = 0;
 
+  real radBench = 0.0075;
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   theCollisionSystem()->setSlipLength(slipLength);
   Vec3 position(-0.0, -0.0, 0.1275);
+  //position[2] = radBench + lubricationThreshold;
   //Vec3 position(-0.0, -0.0, 0.008);
-//  0.123597
 
   //==============================================================================================
   // Bench Configuration
   //==============================================================================================
-  real radBench = 0.0075;
+  theCollisionSystem()->setMinEps(5e-6 / radBench);
   SphereID spear(nullptr);
   if (world->ownsPoint( position )) {
     spear = createSphere(idx, position, radBench, myMaterial, true);
     //spear->setLinearVel(Vec3(0,0,-0.1));
-    std::cout << "[Creating particle] at: " << position << " in domain: " << my_rank << std::endl;
-    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
     ++idx;
   }
 
@@ -490,9 +494,11 @@ void setupParticleBench(MPI_Comm ex0) {
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"
       << " Fluid Density                           = " << simRho << "\n"
-      << " Gravity constant                        = " << world->getGravity()  
+      << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Lubrication                             = " << useLub << "\n"
       << " Lubrication h_c                         = " << slipLength << "\n"
+      << " Lubrication threshold                   = " << lubricationThreshold << "\n"
+      << " Contact threshold                       = " << contactThreshold << "\n"
       << " Particle starting position              = " << position << "\n"  
       << " Particle mass                           = " << totalMass << "\n" 
       << " Particle volume                         = " << totalVol << "\n" 

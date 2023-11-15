@@ -30,7 +30,7 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 
     if (remRank != 0) {
       CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
-      printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
+      //printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
       setupParticleBench(CcommEx0);
     } 
 }
