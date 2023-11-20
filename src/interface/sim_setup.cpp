@@ -30,13 +30,13 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 4500 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.001 );  // Size of a single time step
+const size_t timesteps     ( 1000000 );  // Number of time steps for the flowing granular media
+const real   stepsize      (  0.0005 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 1 );    // Number of processes in x-direction
-const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 12 );    // Number of processes in y-direction
+const int    processesX( 3 );    // Number of processes in x-direction
+const int    processesY( 3 );    // Number of processes in y-direction
+const int    processesZ( 3 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -68,7 +68,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 bool g_povray  ( false );
 bool g_vtk( true );
 // 
-const unsigned int visspacing( 50 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 100 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -126,10 +126,10 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.000555;
+  real h = 0.001;
 
 //=================================================================================================
-  int subSteps = 10;
+  int subSteps = 100;
   TimeStep::stepsize(stepsize);
   real subStepSize = stepsize / static_cast<real>(subSteps);
   for (int istep(0); istep < subSteps; ++istep) {
@@ -159,12 +159,12 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-      std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
+//      std::cout << "==Single Particle Data========================================================" << std::endl;
+//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
-////      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+//////      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
 //
     }
   }

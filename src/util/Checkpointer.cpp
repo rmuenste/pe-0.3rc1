@@ -16,7 +16,15 @@ Checkpointer::~Checkpointer() {
 void Checkpointer::trigger()
 {
   // Skipping the visualization for intermediate time steps
-  if(( ++steps_ < tspacing_ ) && (!counter_ == 0)) return;
+  if(( ++steps_ < tspacing_ ) && (!counter_ == 0)) {
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "Checkpoint in:" << tspacing_ - steps_ << std::endl;
+  }
+    return;
+  }
+//  else {
+//    std::cout << "Checkpoint triggered!" << std::endl;
+//  }
 
   // Adjusing the counters
   steps_ = 0;

@@ -112,7 +112,9 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
     MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
     MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
 
-    printf( "%d> C) Configuration Kroupa for process %d of %d\n", remRank, rank, size );
+    if (rank == 1) {
+      printf( "%d> C) Configuration Kroupa with %d processes.\n", remRank, size );
+    }
     if( CcommEx0 == MPI_COMM_NULL ) {
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;

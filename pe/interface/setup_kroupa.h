@@ -13,7 +13,7 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
     real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
     real domainVol = L * L * L;
 
-    std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
+    //std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
 
     // Calculate the number of cells along one side of the cubic grid
     int gridSize = static_cast<int>(L / cellSize);
@@ -86,10 +86,20 @@ void setupKroupa(MPI_Comm ex0) {
 
   world = theWorld();
   world->setGravity( 0.0, 0.0, 0.0 );
+
+  // Re 1.5 configuration
+  real simViscosity( 8.37e-5 );
+  real simRho( 1.0 );
+  world->setViscosity( simViscosity );
+  world->setLiquidDensity( simRho );
+
+  // Particle Bench Config 
+  real slipLength( 0.75 );
   world->setLiquidSolid(true);
-  world->setLiquidDensity(1.0);
-  world->setViscosity( 8.37e-5 );
   world->setDamping( 1.0 );
+
+  // Lubrication switch
+  bool useLubrication(false);
 
   // Configuration of the MPI system
   mpisystem = theMPISystem();
@@ -97,7 +107,6 @@ void setupKroupa(MPI_Comm ex0) {
 
   // Resume Simulation
   bool resume ( true );
-
 
   const real L( 0.1 );
   const real dx( L/processesX );
@@ -206,13 +215,19 @@ void setupKroupa(MPI_Comm ex0) {
 
   real h = 0.0075;
 
-  //real radius2 = 0.002;
-  real radius2 = 0.005;
-  //std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.4 / 14.0); 
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.001); 
+  //real radius3 = 0.002;
+  real radius3 = 0.00185;
+  real radius2 = 0.00175;
+  //real radius2 = 0.0015;
+  //real radius2 = 0.005;
+
+  // 40% vol frac:
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius3, 0.4 / 12.0); 
+  
+  //std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.001); 
   //=========================================================================================
   BodyID particle;
-  Vec3 gpos(0.02 , 0.02, 0.02);
+  Vec3 gpos(0.05 , 0.05, 0.1 - radius2 - (0.1 * radius2));
   Vec3 vel(0.1, 0, 0.0);
 
   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
@@ -226,7 +241,7 @@ void setupKroupa(MPI_Comm ex0) {
     }
   }
   else {
-    checkpointer.read( "../start.1" );
+    //checkpointer.read( "../start.1" );
   }
   //=========================================================================================
 
@@ -280,23 +295,30 @@ void setupKroupa(MPI_Comm ex0) {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
-//  if(resume)
-//    particlesTotal = primitivesTotal;
-
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
 
-  std::string resOut = (resume) ? " resuming " : " not resuming ";
+  std::string resOut = (resume) ? "resuming " : "not resuming ";
+  std::string useLub = (useLubrication) ? "enabled" : "disabled";
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " Total particles          = " << particlesTotal << "\n"
-      << " particle volume          = " << partVol << "\n"
-      << " Domain volume            = " << L * L * L << "\n"
-      << " Resume                   = " << resOut  << "\n"
-      << " Volume fraction[%]       = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
-      << " Total objects            = " << primitivesTotal << "\n" << std::endl;
+      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
+      << " Total number of particles               = " << particlesTotal << "\n"
+      << " particle volume                         = " << partVol << "\n"
+      << " Total number of objects                 = " << primitivesTotal << "\n"
+      << " Fluid Viscosity                         = " << simViscosity << "\n"
+      << " Fluid Density                           = " << simRho << "\n"
+      << " Gravity constant                        = " << world->getGravity() << "\n" 
+      << " Lubrication                             = " << useLub << "\n"
+      << " Lubrication h_c                         = " << slipLength << "\n"
+      << " Lubrication threshold                   = " << lubricationThreshold << "\n"
+      << " Contact threshold                       = " << contactThreshold << "\n"
+      << " Domain volume                           = " << L * L * L << "\n"
+      << " Resume                                  = " << resOut  << "\n"
+      << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
+      << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 
