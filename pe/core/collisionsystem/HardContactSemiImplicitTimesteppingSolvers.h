@@ -2027,7 +2027,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      std::cout << "NaN lubrication found with another particle, eps:  " << eps << " "<< vr << normal << std::endl;
    }
    //================================================================================================================ 
-#define OUTPUT_LVL2   
+//#define OUTPUT_LVL2   
 #ifdef OUTPUT_LVL2
    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
                                                << " | pos: " 
@@ -2183,10 +2183,13 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
    else {
 
+#ifdef OUTPUT_LVL2
      std::cout << "contact with wall: " << b2->getSystemID() << std::endl;
+#endif
    }
 
    real fc =  calculate_f_star(eps, hc);
+#ifdef OUTPUT_LVL2
    std::cout << "Lubrication wall normal force: "  << lubricationForce 
                                                    << " | vr: " 
                                                    << vr 
@@ -2201,6 +2204,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                    << " | minEps: " 
                                                    << minEps 
                                                    << std::endl;
+#endif
    lubricationForce *= fc;
    slidingLubricationForce *= fc; 
 
@@ -2225,7 +2229,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 
    b1->addForce(-slidingLubricationForce );
    if (-velNormal > 0) {
+#ifdef OUTPUT_LVL2
      std::cout << "Not adding normal lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
+#endif
    } else {
      b1->addForce(-lubricationForce );
    }

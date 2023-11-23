@@ -139,7 +139,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 366 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 2 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Process parameters
@@ -159,7 +159,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   5 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   2 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -431,9 +431,9 @@ int main( int argc, char** argv )
   // volume fraction.
   //======================================================================================== 
   // const real   radius  ( 0.005  );
-  bool resume = true;
-  real radius2 = 0.005;
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.1 / 4.0); 
+  bool resume = false;
+  real radius2 = 0.01;
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.35 / 4.0); 
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
@@ -517,15 +517,15 @@ int main( int argc, char** argv )
     }
     world->simulationStep( stepsize );
 
-#ifdef OUTPUT_LVL2
+#ifdef OUTPUT_LVL4
     for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
       World::SizeType widx = static_cast<World::SizeType>(i);
       BodyID body = world->getBody(static_cast<unsigned int>(widx));
       if(body->getType() == sphereType || body->getType() == capsuleType) {
         Vec3 vel = body->getLinearVel();
         Vec3 ang = body->getAngularVel();
-        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition() << std::endl;
-        std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel() << std::endl;
+//        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition() << std::endl;
+//        std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel() << std::endl;
       }
     }
 #endif
