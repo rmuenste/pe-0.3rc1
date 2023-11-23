@@ -33,6 +33,7 @@
 #include <iosfwd>
 #include <pe/core/attachable/Attachable.h>
 #include <pe/core/Configuration.h>
+#include <pe/core/ExclusiveSection.h>
 #include <pe/core/GamesSection.h>
 #include <pe/core/GeomType.h>
 #include <pe/core/ScientificSection.h>

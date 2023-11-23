@@ -433,7 +433,7 @@ int main( int argc, char** argv )
   // const real   radius  ( 0.005  );
   bool resume = false;
   real radius2 = 0.01;
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.35 / 4.0); 
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.35 / 2.0); 
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
