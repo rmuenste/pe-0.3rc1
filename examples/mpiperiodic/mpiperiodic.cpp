@@ -139,7 +139,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 300 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 366 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Process parameters
@@ -159,7 +159,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   10 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   5 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -410,6 +410,7 @@ int main( int argc, char** argv )
    //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    theCollisionSystem()->setSlipLength(1.5);
+   theCollisionSystem()->setMinEps(0.01);
 
   //======================================================================================== 
   // The way we atm include lubrication by increasing contact threshold
@@ -419,9 +420,9 @@ int main( int argc, char** argv )
   // particle is close in size to the size of a domain part!
   //======================================================================================== 
   BodyID particle;
-  Vec3 gpos (0.02 , 0.02, 0.1 - 2.* radius);
-  Vec3 gpos2(0.02 + 5. * radius, 0.02, 0.1 -2. * radius);
-  Vec3 vel(0.025, 0.0, 0.1);
+  Vec3 gpos (0.05 , 0.05, 0.05);
+  Vec3 gpos2(0.05 + 3. * radius, 0.05, 0.05);
+  Vec3 vel(0.025, 0.0, 0.0);
   int id = 0;
 
 
@@ -441,14 +442,13 @@ int main( int argc, char** argv )
       ++id;      
     }
   } else {
-//   if( world->ownsPoint( gpos ) ) {
-//      particle = createSphere( id++, gpos, radius, elastic );
-//      particle->setLinearVel( vel );
-//      particle->getID();
-//   }
+   if( world->ownsPoint( gpos ) ) {
+      particle = createSphere( id++, gpos, radius, elastic );
+      particle->setLinearVel( vel );
+      particle->getID();
+   }
    if( world->ownsPoint( gpos2 ) ) {
       particle = createSphere( id++, gpos2, radius, elastic );
-      particle->setLinearVel( vel );
    }
   }
   //======================================================================================== 
@@ -505,9 +505,8 @@ int main( int argc, char** argv )
       << " Resume                                  = " << resOut  << "\n"
       << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
-     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
-
 
 
   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {

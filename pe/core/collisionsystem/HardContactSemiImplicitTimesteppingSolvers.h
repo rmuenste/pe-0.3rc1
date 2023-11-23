@@ -1822,13 +1822,13 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
     if( std::isnan(epsilon) ) { 
       std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
     }
-    real term2 = 0.0;
-//    real term2 = -9.0 / 40.0 * std::log(epsilon);
-//    if( std::isnan(epsilon) ) { 
-//      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
-//    }
-//    real term3 = -3.0 / 112.0 * epsilon * std::log(epsilon);
-    real term3 = 0.0;
+//    real term2 = 0.0;
+    real term2 = -9.0 / 40.0 * std::log(epsilon);
+    if( std::isnan(epsilon) ) { 
+      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
+    }
+    real term3 = -3.0 / 112.0 * epsilon * std::log(epsilon);
+//    real term3 = 0.0;
 
     if( (std::isnan(term1)) ||
         (std::isnan(term2)) ||
@@ -2027,7 +2027,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      std::cout << "NaN lubrication found with another particle, eps:  " << eps << " "<< vr << normal << std::endl;
    }
    //================================================================================================================ 
-   
+#define OUTPUT_LVL2   
 #ifdef OUTPUT_LVL2
    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
                                                << " | pos: " 
@@ -2036,7 +2036,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                << b2->getSystemID() 
                                                << " | pos: " 
                                                << b2->getPosition() 
-                                               << " | global normal: " 
+                                               << "\n | global normal: " 
                                                << c.getNormal() 
                                                << " | Distance: " 
                                                << dist 
@@ -2255,7 +2255,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 {
    const real dtinv( real(1) / dt );
 
-   bool useLubrication = false;
+   bool useLubrication = true;
 
    totalWallLubrication_ = 0.0;
 
@@ -2726,8 +2726,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    }
 
 #ifdef OUTPUT_LVL2
-   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
-   std::cout << "Number of s-p lubrication contacts: " << numTopWallContacts_ << std::endl;
+//   std::cout << "Number of lubrication contacts: " << numLubricationContacts << std::endl;
+//   std::cout << "Number of s-p lubrication contacts: " << numTopWallContacts_ << std::endl;
 #endif
 
    real allLub = 0.0;
