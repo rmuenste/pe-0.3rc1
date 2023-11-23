@@ -32,6 +32,9 @@ void Checkpointer::trigger()
   bodyFile << "checkpoint." << counter_;
   setPath( "checkpoints/" );
   size_t               mt( 0 );
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "Checkpoint:" << bodyFile.str() << std::endl;
+  }
   write(bodyFile.str());
   ++counter_;
 }
