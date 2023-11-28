@@ -482,6 +482,7 @@ int main( int argc, char** argv )
     }
   }
 
+
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
@@ -516,18 +517,69 @@ int main( int argc, char** argv )
 //     std::cout << particle->getLinearVel() << std::endl;
     }
     world->simulationStep( stepsize );
-
-#ifdef OUTPUT_LVL4
+#define OUTPUT_LVL666 
+#ifdef OUTPUT_LVL666
+    std::vector<Vec3> localPoints;
     for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
       World::SizeType widx = static_cast<World::SizeType>(i);
       BodyID body = world->getBody(static_cast<unsigned int>(widx));
-      if(body->getType() == sphereType || body->getType() == capsuleType) {
-        Vec3 vel = body->getLinearVel();
-        Vec3 ang = body->getAngularVel();
+      if(body->getType() == sphereType) { //} || body->getType() == capsuleType) {
+        SphereID s = static_body_cast<Sphere>(body);
+        Vec3 pos = s->getPosition();
+        localPoints.push_back(pos);
+//        Vec3 vel = body->getLinearVel();
+//        Vec3 ang = body->getAngularVel();
 //        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition() << std::endl;
 //        std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel() << std::endl;
       }
     }
+    int totalPoints(0);
+    int localSize = localPoints.size();
+    MPI_Reduce(&localSize, &totalPoints, 1, MPI_INT, MPI_SUM, 0, mpisystem->getComm());
+pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "\n--" << "Total points: " << totalPoints << std::endl;
+}    
+
+//    int local_size = localPoints.size();
+//    int size;
+//    int* recvcounts = nullptr;
+//    int* displs = nullptr;
+//    int total_points;
+//
+//    int myrank = mpisystem->getRank(); 
+//
+//    if (myrank == 0) {
+//        recvcounts = new int[size];
+//        displs = new int[size];
+//    }
+//
+//    MPI_Gather(&local_size, 1, MPI_INT, recvcounts, 1, MPI_INT, 0, mpisystem->getComm());
+//
+//    if (myrank == 0) {
+//        displs[0] = 0;
+//        total_points = recvcounts[0];
+//        for (int i = 1; i < size; ++i) {
+//            displs[i] = displs[i - 1] + recvcounts[i - 1];
+//            total_points += recvcounts[i];
+//        }
+//    }
+//
+//    Vec3* all_points = new Vec3[total_points];
+//
+//    MPI_Gatherv(localPoints.data(), local_size * sizeof(Vec3), MPI_BYTE,
+//                all_points, recvcounts, displs, MPI_BYTE,
+//                0, mpisystem->getComm());
+
+    int myrank = mpisystem->getRank(); 
+
+   std::vector<Vec3> all_points(totalPoints);
+     //Vec3 *buffer = new Vec3[totalPoints];
+     MPI_Gather(localPoints.data(), localPoints.size() * sizeof(Vec3), MPI_BYTE,
+                all_points.data(), localPoints.size() * sizeof(Vec3), MPI_BYTE,
+                0, mpisystem->getComm());
+
+   std::cout << "Gathered " << all_points.size() << " points." << std::endl;
+
 #endif
 
   }
