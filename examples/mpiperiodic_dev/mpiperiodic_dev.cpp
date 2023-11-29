@@ -23,6 +23,7 @@
 #include <sstream>
 #include <random>
 #include <algorithm>
+#include <pe/core/Types.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -42,6 +43,34 @@ using boost::filesystem::path;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
+
+void outputDataToFile(const std::vector<double>& all_points_x,
+                      const std::vector<double>& all_points_y,
+                      const std::vector<double>& all_points_z,
+                      const std::vector<pe::id_t>& allSystemIDs,
+                      const std::vector<int>& globalWallContacts,
+                      const std::vector<double>& globalWallDistances) {
+    
+    // Open the file
+    std::ofstream outputFile("output.dat");
+    if (!outputFile.is_open()) {
+        std::cerr << "Error opening file: output.dat" << std::endl;
+        return;
+    }
+
+    // Output all_points_x, all_points_y, all_points_z
+    for (size_t i = 0; i < all_points_x.size(); ++i) {
+        outputFile << all_points_x[i] << " " << all_points_y[i] << " " << all_points_z[i] << std::endl;
+    }
+
+    // Output globalWallContacts and globalWallDistances
+    for (size_t i = 0; i < globalWallContacts.size(); ++i) {
+        outputFile << globalWallContacts[i] << " " << globalWallDistances[i] << std::endl;
+    }
+
+    // Close the file
+    outputFile.close();
+}
 
 
 // Function to generate random positions within a cubic domain
@@ -139,7 +168,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 2 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 0 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Process parameters
@@ -456,9 +485,10 @@ int main( int argc, char** argv )
   // Here we add some planes
   pe_GLOBAL_SECTION
   {
-     createPlane( 99999, 0.0, 0.0, 1.0, 1.0e-4, granite, false ); // bottom border
+     BodyID botPlane = createPlane( 99999, 0.0, 0.0, 1.0, 0.0, granite, false ); // bottom border
      BodyID topPlane = createPlane( 88888, 0.0, 0.0, -1.0, -L, granite, false ); // top border
      std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
+     std::cout << "botPlaneID: "  << botPlane->getSystemID() << std::endl;
   }
 
 
@@ -520,6 +550,9 @@ int main( int argc, char** argv )
 #define OUTPUT_LVL666 
 #ifdef OUTPUT_LVL666
     std::vector<Vec3> localPoints;
+    std::vector<pe::id_t> systemIDs;
+    std::vector<int> localWallContacts;
+    std::vector<real> localWallDistances;
     for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
       World::SizeType widx = static_cast<World::SizeType>(i);
       BodyID body = world->getBody(static_cast<unsigned int>(widx));
@@ -527,6 +560,11 @@ int main( int argc, char** argv )
         SphereID s = static_body_cast<Sphere>(body);
         Vec3 pos = s->getPosition();
         localPoints.push_back(pos);
+        systemIDs.push_back(body->getSystemID());
+        //std::cout << "Wall contact: " << body->wallContact_ << " distance: " << body->contactDistance_ << std::endl;
+        localWallContacts.push_back(body->wallContact_);
+        localWallDistances.push_back(body->contactDistance_);
+//        std::cout << "Real System Id: " << body->getSystemID() << std::endl;
 //        Vec3 vel = body->getLinearVel();
 //        Vec3 ang = body->getAngularVel();
 //        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition() << std::endl;
@@ -541,33 +579,52 @@ int main( int argc, char** argv )
 pe_EXCLUSIVE_SECTION(0) {
     std::cout << "\n--" << "Total points: " << totalPoints << std::endl;
 }    
+
+//======================================================================================================
+// We perform MPI communication of the particle positions here
+// Additionally we also want to communicate the particle systemIDs
+// and information about boundary contacts
+//
+// Since the number of particles can be different on each process we use the MPI_Gatherv function
+//======================================================================================================
    std::vector<double> x;
+   std::vector<double> y;
+   std::vector<double> z;
    for(auto point : localPoints) {
       x.push_back(point[0]);
+      y.push_back(point[1]);
+      z.push_back(point[2]);
    }
 
-   int local_size = x.size();
-   std::vector<int> recvcounts(4);
 
+   int local_size = x.size();
+
+   // Get the size of the mpi world
+   int size = mpisystem->getSize();
+   std::vector<int> recvcounts(size);
+
+   // Get the id of the current process
    int myrank = mpisystem->getRank(); 
+
    // Gather the size of data from each process on the root
    MPI_Gather(&local_size, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, 0, cartcomm); 
 
-   std::vector<int> displs(4, 0); // Displacement array
+   std::vector<int> displs(size, 0); // Displacement array
 
    if (myrank == 0) {
         // Calculate the displacement array for the gathered data
-        for (int i = 1; i < 4; ++i) {
+        for (int i = 1; i < size; ++i) {
             displs[i] = displs[i - 1] + recvcounts[i - 1];
             std::cout << "Displacement " << i << " " << displs[i] << std::endl;
         }
    }   
 
-   std::vector<double> localResult = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
-
-
-   std::vector<double> result;
-   std::vector<double> all_points;
+   std::vector<double> all_points_x;
+   std::vector<double> all_points_y;
+   std::vector<double> all_points_z;
+   std::vector<pe::id_t> allSystemIDs;
+   std::vector<int> globalWallContacts;
+   std::vector<real> globalWallDistances;
    int total_size;
    if (myrank == 0) {
       // Calculate the total size of the gathered data
@@ -577,26 +634,62 @@ pe_EXCLUSIVE_SECTION(0) {
       }
 
       // Allocate space for the gathered data
-      all_points.resize(total_size);      
+      all_points_x.resize(total_size);      
+      all_points_y.resize(total_size);      
+      all_points_z.resize(total_size);      
+      //allSystemIDs.resize(total_size * sizeof(pe::id_t));      
+      allSystemIDs.resize(total_size);      
+      globalWallContacts.resize(total_size);      
+      globalWallDistances.resize(total_size);      
    }
 
-   // Gather the local results from all processes.
-//   MPI_Gather(localResult.data(), localResult.size(), MPI_DOUBLE, result.data(),
-//      localResult.size(), MPI_DOUBLE, 0, cartcomm);
-
-   //Vec3 *buffer = new Vec3[totalPoints];
-//   MPI_Gather(x.data(), x.size(), MPI_DOUBLE, all_points.data(), 
-//              x.size(), MPI_DOUBLE, 0, cartcomm);
-
+//===============================================================================
+// Here we gather the x-y-z data on the root process
+//===============================================================================
    // Gather the data from each process into the all_data array
    MPI_Gatherv(x.data(), x.size(), MPI_DOUBLE,
-               all_points.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
+               all_points_x.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
+               0, cartcomm);              
+   // Gather the data from each process into the all_data array
+   MPI_Gatherv(y.data(), y.size(), MPI_DOUBLE,
+               all_points_y.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
+               0, cartcomm);              
+   // Gather the data from each process into the all_data array
+   MPI_Gatherv(z.data(), z.size(), MPI_DOUBLE,
+               all_points_z.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
+               0, cartcomm);              
+//===============================================================================
+// Here we gather the system ids on the root process
+//===============================================================================
+   MPI_Gatherv(systemIDs.data(), systemIDs.size(), MPI_UNSIGNED_LONG_LONG,
+               allSystemIDs.data(), recvcounts.data(), displs.data(), MPI_UNSIGNED_LONG_LONG,
+               0, cartcomm);              
+//===============================================================================
+// Here we gather the wall contacts on the root process
+//===============================================================================
+   MPI_Gatherv(localWallDistances.data(), localWallDistances.size(), MPI_DOUBLE,
+               globalWallDistances.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
+               0, cartcomm);              
+   MPI_Gatherv(localWallContacts.data(), localWallContacts.size(), MPI_INT,
+               globalWallContacts.data(), recvcounts.data(), displs.data(), MPI_INT,
                0, cartcomm);              
 
 pe_EXCLUSIVE_SECTION(0) {
-   for(auto xc : x) {
-      std::cout << xc << std::endl;
-   }
+//   std::vector<pe::id_t> converted_data(allSystemIDs.size() / sizeof(pe::id_t));
+//   std::memcpy(converted_data.data(), allSystemIDs.data(), allSystemIDs.size());   
+
+   outputDataToFile(all_points_x,
+                    all_points_y,
+                    all_points_z,
+                    allSystemIDs,
+                    globalWallContacts,
+                    globalWallDistances);
+
+   //for(int i(0); i < all_points_x.size(); i++) {
+    //  std::cout << all_points_x[i] << " " << all_points_y[i] << " " << all_points_z[i] << std::endl;
+    //std::cout << "System Id: " << converted_data[i] << std::endl;
+    //std::cout << "System Id: " << allSystemIDs[i] << std::endl;
+   //}
 }    
 
 #endif

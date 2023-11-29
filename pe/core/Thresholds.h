@@ -187,7 +187,7 @@ public:
    /*! Only points with a distance to the all smaller than this threshold are considered
        for lubrication. */
    //static inline double lubricationThreshold() { return 33e-3; }
-   static inline double lubricationThreshold() { return 0.5e-3; }
+   static inline double lubricationThreshold() { return 5e-3; }
 
    //! Threshold for parallelism checks.
    /*! Scalar products smaller than this threshold value indicate parallel vectors. */

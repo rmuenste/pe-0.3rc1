@@ -90,6 +90,8 @@ public:
     }
 
    size_t index_;
+   int wallContact_;
+   real contactDistance_;
 };
 //*************************************************************************************************
 
@@ -110,6 +112,8 @@ template< template<typename> class CD                           // Type of the c
 RigidBodyTrait< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::RigidBodyTrait( BodyID body )
    : MPIRigidBodyTrait( body )  // Initialization of the parent class
    , index_( 0 )
+   , wallContact_( 0 )
+   , contactDistance_( 0.0 )
 {}
 //*************************************************************************************************
 

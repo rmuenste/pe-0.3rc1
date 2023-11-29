@@ -2162,6 +2162,13 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      //Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
      totalWallLubrication_ += slidingLubricationForce[0];
      numTopWallContacts_++;
+     b1->wallContact_ = 1;
+     b1->contactDistance_ = c.getDistance();
+
+//#define OUTPUT_TOPWALL
+#ifdef OUTPUT_TOPWALL
+   std::cout << "contact with t-wall: " << b2->getSystemID() << " | distance: " << c.getDistance() << std::endl;
+#endif 
 #ifdef OUTPUT_LVL2
      std::cout << "Lubrication wall sliding force: " << slidingLubricationForce 
                                                      << " | vr: " 
@@ -2182,10 +2189,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 #endif
    }
    else {
-
-#ifdef OUTPUT_LVL2
-     std::cout << "contact with wall: " << b2->getSystemID() << std::endl;
+//#define OUTPUT_BOTTOMWALL
+#ifdef OUTPUT_BOTTOMWALL
+     std::cout << "contact with b-wall: " << b2->getSystemID() << " | distance: " << c.getDistance() << std::endl;
 #endif
+     b1->wallContact_ = 2;
+     b1->contactDistance_ = c.getDistance();
    }
 
    real fc =  calculate_f_star(eps, hc);
