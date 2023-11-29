@@ -534,51 +534,70 @@ int main( int argc, char** argv )
       }
     }
     int totalPoints(0);
+    int maxPoints(0);
     int localSize = localPoints.size();
     MPI_Reduce(&localSize, &totalPoints, 1, MPI_INT, MPI_SUM, 0, mpisystem->getComm());
+
 pe_EXCLUSIVE_SECTION(0) {
     std::cout << "\n--" << "Total points: " << totalPoints << std::endl;
 }    
+   std::vector<double> x;
+   for(auto point : localPoints) {
+      x.push_back(point[0]);
+   }
 
-//    int local_size = localPoints.size();
-//    int size;
-//    int* recvcounts = nullptr;
-//    int* displs = nullptr;
-//    int total_points;
-//
-//    int myrank = mpisystem->getRank(); 
-//
-//    if (myrank == 0) {
-//        recvcounts = new int[size];
-//        displs = new int[size];
-//    }
-//
-//    MPI_Gather(&local_size, 1, MPI_INT, recvcounts, 1, MPI_INT, 0, mpisystem->getComm());
-//
-//    if (myrank == 0) {
-//        displs[0] = 0;
-//        total_points = recvcounts[0];
-//        for (int i = 1; i < size; ++i) {
-//            displs[i] = displs[i - 1] + recvcounts[i - 1];
-//            total_points += recvcounts[i];
-//        }
-//    }
-//
-//    Vec3* all_points = new Vec3[total_points];
-//
-//    MPI_Gatherv(localPoints.data(), local_size * sizeof(Vec3), MPI_BYTE,
-//                all_points, recvcounts, displs, MPI_BYTE,
-//                0, mpisystem->getComm());
+   int local_size = x.size();
+   std::vector<int> recvcounts(4);
 
-    int myrank = mpisystem->getRank(); 
+   int myrank = mpisystem->getRank(); 
+   // Gather the size of data from each process on the root
+   MPI_Gather(&local_size, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, 0, cartcomm); 
 
-   std::vector<Vec3> all_points(totalPoints);
-     //Vec3 *buffer = new Vec3[totalPoints];
-     MPI_Gather(localPoints.data(), localPoints.size() * sizeof(Vec3), MPI_BYTE,
-                all_points.data(), localPoints.size() * sizeof(Vec3), MPI_BYTE,
-                0, mpisystem->getComm());
+   std::vector<int> displs(4, 0); // Displacement array
 
-   std::cout << "Gathered " << all_points.size() << " points." << std::endl;
+   if (myrank == 0) {
+        // Calculate the displacement array for the gathered data
+        for (int i = 1; i < 4; ++i) {
+            displs[i] = displs[i - 1] + recvcounts[i - 1];
+            std::cout << "Displacement " << i << " " << displs[i] << std::endl;
+        }
+   }   
+
+   std::vector<double> localResult = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
+
+
+   std::vector<double> result;
+   std::vector<double> all_points;
+   int total_size;
+   if (myrank == 0) {
+      // Calculate the total size of the gathered data
+      total_size = 0;
+      for (int i = 0; i < recvcounts.size(); ++i) {
+          total_size += recvcounts[i];
+      }
+
+      // Allocate space for the gathered data
+      all_points.resize(total_size);      
+   }
+
+   // Gather the local results from all processes.
+//   MPI_Gather(localResult.data(), localResult.size(), MPI_DOUBLE, result.data(),
+//      localResult.size(), MPI_DOUBLE, 0, cartcomm);
+
+   //Vec3 *buffer = new Vec3[totalPoints];
+//   MPI_Gather(x.data(), x.size(), MPI_DOUBLE, all_points.data(), 
+//              x.size(), MPI_DOUBLE, 0, cartcomm);
+
+   // Gather the data from each process into the all_data array
+   MPI_Gatherv(x.data(), x.size(), MPI_DOUBLE,
+               all_points.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
+               0, cartcomm);              
+
+pe_EXCLUSIVE_SECTION(0) {
+   for(auto xc : x) {
+      std::cout << xc << std::endl;
+   }
+}    
 
 #endif
 
