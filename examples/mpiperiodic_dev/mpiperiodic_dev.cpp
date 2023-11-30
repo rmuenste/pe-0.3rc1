@@ -49,7 +49,11 @@ void outputDataToFile(const std::vector<double>& all_points_x,
                       const std::vector<double>& all_points_z,
                       const std::vector<pe::id_t>& allSystemIDs,
                       const std::vector<int>& globalWallContacts,
-                      const std::vector<double>& globalWallDistances) {
+                      const std::vector<double>& globalWallDistances,
+                      real L,
+                      real phi,
+                      real radius
+                      ) {
     
     // Open the file
     std::ofstream outputFile("output.dat");
@@ -57,6 +61,10 @@ void outputDataToFile(const std::vector<double>& all_points_x,
         std::cerr << "Error opening file: output.dat" << std::endl;
         return;
     }
+
+    outputFile << L << std::endl;
+    outputFile << phi << std::endl;
+    outputFile << radius << std::endl;
 
     // Output all_points_x, all_points_y, all_points_z
     for (size_t i = 0; i < all_points_x.size(); ++i) {
@@ -74,13 +82,15 @@ void outputDataToFile(const std::vector<double>& all_points_x,
 
 
 // Function to generate random positions within a cubic domain
-std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFraction) {
+std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFraction, real eps=0.0) {
 
     WorldID world = theWorld();
 
     std::vector<Vec3> positions;
 
-    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
+    real cellSize = diameter + eps;
+
+    real partVol = 4./3. * M_PI * std::pow(0.5 * diameter, 3);
     real domainVol = L * L * L;
 
     std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
@@ -90,6 +100,14 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
 
     // Calculate the total number of cells in the grid
     int totalCells = gridSize * gridSize * gridSize;
+
+    // Calculate the maximum volume fraction possible for the current configuration
+    real maxPhi = ((totalCells * partVol) / domainVol);
+
+    if (volumeFraction > maxPhi) {
+      std::cout << "User defined volume fraction: " << volumeFraction << " is too high for the current configuration" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
 
     // Initialize a vector to keep track of visited cells
     std::vector<bool> cellVisited(totalCells, false);
@@ -101,6 +119,7 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
 
     // Generate random positions until the grid is full or the volume fraction is reached
     while (positions.size() < totalCells && (static_cast<real>(positions.size()) / totalCells) < volumeFraction) {
+    //while (positions.size() < totalCells && (static_cast<real>(positions.size()) * partVol) / domainVol < volumeFraction) {
         // Generate random cell indices
         int x = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
         int y = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
@@ -128,11 +147,14 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
             // Create a Vec3 object for the position and add it to the positions vector
             positions.push_back(Vec3(posX, posY, posZ));
         }
+    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
+    std::cout << MPISettings::rank() << ")local fraction:  " << (static_cast<real>(positions.size()) / totalCells) << " of " << volumeFraction << std::endl;
+    std::cout << MPISettings::rank() << ")local:  " << positions.size() << " of " << totalCells << std::endl;
     }
 
-    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
-    //std::cout << "Volume fraction:  " << solidFraction << std::endl;
-    //std::cout << "local:  " << positions.size() << std::endl;
+    //real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
+    //std::cout << MPISettings::rank() << ")Volume fraction:  " << solidFraction << std::endl;
+    //std::cout << MPISettings::rank() << ")local:  " << positions.size() << std::endl;
     return positions;
 }
 
@@ -459,10 +481,11 @@ int main( int argc, char** argv )
   // Here is how to create some random positions on a grid up to a certain
   // volume fraction.
   //======================================================================================== 
-  // const real   radius  ( 0.005  );
   bool resume = false;
-  real radius2 = 0.01;
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.35 / 2.0); 
+  real radius2 = 0.0075;
+  real targetVolumeFraction = 0.35 / 2.0;
+
+  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.16, 1e-4); 
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
@@ -521,6 +544,7 @@ int main( int argc, char** argv )
 
   real domainVol = L * L * L;
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
+  real phi = (particlesTotal * partVol)/domainVol * 100.0;
 
   std::string resOut = (resume) ? " resuming " : " not resuming ";
 
@@ -534,7 +558,7 @@ int main( int argc, char** argv )
       << " particle volume                         = " << partVol << "\n"
       << " Domain volume                           = " << L * L * L << "\n"
       << " Resume                                  = " << resOut  << "\n"
-      << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
+      << " Volume fraction[%]                      = " << phi << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
@@ -615,7 +639,7 @@ pe_EXCLUSIVE_SECTION(0) {
         // Calculate the displacement array for the gathered data
         for (int i = 1; i < size; ++i) {
             displs[i] = displs[i - 1] + recvcounts[i - 1];
-            std::cout << "Displacement " << i << " " << displs[i] << std::endl;
+            //std::cout << "Displacement " << i << " " << displs[i] << std::endl;
         }
    }   
 
@@ -675,21 +699,18 @@ pe_EXCLUSIVE_SECTION(0) {
                0, cartcomm);              
 
 pe_EXCLUSIVE_SECTION(0) {
-//   std::vector<pe::id_t> converted_data(allSystemIDs.size() / sizeof(pe::id_t));
-//   std::memcpy(converted_data.data(), allSystemIDs.data(), allSystemIDs.size());   
 
    outputDataToFile(all_points_x,
                     all_points_y,
                     all_points_z,
                     allSystemIDs,
                     globalWallContacts,
-                    globalWallDistances);
+                    globalWallDistances,
+                    L,
+                    phi,
+                    radius2
+                    );
 
-   //for(int i(0); i < all_points_x.size(); i++) {
-    //  std::cout << all_points_x[i] << " " << all_points_y[i] << " " << all_points_z[i] << std::endl;
-    //std::cout << "System Id: " << converted_data[i] << std::endl;
-    //std::cout << "System Id: " << allSystemIDs[i] << std::endl;
-   //}
 }    
 
 #endif
