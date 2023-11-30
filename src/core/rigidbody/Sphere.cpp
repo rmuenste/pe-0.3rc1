@@ -52,6 +52,7 @@
 #include <pe/system/VerboseMode.h>
 #include <pe/util/ColorMacros.h>
 #include <pe/util/logging/DetailSection.h>
+#include <sstream>
 
 
 namespace pe {
@@ -1194,8 +1195,12 @@ PE_PUBLIC SphereID createSphere( id_t uid, const Vec3& gpos, real radius,
       throw std::invalid_argument( "Invalid sphere radius" );
 
    // Checking the global position of the sphere
-   if( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) )
-      throw std::invalid_argument( "Invalid global sphere position" );
+   if( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) ) {
+      std::stringstream ss;
+      ss << "rank: " << MPISettings::rank() << "Invalid global sphere position: " << gpos << std::endl;
+      //throw std::invalid_argument( "Invalid global sphere position" );
+      throw std::invalid_argument( ss.str());
+   }
 
    // Creating a new sphere
    const id_t sid( global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create() );
