@@ -52,28 +52,53 @@ void outputDataToFile(const std::vector<double>& all_points_x,
                       const std::vector<double>& globalWallDistances,
                       real L,
                       real phi,
-                      real radius
+                      real radius,
+                      std::string fileName
                       ) {
     
     // Open the file
-    std::ofstream outputFile("output.dat");
+    std::ofstream outputFile(fileName);
     if (!outputFile.is_open()) {
-        std::cerr << "Error opening file: output.dat" << std::endl;
+        std::cerr << "Error opening file: " << fileName << std::endl;
         return;
     }
 
+    outputFile << "CELL_SIZE 1" << std::endl;
     outputFile << L << std::endl;
-    outputFile << phi << std::endl;
+    outputFile << "RADIUS 1" << std::endl;
     outputFile << radius << std::endl;
+    outputFile << "VOLUME_FRACTION 1" << std::endl;
+    outputFile << phi << std::endl;
 
+    outputFile << "POINTS 88" << std::endl;
     // Output all_points_x, all_points_y, all_points_z
     for (size_t i = 0; i < all_points_x.size(); ++i) {
         outputFile << all_points_x[i] << " " << all_points_y[i] << " " << all_points_z[i] << std::endl;
     }
 
+    outputFile << "WALLINFO 88" << std::endl;
     // Output globalWallContacts and globalWallDistances
     for (size_t i = 0; i < globalWallContacts.size(); ++i) {
         outputFile << globalWallContacts[i] << " " << globalWallDistances[i] << std::endl;
+    }
+
+    // Close the file
+    outputFile.close();
+}
+
+void outputPointsToFile(const std::vector<Vec3>& all_points) {
+    
+    // Open the file
+    std::ofstream outputFile("generated_points.dat");
+    if (!outputFile.is_open()) {
+        std::cerr << "Error opening file: generated_points.dat" << std::endl;
+        return;
+    }
+
+
+    // Output all_points_x, all_points_y, all_points_z
+    for (size_t i = 0; i < all_points.size(); ++i) {
+        outputFile << all_points[i] << std::endl;
     }
 
     // Close the file
@@ -166,7 +191,7 @@ std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFrac
 
     real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
     std::cout << MPISettings::rank() << ")Volume fraction:  " << solidFraction << std::endl;
-    //std::cout << MPISettings::rank() << ")local:  " << positions.size() << std::endl;
+    std::cout << MPISettings::rank() << ")local:  " << positions.size() << std::endl;
     return positions;
 }
 
@@ -222,7 +247,7 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   2 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   1 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
 
@@ -329,6 +354,7 @@ int main( int argc, char** argv )
    pe_LOG_DEBUG_SECTION( log ) {
      log << "Rank: " << mpisystem->getRank() << " +1,0,0: " << +center[0]*lpx << "| -1,0,0: " << -east[0]*lpx << "| 0,0,+1: " << +center[1]*lpz << "| 0,0,-1: " << -top[1]*lpz << "\n";
    }
+   std::cout << "Rank: " << mpisystem->getRank() << " +1,0,0: " << +center[0]*lpx << "| -1,0,0: " << -east[0]*lpx << "| 0,0,+1: " << +center[1]*lpz << "| 0,0,-1: " << -top[1]*lpz << std::endl;
 
 
    // Connecting the west neighbor
@@ -494,43 +520,59 @@ int main( int argc, char** argv )
   // volume fraction.
   //======================================================================================== 
   bool resume = false;
-  real radius2 = 0.0075;
-  real targetVolumeFraction = 0.35 / 2.0;
+  real epsilon = 1e-4;
+  real targetVolumeFraction = 0.35;
+  real radius2 = 0.01 - epsilon;
 
   std::vector<Vec3> allPositions;
   int numPositions;
   
   pe_EXCLUSIVE_SECTION(0) {
-   allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.16, 1e-4); 
+   allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
    numPositions = allPositions.size();
+   outputPointsToFile(allPositions);
+
   }
 
   MPI_Bcast(&numPositions, 1, MPI_INT, 0, cartcomm);
   // Now all processes have the same value
   std::cout << "Rank " << MPISettings::rank() << ": Received value " << numPositions << std::endl;
 
-
-  std::vector<real> flatPositions(numPositions);
-  for(std::size_t i(0); i < allPositions.size(); i++) {
-    flatPositions[i][0];
-    flatPositions[i][1];
-    flatPositions[i][2];
+  std::vector<real> flatPositions(numPositions * 3);
+  pe_EXCLUSIVE_SECTION(0) {
+   for(std::size_t i(0); i < allPositions.size(); i++) {
+      flatPositions[3 * i]     = allPositions[i][0];
+      flatPositions[3 * i + 1] = allPositions[i][1];
+      flatPositions[3 * i + 2] = allPositions[i][2];
+   }
   }
 
+  // Broadcast the vector from the root process to all other processes
+  MPI_Bcast(flatPositions.data(), numPositions * 3, MPI_DOUBLE, 0, cartcomm);
+
+  pe_EXCLUSIVE_SECTION(0){
   
-  // Gather the data from each process into the all_data array
-  MPI_Gatherv(x.data(), x.size(), MPI_DOUBLE,
-              all_points_x.data(), recvcounts.data(), displs.data(), MPI_DOUBLE,
-              0, cartcomm);              
+  }
+  pe_EXCLUSIVE_ELSE {
 
+   for(std::size_t i(0); i < numPositions * 3; i += 3) {
+      Vec3 p(flatPositions[i], flatPositions[i + 1], flatPositions[i + 2]);
+      allPositions.push_back(p);
+   }
+  
+  }
 
+  std::vector<bool> pointEnabled(numPositions, true);
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
       if( world->ownsPoint(position)) {
          SphereID sphere = createSphere(id, position, radius2, elastic, true);
-         sphere->setLinearVel(0.01, 0.0, 0.0);
          ++id;      
+      }
+      else {
+         //std::cout << MPISettings::rank() << ") does not own: " << position << " at idx: " << i << std::endl;
+         pointEnabled[i] = false;
       }
     }
   } else {
@@ -541,6 +583,16 @@ int main( int argc, char** argv )
    }
    if( world->ownsPoint( gpos2 ) ) {
       particle = createSphere( id++, gpos2, radius, elastic );
+   }
+  }
+  //======================================================================================== 
+  for(std::size_t i(0); i < pointEnabled.size(); i++ ) {
+   pe_LOG_DEBUG_SECTION( log ) {
+     if(pointEnabled[i]) {
+       log << "Point: " << i << " is ON "  << allPositions[i] << "\n";
+     } else {
+       log << "Point: " << i << " is OFF " << allPositions[i] << "\n";
+     }
    }
   }
   //======================================================================================== 
@@ -748,7 +800,8 @@ pe_EXCLUSIVE_SECTION(0) {
                     globalWallDistances,
                     L,
                     phi,
-                    radius2
+                    radius2,
+                    std::string("exchange_file.dat")
                     );
 
 }    
