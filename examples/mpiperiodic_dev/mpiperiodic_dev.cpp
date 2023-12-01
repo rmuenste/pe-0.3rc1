@@ -70,13 +70,13 @@ void outputDataToFile(const std::vector<double>& all_points_x,
     outputFile << "VOLUME_FRACTION 1" << std::endl;
     outputFile << phi << std::endl;
 
-    outputFile << "POINTS 88" << std::endl;
+    outputFile << "POINTS " << all_points_x.size() << std::endl;
     // Output all_points_x, all_points_y, all_points_z
     for (size_t i = 0; i < all_points_x.size(); ++i) {
         outputFile << all_points_x[i] << " " << all_points_y[i] << " " << all_points_z[i] << std::endl;
     }
 
-    outputFile << "WALLINFO 88" << std::endl;
+    outputFile << "WALLINFO " << globalWallContacts.size() << std::endl;
     // Output globalWallContacts and globalWallDistances
     for (size_t i = 0; i < globalWallContacts.size(); ++i) {
         outputFile << globalWallContacts[i] << " " << globalWallDistances[i] << std::endl;
