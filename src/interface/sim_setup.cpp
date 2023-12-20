@@ -34,9 +34,9 @@ const size_t timesteps     ( 1000000 );  // Number of time steps for the flowing
 const real   stepsize      (  0.0005 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
+const int    processesX( 5 );    // Number of processes in x-direction
 const int    processesY( 3 );    // Number of processes in y-direction
-const int    processesZ( 3 );    // Number of processes in y-direction
+const int    processesZ( 1 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
