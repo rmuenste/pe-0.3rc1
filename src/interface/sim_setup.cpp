@@ -31,7 +31,7 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 1000000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.0005 );  // Size of a single time step
+const real   stepsize      (  0.001 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 5 );    // Number of processes in x-direction
@@ -129,7 +129,7 @@ void stepSimulation() {
   real h = 0.001;
 
 //=================================================================================================
-  int subSteps = 100;
+  int subSteps = 1;
   TimeStep::stepsize(stepsize);
   real subStepSize = stepsize / static_cast<real>(subSteps);
   for (int istep(0); istep < subSteps; ++istep) {
@@ -186,35 +186,6 @@ void stepSimulation() {
   checkpointer.trigger();
   checkpointer.flush();
   timestep++;
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//  numBodies = theCollisionSystem()->getBodyStorage().size();
-//  bodiesUpdate = static_cast<unsigned long>(numBodies);
-//  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-//  pe_EXCLUSIVE_SECTION(0) {
-//   std::cout << "Num particles: " << bodiesUpdate << "   " << std::endl;
-//  }
-
-//  if (particlesTotal != particlesTotalBefore) {
-//    std::cout << " We have lost particles: " << particlesTotal << " != " << particlesTotalBefore << "\n" << std::endl;
-//    std::exit(EXIT_FAILURE);
-//  }
-//  const real cylRad1 = 0.2;  
-//  const real cylRad2 = 0.4;  
-//  const real cylLength  = 0.4;
-//
-//  real domainVol = M_PI * std::pow(cylRad2, 2) * cylLength;
-//  real cylVol = M_PI * std::pow(cylRad1, 2) * cylLength;
-//  domainVol -= cylVol;
-//  real radius2 = 0.02;
-//  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
-//  pe_EXCLUSIVE_SECTION(0) {
-//   real volumeFraction = (particlesTotal * partVol)/domainVol * 100.0;
-//   std::cout << " Volume fraction[%]       = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n" << std::endl;
-//   if(volumeFraction < 20.0)
-//     std::exit(EXIT_FAILURE);
-//  }
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
 
   /////////////////////////////////////////////////////
   // MPI Finalization

@@ -200,7 +200,7 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
 
    path p(filename_);
    if(exists(p)) {
-      std::cerr << "vtk::Writer::Writer(): Directory exists: "<<p<<". - Files in this directory may be overwritten!\n";
+      //std::cerr << "vtk::Writer::Writer(): Directory exists: "<<p<<". - Files in this directory may be overwritten!\n";
    }
    if (!exists(p)) {
       create_directory(p);

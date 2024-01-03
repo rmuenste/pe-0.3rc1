@@ -90,6 +90,8 @@ World::~World()
    // Clearing the collision system
    theCollisionSystem()->clear();
 
+   std::cout << "World destructor" << std::endl;
+
    // Logging the successful destruction of the simulation world
    pe_LOG_PROGRESS_SECTION( log ) {
       log << "Successfully destroyed the simulation world instance";

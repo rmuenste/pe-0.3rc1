@@ -129,6 +129,7 @@ void MPISettings::comm( MPI_Comm communicator )
    // Reinitializing the total number of processes and the rank of this process
    if( initialized ) {
       parallel_ = true;
+      //std::cout << "Comm rank!" << std::endl;
       MPI_Comm_size( comm_, &size_ );  // Estimating the total number of MPI processes
       MPI_Comm_rank( comm_, &rank_ );  // Estimating the rank of this process
    }
@@ -182,6 +183,7 @@ void MPISettings::activate()
    // Initializing the total number of processes and the rank of this process
    if( initialized ) {
       parallel_ = true;
+      //std::cout << "Comm rank!!" << std::endl;
       MPI_Comm_size( comm_, &size_ );  // Estimating the total number of MPI processes
       MPI_Comm_rank( comm_, &rank_ );  // Estimating the rank of this process
    }

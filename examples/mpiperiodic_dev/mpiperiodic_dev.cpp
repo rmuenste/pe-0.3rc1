@@ -104,7 +104,12 @@ void outputPointsToFile(const std::vector<Vec3>& all_points) {
     // Close the file
     outputFile.close();
 }
+//=================================================================================================
 
+
+//=================================================================================================
+// Get the maximum possible number of positions
+//=================================================================================================
 int getMaxPositions(real L, real diameter, real eps) {
 
     real cellSize = diameter + eps;
@@ -115,7 +120,12 @@ int getMaxPositions(real L, real diameter, real eps) {
     // Calculate the total number of cells in the grid
     return gridSize * gridSize * gridSize;
 }
+//=================================================================================================
 
+
+//=================================================================================================
+// GenerateRandomPositions
+//=================================================================================================
 // Function to generate random positions within a cubic domain
 std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFraction, real eps) {
 
