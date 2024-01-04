@@ -305,26 +305,26 @@ void setupKroupa(MPI_Comm ex0) {
     } 
   }
   else {
-    //checkpointer.read( "../start.1" );
-   if( world->ownsPoint( gpos ) ) {
-      createSphere( idx++, gpos, radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
+//    //checkpointer.read( "../start.1" );
+//   if( world->ownsPoint( gpos ) ) {
+//      createSphere( idx++, gpos, radius2, elastic );
+//   }
+//   gpos[2] -= 2. * (radius2 + epsilon);
+//   if( world->ownsPoint( gpos  ) ) {
+//      createSphere( idx++, gpos , radius2, elastic );
+//   }
+//   gpos[2] -= 2. * (radius2 + epsilon);
+//   if( world->ownsPoint( gpos  ) ) {
+//      createSphere( idx++, gpos , radius2, elastic );
+//   }
+//   gpos[2] -= 2. * (radius2 + epsilon);
+//   if( world->ownsPoint( gpos  ) ) {
+//      createSphere( idx++, gpos , radius2, elastic );
+//   }
+//   gpos[2] -= 2. * (radius2 + epsilon);
+//   if( world->ownsPoint( gpos  ) ) {
+//      createSphere( idx++, gpos , radius2, elastic );
+//   }
   }
   //=========================================================================================
 
