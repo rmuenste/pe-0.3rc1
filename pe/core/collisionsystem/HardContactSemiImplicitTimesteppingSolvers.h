@@ -2466,7 +2466,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       }
 
       //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
-      if(c->getDistance() <= lubricationThreshold && useLubrication_) {
+      //if(c->getDistance() <= lubricationThreshold && useLubrication_) {
+      if(false) {
 
          BodyID b1( c->getBody1() );
          BodyID b2( c->getBody2() );

@@ -2515,7 +2515,7 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    }
 
    center /= totalVolume*4.0; //anstelle von *0.25
-/*   static const real sixth = 1.0 / 6.0;
+   static const real sixth = 1.0 / 6.0;
    totalVolume *= sixth;
 
    std::cout << file << std::endl;
@@ -2523,7 +2523,7 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    std::cout << "X center = " << center[0] << std::endl; //xCenter/totalVolume
    std::cout << "Y center = " << center[1] << std::endl; //yCenter/totalVolume
    std::cout << "Z center = " << center[2] << std::endl; //zCenter/totalVolume
-*/
+
    //move the triangle mesh so that the COM is the coordinate origin
    //and scale it
    for(Vertices::iterator v=vertices.begin(); v != vertices.end(); ++v) {

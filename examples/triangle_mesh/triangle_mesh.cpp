@@ -94,8 +94,8 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 3000    );  // Total number of time steps
-   const unsigned int visspacing(   30 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int timesteps ( 9000    );  // Total number of time steps
+   const unsigned int visspacing(   90 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
@@ -106,40 +106,40 @@ int main( int argc, char* argv[] )
 
    setSeed( 12345 );  // Setup of the random number generation
 
-//   // Parsing the command line arguments
-//   CommandLineInterface& cli = CommandLineInterface::getInstance();
-////   cli.getDescription().add_options()
-////     ( "file", value<std::string>()->default_value(""), "obj mesh file to be loaded" );
-//   cli.parse( argc, argv );
-//   cli.evaluateOptions();
-//   variables_map& vm = cli.getVariablesMap();
-//   if( vm.count( "no-povray" ) > 0 )
-//      povray = false;
-//   if( vm.count( "no-irrlicht" ) > 0 )
-//      irrlicht = false;
-//   if( vm.count( "no-vtk" ) > 0 )
-//      vtk = false;
+   // Parsing the command line arguments
+   CommandLineInterface& cli = CommandLineInterface::getInstance();
+   cli.getDescription().add_options()
+     ( "file", value<std::string>()->default_value(""), "obj mesh file to be loaded" );
+   cli.parse( argc, argv );
+   cli.evaluateOptions();
+   variables_map& vm = cli.getVariablesMap();
+   if( vm.count( "no-povray" ) > 0 )
+      povray = false;
+   if( vm.count( "no-irrlicht" ) > 0 )
+      irrlicht = false;
+   if( vm.count( "no-vtk" ) > 0 )
+      vtk = false;
 
-//   std::string fileName(vm["file"].as<std::string>());
-//
-//   if( fileName.empty() ) {
-//     std::cout << "Need to enter a file via the --file command line parameter. Setting a default value." << std::endl;
-     std::string fileName = std::string("schussel.obj");
-//   }
+   std::string fileName(vm["file"].as<std::string>());
+
+   if( fileName.empty() ) {
+     std::cout << "Need to enter a file via the --file command line parameter. Setting a default value." << std::endl;
+     fileName = std::string("span_aligned.obj");
+   }
 
    // Simulation world setup
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -0.4 );
 
    // Setup of the ground plane
-   PlaneID plane = createPlane( 0, 0.0, 0.0, 1.0, 0.0, granite );
+   PlaneID plane = createPlane( 0.0, 0.0, 0.0, 1.0, -0.4, granite );
 
-   TriangleMeshID meshSphere = createTriangleMesh(++id, Vec3(0, 0, 1.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
-   meshSphere->setFixed(true);
-   std::cout << "Number of vertices: " << meshSphere->getWFVertices().size() << std::endl;
+   TriangleMeshID span = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+   span->setFixed(true);
+   std::cout << "Number of vertices: " << span->getWFVertices().size() << std::endl;
 
    // Setup of the metal sphere
-   SphereID s = createSphere( ++id, 0.1, 0.0, 4.0, 0.5, iron );
+   SphereID s = createSphere( ++id, 0.0, 0.0, 2.0, 0.5, iron );
    s->setLinearVel( 0.0, 0.0, 0.0 );
 
    // Setup of the VTK visualization
@@ -176,17 +176,8 @@ int main( int argc, char* argv[] )
       );
       pov->setTexture( plane, grassTexture );
 
-      // Setting the textures of the boxes
-      std::ostringstream oss;
-      for( World::Bodies::CastIterator<Box> b=world->begin<Box>(); b!=world->end<Box>(); ++b )
-      {
-         oss.str( "" );
-         oss << "T_Wood" << rand<unsigned int>( 1, 12 );
-         pov->setTexture( *b, CustomTexture( oss.str() ) );
-      }
-
       // Setting the sphere texture
-//      pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
+      pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
    }
 
    // Simulation loop

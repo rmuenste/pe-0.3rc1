@@ -211,6 +211,10 @@ public:
    inline const AS&       getAttachableStorage()  const;
    inline const Domain&   getDomain()             const;
    inline real            getMaximumPenetration() const;
+   inline real            getSlipLength()         const {return 0;};
+   inline real            getMinEps()             const {return 0;};
+   inline real            getMaximumLubrication() const {return 0;};
+   inline real            getLubricationDist()    const {return 0;};
    inline size_t          getNumberOfContacts()   const;
    //@}
    //**********************************************************************************************
@@ -220,6 +224,9 @@ public:
    //@{
    inline void            setRelaxationParameter( real f );
    inline void            setMaxIterations( size_t n );
+   inline void            setSlipLength( real hc ){};
+   inline void            setLubrication( bool lub ){};
+   inline void            setMinEps( real minEps ){};
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
    //@}
