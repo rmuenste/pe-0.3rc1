@@ -137,6 +137,7 @@ protected:
 //
 //=================================================================================================
 
+
 //*************************************************************************************************
 /*!\brief Returns the list of all vertices which are on the surface of the triangle mesh,
  * at the very moment in time, in world frame coordinates.

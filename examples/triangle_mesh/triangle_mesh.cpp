@@ -94,8 +94,8 @@ real angle()
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 9000    );  // Total number of time steps
-   const unsigned int visspacing(   90 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int timesteps ( 3000 );  // Total number of time steps
+   const unsigned int visspacing(   30 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 
@@ -132,22 +132,24 @@ int main( int argc, char* argv[] )
    world->setGravity( 0.0, 0.0, -0.4 );
 
    // Setup of the ground plane
-   PlaneID plane = createPlane( 0.0, 0.0, 0.0, 1.0, -0.4, granite );
+   PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
+   // +y
+   createPlane( id++, 0.0, 1.0, 0.0, -0.1, granite );
+   // -y
+   createPlane( id++, 0.0,-1.0, 0.0,  -0.1, granite );
+   TriangleMeshID span = createTriangleMesh(++id, Vec3(0, 0, 0.374807), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+   span->setAngularVel(Vec3(0.314, 0, 0));
 
-   TriangleMeshID span = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
-   span->setFixed(true);
-   std::cout << "Number of vertices: " << span->getWFVertices().size() << std::endl;
+   //std::cout << "Number of vertices: " << span->getWFVertices().size() << std::endl;
 
    // Setup of the metal sphere
-   SphereID s = createSphere( ++id, 0.0, 0.0, 2.0, 0.5, iron );
-   s->setLinearVel( 0.0, 0.0, 0.0 );
+//   SphereID s = createSphere( ++id, 0.0, 0.05, 1.4, 0.04, granite );
+//   s->setLinearVel( 0.0, 0.0,-1.0 );
 
    // Setup of the VTK visualization
    if( vtk ) {
       vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
    }
-
-
    // Setup of the POV-Ray visualization
    if( povray ) {
       WriterID pov = activateWriter();

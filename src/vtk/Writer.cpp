@@ -301,6 +301,10 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
    for( Visualization::Capsules::Iterator s=beginCapsules(); s!=endCapsules(); ++s )
       addCapsule( *s );
 
+   // Adding the registered visible capsules
+   for( Visualization::Meshes::Iterator s=beginMeshes(); s!=endMeshes(); ++s )
+      addMesh( *s );
+
    // Logging the successful setup of the VTK writer
    pe_LOG_PROGRESS_SECTION( log ) {
       log << "Successfully initialized the VTK writer instance";
@@ -717,6 +721,10 @@ void Writer::trigger()
    std::ostringstream capsulefile;
    capsulefile << filename_ << "/capsules" << counter_ << ".vtu";
    writeCapsules( capsulefile.str().c_str() );
+
+   std::ostringstream meshfile;
+   meshfile << filename_ << "/meshes" << counter_ << ".vtu";
+   writeMeshes( meshfile.str().c_str() );
 
    ++counter_;
 }
@@ -1741,6 +1749,69 @@ void Writer::writeMeshes(const boost::filesystem::path& filename) const
          throw std::runtime_error( "Directory for VTK-Ray files does not exist" );
       if( file.empty() )
          throw std::runtime_error( "Invalid file name" );
+
+      // Generation of a single VTK-Ray file
+      // In case the 'singleFile' flag is set to 'true' all processes append their local, finite
+      // rigid bodies to the main POV-Ray file 'filename'. This task is performed serially in
+      // ascending order.
+      if( false && /*singleFile || */ MPISettings::size() == 1 )
+      {
+         pe_SERIALIZATION
+         {
+           throw std::runtime_error( "src/vtk/Writer.cpp::writeMeshes(): not yet implemented");
+
+            // Opening the output file
+            std::ofstream out( filename.string().c_str(), std::ofstream::out | std::ostream::app );
+            if( !out.is_open() ) {
+               std::ostringstream oss;
+               oss << " Error opening VTK-Ray file '" << filename << "' !\n";
+               throw std::runtime_error( oss.str() );
+            }
+
+            // Writing the registered boxes
+            for( Boxes::ConstIterator s=boxes_.begin(); s!=boxes_.end(); ++s )
+            {
+
+            }
+
+            // Closing the output file
+            out.close();
+         }
+      }
+
+      // Generation of multiple VTK-Ray files
+      // In case the 'singleFile' flag is set to 'false' each process creates an individual
+      // POV-Ray file (containing their local rigid bodies) that is included in the main POV-Ray
+      // file 'filename'.
+      else
+      {
+         // Creating the process-specific extended directory
+         path extended( directory );
+         extended /= lexical_cast<std::string>( MPISettings::rank() );
+         if( !exists( extended ) )
+            create_directory( extended );
+         extended /= file;
+
+         // Opening the output file
+         std::ofstream out( extended.string().c_str(), std::ofstream::out | std::ostream::trunc );
+         if( !out.is_open() ) {
+            std::ostringstream oss;
+            oss << " Error opening VTK-Ray file '" << filename << "' !\n";
+            throw std::runtime_error( oss.str() );
+         }
+
+         if(binary_) {
+            //std::cout << "writing meshes binary";
+            writeMeshDataBinary(out);
+         }
+         else {
+            //std::cout << "writing meshes ascii";
+            writeMeshDataAscii(out);
+         }
+
+         // Closing the output file
+         out.close();
+      }
 }
 //*************************************************************************************************
 
@@ -2200,33 +2271,11 @@ void Writer::writeCapsuleDataBinary(std::ostream& out) const {
 
 //*************************************************************************************************
 void Writer::writeMeshDataAscii(std::ostream& out) const {
-//   // Function to write a vector of doubles to the .vtu file
-//   void writeDoubles(std::ofstream& file, const std::vector<double>& data, const std::string& name, int numComponents) {
-//      file << "    <DataArray type=\"Float64\" Name=\"" << name << "\" NumberOfComponents=\"" << numComponents << "\" format=\"ascii\">\n";
-//      for (size_t i = 0; i < data.size(); ++i) {
-//         file << "      " << data[i] << "\n";
-//      }
-//      file << "    </DataArray>\n";
-//   }
-//
-//   // Function to write a vector of integers to the .vtu file
-//   void writeIntegers(std::ofstream& file, const std::vector<int>& data, const std::string& name, int numComponents) {
-//      file << "    <DataArray type=\"Int32\" Name=\"" << name << "\" NumberOfComponents=\"" << numComponents << "\" format=\"ascii\">\n";
-//      for (size_t i = 0; i < data.size(); ++i) {
-//         file << "      " << data[i] << "\n";
-//      }
-//      file << "    </DataArray>\n";
-//   }
-//
-//   // Open the output file
-//   std::ofstream outfile("mesh.vtu");
-//   if (!outfile.is_open()) {
-//       std::cerr << "Failed to open the output file." << std::endl;
-//       return 1;
-//   }
 
    int numPoints = 0;
    int numCells = 0;
+
+   // Loop to get the total number of vertices and cells
    for (Meshes::ConstIterator m = meshes_.begin(); m != meshes_.end(); ++m) {
      numPoints += m->getBFVertices().size(); 
      numCells += m->getFaceIndices().size(); 
@@ -2242,27 +2291,62 @@ void Writer::writeMeshDataAscii(std::ostream& out) const {
         "\" NumberOfComponents=\"" << 3 <<
         "\" format=\"ascii\">\n";
 
+   std::vector<int> offsets;
    for (Meshes::ConstIterator m = meshes_.begin(); m != meshes_.end(); ++m) {
+      Vec3 pos = m->getPosition();
+      Quat q = m->getQuaternion();
+      for (size_t i(0); i < m->getBFVertices().size(); ++i) {
+        Vec3 v = m->getBFVertices()[i];
+        //rotation
+        v = q.rotate(v);
+        //translation
+        v += pos;
+        out << "\t" << v[0] << "\t" << v[1] << "\t" << v[2] << "\n";
+
+      }
+
+     offsets.push_back(m->getBFVertices().size());
    }
 
+   out << "    </DataArray>\n";
    //writeDoubles(outfile, coordinates, "Coordinates", 3);
-   out << "      </Points>\n";
+   out << "  </Points>\n";
 
    // Write the cells
    out << "      <Cells>\n";
-//   writeIntegers(outfile, faceIndices, "Connectivity", 3);
-//   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 3), "Offsets", 1);
-//   writeIntegers(outfile, std::vector<int>(faceIndices.size() / 3, 5), "Types", 1);
-   out << "      </Cells>\n";
+   out << "    <DataArray type=\"Int32\" Name=\"connectivity\">\n";
+   int voff = 0;
+   for (size_t i = 0; i < meshes_.size(); ++i) {
+      ConstTriangleMeshID m = meshes_[i];
+      for (size_t j(0); j < m->getFaceIndices().size(); ++j) {
+        out << " " << m->getFaceIndices()[j][0] + voff << " " << m->getFaceIndices()[j][1] + voff << " " << m->getFaceIndices()[j][2] + voff << "\n";
+      }
 
-   // Write the cell data (if any)
+      voff += m->getBFVertices().size();
+   }
+   out << "    </DataArray>\n";
+
+   // the offset array  is used to specify the starting index of each cell in the connectivity array 
+   out << "    <DataArray type=\"Int32\" Name=\"offsets\">\n";
+   int triCount = 0;
+   for(int i(0); i < numCells; ++i) {
+      out << " " << triCount << "\n";
+      triCount += 3;
+   }
+
+   out << "    </DataArray>\n";
+
+   out << "    <DataArray type=\"UInt8\" Name=\"types\">\n";
+   for(int i(0); i < numCells; ++i) {
+      out << " " << 5 << "\n";
+   }
+   out << "    </DataArray>\n";
+
+   out << "      </Cells>\n";
 
    out << "    </Piece>\n";
    out << "  </UnstructuredGrid>\n";
    out << "</VTKFile>\n";
-
-//   // Close the output file
-//   outfile.close();
 
 }
 //*************************************************************************************************
