@@ -179,7 +179,7 @@ int main( int argc, char* argv[] )
       pov->setTexture( plane, grassTexture );
 
       // Setting the sphere texture
-      pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
+      //pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
    }
 
    // Simulation loop
@@ -189,7 +189,7 @@ int main( int argc, char* argv[] )
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
       world->simulationStep( 0.004 );
-      std::cout << "[particle position]: " << s->getPosition() << std::endl;
+      //std::cout << "[particle position]: " << s->getPosition() << std::endl;
    }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"
