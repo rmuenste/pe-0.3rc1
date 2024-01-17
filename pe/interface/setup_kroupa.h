@@ -231,7 +231,7 @@ void setupKroupa(MPI_Comm ex0) {
   // Here is how to create some random positions on a grid up to a certain
   // volume fraction.
   //======================================================================================== 
-  bool resume               = true;
+  bool resume               = false;
   real epsilon              = 2e-4;
   real targetVolumeFraction = 0.35;
   real radius2              = 0.01 - epsilon;

@@ -218,8 +218,8 @@ inline real SphereBase::calcDensity( real radius, real mass )
  */
 inline void SphereBase::calcBoundingBox()
 {
-   //const real length( radius_ + contactThreshold + lubricationThreshold );
-   const real length( radius_ + contactThreshold );
+   const real length( radius_ + contactThreshold + lubricationThreshold );
+   //const real length( radius_ + contactThreshold );
 
    aabb_[0] = gpos_[0] - length;
    aabb_[1] = gpos_[1] - length;
