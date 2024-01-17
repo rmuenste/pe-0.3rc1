@@ -37,6 +37,8 @@
 #include <pe/util/policies/NoDelete.h>
 #include <pe/util/PtrVector.h>
 #include <pe/util/Types.h>
+#include <sstream>
+#include <iostream>
 
 
 namespace pe {
@@ -486,7 +488,7 @@ inline typename BodyStorage<C>::ConstIterator BodyStorage<C>::find( ConstBodyID 
 template< typename C >  // Type of the configuration
 inline void BodyStorage<C>::add( BodyID body )
 {
-   pe_INTERNAL_ASSERT( bodyIDs_.find( body->getSystemID() ) == bodyIDs_.end(), "Body with same system ID already added." );
+   pe_INTERNAL_ASSERT( bodyIDs_.find( body->getSystemID() ) == bodyIDs_.end(), "Body with same system ID already added.");
    bodyIDs_[ body->getSystemID() ] = bodies_.size();
    bodies_.pushBack( body );
 }

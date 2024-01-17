@@ -2123,14 +2123,15 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    // Here we deal with the sliding lubrication force
    //================================================================================================================ 
    Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
+#define OUTPUT_S_S_CONTACT
 #ifdef OUTPUT_S_S_CONTACT
-   std::cout << "Lubrication s-s sliding force: " << slidingLubricationForce 
+   std::cout << "Lubrication s-s (" << b1->getID() << ", " << b2->getID() << ") sliding force: " << slidingLubricationForce 
                                                        << " | vr: " 
                                                        << vr 
                                                        << " | vs(tangential velocity): " 
                                                        << vs 
-                                                       << " | vx: " 
-                                                       << b1->getLinearVel()[0]
+//                                                       << " | vx: " 
+//                                                       << b1->getLinearVel()[0]
                                                        << " | normal velocity: " 
                                                        << velNormal 
                                                        << " | Distance: " 
@@ -2142,6 +2143,14 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                        << std::endl;
 #endif
    slidingLubricationForce *= fc;
+#ifdef OUTPUT_S_S_CONTACT
+   std::cout << "Corrected sliding force: "        << (slidingLubricationForce) << std::endl; 
+#endif
+  //===========================================================================================================
+  // Apply the sliding lubrication force
+  //===========================================================================================================
+  b1->addForce( slidingLubricationForce );
+  b2->addForce(-slidingLubricationForce );
 
 
    real mag = lubricationForce.length();
@@ -2221,7 +2230,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      b1->wallContact_ = 1;
      b1->contactDistance_ = c.getDistance();
 
-//#define OUTPUT_TOPWALL
+#define OUTPUT_TOPWALL
 #ifdef OUTPUT_TOPWALL
    std::cout << "contact with t-wall: " << b2->getSystemID() << " | distance: " << c.getDistance() << std::endl;
 #endif 
@@ -2473,7 +2482,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          BodyID b2( c->getBody2() );
 
          if(b2->getType() == planeType || b1->getType() == planeType) {
-           //std::cout << "Found a s-p contact with distance: " << c->getDistance() << std::endl;
+           std::cout << "Found a s-p contact with distance: " << c->getDistance() << std::endl;
            numWallSphereContacts++;
          }
 
@@ -2818,6 +2827,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    real allWallLubriation = 0.0;
 
    if (useLubrication_) {
+#ifdef MPI      
       MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
       MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
@@ -2828,6 +2838,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       std::cout << "Max Penetration : " << allPenetration << std::endl;
       std::cout << "Total Wall lubrication : " << allWallLubriation << std::endl;
       }
+#else
+      std::cout << "Max Lubrication : " << maxLubrication_ << " at distance: " << allDist << std::endl;
+      std::cout << "Max Penetration : " << maximumPenetration_ << std::endl;
+      std::cout << "Total Wall lubrication : " << totalWallLubrication_ << std::endl;
+#endif      
    }
    
 
