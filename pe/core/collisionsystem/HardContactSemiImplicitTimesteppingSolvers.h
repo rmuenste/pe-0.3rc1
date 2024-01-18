@@ -2827,7 +2827,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    real allWallLubriation = 0.0;
 
    if (useLubrication_) {
-#ifdef MPI      
+#ifdef HAVE_MPI      
       MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
       MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
       MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );

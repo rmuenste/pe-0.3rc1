@@ -48,6 +48,7 @@ SET( BOOST_LIBRARYDIR ""      CACHE PATH   "The boost library directory."       
 SET( PREPROCESSOR_FLAGS ""    CACHE PATH   "Additional preprocessor flags."                           )
 SET( COMPILER_FLAGS   ""      CACHE PATH   "Additional compiler flags."                               )
 SET( LINKER_FLAGS     ""      CACHE PATH   "Additional linker flags when linking the examples."       )
+OPTION(USE_CGAL       "Build the project using the CGAL library" OFF                                  )
 
 # Guide selection of boost libraries by FindBoost.cmake
 SET( Boost_USE_STATIC_LIBS OFF CACHE BOOL "Force static linking of Boost libraries." )
@@ -163,6 +164,18 @@ IF( IRRLICHT )
 ELSE()
    SET( DEFINES "${DEFINES} PE_MEDIA_PATH= HAVE_IRRLICHT=0" )
 ENDIF()
+
+# Configuration of the CGAL library
+# Check if USE_CGAL is enabled
+if (USE_CGAL)
+    message(STATUS "CGAL support is enabled.")
+    # Add a compiler define if USE_CGAL is true
+    SET( DEFINES "${DEFINES} HAVE_CGAL=1" )
+else()
+    message(STATUS "CGAL support is disabled.")
+    # Add a compiler define if USE_CGAL is false (optional)
+    SET( DEFINES "${DEFINES} HAVE_CGAL=0" )
+endif()
 
 # Configuration of the MPI library
 IF( MPI )

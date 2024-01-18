@@ -326,25 +326,6 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
  */
 Writer::~Writer()
 {
-   std::ofstream out( filename_.c_str(), std::ofstream::out | std::ofstream::app );
-   pe_INTERNAL_ASSERT( out.is_open(), "VTK output file could not be opened" );
-
-   for( unsigned int i=1; i<=counter_; ++i )
-   {
-      out << "object " << counter_+i << " class field\n";
-      out << "component \"positions\" value " << i << "\n\n";
-   }
-
-   out << "object \"series\" class series\n";
-
-   for( unsigned int i=0; i<counter_; ++i ) {
-      out << "member " << i << " value " << counter_+i+1 << " position " << i << "\n";
-   }
-
-   out << "\nend\n";
-
-   out.close();
-
    // Logging the successful destruction of the VTK writer
    pe_LOG_PROGRESS_SECTION( log ) {
       log << "Successfully destroyed the VTK writer instance";

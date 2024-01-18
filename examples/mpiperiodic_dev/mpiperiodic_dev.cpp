@@ -44,6 +44,10 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR,
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 
+#if HAVE_CGAL
+#include <pe/interface/compute_delaunay.h>
+#endif
+
 void outputDataToFile(const std::vector<double>& all_points_x,
                       const std::vector<double>& all_points_y,
                       const std::vector<double>& all_points_z,

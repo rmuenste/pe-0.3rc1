@@ -1,6 +1,7 @@
 # Serial Examples
 add_subdirectory(triangle_mesh)
 add_subdirectory(cylinder)
+add_subdirectory(box_domain)
 add_subdirectory(simple_granular)
 
 # MPI Examples
