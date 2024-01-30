@@ -10,4 +10,5 @@ void setupBench(MPI_Comm ex0);
 void setupKroupa(MPI_Comm ex0);
 void setupDraftKissTumbBench(MPI_Comm ex0);
 void setupGeneralInit(MPI_Comm ex0);
+void setupSpan(MPI_Comm ex0);
 #endif 

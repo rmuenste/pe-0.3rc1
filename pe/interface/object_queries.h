@@ -120,6 +120,10 @@ double getObjRadius(int idx);
  */
 bool isSphereType(int idx);
 
+/*
+ *!\brief The function returns if the object is a mesh
+ */
+bool isMeshType(int idx); 
 
 /*
  *!\brief The function returns if the object is a plane

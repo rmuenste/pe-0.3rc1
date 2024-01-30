@@ -2458,6 +2458,10 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
 
    const bool global( GlobalSection::isActive() );
 
+   std::stringstream ss;
+   std::string globActive  = (global) ? "active" : "inactive";
+   std::string ownsPoints  = (theCollisionSystem()->getDomain().ownsPoint( gpos )) ? "true" : "false";
+   ss << "Global section is " << globActive << " | domain owns point: " << ownsPoints;
    // Checking for the input file formte
    if(file.find(".obj") == std::string::npos && file.find(".OBJ") == std::string::npos
             /*&& file.find(".stl") == std::string::npos && file.find(".STL") == std::string::npos*/) {
@@ -2466,7 +2470,8 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
 
    // Checking the global position of the triangle mesh
    if( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) )
-      throw std::invalid_argument( "Invalid global triangle mesh position." );
+      throw std::invalid_argument( ss.str() );
+      //throw std::invalid_argument( "Invalid global triangle mesh position." );
 
    //Variables to hold mesh information during inizialisierung
    Vertices         vertices;

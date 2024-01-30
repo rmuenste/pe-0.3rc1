@@ -81,6 +81,10 @@ void getParticlesIndexMap(int *idxMap) {
       idxMap[count] = i;
       count++;
     }
+    else if(body->getType() == triangleMeshType) {
+      idxMap[count] = i;
+      count++;
+    }
   }
 
 }
@@ -110,6 +114,11 @@ void getRemoteParticlesIndexMap(int *idxMap) {
       count++;
     }
     else if(body->getType() == capsuleType) {
+      idxMap[count] = i;
+//      std::cout << " " << i << " " << body->getSystemID();
+      count++;
+    }
+    else if(body->getType() == triangleMeshType) {
       idxMap[count] = i;
 //      std::cout << " " << i << " " << body->getSystemID();
       count++;
@@ -301,6 +310,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         return true;
       }
     }
+    else if(body->getType() == triangleMeshType) {
+      if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
   }
   for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++) {
 
@@ -322,6 +339,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
+    else if(body->getType() == triangleMeshType) {
+      if(static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
         int val = bytes[0] + 1;
         *inpr = val;
@@ -424,9 +449,18 @@ bool isInsideObject(int idx, double pos[3]) {
     BodyID body;
     body = world->getBody(static_cast<unsigned int>(widx));
     return static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  } 
+  else if(isMeshType(idx)) {
+
+    WorldID world = theWorld();
+    World::SizeType widx = static_cast<World::SizeType>(idx);
+    BodyID body;
+    body = world->getBody(static_cast<unsigned int>(widx));
+    return static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2]);
   } else {
     return false;
   } 
+
 }
 
 //=================================================================================================
@@ -438,26 +472,34 @@ bool isInsideObject(int idx, double pos[3]) {
  */
 bool isInsideRemObject(int idx, double pos[3]) {
 
-  WorldID world = theWorld();
 
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-  World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
-
-  ConstBodyID body;
-  if ( widx < size ) {
+  if ( isSphereType(idx) ) {
+    WorldID world = theWorld();
+    ConstBodyID body;
+    World::SizeType widx = static_cast<World::SizeType>(idx);
+    World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
     body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
-    if (body->getType() != sphereType) {
-      return false;
-    }
+    return static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
   }
-  else {
-    std::stringstream msg;
-    msg << "Body index: " << idx << " out of range." << "\n";
-    throw std::out_of_range(msg.str());
-  }
+  else if(isCapsuleType(idx)) {
 
+    WorldID world = theWorld();
+    World::SizeType widx = static_cast<World::SizeType>(idx);
+    ConstBodyID body;
+    body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
+    return static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  } 
+  else if(isMeshType(idx)) {
 
-  return static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    WorldID world = theWorld();
+    World::SizeType widx = static_cast<World::SizeType>(idx);
+    ConstBodyID body;
+    body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
+    return static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  } else {
+    return false;
+  } 
+
 }
 
 //=================================================================================================
@@ -523,6 +565,31 @@ bool isPlaneType(int idx) {
 } 
 //=================================================================================================
 
+
+//=================================================================================================
+/*
+ *!\brief We return whether the object with id idx is a sphere
+ *
+ * \param idx The id of the local particle
+ */
+bool isMeshType(int idx) {
+
+  WorldID world = theWorld();
+  World::SizeType widx = static_cast<World::SizeType>(idx);
+
+  BodyID body;
+  if ( widx < world->size() ) {
+    body = world->getBody(static_cast<unsigned int>(widx));
+    return (body->getType() == triangleMeshType) ? true : false;
+  }
+  else {
+    std::stringstream msg;
+    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
+    throw std::out_of_range(msg.str());
+  }
+
+} 
+//=================================================================================================
 
 
 //=================================================================================================
@@ -1028,14 +1095,6 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     particle->time = -1.0;
     
     uint64toByteArray(body->getSystemID(), particle->bytes); 
-//    if(rank==3) {
-//      std::cout << rank <<") sys=" << body->getSystemID() << " -> ";
-//      for( int i = 0; i < 8; ++i ) {
-//        std::cout << int(particle->bytes[i]) << " ";
-//      }
-//      std::cout << std::endl;
-//    }
-
   }
   else {
     unsigned int i(0);

@@ -97,7 +97,7 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    //setupBench(CcommEx0);
+    setupSpan(CcommEx0);
   } 
 }
 
