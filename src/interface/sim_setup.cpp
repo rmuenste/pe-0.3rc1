@@ -168,6 +168,10 @@ void stepSimulation() {
 //////      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
 //
     }
+    if(body->getType() == triangleMeshType) {
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+    }
   }
 
   MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );

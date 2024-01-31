@@ -17,9 +17,10 @@ using namespace pe::povray;
 void setupSpan(MPI_Comm ex0) {
 
   world = theWorld();
+  //world->setGravity( 0.0, 0.0,-980.665 );
   world->setGravity( 0.0, 0.0, 0.0 );
 
-  real simRho( 1.0 );
+  real simRho( 0.85 );
   world->setLiquidDensity( simRho );
 
   // Particle Bench Config 
@@ -121,10 +122,6 @@ void setupSpan(MPI_Comm ex0) {
      vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
   }
 
-  // Create a custom material for the benchmark
-  MaterialID myMaterial = createMaterial("Bench", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-
   //======================================================================================== 
   // Here is how to create some random positions on a grid up to a certain
   // volume fraction.
@@ -142,19 +139,23 @@ void setupSpan(MPI_Comm ex0) {
   //=========================================================================================  
   // Creation and positioning of the span
   //=========================================================================================  
-  Vec3 spanPos = Vec3(0.12, 0.01, 0.0374807);
+  // Create a custom material for the span
+  MaterialID spanMat = createMaterial("span"    , 1.0 , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID elastic = createMaterial( "elastic", 8.19, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
-//  pe_GLOBAL_SECTION
-//  {
-//     // Setup of the ground plane
-//     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
-//     // +y
-//     createPlane( id++, 0.0, 1.0, 0.0, -0.1, granite );
-//     // -y
-//     createPlane( id++, 0.0,-1.0, 0.0,  -0.1, granite );
-//  }
+  Vec3 spanPos = Vec3(0.12, 0.01, 0.0374807);
+  TriangleMeshID span;
+  pe_GLOBAL_SECTION
+  {
+     // Setup of the ground plane
+     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
+     // +y
+     createPlane( id++, 0.0, 1.0, 0.0,  0.0, granite );
+     // -y
+     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, granite );
+  }
   if(world->ownsPoint(spanPos)) {
-    TriangleMeshID span = createTriangleMesh(++id, spanPos, fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+    span = createTriangleMesh(++id, spanPos, fileName, spanMat, true, true, Vec3(1.0,1.0,1.0), false, false);
   }
   //=========================================================================================  
 
@@ -204,7 +205,8 @@ void setupSpan(MPI_Comm ex0) {
       << " Fluid Density                           = " << simRho << "\n"
       << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Contact threshold                       = " << contactThreshold << "\n"
-      << " Domain volume                           = " << L * L * L << "\n"
+      << " Domain volume                           = " << 2. * 0.2 * 0.02 << " [cm**3]" << "\n"
+      << " Span volume                             = " << 0.000103797 << " [cm**3]" << "\n"
       << " Resume                                  = " << resOut  << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;

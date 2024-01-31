@@ -1889,6 +1889,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
+           else if(body->getType() == triangleMeshType) {
+             BodyID b( *body );
+             TriangleMeshID s = static_body_cast<TriangleMesh>(b);
+             mat = s->getMaterial();
+             real rho = Material::getDensity( mat );
+
+             real vol = s->getVolume();
+
+             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
+             // TODO: find out what happens here
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
+             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
+           }
            else {
             v_[j] = body->getLinearVel() + Settings::gravity() * dt;
             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
@@ -4272,7 +4285,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::initializeVel
    if( body->awake_ ) {
       if( !body->isFixed() ) {
          dv = ( body->getInvMass() * dt ) * ( (body->getForce() + body->oldForce_) * 0.5 );
-//         std::cout << "Force: " << (body->getForce()) << std::endl;
+         std::cout << "Dv: " << dv << " force: " << (body->getForce() + body->oldForce_) * 0.5 << body->getLinearVel() << std::endl;
          dw = dt * ( body->getInvInertia() * ( ( body->getTorque() + body->oldTorque_) * 0.5 ) );
          body->oldForce_ = body->getForce();
          body->oldTorque_ = body->getTorque();
@@ -4320,6 +4333,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
    if( body->awake_ ) {
       // Calculating the translational displacement
       body->gpos_ += v * dt;
+
+
+      if(body->getType() == triangleMeshType) {
+        std::cout << "Final velocity: " << v << std::endl;
+      }
 
       // Calculating the rotation angle
       const Vec3 phi( w * dt );

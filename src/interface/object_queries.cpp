@@ -34,10 +34,14 @@ void synchronizeForces() {
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
     if (body->getType() == sphereType) {
-      //std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << std::endl;
+      std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << " " <<  rank << std::endl;
       body->applyFluidForces(stepsize);
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
+    }
+    else if (body->getType() == triangleMeshType) {
+      std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << " "<<  rank << std::endl;
+      body->applyFluidForces(stepsize);
     }
   }
 
@@ -46,6 +50,10 @@ void synchronizeForces() {
     if (body->getType() == sphereType) {
       body->applyFluidForces(stepsize);
 //      std::cout << rank << ")" << body << std::endl;
+    }
+    else if (body->getType() == triangleMeshType) {
+      std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << " "<<  rank << std::endl;
+      body->applyFluidForces(stepsize);
     }
   }
 
