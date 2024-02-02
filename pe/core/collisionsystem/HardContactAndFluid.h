@@ -4284,11 +4284,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::initializeVel
 {
    if( body->awake_ ) {
       if( !body->isFixed() ) {
-         dv = ( body->getInvMass() * dt ) * ( (body->getForce() + body->oldForce_) * 0.5 );
-         std::cout << "Dv: " << dv << " force: " << (body->getForce() + body->oldForce_) * 0.5 << body->getLinearVel() << std::endl;
-         dw = dt * ( body->getInvInertia() * ( ( body->getTorque() + body->oldTorque_) * 0.5 ) );
-         body->oldForce_ = body->getForce();
-         body->oldTorque_ = body->getTorque();
+         dv = ( body->getInvMass() * dt ) * body->getForce();
+         dw = dt * ( body->getInvInertia() * body->getTorque() );
+         body->oldForce_ = Vec3(0,0,0);
+         body->oldTorque_ = Vec3(0,0,0);
       }
    }
    else {
@@ -4332,12 +4331,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 
    if( body->awake_ ) {
       // Calculating the translational displacement
+      v[2] = 0.0;
       body->gpos_ += v * dt;
-
-
-      if(body->getType() == triangleMeshType) {
-        std::cout << "Final velocity: " << v << std::endl;
-      }
 
       // Calculating the rotation angle
       const Vec3 phi( w * dt );

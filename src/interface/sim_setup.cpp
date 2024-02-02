@@ -31,7 +31,7 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 1000 );  // Number of time steps for the flowing granular media
+const size_t timesteps     ( 3500 );  // Number of time steps for the flowing granular media
 const real   stepsize      (  0.00001 );  // Size of a single time step
 
 // Process parameters
@@ -69,7 +69,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 bool g_povray  ( false );
 bool g_vtk( true );
 // 
-const unsigned int visspacing( 100 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 20 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -99,7 +99,7 @@ real degreesToRadians(real deg) {
 //
 //=================================================================================================
 
-//
+
 //=================================================================================================
 //
 
@@ -127,7 +127,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.001;
+  real h = 0.0025;
 
 //=================================================================================================
   int subSteps = 1;
@@ -150,7 +150,7 @@ void stepSimulation() {
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType || body->getType() == capsuleType) {
+    if(body->getType() == sphereType || body->getType() == capsuleType || body->getType() == triangleMeshType) {
       Vec3 vel = body->getLinearVel();
       Vec3 ang = body->getAngularVel();
       real v = vel.length();
@@ -169,8 +169,8 @@ void stepSimulation() {
 //
     }
     if(body->getType() == triangleMeshType) {
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition().toString()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel().toString()  << " " << timestep * stepsize << std::endl;
     }
   }
 
@@ -180,7 +180,6 @@ void stepSimulation() {
       std::cout << "==Particle Group Data=========================================================" << std::endl;
       std::cout << "Maximum Vp : " << totalV << std::endl;
       std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
-      std::cout << "Maximum Ap : " << totalA << std::endl;
   }
 #endif 
 

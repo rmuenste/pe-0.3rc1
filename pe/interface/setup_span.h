@@ -140,10 +140,21 @@ void setupSpan(MPI_Comm ex0) {
   // Creation and positioning of the span
   //=========================================================================================  
   // Create a custom material for the span
-  MaterialID spanMat = createMaterial("span"    , 1.0 , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
-  MaterialID elastic = createMaterial( "elastic", 8.19, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+  // Creates the material "myMaterial" with the following material properties:
+  //  - material density               : 2.54
+  //  - coefficient of restitution     : 0.8
+  //  - coefficient of static friction : 0.1
+  //  - coefficient of dynamic friction: 0.05
+  //  - Poisson's ratio                : 0.2
+  //  - Young's modulus                : 80
+  //  - Contact stiffness              : 100
+  //  - dampingN                       : 10
+  //  - dampingT                       : 11
+  //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
+  real spanDensity = 8.19;
+  MaterialID spanMat = createMaterial("span"    , spanDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  Vec3 spanPos = Vec3(0.12, 0.01, 0.0374807);
+  Vec3 spanPos = Vec3(0.22, 0.01, 0.0374807);
   TriangleMeshID span;
   pe_GLOBAL_SECTION
   {
@@ -199,10 +210,10 @@ void setupSpan(MPI_Comm ex0) {
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
-      << " Total number of particles               = " << particlesTotal << "\n"
-      << " particle volume                         = " << partVol << "\n"
+      << " Total number of particles               = " << 1 << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
-      << " Fluid Density                           = " << simRho << "\n"
+      << " Fluid Density                           = " << simRho << " [g/cm**3]"  << "\n"
+      << " Span  Density                           = " << spanDensity << " [g/cm**3]"  << "\n"
       << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Contact threshold                       = " << contactThreshold << "\n"
       << " Domain volume                           = " << 2. * 0.2 * 0.02 << " [cm**3]" << "\n"

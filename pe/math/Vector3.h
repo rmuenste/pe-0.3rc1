@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cmath>
 #include <istream>
+#include <sstream>
 #include <ostream>
 #include <stdexcept>
 #include <boost/type_traits/remove_reference.hpp>
@@ -201,6 +202,7 @@ public:
                               inline Type          min()           const;
                               inline Type          max()           const;
                               inline void          swap( Vector3& v ) /* throw() */;
+                              inline std::string   toString()      const;
    //@}
    //**********************************************************************************************
 
@@ -1072,6 +1074,23 @@ inline Vector3<Type,TF>& Vector3<Type,TF>::scale( Other scalar )
    v_[1] *= scalar;
    v_[2] *= scalar;
    return *this;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the largest element of the vector.
+ *
+ * \return The largest vector element.
+ */
+template< typename Type  // Data type of the vector
+        , bool TF >      // Transposition flag
+inline std::string Vector3<Type,TF>::toString() const
+{
+
+  std::stringstream ss;
+  ss << v_[0] << " " << v_[1] << " " << v_[2];
+  return ss.str();
 }
 //*************************************************************************************************
 

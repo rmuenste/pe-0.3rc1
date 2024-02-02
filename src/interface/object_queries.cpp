@@ -28,33 +28,23 @@ void synchronizeForces() {
   WorldID world = theWorld();
   MPI_Comm cartcomm = theMPISystem()->getComm();
   int rank = theMPISystem()->getRank();
-  MPI_Barrier(cartcomm);
+
+  // This synchronizeForces method only has the synced forces on the 
+  // owner process. So to do this correctly we should:
+  // -syncForces
+  // -applyForces on owner (this updates the velocity to v_new), reset forces (this is done in the applyFluidForces function)
+  // -call synchronize() (which then sets the same velocity v_new on all processes where the body is registered)
   theCollisionSystem()->synchronizeForces();
+  MPI_Barrier(cartcomm);
 
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
-    if (body->getType() == sphereType) {
-      std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << " " <<  rank << std::endl;
-      body->applyFluidForces(stepsize);
-      //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
-      //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
-    }
-    else if (body->getType() == triangleMeshType) {
-      std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << " "<<  rank << std::endl;
-      body->applyFluidForces(stepsize);
-    }
+    body->applyFluidForces(stepsize);
   }
 
   for (std::size_t i=0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
     BodyID body = world->getShadowBody(i);
-    if (body->getType() == sphereType) {
-      body->applyFluidForces(stepsize);
-//      std::cout << rank << ")" << body << std::endl;
-    }
-    else if (body->getType() == triangleMeshType) {
-      std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << " "<<  rank << std::endl;
-      body->applyFluidForces(stepsize);
-    }
+    body->applyFluidForces(stepsize);
   }
 
   world->synchronize();
@@ -530,6 +520,9 @@ int getNumParts() {
     else if(body->getType() == capsuleType) {
       numBodies++;
     }
+    else if(body->getType() == triangleMeshType) {
+      numBodies++;
+    }
   }
 
   return numBodies;
@@ -984,11 +977,20 @@ void setPartStruct(particleData_t *particle) {
 
   MPISystemID mpisys = theMPISystem();
   pe::World::Iterator fid = theCollisionSystem()->getBodyStorage().find(id);
+
+  Vec3 f(
+    particle->force[0], 
+    particle->force[1],
+    particle->force[2]
+  );
+
   if( fid != theCollisionSystem()->getBodyStorage().end()) {
     body = *fid;
     std::stringstream msg;
-    msg << "Setting local forces for system id: " << id << " in domain " << mpisys->getRank() << ".\n";
-//    std::cout << msg.str() << std::endl;
+//    if (body->getType() == triangleMeshType) {
+//    msg << "Setting local forces for system id: " << id << " in domain " << mpisys->getRank() << ".\n";
+//    std::cout << msg.str() << f << std::endl;
+//    }
   } else {
 
     std::stringstream msg;
@@ -996,11 +998,6 @@ void setPartStruct(particleData_t *particle) {
     throw std::logic_error(msg.str());
   }
 
-  Vec3 f(
-    particle->force[0], 
-    particle->force[1],
-    particle->force[2]
-  );
 
   body->setForce(1.0 * f);
 
@@ -1027,12 +1024,17 @@ void setRemPartStruct(particleData_t *particle) {
   MPISystemID mpisys = theMPISystem();
 
   //pe::World::Iterator fid = theCollisionSystem()->getBodyStorage().find(id);
+  Vec3 f(
+    particle->force[0], 
+    particle->force[1],
+    particle->force[2]
+  );
 
   pe::World::Iterator fid = theCollisionSystem()->getBodyShadowCopyStorage().find(id);
   if( fid != theCollisionSystem()->getBodyShadowCopyStorage().end()) {
     body = *fid;
     std::stringstream msg;
-    msg << "Setting remote forces for system id: " << id << " in domain " << mpisys->getRank() << ".\n";
+    msg << "Setting remote forces for system id: " << id << " in domain " << mpisys->getRank() << " " << f << ".\n";
 //    std::cout << msg.str() << std::endl;
   } else {
 
@@ -1041,11 +1043,6 @@ void setRemPartStruct(particleData_t *particle) {
     throw std::logic_error(msg.str());
   }
 
-  Vec3 f(
-    particle->force[0], 
-    particle->force[1],
-    particle->force[2]
-  );
 
   body->setForce(1.0 * f);
 
