@@ -215,7 +215,7 @@ void setupKroupa(MPI_Comm ex0) {
 
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+  MaterialID elastic = createMaterial( "elastic", 1.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
   //======================================================================================== 
   // The way we atm include lubrication by increasing contact threshold
   // has problems: the particles get distributed to more domain bc the threshold AABB
@@ -226,6 +226,7 @@ void setupKroupa(MPI_Comm ex0) {
   theCollisionSystem()->setLubrication(true);
   theCollisionSystem()->setSlipLength(slipLength);
   theCollisionSystem()->setMinEps(0.01);
+  theCollisionSystem()->setMaxIterations(200);
 
   //======================================================================================== 
   // Here is how to create some random positions on a grid up to a certain
@@ -296,15 +297,17 @@ void setupKroupa(MPI_Comm ex0) {
 
   //=========================================================================================
   if(!resume) {
-    for (int i = 0; i < allPositions.size(); ++i) {
-      Vec3 &position = allPositions[i];
-      if( world->ownsPoint(position)) {
-         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
-         ++idx;      
-      }
-    } 
+//    for (int i = 0; i < allPositions.size(); ++i) {
+//      Vec3 &position = allPositions[i];
+//      if( world->ownsPoint(position)) {
+//         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+//         ++idx;      
+//      }
+//    } 
   }
   else {
+
+    checkpointer.read( "../start.3" );
 //    //checkpointer.read( "../start.1" );
 //   if( world->ownsPoint( gpos ) ) {
 //      createSphere( idx++, gpos, radius2, elastic );
@@ -338,8 +341,8 @@ void setupKroupa(MPI_Comm ex0) {
 
   pe_GLOBAL_SECTION
   {
-     createPlane( 99999, 0.0, 0.0, 1.0, 0.0, granite, false ); // bottom border
-     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, granite, false ); // top border
+     createPlane( 99999, 0.0, 0.0, 1.0, 0.0, elastic, false ); // bottom border
+     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, elastic, false ); // top border
   }
 
   pe_EXCLUSIVE_SECTION( 0 ) {
@@ -392,7 +395,7 @@ void setupKroupa(MPI_Comm ex0) {
       << " Fluid Density                           = " << simRho << "\n"
       << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Lubrication                             = " << useLub << "\n"
-      << " Lubrication h_c                         = " << slipLength << "\n"
+      << " Lubrication h_c (slip length)           = " << slipLength << "\n"
       << " Lubrication threshold                   = " << lubricationThreshold << "\n"
       << " Contact threshold                       = " << contactThreshold << "\n"
       << " Domain volume                           = " << L * L * L << "\n"

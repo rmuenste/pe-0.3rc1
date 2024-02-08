@@ -48,7 +48,7 @@ SET( BOOST_LIBRARYDIR ""      CACHE PATH   "The boost library directory."       
 SET( PREPROCESSOR_FLAGS ""    CACHE PATH   "Additional preprocessor flags."                           )
 SET( COMPILER_FLAGS   ""      CACHE PATH   "Additional compiler flags."                               )
 SET( LINKER_FLAGS     ""      CACHE PATH   "Additional linker flags when linking the examples."       )
-OPTION(USE_CGAL       "Build the project using the CGAL library" OFF                                  )
+#OPTION(USE_CGAL       "Build the project using the CGAL library" OFF                                  )
 
 # Guide selection of boost libraries by FindBoost.cmake
 SET( Boost_USE_STATIC_LIBS OFF CACHE BOOL "Force static linking of Boost libraries." )
@@ -69,7 +69,7 @@ ENDIF()
 # Setting compiler flags analogously to the configure script (and clear default compiler flags set
 # by cmake for all compilers supported by the configure script to ensure compatibility)
 IF( CMAKE_COMPILER_IS_GNUCXX )
-   set (CMAKE_CXX_STANDARD 11)
+   set (CMAKE_CXX_STANDARD 17)
    SET( CMAKE_CXX_FLAGS "-DMOBILE_INFINITE=1 -Wall -Wextra -Wshadow -Wfatal-errors -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
 ENDIF()
 
@@ -128,7 +128,13 @@ ENDIF()
 
 INCLUDE_DIRECTORIES( SYSTEM ${Boost_INCLUDE_DIRS} )
 LINK_DIRECTORIES   ( ${Boost_LIBRARY_DIRS} )
-LINK_LIBRARIES     ( ${Boost_LIBRARIES}    )
+
+if(USE_CGAL)
+  LINK_LIBRARIES     ( ${Boost_LIBRARIES} ${GMP_LIBRARIES} ${MPFR_LIBRARIES}   )
+ELSE()
+  LINK_LIBRARIES     ( ${Boost_LIBRARIES} )
+endif()
+
 # Disable Boost auto-linking since it conflicts with cmake:
 ADD_DEFINITIONS    ( -DBOOST_ALL_NO_LIB    )
 
@@ -171,6 +177,7 @@ if (USE_CGAL)
     message(STATUS "CGAL support is enabled.")
     # Add a compiler define if USE_CGAL is true
     SET( DEFINES "${DEFINES} HAVE_CGAL=1" )
+    INCLUDE_DIRECTORIES( SYSTEM ${CGAL_INCLUDE_DIRS} )
 else()
     message(STATUS "CGAL support is disabled.")
     # Add a compiler define if USE_CGAL is false (optional)
