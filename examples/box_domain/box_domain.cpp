@@ -184,7 +184,7 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 1000 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 5 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Visualization variables
@@ -195,14 +195,11 @@ int main( int argc, char* argv[] )
 
    setSeed( 12345 );  // Setup of the random number generation
 
-   // Creating the material for the particles
-   MaterialID granular = createMaterial( "granular", 1.0, 0.04, 0.1, 0.1, 0.3, 300, 1e6, 1e5, 2e5 );
-
    // Fixed simulation parameters
-   const real L(0.1);
-   const real LX(0.03);
-   const real LY(0.03);
-   const real LZ(0.1);
+   const real L(0.01);
+   const real LX(0.04);
+   const real LY(0.02);
+   const real LZ(0.04);
 
 //   // Parsing the command line arguments
 //   CommandLineInterface& cli = CommandLineInterface::getInstance();
@@ -252,19 +249,6 @@ int main( int argc, char* argv[] )
       vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
    }
 
-   // Creates the material "myMaterial" with the following material properties:
-   //  - material density               : 2.54
-   //  - coefficient of restitution     : 0.8
-   //  - coefficient of static friction : 0.1
-   //  - coefficient of dynamic friction: 0.05
-   //  - Poisson's ratio                : 0.2
-   //  - Young's modulus                : 80
-   //  - Contact stiffness              : 100
-   //  - dampingN                       : 10
-   //  - dampingT                       : 11
-   //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-
    //======================================================================================== 
    // The way we atm include lubrication by increasing contact threshold
    // has problems: the particles get distributed to more domain bc the threshold AABB
@@ -291,15 +275,27 @@ int main( int argc, char* argv[] )
    //allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
 
 
+   // Creates the material "myMaterial" with the following material properties:
+   //  - material density               : 2.54
+   //  - coefficient of restitution     : 0.8
+   //  - coefficient of static friction : 0.1
+   //  - coefficient of dynamic friction: 0.05
+   //  - Poisson's ratio                : 0.2
+   //  - Young's modulus                : 80
+   //  - Contact stiffness              : 100
+   //  - dampingN                       : 10
+   //  - dampingT                       : 11
+   //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
+   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    int planeId = 99999;
    //======================================================================================== 
    // Here we add some planes
-   BodyID botPlane = createPlane( 6666, 0.0, 0.0, 1.0, 0.0, granite, false ); // bottom border
-   BodyID topPlane = createPlane( 7777, 0.0, 0.0, -1.0, -L, granite, false ); // top border
-   BodyID rightPlane = createPlane( 8888, 1.0, 0.0, 0.0, 0.0, granite, false ); // right border
-   BodyID leftPlane = createPlane( 9999,-1.0, 0.0,  0.0, -LX, granite, false ); // left border
-   BodyID frontPlane = createPlane( 5555, 0.0, 1.0, 0.0, 0.0, granite, false ); // front border
-   BodyID backPlane = createPlane( 4444, 0.0, 1.0,  0.0, -LY, granite, false ); // back border
+   BodyID botPlane = createPlane( 6666, 0.0, 0.0, 1.0, 0.0, elastic, false ); // bottom border
+   BodyID topPlane = createPlane( 7777, 0.0, 0.0, -1.0, -LZ, elastic, false ); // top border
+   BodyID rightPlane = createPlane( 8888, 1.0, 0.0, 0.0, 0.0, elastic, false ); // right border
+   BodyID leftPlane = createPlane( 9999,-1.0, 0.0,  0.0, -LX, elastic, false ); // left border
+   BodyID frontPlane = createPlane( 5555, 0.0, 1.0, 0.0, 0.0, elastic, false ); // front border
+   BodyID backPlane = createPlane( 4444, 0.0, 1.0,  0.0, -LY, elastic, false ); // back border
    std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
    std::cout << "botPlaneID: "  << botPlane->getSystemID() << std::endl;
 
@@ -307,12 +303,12 @@ int main( int argc, char* argv[] )
    s = createSphere( id++, gpos, radius2, elastic );
    gpos[2] += 2. * radius2 + epsilon;
    s1 = createSphere( id++, gpos, radius2, elastic );
-   gpos[2] += 2. * radius2 + epsilon;
-   s2 = createSphere( id++, gpos, radius2, elastic );
-   gpos[2] += 2. * radius2 + epsilon;
-   s3 = createSphere( id++, gpos, radius2, elastic );
-   gpos[2] += 2. * radius2 + epsilon;
-   s4 = createSphere( id++, gpos, radius2, elastic );
+//   gpos[2] += 2. * radius2 + epsilon;
+//   s2 = createSphere( id++, gpos, radius2, elastic );
+//   gpos[2] += 2. * radius2 + epsilon;
+//   s3 = createSphere( id++, gpos, radius2, elastic );
+//   gpos[2] += 2. * radius2 + epsilon;
+//   s4 = createSphere( id++, gpos, radius2, elastic );
  
    unsigned int particlesTotal = 1;
    real domainVol = LX * LY * LZ;
@@ -349,12 +345,13 @@ int main( int argc, char* argv[] )
       std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
       world->simulationStep( 0.0005 );
       //std::cout << "[particle1 position]: " << s->getPosition() << std::endl;
-      std::cout << "[particle1 velocity]: " << s->getLinearVel() << std::endl;
+      //std::cout << std::endl;
+      //std::cout << "[particle " << s->getSystemID() << " velocity]: " << s->getLinearVel() << std::endl;
       //std::cout << "[particle2 position]: " << s1->getPosition() << std::endl;
-      std::cout << "[particle2 velocity]: " << s1->getLinearVel() << std::endl;
-      std::cout << "[particle3 velocity]: " << s2->getLinearVel() << std::endl;
-      std::cout << "[particle4 velocity]: " << s3->getLinearVel() << std::endl;
-      std::cout << "[particle5 velocity]: " << s4->getLinearVel() << std::endl;
+      //std::cout << "[particle " << s1->getSystemID() << " velocity]: " << s1->getLinearVel() << std::endl;
+      //std::cout << "[particle3 velocity]: " << s2->getLinearVel() << std::endl;
+      //std::cout << "[particle4 velocity]: " << s3->getLinearVel() << std::endl;
+      //std::cout << "[particle5 velocity]: " << s4->getLinearVel() << std::endl;
    }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"

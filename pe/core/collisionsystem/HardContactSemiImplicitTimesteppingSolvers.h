@@ -2127,15 +2127,22 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    // Here we deal with the sliding lubrication force
    //================================================================================================================ 
    Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
-//#define OUTPUT_S_S_CONTACT
+#define OUTPUT_SS_S_CONTACT
+
+   slidingLubricationForce *= fc;
+   Vec3 dv1 = ( b1->getInvMass() * dt ) *  slidingLubricationForce;
+   Vec3 dv2 = ( b2->getInvMass() * dt ) * -slidingLubricationForce;
+
 #ifdef OUTPUT_SS_S_CONTACT
-   std::cout << "Lubrication s-s (" << b1->getID() << ", " << b2->getID() << ") sliding force: " << slidingLubricationForce 
-                                                       << " | vr: " 
+   std::cout << "Lubrication s-s (" << b1->getSystemID() << ", " << b2->getSystemID() << ") sliding force: " << slidingLubricationForce 
+                                                       << " | vr(b2-b1): " 
                                                        << vr 
-                                                       << " | vs(tangential velocity): " 
+                                                       << " | vt(tangential): " 
                                                        << vs 
-//                                                       << " | vx: " 
-//                                                       << b1->getLinearVel()[0]
+                                                       << " | vxs(1,2): " 
+                                                       << b1->getLinearVel()[0]
+                                                       << " "
+                                                       << b2->getLinearVel()[0]
                                                        << " | normal velocity: " 
                                                        << velNormal 
                                                        << " | Distance: " 
@@ -2146,10 +2153,6 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                        << minEps_ 
                                                        << std::endl;
 #endif
-
-   slidingLubricationForce *= fc;
-   Vec3 dv1 = ( b1->getInvMass() * dt ) *  slidingLubricationForce;
-   Vec3 dv2 = ( b2->getInvMass() * dt ) * -slidingLubricationForce;
 
 #ifdef LUB_WARNINGS   
    if( (b1->v_ + dv1).length() > 2.5 * b1->v_.length()) {
@@ -2169,8 +2172,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   //===========================================================================================================
   // Apply the sliding lubrication force
   //===========================================================================================================
-  b1->addForce( slidingLubricationForce );
-  b2->addForce(-slidingLubricationForce );
+  b1->addForce(-slidingLubricationForce );
+  b2->addForce( slidingLubricationForce );
 
 
    real mag = lubricationForce.length();
@@ -2881,24 +2884,24 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    real maxVx = 0.0;
 
    if (useLubrication_) {
-#ifdef HAVE_MPI      
-      MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
-      MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      MPI_Reduce( &maximumPenetration_, &allPenetration, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      MPI_Reduce( &totalWallLubrication_, &allWallLubriation, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      MPI_Reduce( &maxVx_, &maxVx, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
-      pe_EXCLUSIVE_SECTION(0) {
-      std::cout << "Max Lubrication : " << allLub << " at distance: " << allDist << std::endl;
-      std::cout << "Max Penetration : " << allPenetration << std::endl;
-      std::cout << "Total Wall lubrication : " << allWallLubriation << std::endl;
-      std::cout << "Vx max : " << maxVx << std::endl;
-      }
-#else
-      std::cout << "Max Lubrication : " << maxLubrication_ << " at distance: " << allDist << std::endl;
-      std::cout << "Max Penetration : " << maximumPenetration_ << std::endl;
-      std::cout << "Total Wall lubrication : " << totalWallLubrication_ << std::endl;
-#endif      
+//#ifdef HAVE_MPI      
+//      MPI_Reduce( &maxLubrication_, &allLub, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      MPI_Reduce( &lubricationDist_, &allDist, 1, MPI_DOUBLE, MPI_MIN, 0, MPISettings::comm() );
+//      MPI_Reduce( &maxForce_, &allForce, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      MPI_Reduce( &maximumPenetration_, &allPenetration, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      MPI_Reduce( &totalWallLubrication_, &allWallLubriation, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      MPI_Reduce( &maxVx_, &maxVx, 1, MPI_DOUBLE, MPI_MAX, 0, MPISettings::comm() );
+//      pe_EXCLUSIVE_SECTION(0) {
+//      std::cout << "Max Lubrication : " << allLub << " at distance: " << allDist << std::endl;
+//      std::cout << "Max Penetration : " << allPenetration << std::endl;
+//      std::cout << "Total Wall lubrication : " << allWallLubriation << std::endl;
+//      std::cout << "Vx max : " << maxVx << std::endl;
+//      }
+//#else
+//      std::cout << "Max Lubrication : " << maxLubrication_ << " at distance: " << allDist << std::endl;
+//      std::cout << "Max Penetration : " << maximumPenetration_ << std::endl;
+//      std::cout << "Total Wall lubrication : " << totalWallLubrication_ << std::endl;
+//#endif      
    }
    
 
