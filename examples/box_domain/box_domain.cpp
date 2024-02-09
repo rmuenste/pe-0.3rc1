@@ -184,7 +184,7 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 5 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 1000 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Visualization variables
