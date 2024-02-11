@@ -12,7 +12,7 @@
 using boost::filesystem::path;
 
 using namespace pe;
-#ifndef HAVE_MPI
+#ifdef HAVE_MPI
 #include <pe/interface/compute_delaunay.h>
 //=================================================================================================
 //

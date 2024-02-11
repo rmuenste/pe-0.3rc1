@@ -110,7 +110,7 @@ void setupKroupa(MPI_Comm ex0) {
   world->setDamping( 1.0 );
 
   // Lubrication switch
-  bool useLubrication(true);
+  bool useLubrication(false);
 
   // Configuration of the MPI system
   mpisystem = theMPISystem();
@@ -223,7 +223,7 @@ void setupKroupa(MPI_Comm ex0) {
   // We can even run into the "registering distant domain" error when the AABB of the 
   // particle is close in size to the size of a domain part!
   //======================================================================================== 
-  theCollisionSystem()->setLubrication(true);
+  theCollisionSystem()->setLubrication(useLubrication);
   theCollisionSystem()->setSlipLength(slipLength);
   theCollisionSystem()->setMinEps(0.01);
   theCollisionSystem()->setMaxIterations(200);
@@ -232,10 +232,10 @@ void setupKroupa(MPI_Comm ex0) {
   // Here is how to create some random positions on a grid up to a certain
   // volume fraction.
   //======================================================================================== 
-  bool resume               = false;
+  bool resume               = true;
   real epsilon              = 2e-4;
   real targetVolumeFraction = 0.35;
-  real radius2              = 0.01 - epsilon;
+  real radius2              = 0.005 - epsilon;
 
   int idx = 0;
   real h = 0.0075;
@@ -297,17 +297,17 @@ void setupKroupa(MPI_Comm ex0) {
 
   //=========================================================================================
   if(!resume) {
-//    for (int i = 0; i < allPositions.size(); ++i) {
-//      Vec3 &position = allPositions[i];
-//      if( world->ownsPoint(position)) {
-//         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
-//         ++idx;      
-//      }
-//    } 
+    for (int i = 0; i < allPositions.size(); ++i) {
+      Vec3 &position = allPositions[i];
+      if( world->ownsPoint(position)) {
+         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+         ++idx;      
+      }
+    } 
   }
   else {
 
-    checkpointer.read( "../start.3" );
+    checkpointer.read( "../start.1" );
 //    //checkpointer.read( "../start.1" );
 //   if( world->ownsPoint( gpos ) ) {
 //      createSphere( idx++, gpos, radius2, elastic );
