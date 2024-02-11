@@ -48,4 +48,5 @@ int SimSettings::px_( 1 );
 int SimSettings::py_( 1 );
 int SimSettings::pz_( 1 );
 int SimSettings::visspacing_( 50 );
+int SimSettings::timesteps_( 100 );
 } // namespace pe

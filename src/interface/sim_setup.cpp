@@ -13,7 +13,6 @@ using boost::filesystem::path;
 
 using namespace pe;
 #ifdef HAVE_MPI
-#include <pe/interface/compute_delaunay.h>
 //=================================================================================================
 //
 //    Global Definitions
@@ -89,17 +88,13 @@ MPISystemID mpisystem;
 path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
 Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
 
-
-real degreesToRadians(real deg) {
-  return deg * M_PI / 180.0;
-}
-
 //=================================================================================================
 //
-//    INTERFACE SIMULATION CONTROL FUNCTIONS
+//    INTERFACE CGAL DELAUNAY
 //
 //=================================================================================================
-
+#ifdef HAVE_CGAL
+#include <pe/interface/compute_delaunay.h>
 void outputDelaunay(int timeStep);
 //=================================================================================================
 //
@@ -292,6 +287,17 @@ void outputDelaunay(int timeStep) {
   }    
 
 }
+//=================================================================================================
+#endif HAVE_CGAL
+
+real degreesToRadians(real deg) {
+  return deg * M_PI / 180.0;
+}
+
+//=================================================================================================
+//
+//    INTERFACE SIMULATION CONTROL FUNCTIONS
+//
 //=================================================================================================
 
 

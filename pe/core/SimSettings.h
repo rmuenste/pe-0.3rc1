@@ -62,11 +62,18 @@ public:
    static inline int         py();
    static inline int         pz();
    static inline int         visspacing();
+   static inline int         timesteps();
    static inline real        stepsize();
 //   static inline const Vec3& gravity();
    //@}
    //**********************************************************************************************
-
+   static void setPx(int px);
+   static void setPy(int py);
+   static void setPz(int pz);
+   static void setVisspacing(int visspacing);
+   static void setTimesteps(int timesteps);
+   static void setStepSize(real stepSize);
+   //**********************************************************************************************
 private:
    //**Member variables****************************************************************************
    /*!\name Member variables */
@@ -75,8 +82,8 @@ private:
    static int py_;  //!< The number of processes in y
    static int pz_;  //!< The number of processes in z
    static int visspacing_;  //!< The visualization spacing
+   static int timesteps_;  //!< The number of simulation timesteps
    static real stepSize_; //!< The time step size of the simulation
-//   static Vec3 gravity_;       //!< Gravity of the simulated system.
    //@}
    //**********************************************************************************************
 
@@ -97,6 +104,7 @@ private:
 //
 //=================================================================================================
 
+
 //*************************************************************************************************
 /*!\brief Returns the time step size
  *
@@ -106,6 +114,21 @@ inline real SimSettings::stepsize()
 {
    return stepSize_;
 }
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the time step size
+ *
+ * \return \a The time step size
+ */
+inline int SimSettings::timesteps()
+{
+   return timesteps_;
+}
+//*************************************************************************************************
+
+
 //*************************************************************************************************
 
 
@@ -153,6 +176,66 @@ inline int SimSettings::pz()
 inline int SimSettings::visspacing()
 {
    return visspacing_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the x-processes
+ *
+ */
+void SimSettings::setPx(int px) {
+    px_ = px;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the x-processes
+ *
+ */
+void SimSettings::setPy(int py) {
+    py_ = py;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the x-processes
+ *
+ */
+void SimSettings::setPz(int pz) {
+    pz_ = pz;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the visualization spacing
+ *
+ */
+void SimSettings::setVisspacing(int visspacing) {
+    visspacing_ = visspacing;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the number of simulation time steps
+ *
+ */
+void SimSettings::setTimesteps(int timesteps) {
+    timesteps_ = timesteps;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the time step size
+ *
+ */
+void SimSettings::setStepSize(real stepSize) {
+    stepSize_ = stepSize;
 }
 //*************************************************************************************************
 
