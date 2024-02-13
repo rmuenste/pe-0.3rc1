@@ -2041,14 +2041,16 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   // Limiting according to Kroupa et al.:
   // if dist < h_c -> dist = h_c; eps = h_c / rad
   //============================================================================
+  real eps = dist / rad;
   if (dist < hc_) {
     dist = hc_;
+    eps = dist / rad;
   }
 
-  real eps = dist / rad;
 
   if(eps < minEps_) {
     eps = minEps_;
+    std::cout << "Suspicious eps value warning" << std::endl;
   }
 
   //===========================================================================================================
@@ -2386,13 +2388,36 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    }
 #endif
 
-   b1->addForce(-slidingLubricationForce );
+   b1->addForce( slidingLubricationForce );
    if (-velNormal > 0) {
 #ifdef OUTPUT_LVL2
      std::cout << "Not adding normal lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
 #endif
    } else {
-     //b1->addForce(-lubricationForce );
+
+   dist = c.getDistance();
+   vr =  - b1->getLinearVel();
+   std::cout << "Lub force: " << lubricationForce << std::endl; 
+   lubricationForce = -lubricationForce;
+   real velNormal = trans(vr) * c.getNormal();
+     std::cout << "Lub mov wall normal force: " << lubricationForce 
+                                                            << " | vr: " 
+                                                            << vr << trans(vr) 
+                                                            << " | vn: " 
+                                                            << velNormal 
+                                                            << " | n: " 
+                                                            << c.getNormal() 
+                                                            << " | Distance: " 
+                                                            << c.getDistance() 
+                                                            << " | Corrected Distance: " 
+                                                            << dist 
+                                                            << " | eps: " 
+                                                            << eps 
+                                                            << " | minEps: " 
+                                                            << dist / rad 
+                                                            << std::endl;
+
+     b1->addForce( lubricationForce );
    }
 
   }
