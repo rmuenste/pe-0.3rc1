@@ -2269,6 +2269,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
 
    bool ALWT = false;
+   //===========================================================================================================
    // If this is the top wall
    if(disp < 0.0) {
      ALWT = true;
@@ -2277,33 +2278,8 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      b1->wallContact_ = 1;
      b1->contactDistance_ = c.getDistance();
 
-//#define OUTPUT_TOPWALL
-#ifdef OUTPUT_TOPWALL
-   std::cout << "contact with t-wall: " << b2->getSystemID() << " | distance: " << c.getDistance() << std::endl;
-
-     std::cout << "Lubrication moving wall sliding force: " << slidingLubricationForce 
-                                                            << " | vr: " 
-                                                            << vr 
-                                                            << " | vs(tangential velocity): " 
-                                                            << vs 
-                                                            << " | vx: " 
-                                                            << b1->getLinearVel()[0]
-                                                            << " | normal velocity: " 
-                                                            << velNormal 
-                                                            << " | Distance: " 
-                                                            << dist 
-                                                            << " | eps: " 
-                                                            << eps 
-                                                            << " | minEps: " 
-                                                            << minEps 
-                                                            << std::endl;
-#endif
    }
    else {
-   std::string out = (c.getDistance() < getSlipLength()) ? "yes" : "no";
-#ifdef OUTPUT_BOTTOMWALL
-     std::cout << "contact with b-wall: (" << b1->getSystemID() << "," << b2->getSystemID() << ")" << " | distance: " << c.getDistance()  << " < hc("<< getSlipLength() <<" ) : " << out << std::endl;
-#endif
      vr =  -b1->getLinearVel();
      velNormal = trans(vr) * c.getNormal();
      vs = vr - velNormal * c.getNormal();
@@ -2315,33 +2291,14 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      b1->wallContact_ = 2;
      b1->contactDistance_ = c.getDistance();
    }
-
+   //===========================================================================================================
 
    real fc =  calculate_f_star(eps);
    lubricationForce *= fc;
+   lubricationForce = lubricationForce.length() * c.getNormal(); 
    slidingLubricationForce *= fc; 
-#ifdef OUTPUT_BOTTOMWALL
-     std::cout << "Lubrication stat wall sliding force: "   <<-slidingLubricationForce 
-                                                            << " | vr: " 
-                                                            << vr 
-                                                            << " | vs(tangential velocity): " 
-                                                            << vs 
-                                                            << " | vx: " 
-                                                            << b1->getLinearVel()[0]
-                                                            << " | normal velocity: " 
-                                                            << velNormal 
-                                                            << " | Distance: " 
-                                                            << dist 
-                                                            << " | eps: " 
-                                                            << eps 
-                                                            << " | minEps: " 
-                                                            << minEps 
-                                                            << std::endl;
-#endif
 
-#ifdef OUTPUT_TOPWALL
-   std::cout << "Corrected sliding force: "        << (-slidingLubricationForce) << std::endl; 
-#endif
+
 #ifdef LUB_WARNINGS   
    if( (b1->v_ + dv1).length() > 2.5 * b1->v_.length()) {
      real normDist = c.getDistance();
@@ -2394,28 +2351,45 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      std::cout << "Not adding normal lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
 #endif
    } else {
-
-   dist = c.getDistance();
-   vr =  - b1->getLinearVel();
-   std::cout << "Lub force: " << lubricationForce << std::endl; 
-   lubricationForce = -lubricationForce;
-   real velNormal = trans(vr) * c.getNormal();
-     std::cout << "Lub mov wall normal force: " << lubricationForce 
+     std::string wall= (ALWT) ? "top" : "bottom";
+//#define OUTPUT_TOPWALL
+#ifdef OUTPUT_TOPWALL
+     std::cout << "Lubrication " << wall << " wall sliding force: " << slidingLubricationForce 
                                                             << " | vr: " 
-                                                            << vr << trans(vr) 
-                                                            << " | vn: " 
+                                                            << vr 
+                                                            << " | vs(tangential velocity): " 
+                                                            << vs 
+                                                            << " | vx: " 
+                                                            << b1->getLinearVel()[0]
+                                                            << " | normal velocity: " 
                                                             << velNormal 
-                                                            << " | n: " 
+                                                            << " | normal: " 
                                                             << c.getNormal() 
                                                             << " | Distance: " 
-                                                            << c.getDistance() 
-                                                            << " | Corrected Distance: " 
                                                             << dist 
                                                             << " | eps: " 
                                                             << eps 
                                                             << " | minEps: " 
-                                                            << dist / rad 
+                                                            << minEps 
                                                             << std::endl;
+//   std::cout << "Lub " << wall <<  " wall normal force: " << lubricationForce 
+//                                              << " | vr: " 
+//                                              << vr << trans(vr) 
+//                                              << " | vn: " 
+//                                              << velNormal 
+//                                              << " | n: " 
+//                                              << c.getNormal() 
+//                                              << " | Distance: " 
+//                                              << c.getDistance() 
+//                                              << " | Corrected Distance: " 
+//                                              << dist 
+//                                              << " | eps: " 
+//                                              << eps 
+//                                              << " | minEps: " 
+//                                              << dist / rad 
+//                                              << std::endl;
+#endif
+
 
      b1->addForce( lubricationForce );
    }

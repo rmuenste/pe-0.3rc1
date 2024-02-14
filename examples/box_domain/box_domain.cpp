@@ -265,8 +265,6 @@ int main( int argc, char* argv[] )
    real epsilon = 1e-4;
    real targetVolumeFraction = 0.35;
    real radius2 = 0.01 - epsilon;
-   Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
-   Vec3 vel(0.025, 0.0, 0.0);
 
    std::vector<Vec3> allPositions;
    int numPositions;
@@ -298,9 +296,10 @@ int main( int argc, char* argv[] )
    std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
    std::cout << "botPlaneID: "  << botPlane->getSystemID() << std::endl;
 
+   Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
    BodyID s,s1,s2,s3,s4;
    s = createSphere( id++, gpos, radius2, elastic );
-   s->setLinearVel(Vec3(0,0,-1.0));
+   s->setLinearVel(Vec3(0.1,0, 0.0));
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s1 = createSphere( id++, gpos, radius2, elastic );
 //   s1->setLinearVel(Vec3(0,0,1.0));
