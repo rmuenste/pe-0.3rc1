@@ -62,6 +62,7 @@ void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, 
 
   int rank = mpisystem->getRank();
 
+
   // Specify local domain
   defineLocalDomain( intersect(
      intersect(
@@ -72,6 +73,7 @@ void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, 
      HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
      HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz ) ) ) );
 
+//  std::cout << (Vec3(center[0], center[1], center[2])) << ":" << mpisystem->getRank() << " x= " << bx+center[0]*dx << " y = " << by+north[1]*dy << std::endl;
   // Connecting the west neighbor
   if( west[0] >= 0 ) {
      MPI_Cart_rank( cartcomm, west, &rank );

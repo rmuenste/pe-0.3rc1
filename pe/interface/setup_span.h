@@ -72,11 +72,12 @@ void setupSpan(MPI_Comm ex0) {
      return;
   }
 
+  mpisystem->setComm(cartcomm);
+
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "> 3D communicator created" << std::endl;
     std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
   }
-  mpisystem->setComm(cartcomm);
 
   // Here the cartesian coordinates of the different processes are created
   /*  
@@ -102,8 +103,8 @@ void setupSpan(MPI_Comm ex0) {
   real by = 0.0;
   real bz = 0.0;
 
-  const real dx( 2.0 / processesX );
-  const real dy( 0.02 );
+  const real dx( 2.0  / processesX );
+  const real dy( 0.02 / processesY );
   const real dz( 0.2 );
 
   decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);

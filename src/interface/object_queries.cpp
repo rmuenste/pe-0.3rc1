@@ -845,6 +845,10 @@ void setForcesByIdx(int idx,
   Vec3 f(force[0], force[1], force[2]);
   body->setForce(1.025 * f);
   Vec3 t(0.0, 0.0, 0.0);
+
+  std::stringstream msg;
+  msg << "Warning setting a 0 torque in domain " << theMPISystem()->getRank() << ".\n";
+  std::cout << msg.str() << std::endl;
   body->setTorque(t);
 
 } 
@@ -875,6 +879,9 @@ void setRemoteForcesByIdx(int idx,
   Vec3 f(force[0], force[1], force[2]);
   body->setForce(f);
   Vec3 t(0.0, 0.0, 0.0);
+  std::stringstream msg;
+  msg << "Warning setting a 0 torque in domain " << theMPISystem()->getRank() << ".\n";
+  std::cout << msg.str() << std::endl;
   body->setTorque(t);
 
 } 

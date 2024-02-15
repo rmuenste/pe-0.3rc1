@@ -36,7 +36,7 @@ const real   stepsize      (  0.00001 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 10 );    // Number of processes in x-direction
-const int    processesY( 1 );    // Number of processes in y-direction
+const int    processesY( 2 );    // Number of processes in y-direction
 const int    processesZ( 1 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
