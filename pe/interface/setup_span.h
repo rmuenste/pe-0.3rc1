@@ -154,8 +154,23 @@ void setupSpan(MPI_Comm ex0) {
   real spanDensity = 8.19;
   MaterialID spanMat = createMaterial("span"    , spanDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
+  //Vec3 spanPos = Vec3(0.23, 0.01, 0.0374807);
   Vec3 spanPos = Vec3(0.22, 0.01, 0.0374807);
+  //Vec3 spanPos = Vec3(0.800079 0.00976448,0.0399377);
   TriangleMeshID span;
+
+  if(!resume) {
+    if(world->ownsPoint(spanPos)) {
+      span = createTriangleMesh(++id, spanPos, fileName, spanMat, true, true, Vec3(1.0,1.0,1.0), false, false);
+      //AABB &aabb = span->getAABB();
+      std::cout << "Span x:[" << span->getAABB()[3] << "," << span->getAABB()[0] << "]" << std::endl;
+    }
+  }
+  else {
+    checkpointer.read( "../start.1" );
+  }
+
+  //=========================================================================================  
   pe_GLOBAL_SECTION
   {
      // Setup of the ground plane
@@ -165,11 +180,7 @@ void setupSpan(MPI_Comm ex0) {
      // -y
      createPlane( id++, 0.0,-1.0, 0.0,  -0.02, granite );
   }
-  if(world->ownsPoint(spanPos)) {
-    span = createTriangleMesh(++id, spanPos, fileName, spanMat, true, true, Vec3(1.0,1.0,1.0), false, false);
-  }
   //=========================================================================================  
-
 
   // Synchronization of the MPI processes
   world->synchronize();

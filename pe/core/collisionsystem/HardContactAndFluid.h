@@ -3603,9 +3603,22 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
 
                   if( it != processstorage_.end() )
                      b->registerProcess( *it );
-                  else
+                  else {
+                     // A distant process is a process that is in the process list of the
+                     // given rigid body, BUT is not in the neighbors list of the current body.
+                     // This can mean that the body skipped a large part of the neighboring process, but
+                     // this can also happen if the body is large in size compared to the size
+                     // of a domain.
                      // TODO
-                     throw std::runtime_error( "Registering distant processes is not yet implemented." );
+                     //throw std::runtime_error( "Registering distant processes is not yet implemented." );
+                    std::stringstream ss;
+                    
+                    ss << MPISettings::rank() << ")Registering a distant process " << objparam.reglist_[i];
+                    std::cout << "Distant process warning: " << ss.str() << std::endl;
+                    pe_LOG_DEBUG_SECTION( log ) {
+                       log << "Received distant body migration for body " << objparam.sid_ << " with distant process: " << objparam.reglist_[i] << ".\n";
+                    }
+                  }
                }
 
                pe_LOG_DEBUG_SECTION( log ) {
@@ -4331,7 +4344,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 
    if( body->awake_ ) {
       // Calculating the translational displacement
-      v[2] = 0.0;
       body->gpos_ += v * dt;
 
       // Calculating the rotation angle

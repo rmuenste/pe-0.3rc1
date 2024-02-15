@@ -39,6 +39,9 @@ void synchronizeForces() {
 
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
+    if(body->getType() == triangleMeshType) {
+      std::cout << rank << ")force: " << body->getForce().toString() << std::endl;
+    }
     body->applyFluidForces(stepsize);
   }
 
