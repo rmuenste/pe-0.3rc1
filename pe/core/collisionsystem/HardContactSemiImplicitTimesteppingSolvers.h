@@ -2710,7 +2710,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
              real vol = real(4.0)/real(3.0) * M_PI * rad * rad * rad;
              real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
              // TODO: find out what happens here
-             v_[j] = body->getLinearVel() + Settings::gravity() * dt;
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
 //             std::cout << "==========================================================" << std::endl;
 //             std::cout << "Gravity update: " << v_[j][2] << std::endl;
 //             std::cout << "vol : " << vol  << std::endl;

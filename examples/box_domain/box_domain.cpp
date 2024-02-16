@@ -183,7 +183,7 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 10 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Visualization variables
@@ -265,8 +265,8 @@ int main( int argc, char* argv[] )
    // volume fraction.
    //======================================================================================== 
    bool resume = false;
-   real epsilon = 2e-4;
-   real targetVolumeFraction = 0.26;
+   real epsilon = 1e-4;
+   real targetVolumeFraction = 0.50;
    real radius2 = 0.005 - epsilon;
 
    // Creates the material "myMaterial" with the following material properties:
