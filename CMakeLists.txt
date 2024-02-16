@@ -86,7 +86,6 @@ IF( CMAKE_COMPILER_IS_GNUCXX )
       message(FATAL_ERROR "The compiler does not support C++14 or C++17.")
    endif()
    message(STATUS "We found a GNU compiler")
-   set (CMAKE_CXX_STANDARD 14)
    SET( CMAKE_CXX_FLAGS "-DMOBILE_INFINITE=1 -Wall -Wextra -Wshadow -Wfatal-errors -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
 ENDIF()
 
