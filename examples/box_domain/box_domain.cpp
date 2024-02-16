@@ -109,7 +109,7 @@ std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFrac
     real maxPhi = ((totalCells * partVol) / domainVol);
 
     if (volumeFraction > maxPhi) {
-      std::cout << "User defined volume fraction: " << volumeFraction << " is too high for the current configuration" << std::endl;
+      std::cout << "User defined volume fraction: " << volumeFraction << " is too high for the current configuration (max: )" << maxPhi << std::endl;
       std::exit(EXIT_FAILURE);
     }
 
@@ -183,7 +183,7 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 10 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Visualization variables
@@ -195,10 +195,14 @@ int main( int argc, char* argv[] )
    setSeed( 12345 );  // Setup of the random number generation
 
    // Fixed simulation parameters
-   const real L(0.01);
-   const real LX(0.04);
-   const real LY(0.02);
-   const real LZ(0.04);
+   const real L(0.1);
+//   const real LX(0.04);
+//   const real LY(0.02);
+//   const real LZ(0.04);
+
+   const real LX(0.1);
+   const real LY(0.1);
+   const real LZ(0.1);
 
 //   // Parsing the command line arguments
 //   CommandLineInterface& cli = CommandLineInterface::getInstance();
@@ -223,7 +227,7 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, 0.0 );
+   world->setGravity( 0.0, 0.0, 1.0 );
 
    real simViscosity( 8.37e-5 );
    real simRho( 1.0 );
@@ -241,7 +245,6 @@ int main( int argc, char* argv[] )
    theCollisionSystem()->setSlipLength(slipLength);
    theCollisionSystem()->setMinEps(minEps);
    theCollisionSystem()->setLubrication( useLubrication );
-
 
    // Setup of the VTK visualization
    if( vtk ) {
@@ -262,15 +265,9 @@ int main( int argc, char* argv[] )
    // volume fraction.
    //======================================================================================== 
    bool resume = false;
-   real epsilon = 1e-4;
-   real targetVolumeFraction = 0.35;
-   real radius2 = 0.01 - epsilon;
-
-   std::vector<Vec3> allPositions;
-   int numPositions;
-   
-   //allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
-
+   real epsilon = 2e-4;
+   real targetVolumeFraction = 0.26;
+   real radius2 = 0.005 - epsilon;
 
    // Creates the material "myMaterial" with the following material properties:
    //  - material density               : 2.54
@@ -283,7 +280,7 @@ int main( int argc, char* argv[] )
    //  - dampingN                       : 10
    //  - dampingT                       : 11
    //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.5, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    int planeId = 99999;
    //======================================================================================== 
    // Here we add some planes
@@ -292,14 +289,32 @@ int main( int argc, char* argv[] )
    BodyID rightPlane = createPlane( 8888, 1.0, 0.0, 0.0, 0.0, elastic, false ); // right border
    BodyID leftPlane = createPlane( 9999,-1.0, 0.0,  0.0, -LX, elastic, false ); // left border
    BodyID frontPlane = createPlane( 5555, 0.0, 1.0, 0.0, 0.0, elastic, false ); // front border
-   BodyID backPlane = createPlane( 4444, 0.0, 1.0,  0.0, -LY, elastic, false ); // back border
+   BodyID backPlane = createPlane( 4444, 0.0,-1.0,  0.0, -LY, elastic, false ); // back border
    std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
    std::cout << "botPlaneID: "  << botPlane->getSystemID() << std::endl;
 
+   std::vector<Vec3> allPositions;
+   int numPositions;
+ 
+   //======================================================================================== 
+   // The positions are created randomly on the root process and then bcasts 
+   // to the other processes.
+   //======================================================================================== 
+   allPositions = generateRandomPositions(LX, 2.0 * radius2, targetVolumeFraction, epsilon); 
+   numPositions = allPositions.size();
+
    Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
    BodyID s,s1,s2,s3,s4;
-   s = createSphere( id++, gpos, radius2, elastic );
-   s->setLinearVel(Vec3(0.1,0, 0.0));
+//   s = createSphere( id++, gpos, radius2, elastic );
+//   s->setLinearVel(Vec3(0.0,0, 0.5));
+
+   for (int i = 0; i < allPositions.size(); ++i) {
+     Vec3 &position = allPositions[i];
+     SphereID sphere = createSphere(id, position, radius2, elastic, true);
+     ++id;      
+   } 
+
+
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s1 = createSphere( id++, gpos, radius2, elastic );
 //   s1->setLinearVel(Vec3(0,0,1.0));
@@ -310,7 +325,7 @@ int main( int argc, char* argv[] )
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s4 = createSphere( id++, gpos, radius2, elastic );
  
-   unsigned int particlesTotal = 1;
+   unsigned int particlesTotal = allPositions.size();
    real domainVol = LX * LY * LZ;
    real partVol = 4./3. * M_PI * std::pow(radius2, 3);
    real phi = (particlesTotal * partVol)/domainVol * 100.0;
@@ -331,6 +346,7 @@ int main( int argc, char* argv[] )
        << " Lubrication h_c                         = " << slipLength << "\n"
        << " Lubrication threshold                   = " << lubricationThreshold << "\n"
        << " Contact threshold                       = " << contactThreshold << "\n"
+       << " eps_init                                = " << lubricationThreshold / radius2 << "\n"
        << " Domain volume                           = " << LX * LY * LZ << "\n"
        << " Resume                                  = " << resOut  << "\n"
        << " Volume fraction[%]                      = " << phi << "\n" << std::endl;
@@ -341,9 +357,30 @@ int main( int argc, char* argv[] )
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
 
+   real dt = 0.0005;
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
-      world->simulationStep( 0.0005 );
+      world->simulationStep( dt );
+      real maxV = 0;
+      Vec3 vv;
+      for (int i=0; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+         World::SizeType widx = static_cast<World::SizeType>(i);
+         BodyID body = world->getBody(static_cast<unsigned int>(widx));
+         if(body->getType() == sphereType || body->getType() == capsuleType) {
+            Vec3 vel = body->getLinearVel();
+            Vec3 ang = body->getAngularVel();
+            real v = vel.length();
+            real a = ang.length();
+            if( maxV <= v) {
+            maxV = v;
+            vv = vel;
+            }
+         }
+      }
+      std::cout << "Maximum Vp : " << maxV << " " << vv  << " ds * dt = " << maxV * dt << " sol = " << (3.2e-5 / maxV) / dt << std::endl;
+      dt = (3.2e-5 / maxV);
+      if(dt > 0.001)
+        dt = 0.001;
       //std::cout << "[particle1 position]: " << s->getPosition() << std::endl;
       //std::cout << std::endl;
       //std::cout << "[particle " << s->getSystemID() << " velocity]: " << s->getLinearVel() << std::endl;
