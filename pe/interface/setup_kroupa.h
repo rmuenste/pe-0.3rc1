@@ -105,12 +105,12 @@ void setupKroupa(MPI_Comm ex0) {
   world->setLiquidDensity( simRho );
 
   // Particle Bench Config 
-  real slipLength( 0.001 );
+  real slipLength( 0.01 );
   world->setLiquidSolid(true);
   world->setDamping( 1.0 );
 
   // Lubrication switch
-  bool useLubrication(false);
+  bool useLubrication(true);
 
   // Configuration of the MPI system
   mpisystem = theMPISystem();
@@ -235,7 +235,7 @@ void setupKroupa(MPI_Comm ex0) {
   bool resume               = true;
   real epsilon              = 2e-4;
   real targetVolumeFraction = 0.35;
-  real radius2              = 0.005 - epsilon;
+  real radius2              = 0.01 - epsilon;
 
   int idx = 0;
   real h = 0.0075;
@@ -307,10 +307,14 @@ void setupKroupa(MPI_Comm ex0) {
   }
   else {
 
-    checkpointer.read( "../start.1" );
+//    checkpointer.read( "../start.1" );
 //    //checkpointer.read( "../start.1" );
 //   if( world->ownsPoint( gpos ) ) {
 //      createSphere( idx++, gpos, radius2, elastic );
+//   }
+//   gpos[2] -= 2. * (radius2 + epsilon);
+//   if( world->ownsPoint( gpos  ) ) {
+//      createSphere( idx++, gpos , radius2, elastic );
 //   }
 //   gpos[2] -= 2. * (radius2 + epsilon);
 //   if( world->ownsPoint( gpos  ) ) {

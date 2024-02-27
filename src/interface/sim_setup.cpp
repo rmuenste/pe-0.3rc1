@@ -376,13 +376,13 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-//#define OUTPUT_LEVEL4
+#define OUTPUT_LEVEL4
 #ifdef OUTPUT_LEVEL4
       std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
       std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
 //      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
 #endif
     }
@@ -395,7 +395,8 @@ void stepSimulation() {
   }
   pe_EXCLUSIVE_SECTION(0) {
       std::cout << "==Particle Group Data=========================================================" << std::endl;
-      std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;
+      //std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;
+      std::cout << "Maximum Vp : " << totalV << std::endl;
       std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
       std::cout << "Maximum Ap : " << totalA << std::endl;
   }

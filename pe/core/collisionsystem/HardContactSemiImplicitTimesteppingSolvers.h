@@ -2045,6 +2045,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   if (dist < hc_) {
     dist = hc_;
     eps = dist / rad;
+    std::cout << "Dist correction: " << dist << " is clamped to hc = " << dist << " eps = " << eps << std::endl;
   }
 
 
@@ -2152,25 +2153,32 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    Vec3 dv1 = ( b1->getInvMass() * dt ) *  slidingLubricationForce;
    Vec3 dv2 = ( b2->getInvMass() * dt ) * -slidingLubricationForce;
 
-//#define OUTPUT_SS_S_CONTACT
+#define OUTPUT_SS_S_CONTACT
 #ifdef OUTPUT_SS_S_CONTACT
+//  b1->addForce(-slidingLubricationForce );
+//  b2->addForce( slidingLubricationForce );
+
+  b1->addForce( slidingLubricationForce );
+  b2->addForce(-slidingLubricationForce );
    std::cout << "Lubrication s-s (" << b1->getSystemID() << ", " << b2->getSystemID() << ") sliding force: " << slidingLubricationForce 
                                                        << " | vr(b2-b1): " 
                                                        << vr 
-                                                       << " | vt(tangential): " 
+                                                       << " | vt: " 
                                                        << vs 
-                                                       << " | vxs(1,2): " 
+                                                       << " | vxs(+1,-2): " 
                                                        << b1->getLinearVel()[0]
                                                        << " "
                                                        << b2->getLinearVel()[0]
-                                                       << " | normal velocity: " 
+                                                       << " | dp(1,2): " 
+                                                       << b1->getPosition()[2]
+                                                       << " "
+                                                       << b2->getPosition()[2]
+                                                       << " | nv: " 
                                                        << velNormal 
-                                                       << " | Distance: " 
+                                                       << " | dist: " 
                                                        << dist 
                                                        << " | eps: " 
                                                        << eps 
-                                                       << " | minEps: " 
-                                                       << minEps_ 
                                                        << std::endl;
 #endif
 
@@ -2352,12 +2360,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 #endif
    } else {
      std::string wall= (ALWT) ? "top" : "bottom";
-//#define OUTPUT_TOPWALL
+#define OUTPUT_TOPWALL
 #ifdef OUTPUT_TOPWALL
      std::cout << "Lubrication " << wall << " wall sliding force: " << slidingLubricationForce 
                                                             << " | vr: " 
                                                             << vr 
-                                                            << " | vs(tangential velocity): " 
+                                                            << " | vt(): " 
                                                             << vs 
                                                             << " | vx: " 
                                                             << b1->getLinearVel()[0]
@@ -2365,9 +2373,9 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
                                                             << velNormal 
                                                             << " | normal: " 
                                                             << c.getNormal() 
-                                                            << " | Distance: " 
+                                                            << " | sep Dist(h): " 
                                                             << dist 
-                                                            << " | eps: " 
+                                                            << " | h/r: " 
                                                             << eps 
                                                             << " | minEps: " 
                                                             << minEps 
