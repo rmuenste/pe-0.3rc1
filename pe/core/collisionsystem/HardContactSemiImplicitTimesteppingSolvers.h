@@ -2045,7 +2045,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   if (dist < hc_) {
     dist = hc_;
     eps = dist / rad;
-    std::cout << "Dist correction: " << dist << " is clamped to hc = " << dist << " eps = " << eps << std::endl;
+//    std::cout << "Dist correction: " << dist << " is clamped to hc = " << dist << " eps = " << eps << std::endl;
   }
 
 
@@ -2082,7 +2082,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
      std::cout << "NaN lubrication found with another particle, eps:  " << eps << " "<< vr << normal << std::endl;
    }
    //================================================================================================================ 
-#define SS_LUB_ENABLED   
+//#define SS_LUB_ENABLED   
 #ifdef SS_LUB_ENABLED_OUTPUT   
    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
                                                << " | pos: " 
@@ -2153,13 +2153,11 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
    Vec3 dv1 = ( b1->getInvMass() * dt ) *  slidingLubricationForce;
    Vec3 dv2 = ( b2->getInvMass() * dt ) * -slidingLubricationForce;
 
-#define OUTPUT_SS_S_CONTACT
+//#define OUTPUT_SS_S_CONTACT
 #ifdef OUTPUT_SS_S_CONTACT
 //  b1->addForce(-slidingLubricationForce );
 //  b2->addForce( slidingLubricationForce );
 
-  b1->addForce( slidingLubricationForce );
-  b2->addForce(-slidingLubricationForce );
    std::cout << "Lubrication s-s (" << b1->getSystemID() << ", " << b2->getSystemID() << ") sliding force: " << slidingLubricationForce 
                                                        << " | vr(b2-b1): " 
                                                        << vr 
@@ -2200,8 +2198,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
   //===========================================================================================================
   // Apply the sliding lubrication force
   //===========================================================================================================
-  b1->addForce(-slidingLubricationForce );
-  b2->addForce( slidingLubricationForce );
+  b1->addForce( slidingLubricationForce );
+  b2->addForce(-slidingLubricationForce );
+//  b1->addForce(-slidingLubricationForce );
+//  b2->addForce( slidingLubricationForce );
 
 
    real mag = lubricationForce.length();
@@ -2360,7 +2360,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactSemiImplicitTimesteppin
 #endif
    } else {
      std::string wall= (ALWT) ? "top" : "bottom";
-#define OUTPUT_TOPWALL
+//#define OUTPUT_TOPWALL
 #ifdef OUTPUT_TOPWALL
      std::cout << "Lubrication " << wall << " wall sliding force: " << slidingLubricationForce 
                                                             << " | vr: " 

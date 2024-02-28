@@ -202,7 +202,7 @@ int main( int argc, char* argv[] )
 
    const real LX(0.1);
    const real LY(0.1);
-   const real LZ(0.1);
+   const real LZ(0.04);
 
 //   // Parsing the command line arguments
 //   CommandLineInterface& cli = CommandLineInterface::getInstance();
@@ -265,9 +265,9 @@ int main( int argc, char* argv[] )
    // volume fraction.
    //======================================================================================== 
    bool resume = false;
-   real epsilon = 1e-4;
-   real targetVolumeFraction = 0.50;
-   real radius2 = 0.005 - epsilon;
+   real epsilon = 2e-4;
+   real targetVolumeFraction = 0.35;
+   real radius2 = 0.01 - epsilon;
 
    // Creates the material "myMaterial" with the following material properties:
    //  - material density               : 2.54
@@ -305,25 +305,31 @@ int main( int argc, char* argv[] )
 
    Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
    BodyID s,s1,s2,s3,s4;
-//   s = createSphere( id++, gpos, radius2, elastic );
+
+
+   if(resume) {
+      for (int i = 0; i < allPositions.size(); ++i) {
+      Vec3 &position = allPositions[i];
+      SphereID sphere = createSphere(id, position, radius2, elastic, true);
+      ++id;      
+      } 
+   }
+   else {
+   s = createSphere( id++, gpos, radius2, elastic );
 //   s->setLinearVel(Vec3(0.0,0, 0.5));
-
-   for (int i = 0; i < allPositions.size(); ++i) {
-     Vec3 &position = allPositions[i];
-     SphereID sphere = createSphere(id, position, radius2, elastic, true);
-     ++id;      
-   } 
-
-
-//   gpos[2] += 2. * radius2 + epsilon;
-//   s1 = createSphere( id++, gpos, radius2, elastic );
+   gpos[2] += 2. * radius2 + epsilon;
+   s1 = createSphere( id++, gpos, radius2, elastic );
 //   s1->setLinearVel(Vec3(0,0,1.0));
-//   gpos[2] += 2. * radius2 + epsilon;
+   gpos[2] += 2. * radius2 + epsilon;
+   std::cout << "Pos: " << gpos << std::endl;
 //   s2 = createSphere( id++, gpos, radius2, elastic );
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s3 = createSphere( id++, gpos, radius2, elastic );
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s4 = createSphere( id++, gpos, radius2, elastic );
+   }
+
+
  
    unsigned int particlesTotal = allPositions.size();
    real domainVol = LX * LY * LZ;
@@ -377,14 +383,15 @@ int main( int argc, char* argv[] )
             }
          }
       }
-      std::cout << "Maximum Vp : " << maxV << " " << vv  << " ds * dt = " << maxV * dt << " sol = " << (3.2e-5 / maxV) / dt << std::endl;
+      if (maxV != 0.0) 
+        std::cout << "Maximum Vp : " << maxV << " " << vv  << " ds * dt = " << maxV * dt << " sol = " << (3.2e-5 / maxV) / dt << std::endl;
       dt = (3.2e-5 / maxV);
       if(dt > 0.001)
         dt = 0.001;
       //std::cout << "[particle1 position]: " << s->getPosition() << std::endl;
       //std::cout << std::endl;
       //std::cout << "[particle " << s->getSystemID() << " velocity]: " << s->getLinearVel() << std::endl;
-      //std::cout << "[particle2 position]: " << s1->getPosition() << std::endl;
+      //std::cout << "[particle2 position]: " << LZ - s1->getPosition()[2] -radius2 << std::endl;
       //std::cout << "[particle " << s1->getSystemID() << " velocity]: " << s1->getLinearVel() << std::endl;
       //std::cout << "[particle3 velocity]: " << s2->getLinearVel() << std::endl;
       //std::cout << "[particle4 velocity]: " << s3->getLinearVel() << std::endl;
