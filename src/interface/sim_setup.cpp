@@ -340,8 +340,8 @@ void stepSimulation() {
 
   //=================================================================================================
   int subSteps = 1;
-  TimeStep::stepsize(stepsize);
   real subStepSize = stepsize / static_cast<real>(subSteps);
+  TimeStep::stepsize(subStepSize);
   for (int istep(0); istep < subSteps; ++istep) {
     world->simulationStep( subStepSize );
   }
@@ -402,6 +402,7 @@ void stepSimulation() {
   }
 #endif 
 
+  //=================================================================================================
   pe_EXCLUSIVE_SECTION(0) {
       std::cout << "==DEM Time Data===============================================================" << std::endl;
       std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << " || substepping:  " << subSteps << std::endl;

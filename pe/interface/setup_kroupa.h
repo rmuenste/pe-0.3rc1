@@ -235,7 +235,7 @@ void setupKroupa(MPI_Comm ex0) {
   bool resume               = true;
   real epsilon              = 2e-4;
   real targetVolumeFraction = 0.35;
-  real radius2              = 0.01 - epsilon;
+  real radius2              = 0.005 - epsilon;
 
   int idx = 0;
   real h = 0.0075;
@@ -292,7 +292,8 @@ void setupKroupa(MPI_Comm ex0) {
   //=========================================================================================
   BodyID particle;
   Vec3 gpos(0.05 , 0.05, 0.1 - radius2 - epsilon);
-  Vec3 gpos2(0.05 , 0.05, gpos[2] - (2. * radius2) - 6.0 * epsilon);
+  Vec3 gpos2(0.05 , 0.05, gpos[2]);
+  //Vec3 gpos2(0.05 , 0.05, gpos[2] - (2. * radius2) - 6.0 * epsilon);
   //std::cout << "Separation dist:  " << gpos[2] - gpos2[2] << std::endl;
 
   //=========================================================================================
@@ -309,21 +310,21 @@ void setupKroupa(MPI_Comm ex0) {
 
 //    checkpointer.read( "../start.1" );
 //    //checkpointer.read( "../start.1" );
-//   if( world->ownsPoint( gpos ) ) {
-//      createSphere( idx++, gpos, radius2, elastic );
-//   }
-//   gpos[2] -= 2. * (radius2 + epsilon);
-//   if( world->ownsPoint( gpos  ) ) {
-//      createSphere( idx++, gpos , radius2, elastic );
-//   }
-//   gpos[2] -= 2. * (radius2 + epsilon);
-//   if( world->ownsPoint( gpos  ) ) {
-//      createSphere( idx++, gpos , radius2, elastic );
-//   }
-//   gpos[2] -= 2. * (radius2 + epsilon);
-//   if( world->ownsPoint( gpos  ) ) {
-//      createSphere( idx++, gpos , radius2, elastic );
-//   }
+   if( world->ownsPoint( gpos ) ) {
+      createSphere( idx++, gpos, radius2, elastic );
+   }
+   gpos[2] -= 2. * (radius2 + epsilon);
+   if( world->ownsPoint( gpos  ) ) {
+      createSphere( idx++, gpos , radius2, elastic );
+   }
+   gpos[2] -= 2. * (radius2 + epsilon);
+   if( world->ownsPoint( gpos  ) ) {
+      createSphere( idx++, gpos , radius2, elastic );
+   }
+   gpos[2] -= 2. * (radius2 + epsilon);
+   if( world->ownsPoint( gpos  ) ) {
+      createSphere( idx++, gpos , radius2, elastic );
+   }
 //   gpos[2] -= 2. * (radius2 + epsilon);
 //   if( world->ownsPoint( gpos  ) ) {
 //      createSphere( idx++, gpos , radius2, elastic );
@@ -333,13 +334,9 @@ void setupKroupa(MPI_Comm ex0) {
 //      createSphere( idx++, gpos , radius2, elastic );
 //   }
   }
-  //=========================================================================================
 
-//  if( world->ownsPoint( gpos ) ) {
-//    particle = createSphere( idx, gpos, radius2, elastic );
-//    particle->setLinearVel( vel );
-//  }
   //=========================================================================================  
+  
   BodyID botPlane; 
   BodyID topPlane;
 
