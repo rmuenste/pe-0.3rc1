@@ -81,5 +81,5 @@
  *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver
  */
-#define pe_CONSTRAINT_SOLVER  pe::response::HardContactSemiImplicitTimesteppingSolvers
+#define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
 //*************************************************************************************************
