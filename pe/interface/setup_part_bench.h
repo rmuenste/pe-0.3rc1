@@ -29,7 +29,7 @@ void setupParticleBench(MPI_Comm ex0) {
   //const real dz( 0.08 ) 2 subs;
 //  const real dx( -0.05 );
 //  const real dy( -0.05 );
-  const real dz( 0.013333333 );
+  const real dz( 0.16 / processesZ );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -416,10 +416,6 @@ void setupParticleBench(MPI_Comm ex0) {
   if( g_vtk ) {
      vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
   }
-
-//  if(g_povray) {
-//    povraySetup();
-//  }
 
   const real lx = px * dx;
   const real ly = py * dy;

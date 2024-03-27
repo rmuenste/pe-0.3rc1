@@ -34,7 +34,7 @@ void synchronizeForces() {
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
     if (body->getType() == sphereType) {
-      //std::cout << "Delta t: "  << stepsize << " "<<  body->getForce() << std::endl;
+      std::cout << "Force: "  <<  body->getForce()[2] << std::endl;
       body->applyFluidForces(stepsize);
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
