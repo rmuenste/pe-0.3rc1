@@ -101,7 +101,7 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
   } 
 }
 
-extern "C" void commf2c_bench_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;
 
@@ -112,12 +112,14 @@ extern "C" void commf2c_bench_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
     MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
     MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
 
-    printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
+    if (rank == 1) {
+      printf( "%d> C) Configuration FSI bench with %d processes.\n", remRank, size );
+    }
     if( CcommEx0 == MPI_COMM_NULL ) {
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupBench(CcommEx0);
+    setupFSIBench(CcommEx0);
   } 
 }
 

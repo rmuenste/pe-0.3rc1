@@ -37,7 +37,7 @@ const real   stepsize      (  0.001 );  // Size of a single time step
 // Process parameters
 const int    processesX( 1 );    // Number of processes in x-direction
 const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 12 );    // Number of processes in y-direction
+const int    processesZ( 24 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -329,7 +329,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.001;
+  real h = 0.002222;
   real epsilon              = 2e-4;
   real radius2              = 0.01 - epsilon;
 
@@ -421,6 +421,7 @@ void stepSimulation() {
 #include <pe/interface/setup_cyl.h>
 #include <pe/interface/setup_dkt.h>
 #include <pe/interface/setup_bench.h>
+#include <pe/interface/setup_fsi_bench.h>
 #include <pe/interface/setup_kroupa.h>
 //
 //=================================================================================================

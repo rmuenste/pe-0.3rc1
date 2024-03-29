@@ -62,8 +62,11 @@ IF( NOT CMAKE_BUILD_TYPE )
 ENDIF()
 
 # Setting proper options for the compiler
-IF( NOT CMAKE_BUILD_TYPE STREQUAL RELEASE AND NOT CMAKE_BUILD_TYPE STREQUAL DEBUG )
-   MESSAGE( ERROR ": Unknown build type!" )
+IF( NOT CMAKE_BUILD_TYPE STREQUAL RELEASE AND 
+    NOT CMAKE_BUILD_TYPE STREQUAL Release AND 
+    NOT CMAKE_BUILD_TYPE STREQUAL Debug   AND 
+    NOT CMAKE_BUILD_TYPE STREQUAL DEBUG )
+  MESSAGE( ERROR ": Unknown build type! ${CMAKE_BUILD_TYPE}" )
 ENDIF()
 
 # Setting compiler flags analogously to the configure script (and clear default compiler flags set
