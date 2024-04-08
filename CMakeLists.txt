@@ -20,7 +20,7 @@
 #
 #==================================================================================================
 
-CMAKE_MINIMUM_REQUIRED( VERSION 3.1 )
+CMAKE_MINIMUM_REQUIRED( VERSION 3.5 )
 PROJECT( pe )
 
 IF( POLICY CMP0015 )
@@ -339,7 +339,7 @@ ENDIF()
 #=================================================================================================
 
 IF( EXAMPLES )
-
+   message(STATUS "Building PE examples")
    # General settings for all examples
    INCLUDE_DIRECTORIES( . )
    LINK_DIRECTORIES( "${PROJECT_BINARY_DIR}" )
@@ -496,10 +496,10 @@ IF( EXAMPLES )
 
    ENDIF()
 
+   ADD_SUBDIRECTORY(examples)
 ENDIF()
 
 
-ADD_SUBDIRECTORY(examples)
 
 #==================================================================================================
 #
