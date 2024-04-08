@@ -2,20 +2,20 @@
 void setupFSIBench(MPI_Comm ex0) {
 
   world = theWorld();
-  //world->setGravity( 0.0, 0.0, -9.807 );
-  world->setGravity( 0.0, 0.0, -9.81 );
+  world->setGravity( 0.0, 0.0, -9.807 );
+  //world->setGravity( 0.0, 0.0, -9.81 );
 
   // Re 1.5 configuration
   //real simViscosity( 373e-3 );
   //real simRho( 970 );
 
   // Re 31.9 configuration
-  real simViscosity( 58e-3 );
+  //real simViscosity( 58e-3 );
   //real simRho( 960.0 );
   //real particleRho( 1120.0 );
   
   // FSI bench configuration
-  //real simViscosity( 8e-3 );
+  real simViscosity( 8e-3 );
   real simRho( 1141.0 );
   real particleRho( 1361.0 );
 

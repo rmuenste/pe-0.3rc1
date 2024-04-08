@@ -28,6 +28,9 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
     MPI_Comm_rank (Ccomm, &rank);	/* get current process id */
     MPI_Comm_size (Ccomm, &size);	/* get number of processes */
 
+    if (rank == 1) {
+      printf( "%d> C) Configuration Sed bench with %d processes.\n", remRank, size );
+    }
     if (remRank != 0) {
       CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
       //printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );

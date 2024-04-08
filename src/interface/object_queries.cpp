@@ -35,6 +35,7 @@ void synchronizeForces() {
     BodyID body = world->getBody(i);
     if (body->getType() == sphereType) {
       std::cout << "Force: "  <<  body->getForce()[2] << std::endl;
+      std::cout << "Torque: "  <<  body->getTorque() << std::endl;
       body->applyFluidForces(stepsize);
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;

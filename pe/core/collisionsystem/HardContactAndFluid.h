@@ -4377,4 +4377,3 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 
 #endif
 
-
