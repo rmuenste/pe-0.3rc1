@@ -297,34 +297,26 @@ void setupKroupa(MPI_Comm ex0) {
   //std::cout << "Separation dist:  " << gpos[2] - gpos2[2] << std::endl;
 
   //=========================================================================================
-  if(!resume) {
-    for (int i = 0; i < allPositions.size(); ++i) {
-      Vec3 &position = allPositions[i];
-      if( world->ownsPoint(position)) {
-         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
-         ++idx;      
-      }
-    } 
-  }
-  else {
-
-//    checkpointer.read( "../start.1" );
-//    //checkpointer.read( "../start.1" );
-   if( world->ownsPoint( gpos ) ) {
-      createSphere( idx++, gpos, radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
-   gpos[2] -= 2. * (radius2 + epsilon);
-   if( world->ownsPoint( gpos  ) ) {
-      createSphere( idx++, gpos , radius2, elastic );
-   }
+//  if(!resume) {
+//    for (int i = 0; i < allPositions.size(); ++i) {
+//      Vec3 &position = allPositions[i];
+//      if( world->ownsPoint(position)) {
+//         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+//         ++idx;      
+//      }
+//    } 
+//  }
+//  else {
+//
+////    checkpointer.read( "../start.1" );
+////    //checkpointer.read( "../start.1" );
+//   if( world->ownsPoint( gpos ) ) {
+//      createSphere( idx++, gpos, radius2, elastic );
+//   }
+//   gpos[2] -= 2. * (radius2 + epsilon);
+//   if( world->ownsPoint( gpos  ) ) {
+//      createSphere( idx++, gpos , radius2, elastic );
+//   }
 //   gpos[2] -= 2. * (radius2 + epsilon);
 //   if( world->ownsPoint( gpos  ) ) {
 //      createSphere( idx++, gpos , radius2, elastic );
@@ -333,9 +325,30 @@ void setupKroupa(MPI_Comm ex0) {
 //   if( world->ownsPoint( gpos  ) ) {
 //      createSphere( idx++, gpos , radius2, elastic );
 //   }
-  }
+////   gpos[2] -= 2. * (radius2 + epsilon);
+////   if( world->ownsPoint( gpos  ) ) {
+////      createSphere( idx++, gpos , radius2, elastic );
+////   }
+////   gpos[2] -= 2. * (radius2 + epsilon);
+////   if( world->ownsPoint( gpos  ) ) {
+////      createSphere( idx++, gpos , radius2, elastic );
+////   }
+//  }
 
   //=========================================================================================  
+  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
+  TriangleMeshID ellipsoid;
+
+  std::string fileName = std::string("ellipsoid.obj");
+  if(world->ownsPoint(ellipsoidPos)) {
+
+    std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << std::endl;
+    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,
+                                   elastic, true, true, Vec3(1.0, 1.0, 1.0),
+                                   false, false);
+  }
+  
+  //=========================================================================================
   
   BodyID botPlane; 
   BodyID topPlane;

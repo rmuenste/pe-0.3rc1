@@ -36,7 +36,8 @@ void setupFSIBench(MPI_Comm ex0) {
   //const real dz( 0.08 ) 2 subs;
 //  const real dx( -0.05 );
 //  const real dy( -0.05 );
-  const real dz( 0.32 / processesZ );
+  //const real dz( 0.32 / processesZ );
+  const real dz( 0.2 / processesZ );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);

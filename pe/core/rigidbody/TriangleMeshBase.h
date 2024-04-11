@@ -77,6 +77,7 @@ public:
    inline const Vertices&      getWFVertices();
    inline const Vertices&      getBFVertices() const;
    inline const IndicesLists&  getFaceIndices() const;
+   inline real                 getVolume() const;
    //@}
    //**********************************************************************************************
 
@@ -165,6 +166,38 @@ inline const Vertices& TriangleMeshBase::getWFVertices()
 inline const Vertices& TriangleMeshBase::getBFVertices() const
 {
    return verticesOriginal_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Calculates the volume of a triangle mesh for given vertex list and corresponding index list.
+ *
+ * \param vertices The list of vertices forming the triangle mesh.
+ * \param faceIndices List of indices which assign three elements of vertices to one triangle.
+ * \return The volume of the triangle mesh.
+ */
+inline real TriangleMeshBase::getVolume() const
+{
+   const real sixth = 1.0 / 6.0;
+   //Calculate centre of mass and volume
+   //http://stackoverflow.com/questions/2083771/a-method-to-calculate-the-centre-of-mass-from-a-stl-stereo-lithography-file
+   real totalVolume ( 0.0 );
+   real currentVolume ( 0.0 );
+
+   for (size_t i = 0; i < faceIndices_.size(); ++i) {
+      const Vec3& a = verticesOriginal_[faceIndices_[i][0]];
+      const Vec3& b = verticesOriginal_[faceIndices_[i][1]];
+      const Vec3& c = verticesOriginal_[faceIndices_[i][2]];
+
+      //http://mathworld.wolfram.com/Tetrahedron.html
+      currentVolume = (trans(a) * ( b % c )); //*sixth out of loop
+      totalVolume += currentVolume;
+   }
+
+   totalVolume *= sixth;
+
+   return totalVolume;
 }
 //*************************************************************************************************
 

@@ -36,18 +36,18 @@ void synchronizeForces() {
     if (body->getType() == sphereType) {
       std::cout << "Force: "  <<  body->getForce()[2] << std::endl;
       std::cout << "Torque: "  <<  body->getTorque() << std::endl;
-      body->applyFluidForces(stepsize);
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
     }
+    body->applyFluidForces(stepsize);
   }
 
   for (std::size_t i=0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
     BodyID body = world->getShadowBody(i);
     if (body->getType() == sphereType) {
-      body->applyFluidForces(stepsize);
 //      std::cout << rank << ")" << body << std::endl;
     }
+    body->applyFluidForces(stepsize);
   }
 
   world->synchronize();
@@ -82,6 +82,10 @@ void getParticlesIndexMap(int *idxMap) {
       idxMap[count] = i;
       count++;
     }
+    else if(body->getType() == triangleMeshType) {
+      idxMap[count] = i;
+      count++;
+    }
   }
 
 }
@@ -111,6 +115,11 @@ void getRemoteParticlesIndexMap(int *idxMap) {
       count++;
     }
     else if(body->getType() == capsuleType) {
+      idxMap[count] = i;
+//      std::cout << " " << i << " " << body->getSystemID();
+      count++;
+    }
+    else if(body->getType() == triangleMeshType) {
       idxMap[count] = i;
 //      std::cout << " " << i << " " << body->getSystemID();
       count++;
@@ -302,6 +311,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         return true;
       }
     }
+    else if(body->getType() == triangleMeshType) {
+      if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
   }
   for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++) {
 
@@ -323,6 +340,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
+    else if(body->getType() == triangleMeshType) {
+      if(static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
         int val = bytes[0] + 1;
         *inpr = val;
@@ -479,6 +504,9 @@ int getNumParts() {
       numBodies++;
     }
     else if(body->getType() == capsuleType) {
+      numBodies++;
+    }
+    else if(body->getType() == triangleMeshType) {
       numBodies++;
     }
   }
