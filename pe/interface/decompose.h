@@ -670,6 +670,156 @@ void decomposePeriodic3D(int center[],
    }
 }
 
+
+void decomposePeriodic3D_XY(int center[], 
+                            real bx, real by, real bz, 
+                            real dx, real dy, real dz, 
+                            real lx, real ly, real lz, 
+                            int px, int py, int pz) {
+
+   int west           [] = { center[0]-1, center[1]  , center[2]   };
+   int east           [] = { center[0]+1, center[1]  , center[2]   };
+   int south          [] = { center[0]  , center[1]-1, center[2]   };
+   int north          [] = { center[0]  , center[1]+1, center[2]   };
+   int southwest      [] = { center[0]-1, center[1]-1, center[2]   };
+   int southeast      [] = { center[0]+1, center[1]-1, center[2]   };
+   int northwest      [] = { center[0]-1, center[1]+1, center[2]   };
+   int northeast      [] = { center[0]+1, center[1]+1, center[2]   };
+
+   int bottom         [] = { center[0]  , center[1]  , center[2]-1 };
+   int bottomwest     [] = { center[0]-1, center[1]  , center[2]-1 };
+   int bottomeast     [] = { center[0]+1, center[1]  , center[2]-1 };
+   int bottomsouth    [] = { center[0]  , center[1]-1, center[2]-1 };
+   int bottomnorth    [] = { center[0]  , center[1]+1, center[2]-1 };
+   int bottomsouthwest[] = { center[0]-1, center[1]-1, center[2]-1 };
+   int bottomsoutheast[] = { center[0]+1, center[1]-1, center[2]-1 };
+   int bottomnorthwest[] = { center[0]-1, center[1]+1, center[2]-1 };
+   int bottomnortheast[] = { center[0]+1, center[1]+1, center[2]-1 };
+
+   int top            [] = { center[0]  , center[1]  , center[2]+1 };
+   int topwest        [] = { center[0]-1, center[1]  , center[2]+1 };
+   int topeast        [] = { center[0]+1, center[1]  , center[2]+1 };
+   int topsouth       [] = { center[0]  , center[1]-1, center[2]+1 };
+   int topnorth       [] = { center[0]  , center[1]+1, center[2]+1 };
+   int topsouthwest   [] = { center[0]-1, center[1]-1, center[2]+1 };
+   int topsoutheast   [] = { center[0]+1, center[1]-1, center[2]+1 };
+   int topnorthwest   [] = { center[0]-1, center[1]+1, center[2]+1 };
+   int topnortheast   [] = { center[0]+1, center[1]+1, center[2]+1 };
+
+   MPISystemID mpisystem = theMPISystem();
+
+   MPI_Comm cartcomm = mpisystem->getComm();
+
+   int rank = mpisystem->getRank();
+
+   // Specify local domain
+   defineLocalDomain( intersect(
+      intersect(
+      HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
+      HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ),
+      HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
+      HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
+      HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+      HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
+
+   // Connecting the west neighbor
+   {
+      const Vec3 offset( ( ( west[0] < 0 ) ? ( lx ) : ( 0 ) ), 0, 0 );
+      MPI_Cart_rank( cartcomm, west, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
+         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
+         HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+   // Connecting the east neighbor
+   {
+      const Vec3 offset( ( ( east[0]==px )?( -lx ) : ( 0 ) ), 0, 0 );
+      MPI_Cart_rank( cartcomm, east, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
+         HalfSpace( Vec3(0,+1,0), +center[1]*dy ),
+         HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+   // Connecting the south neighbor
+   {
+      const Vec3 offset( 0, ( ( south[1]<0 )?( ly ):( 0 ) ), 0 );
+      MPI_Cart_rank( cartcomm, south, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
+         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
+         HalfSpace( Vec3(-1,0,0), -east[0]*dx ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+   // Connecting the north neighbor
+   {
+      const Vec3 offset( 0, ( ( north[1]==py )?(-ly ):( 0 ) ), 0 );
+      MPI_Cart_rank( cartcomm, north, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
+         HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
+         HalfSpace( Vec3(-1,0,0), -east[0]*dx ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+
+   // Connecting the south-west neighbor
+   {
+      const Vec3 offset( ( ( southwest[0]<0 )?( lx ):( 0 ) ), ( ( southwest[1]<0 )?( ly ):( 0 ) ), 0 );
+      MPI_Cart_rank( cartcomm, southwest, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
+         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+   // Connecting the south-east neighbor
+   {
+      const Vec3 offset( ( ( southeast[0]==px )?( -lx ):( 0 ) ), ( ( southeast[1]<0 )?( ly ):( 0 ) ), 0 );
+      MPI_Cart_rank( cartcomm, southeast, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
+         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+   // Connecting the north-west neighbor
+   //if( northwest[0] >= 0 && northwest[1] < py ) {
+   {
+      const Vec3 offset( ( ( northwest[0]<0 )?( lx ):( 0 ) ), ( ( northwest[1]==py )?(-ly ):( 0 ) ), 0 );
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
+         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+   // Connecting the north-east neighbor
+   //if( northeast[0] < px && northeast[1] < py ) {
+   {
+      const Vec3 offset( ( ( northeast[0]==px )?( -lx ):( 0 ) ), ( ( northeast[1]==py )?(-ly ):( 0 ) ), 0 );
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
+         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
+         HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
+         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ), offset );
+   }
+
+
+}
+
 }
 
 

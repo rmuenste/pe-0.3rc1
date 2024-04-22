@@ -1,14 +1,25 @@
 #include <pe/interface/object_queries.h>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 #include <algorithm>
 #include <numeric>
 #include <map>
 
+#define ONLY_ROTATION 
 using namespace pe;
 std::map<int, boost::uint64_t> particleMap;
 std::map<int, boost::uint64_t> remoteParticleMap;
 std::map<int, boost::uint64_t> fbmMap;
+
+
+extern "C"
+void uint64_test(uint64_t* value) {
+  *value = 18446744073709551615;
+  //*value = 123456789123457890;
+}
+
+
 /*
  * This is is build in the pointInsideParticles function. It serves to 
  * convert the fbm-Id to the systemId of the remote particle for the 
@@ -31,13 +42,23 @@ void synchronizeForces() {
   MPI_Barrier(cartcomm);
   theCollisionSystem()->synchronizeForces();
 
+
   for (pe::World::SizeType i=0; i < world->size(); i++) {
     BodyID body = world->getBody(i);
+#ifdef ONLY_ROTATION
+    body->setForce(Vec3(0,0,0));
+#endif
     if (body->getType() == sphereType) {
       std::cout << "Force: "  <<  body->getForce()[2] << std::endl;
       std::cout << "Torque: "  <<  body->getTorque() << std::endl;
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
       //std::cout << "Sync: "  << stepsize << " "<<  rank << ")" << body << std::endl;
+    }
+    else if(body->getType() == triangleMeshType) {
+      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
+      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
+//      std::cout << "Force: "  <<  body->getForce().toString() << std::endl;
+//      std::cout << "Torque: "  <<  body->getTorque().toString() << std::endl;
     }
     body->applyFluidForces(stepsize);
   }
@@ -1199,6 +1220,40 @@ bool mapLocalToSystem2(int lidx, int vidx) {
   }
 
 }
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief The function checks if the point pos in inside the particles (C++ end point for checkAllParticles) 
+ * \param inpr An output parameter that is set to the idx of that particle that contains pos 
+ * \param pos An array that cointans the 3d point
+ */
+//void getPartStructByIdx(int idx, particleData_t *particle) {
+//
+//  WorldID world = theWorld();
+//  World::SizeType widx = static_cast<World::SizeType>(idx);
+//
+//  BodyID body;
+//  if ( widx < world->size() ) {
+//    body = world->getBody(static_cast<unsigned int>(widx));
+//
+//    // TODO: this is a dubious conversion to a smaller type -> fix
+//    particle->uniqueIdx = body->getSystemID();
+//    particle->localIdx  = idx;
+//    particle->systemIdx = -1;
+//    particle->time = -1.0;
+//    
+//    uint64toByteArray(body->getSystemID(), particle->bytes); 
+//
+//  }
+//  else {
+//    std::stringstream msg;
+//    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
+//    throw std::out_of_range(msg.str());
+//  }
+//}
+//=================================================================================================
 
 extern "C"
 bool map_local_to_system(int lidx, int vidx) {

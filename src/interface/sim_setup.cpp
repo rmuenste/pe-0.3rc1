@@ -35,9 +35,9 @@ const size_t timesteps     ( 10000 );  // Number of time steps for the flowing g
 const real   stepsize      (  0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
-const int    processesY( 3 );    // Number of processes in y-direction
-const int    processesZ( 3 );    // Number of processes in y-direction
+const int    processesX( 4 );    // Number of processes in x-direction
+const int    processesY( 4 );    // Number of processes in y-direction
+const int    processesZ( 1 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -362,7 +362,7 @@ void stepSimulation() {
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType || body->getType() == capsuleType) {
+    if(body->getType() == sphereType || body->getType() == capsuleType || body->getType() == triangleMeshType) {
       Vec3 vel = body->getLinearVel();
       Vec3 ang = body->getAngularVel();
       real v = vel.length();
@@ -379,11 +379,10 @@ void stepSimulation() {
 #define OUTPUT_LEVEL4
 #ifdef OUTPUT_LEVEL4
       std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
-      std::cout << "Omega: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition().toString()   << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel().toString()  << " " << timestep * stepsize << std::endl;
+      std::cout << "Omega   : " << body->getSystemID() << " " << body->getAngularVel().toString() << " " << timestep * stepsize << std::endl;
+      std::cout << "Theta   : " << body->getSystemID() << " " << body->getRotation().getEulerAnglesXYZ().toString() << " " << timestep * stepsize << std::endl;
 #endif
     }
   }
@@ -423,6 +422,7 @@ void stepSimulation() {
 #include <pe/interface/setup_bench.h>
 #include <pe/interface/setup_fsi_bench.h>
 #include <pe/interface/setup_kroupa.h>
+#include <pe/interface/setup_creep.h>
 //
 //=================================================================================================
 //

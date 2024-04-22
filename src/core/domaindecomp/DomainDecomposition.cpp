@@ -350,8 +350,24 @@ void connect_backend( int rank, std::auto_ptr<ProcessGeometry> geometry, const V
       throw std::runtime_error( "Selected configuration is not MPI parallel" );
 
    // Checking the rank of the remote process
-   if( rank < 0 || rank >= MPISettings::size() || rank == MPISettings::rank() )
-      throw std::invalid_argument( "Invalid MPI rank" );
+   if( rank < 0 || rank >= MPISettings::size() || rank == MPISettings::rank() ) {
+
+      std::stringstream ss;
+      if(rank == MPISettings::rank()) {
+      ss << "Invalid MPI rank self-connect: " 
+         <<  MPISettings::rank() 
+         << " of " <<  MPISettings::size() << " -> " << rank;
+      throw std::invalid_argument( ss.str() );
+      }
+      else {
+      ss << "Invalid MPI rank " 
+         <<  MPISettings::rank() 
+         << " of " <<  MPISettings::size() << " -> " << rank;
+      throw std::invalid_argument( ss.str() );
+      }
+
+      //throw std::invalid_argument( "Invalid MPI rank" );
+   }
 
    const PS& processstorage( theCollisionSystem()->getProcessStorage() );
 

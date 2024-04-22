@@ -150,6 +150,28 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
   } 
 }
 
+extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{   
+  int remRank = *remoteRank;
+
+  if(remRank != 0) { 
+    int rank, size;
+
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
+    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
+    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
+
+    if (rank == 1) {
+      printf( "%d> C) Configuration Creep with %d processes.\n", remRank, size );
+    }
+    if( CcommEx0 == MPI_COMM_NULL ) {
+      printf( "%d> C)Error converting fortran communicator\n", rank);
+       return;
+    }
+    setupCreep(CcommEx0);
+  } 
+}
+
 extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   // force 4.0 multiplier take it out

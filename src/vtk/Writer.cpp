@@ -227,20 +227,25 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
       {
          for(int proc=0; proc<MPISettings::size(); proc++)
          {
-            // Write spheres entry
-            pvd<< "<DataSet timestep=\"" <<t<<
-                  "\" part=\"" << 2*proc <<
-                  "\" file=\"" << proc << "/spheres" << timeCount <<".vtu\"/>\n";
-
-            // Write boxes entry
+//            // Write spheres entry
+//            pvd<< "<DataSet timestep=\"" <<t<<
+//                  "\" part=\"" << 2*proc <<
+//                  "\" file=\"" << proc << "/spheres" << timeCount <<".vtu\"/>\n";
+//
+//            // Write boxes entry
+//            pvd<< "<DataSet timestep=\"" <<t<<
+//                  "\" part=\"" << 2*proc+1 <<
+//                  "\" file=\"" << proc << "/boxes" << timeCount <<".vtu\"/>\n";
+//
+//            // Write capsule entry
+//            pvd<< "<DataSet timestep=\"" <<t<<
+//                  "\" part=\"" << 2*proc+1 <<
+//                  "\" file=\"" << proc << "/capsules" << timeCount <<".vtu\"/>\n";
+            
+            // Write meshes entry
             pvd<< "<DataSet timestep=\"" <<t<<
                   "\" part=\"" << 2*proc+1 <<
-                  "\" file=\"" << proc << "/boxes" << timeCount <<".vtu\"/>\n";
-
-            // Write capsule entry
-            pvd<< "<DataSet timestep=\"" <<t<<
-                  "\" part=\"" << 2*proc+1 <<
-                  "\" file=\"" << proc << "/capsules" << timeCount <<".vtu\"/>\n";
+                  "\" file=\"" << proc << "/meshes" << timeCount <<".vtu\"/>\n";
 
             //TODO: Write other entries
          }
