@@ -48,6 +48,7 @@
 #include <pe/core/rigidbody/Plane.h>
 #include <pe/core/Serialization.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/attachable/Spring.h>
 #include <pe/core/TimeStep.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
@@ -306,6 +307,19 @@ void Writer::addSphere( ConstSphereID sphere )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single sphere for the POV-Ray visualization.
+ *
+ * \param sphere The sphere to be registered.
+ * \return void
+ */
+void Writer::addEllipsoid( ConstEllipsoidID ell )
+{
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single box for the POV-Ray visualization.
  *
  * \param box The box to be registered.
@@ -432,6 +446,19 @@ void Writer::removeSphere( ConstSphereID sphere )
       }
    }
    pe_INTERNAL_ASSERT( false, "Sphere is not registered for the POV-Ray visualization" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single sphere from the POV-Ray visualization.
+ *
+ * \param sphere The sphere to be removed.
+ * \return void
+ */
+void Writer::removeEllipsoid( ConstEllipsoidID ell )
+{
+   return;
 }
 //*************************************************************************************************
 

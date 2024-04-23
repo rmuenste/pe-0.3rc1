@@ -46,6 +46,7 @@ class Box;
 class Capsule;
 class Contact;
 class Cylinder;
+class Ellipsoid;
 class FixedJoint;
 class ForceGenerator;
 class GeomPrimitive;
@@ -878,6 +879,71 @@ typedef Sphere*  SphereID;
  * pe::SphereID handle refers to a non-constant sphere primitive.
  */
 typedef const Sphere*  ConstSphereID;
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Handle for a Ellipsoid primitive.
+ * \ingroup core
+ *
+ * A pe::EllipsoidID represents a handle to a currently active Ellipsoid primitive in the rigid body
+ * simulation. A handle to a sphere primitive is returned by the sphere creation functions:
+ *
+ * - pe::createEllipsoid( size_t id, real x, real y, real z, real radius, MaterialID material, bool visible )
+ * - pe::createEllipsoid( size_t id, const Vec3 &gPos, real radius, MaterialID material, bool visible )
+ *
+ * The following example illustrates the creation of a new sphere primitive and sphere handle:
+
+   \code
+   // Creates the iron sphere 1 at the global position ( 4.2, 3.7, -0.6 ) with a radius of 1.2
+   EllipsoidID sphere = createEllipsoid( 1, 4.2, 3.7, -0.6, 1.2, iron );
+   \endcode
+
+ * \b Note: A pe::EllipsoidID can implicitly be converted to both a pe::GeomID and a pe::BodyID.
+
+   \code
+   EllipsoidID sphere;
+   GeomID geom = sphere;
+   BodyID body = geom;
+   \endcode
+
+ * \b Note: The pe::EllipsoidID handle refers to a non-constant sphere primitive. In contrast, the
+ * pe::ConstEllipsoidID handle refers to a constant sphere primitive.
+ */
+typedef Ellipsoid*  EllipsoidID;
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Handle for a constant Ellipsoid primitive.
+ * \ingroup core
+ *
+ * A pe::ConstEllipsoidID represents a handle to a currently active Ellipsoid primitive in the rigid
+ * body simulation. A handle to a sphere primitive is returned by the sphere creation functions:
+ *
+ * - pe::createEllipsoid( size_t id, real x, real y, real z, real radius, MaterialID material, bool visible )
+ * - pe::createEllipsoid( size_t id, const Vec3 &gPos, real radius, MaterialID material, bool visible )
+ *
+ * The following example illustrates the creation of a new sphere primitive and sphere handle:
+
+   \code
+   // Creates the iron sphere 1 at the global position ( 4.2, 3.7, -0.6 ) with a radius of 1.2
+   EllipsoidID sphere = createEllipsoid( 1, 4.2, 3.7, -0.6, 1.2, iron );
+   \endcode
+
+ * \b Note: A pe::ConstEllipsoidID can implicitly be converted to both a pe::ConstGeomID and a
+ * pe::ConstBodyID.
+
+   \code
+   ConstEllipsoidID sphere;
+   ConstGeomID geom = sphere;
+   ConstBodyID body = geom;
+   \endcode
+
+ * \b Note: The pe::ConstEllipsoidID handle refers to a constant sphere primitive. In contrast, the
+ * pe::EllipsoidID handle refers to a non-constant sphere primitive.
+ */
+typedef const Ellipsoid*  ConstEllipsoidID;
 //*************************************************************************************************
 
 

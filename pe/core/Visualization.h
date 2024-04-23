@@ -59,6 +59,7 @@ protected:
    //**Type definitions****************************************************************************
    typedef PtrVector<Visualization,NoDelete>       Viewer;     //!< Container for active viewers.
    typedef PtrVector<const Sphere,NoDelete>        Spheres;    //!< Container for visible spheres.
+   typedef PtrVector<const Ellipsoid,NoDelete>     Ellipsoids; //!< Container for visible ellipsoids.
    typedef PtrVector<const Box,NoDelete>           Boxes;      //!< Container for visible boxes.
    typedef PtrVector<const Capsule,NoDelete>       Capsules;   //!< Container for visible capsules.
    typedef PtrVector<const Cylinder,NoDelete>      Cylinders;  //!< Container for visible cylinders.
@@ -77,6 +78,7 @@ public:
    static void add( ConstBoxID           box      );
    static void add( ConstCapsuleID       capsule  );
    static void add( ConstCylinderID      cylinder );
+   static void add( ConstEllipsoidID     ellipsoid);
    static void add( ConstInnerCylinderID cylinder );
    static void add( ConstPlaneID         plane    );
    static void add( ConstTriangleMeshID  mesh     );
@@ -92,6 +94,7 @@ public:
    static void remove( ConstBoxID           box      );
    static void remove( ConstCapsuleID       capsule  );
    static void remove( ConstCylinderID      cylinder );
+   static void remove( ConstEllipsoidID     ellipsoid);
    static void remove( ConstInnerCylinderID cylinder );
    static void remove( ConstPlaneID         plane    );
    static void remove( ConstTriangleMeshID  mesh     );
@@ -107,6 +110,7 @@ public:
    static void changeVisibility( ConstBoxID           box      );
    static void changeVisibility( ConstCapsuleID       capsule  );
    static void changeVisibility( ConstCylinderID      cylinder );
+   static void changeVisibility( ConstEllipsoidID     ellipsoid);
    static void changeVisibility( ConstInnerCylinderID cylinder );
    static void changeVisibility( ConstPlaneID         plane    );
    static void changeVisibility( ConstTriangleMeshID  mesh     );
@@ -137,6 +141,7 @@ protected:
    virtual void addBox     ( ConstBoxID                    box      ) = 0;
    virtual void addCapsule ( ConstCapsuleID                capsule  ) = 0;
    virtual void addCylinder( ConstCylinderID               cylinder ) = 0;
+   virtual void addEllipsoid ( ConstEllipsoidID            ellipsoid) = 0;
    virtual void addInnerCylinder( ConstInnerCylinderID     cylinder ) = 0;
    virtual void addPlane   ( ConstPlaneID                  plane    ) = 0;
    virtual void addMesh    ( ConstTriangleMeshID           mesh     ) = 0;
@@ -152,6 +157,7 @@ protected:
    virtual void removeBox       ( ConstBoxID                    box      ) = 0;
    virtual void removeCapsule   ( ConstCapsuleID                capsule  ) = 0;
    virtual void removeCylinder  ( ConstCylinderID               cylinder ) = 0;
+   virtual void removeEllipsoid ( ConstEllipsoidID            ellipsoid) = 0;
    virtual void removeInnerCylinder( ConstInnerCylinderID     cylinder ) = 0;
    virtual void removePlane     ( ConstPlaneID                  plane    ) = 0;
    virtual void removeMesh      ( ConstTriangleMeshID           mesh     ) = 0;
@@ -167,6 +173,7 @@ protected:
    virtual void changeBoxVisibility          ( ConstBoxID                    box      );
    virtual void changeCapsuleVisibility      ( ConstCapsuleID                capsule  );
    virtual void changeCylinderVisibility     ( ConstCylinderID               cylinder );
+   virtual void changeEllipsoidVisibility    ( ConstEllipsoidID              ellipsoid);
    virtual void changeInnerCylinderVisibility( ConstInnerCylinderID          cylinder );
    virtual void changePlaneVisibility        ( ConstPlaneID                  plane    );
    virtual void changeMeshVisibility         ( ConstTriangleMeshID           mesh     );
@@ -193,6 +200,8 @@ protected:
    static inline Capsules::Iterator  endCapsules();
    static inline Cylinders::Iterator beginCylinders();
    static inline Cylinders::Iterator endCylinders();
+   static inline Ellipsoids::Iterator   beginEllipsoids();
+   static inline Ellipsoids::Iterator   endEllipsoids();
    static inline InnerCylinders::Iterator beginInnerCylinders();
    static inline InnerCylinders::Iterator endInnerCylinders();
    static inline Planes::Iterator    beginPlanes();
@@ -215,6 +224,7 @@ private:
    static Boxes boxes_;            //!< The registered visible boxes.
    static Capsules capsules_;      //!< The registered visible capsules.
    static Cylinders cylinders_;    //!< The registered visible cylinders.
+   static Ellipsoids ellipsoids_;  //!< The registered visible cylinders.
    static InnerCylinders innerCylinders_;  //!< The registered visible cylinders.
    static Planes planes_;          //!< The registered visible planes.
    static Meshes meshes_;          //!< The registered visible triangle meshes.
@@ -254,6 +264,31 @@ inline Visualization::Spheres::Iterator Visualization::beginSpheres()
 inline Visualization::Spheres::Iterator Visualization::endSpheres()
 {
    return spheres_.end();
+}
+//*************************************************************************************************
+
+
+
+//*************************************************************************************************
+/*!\brief Returns a sphere iterator to the first visible sphere.
+ *
+ * \return Sphere iterator to the first visible sphere.
+ */
+inline Visualization::Ellipsoids::Iterator Visualization::beginEllipsoids()
+{
+   return ellipsoids_.begin();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns a sphere iterator just past the last visible sphere.
+ *
+ * \return Sphere iterator just past the last visible sphere.
+ */
+inline Visualization::Ellipsoids::Iterator Visualization::endEllipsoids()
+{
+   return ellipsoids_.end();
 }
 //*************************************************************************************************
 
