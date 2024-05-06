@@ -51,7 +51,8 @@ enum GeomType {
    triangleMeshType  = 6,  //!< Code for TriangleMesh geometries.
    unionType         = 7,  //!< Code for Union geometries.
    innerCylinderType = 8,  //!< Code for Inner cylinder geometries.
-   innerMeshType     = 9   //!< Code for Inner mesh geometries.
+   innerMeshType     = 9,  //!< Code for Inner mesh geometries.
+   ellipsoidType     = 10  //!< Code ellipsoid geometries.
 };
 //*************************************************************************************************
 

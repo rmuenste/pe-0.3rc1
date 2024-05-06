@@ -73,15 +73,17 @@ namespace pe {
  * \param material The material of the sphere.
  * \param visible Specifies if the sphere is visible in a visualization.
  */
-Ellipsoid::Ellipsoid( id_t sid, id_t uid, const Vec3& gpos, real radius,
-                MaterialID material, bool visible )
-   : Parent( sid, uid, gpos, radius, material, visible )  // Initialization of the parent class
+Ellipsoid::Ellipsoid( id_t sid, id_t uid, const Vec3& gpos,
+                    real a, real b, real c, MaterialID material, bool visible )
+   : Parent( sid, uid, gpos, a, b, c, material, visible )  // Initialization of the parent class
 {
    // Checking the radius
    // Since the sphere constructor is never directly called but only used in a small number
    // of functions that already check the sphere arguments, only asserts are used here to
    // double check the arguments.
-   pe_INTERNAL_ASSERT( radius > real(0), "Invalid sphere radius" );
+   pe_INTERNAL_ASSERT( a > real(0), "Invalid a radius" );
+   pe_INTERNAL_ASSERT( b > real(0), "Invalid b radius" );
+   pe_INTERNAL_ASSERT( c > real(0), "Invalid c radius" );
 
    // Registering the sphere for visualization
    Visualization::add( this );
@@ -102,15 +104,19 @@ Ellipsoid::Ellipsoid( id_t sid, id_t uid, const Vec3& gpos, real radius,
  * \param visible Specifies if the sphere is visible in a visualization.
  * \param fixed \a true to fix the sphere, \a false to unfix it.
  */
-Ellipsoid::Ellipsoid( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
-                real radius, MaterialID material, bool visible, bool fixed )
-   : Parent( sid, uid, gpos, radius, material, visible )  // Initialization of the parent class
+Ellipsoid::Ellipsoid( id_t sid, id_t uid, const Vec3& gpos, 
+                      real a, real b, real c, 
+                      const Vec3& rpos, const Quat& q,
+                      MaterialID material, bool visible, bool fixed )
+   : Parent( sid, uid, gpos, a, b, c, material, visible )  // Initialization of the parent class
 {
    // Checking the radius
    // Since the sphere constructor is never directly called but only used in a small number
    // of functions that already check the sphere arguments, only asserts are used here to
    // double check the arguments.
-   pe_INTERNAL_ASSERT( radius > real(0), "Invalid sphere radius" );
+   pe_INTERNAL_ASSERT( a > real(0), "Invalid a radius" );
+   pe_INTERNAL_ASSERT( b > real(0), "Invalid b radius" );
+   pe_INTERNAL_ASSERT( c > real(0), "Invalid c radius" );
 
    // Initializing the instantiated sphere
    remote_ = true;                   // Setting the remote flag
@@ -1214,54 +1220,60 @@ void Ellipsoid::print( std::ostream& os, const char* tab ) const
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-PE_PUBLIC EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real radius,
+PE_PUBLIC EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real a, real b, real c,
                        MaterialID material, bool visible )
 {
    const bool global( GlobalSection::isActive() );
 
    // Checking the radius
-   if( radius <= real(0) )
-      throw std::invalid_argument( "Invalid sphere radius" );
+   if( a <= real(0) )
+      throw std::invalid_argument( "Invalid a radius" );
+   if( b <= real(0) )
+      throw std::invalid_argument( "Invalid b radius" );
+   if( c <= real(0) )
+      throw std::invalid_argument( "Invalid c radius" );
 
    // Checking the global position of the sphere
    if( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) ) {
       std::stringstream ss;
-      ss << "rank: " << MPISettings::rank() << "Invalid global sphere position: " << gpos << std::endl;
-      //throw std::invalid_argument( "Invalid global sphere position" );
+      ss << "rank: " << MPISettings::rank() << "Invalid global ellipsoid position: " << gpos << std::endl;
       throw std::invalid_argument( ss.str());
    }
 
    // Creating a new sphere
    const id_t sid( global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create() );
-   EllipsoidID sphere = new Ellipsoid( sid, uid, gpos, radius, material, visible );
+   EllipsoidID ellipsoid = new Ellipsoid( sid, uid, gpos, a, b, c, material, visible );
 
    // Checking if the sphere is created inside a global section
    if( global )
-      sphere->setGlobal();
+      ellipsoid->setGlobal();
 
    // Checking if the sphere has to be permanently fixed
-   else if( sphere->isAlwaysFixed() )
-      sphere->setFixed( true );
+   else if( ellipsoid->isAlwaysFixed() )
+      ellipsoid->setFixed( true );
 
    // Registering the new sphere with the default body manager
    try {
-      theDefaultManager()->add( sphere );
+      theDefaultManager()->add( ellipsoid );
    }
    catch( std::exception& ) {
-      delete sphere;
+      delete ellipsoid;
       throw;
    }
 
-   // Logging the successful creation of the sphere
+   // Logging the successful creation of the ellipsoid
    pe_LOG_DETAIL_SECTION( log ) {
-      log << "Created sphere " << sid << "\n"
+      Vec3 radii = ellipsoid->getRadius();
+      log << "Created ellipsoid " << sid << "\n"
           << "   User-ID         = " << uid << "\n"
           << "   Global position = " << gpos << "\n"
-          << "   Radius          = " << radius << "\n"
+          << "   Radius a        = " << radii[0] << "\n"
+          << "   Radius b        = " << radii[1] << "\n"
+          << "   Radius c        = " << radii[2] << "\n"
           << "   Material        = " << Material::getName( material );
    }
 
-   return sphere;
+   return ellipsoid;
 }
 //*************************************************************************************************
 
@@ -1288,36 +1300,41 @@ PE_PUBLIC EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real radius,
  * use only!
  */
 EllipsoidID instantiateEllipsoid( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
-                            const Quat& q, real radius, MaterialID material,
+                            const Quat& q, real a, real b, real c, MaterialID material,
                             bool visible, bool fixed, bool reg )
 {
    // Checking the radius
-   pe_INTERNAL_ASSERT( radius > real(0), "Invalid sphere radius" );
+   pe_INTERNAL_ASSERT( a > real(0), "Invalid a radius" );
+   pe_INTERNAL_ASSERT( b > real(0), "Invalid b radius" );
+   pe_INTERNAL_ASSERT( c > real(0), "Invalid c radius" );
 
    // Instantiating the sphere
-   EllipsoidID sphere = new Ellipsoid( sid, uid, gpos, rpos, q, radius, material, visible, fixed );
+   EllipsoidID ellipsoid = new Ellipsoid( sid, uid, gpos, a, b, c, rpos, q, material, visible, fixed );
 
    // Registering the sphere with the default body manager
    if( reg ) {
       try {
-         theDefaultManager()->add( sphere );
+         theDefaultManager()->add( ellipsoid );
       }
       catch( std::exception& ) {
-         delete sphere;
+         delete ellipsoid;
          throw;
       }
    }
 
-   // Logging the successful instantiation of the sphere
+   // Logging the successful creation of the ellipsoid
    pe_LOG_DETAIL_SECTION( log ) {
-      log << "Instantiated sphere " << sid << "\n"
+      Vec3 radii = ellipsoid->getRadius();
+      log << "Created ellipsoid " << sid << "\n"
           << "   User-ID         = " << uid << "\n"
           << "   Global position = " << gpos << "\n"
-          << "   Radius          = " << radius << "\n"
+          << "   Radius a        = " << radii[0] << "\n"
+          << "   Radius b        = " << radii[1] << "\n"
+          << "   Radius c        = " << radii[2] << "\n"
           << "   Material        = " << Material::getName( material );
    }
 
-   return sphere;
+   return ellipsoid;
 }
 //*************************************************************************************************
 

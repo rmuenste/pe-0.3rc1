@@ -62,21 +62,25 @@ namespace pe {
  * \param visible Specifies if the sphere is visible in a visualization.
  */
 EllipsoidBase::EllipsoidBase( id_t sid, id_t uid, const Vec3& gpos,
-                        real radius, MaterialID material, bool visible )
+                        real a, real b, real c, MaterialID material, bool visible )
    : GeomPrimitive( sphereType, true, visible, sid, uid, material )  // Initializing the base object
-   , radiusA_( radius )                                               // Radius of the sphere
+   , radiusA_( a )                                               // Radius of the sphere
+   , radiusB_( b )                                               // Radius of the sphere
+   , radiusC_( c )                                               // Radius of the sphere
 {
    // Checking the radius
    // Since the sphere constructor is never directly called but only used in a small number
    // of functions that already check the sphere arguments, only asserts are used here to
    // double check the arguments.
-   pe_INTERNAL_ASSERT( radius > real(0), "Invalid sphere radius" );
+   pe_INTERNAL_ASSERT( a > real(0), "Invalid a radius" );
+   pe_INTERNAL_ASSERT( b > real(0), "Invalid b radius" );
+   pe_INTERNAL_ASSERT( c > real(0), "Invalid c radius" );
 
    // Setting the center of the sphere
    gpos_ = gpos;
 
    // Calculating the sphere mass
-   mass_ = calcMass( radius, Material::getDensity( material ) );
+   mass_ = calcMass( radiusA_, Material::getDensity( material ) );
    invMass_ = real(1) / mass_;
 
    // Calculating the moment of inertia

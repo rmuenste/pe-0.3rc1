@@ -62,7 +62,8 @@ protected:
    /*!\name Constructor */
    //@{
    explicit EllipsoidBase( id_t sid, id_t uid, const Vec3& gpos,
-                        real radius, MaterialID material, bool visible );
+                        real a, real b, real c,
+                        MaterialID material, bool visible );
    //@}
    //**********************************************************************************************
 
@@ -131,6 +132,9 @@ protected:
 
 //*************************************************************************************************
 /*!\brief Returns the radius of the sphere.
+ * This code defines a method getRadius in the EllipsoidBase class 
+ * that returns the radius of an ellipsoid 
+ * as a Vec3 object containing the values of radiusA_, radiusB_, and radiusC_.
  *
  * \return The radius of the sphere.
  */

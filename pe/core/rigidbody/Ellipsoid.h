@@ -142,9 +142,11 @@ protected:
    /*!\name Constructors */
    //@{
    explicit Ellipsoid( id_t sid, id_t uid, const Vec3& gpos,
-                    real radius, MaterialID material, bool visible );
-   explicit Ellipsoid( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
-                    real radius, MaterialID material, bool visible, bool fixed );
+                    real a, real b, real c, MaterialID material, bool visible );
+   explicit Ellipsoid( id_t sid, id_t uid, const Vec3& gpos, 
+                       real a, real b, real c,
+                       const Vec3& rpos, const Quat& q,
+                       MaterialID material, bool visible, bool fixed );
    //@}
    //**********************************************************************************************
 
@@ -243,10 +245,11 @@ protected:
 
    //**Ellipsoid setup functions**********************************************************************
    /*! \cond PE_INTERNAL */
-   friend EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real radius,
+   friend EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real a, real b, real c,
                                  MaterialID material, bool visible );
    friend EllipsoidID instantiateEllipsoid( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
-                                      const Quat& q, real radius, MaterialID material,
+                                      const Quat& q, real a, real b, real c,
+                                      MaterialID material,
                                       bool visible, bool fixed, bool reg );
    /*! \endcond */
    //**********************************************************************************************
@@ -410,13 +413,16 @@ inline real Ellipsoid::getDistance( const Vec3& gpos ) const
 //*************************************************************************************************
 /*!\name Ellipsoid setup functions */
 //@{
-inline EllipsoidID createEllipsoid( id_t uid, real x, real y, real z, real radius,
+inline EllipsoidID createEllipsoid( id_t uid, real x, real y, real z,
+                              real a, real b, real c,
                               MaterialID material, bool visible=true );
-       EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real radius,
+       EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real a, real b, real c,
                               MaterialID material, bool visible=true );
        EllipsoidID instantiateEllipsoid( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
-                                   const Quat& q, real radius, MaterialID material,
-                                   bool visible, bool fixed, bool reg=true );
+                                      const Quat& q, real a, real b, real c,
+                                      MaterialID material,
+                                      bool visible, bool fixed, bool reg );
+
 //@}
 //*************************************************************************************************
 
@@ -477,10 +483,11 @@ inline EllipsoidID createEllipsoid( id_t uid, real x, real y, real z, real radiu
  * pe::pe_CREATE_UNION section, this rule is relaxed to the extend that only the final center
  * of mass of the resulting union must be inside the domain of the local process.
  */
-inline EllipsoidID createEllipsoid( id_t uid, real x, real y, real z, real radius,
+inline EllipsoidID createEllipsoid( id_t uid, real x, real y, real z,
+                              real a, real b, real c,
                               MaterialID material, bool visible )
 {
-   return createEllipsoid( uid, Vec3(x,y,z), radius, material, visible );
+   return createEllipsoid( uid, Vec3(x,y,z), a, b, c, material, visible );
 }
 //*************************************************************************************************
 
