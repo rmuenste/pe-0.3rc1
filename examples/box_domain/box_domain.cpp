@@ -306,28 +306,30 @@ int main( int argc, char* argv[] )
    Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
    BodyID s,s1,s2,s3,s4;
 
+   s = createEllipsoid( id++, gpos, radius2, radius2, radius2, elastic );
+   
 
-   if(resume) {
-      for (int i = 0; i < allPositions.size(); ++i) {
-      Vec3 &position = allPositions[i];
-      SphereID sphere = createSphere(id, position, radius2, elastic, true);
-      ++id;      
-      } 
-   }
-   else {
-   s = createSphere( id++, gpos, radius2, elastic );
-//   s->setLinearVel(Vec3(0.0,0, 0.5));
-   gpos[2] += 2. * radius2 + epsilon;
-   s1 = createSphere( id++, gpos, radius2, elastic );
-//   s1->setLinearVel(Vec3(0,0,1.0));
-   gpos[2] += 2. * radius2 + epsilon;
-   std::cout << "Pos: " << gpos << std::endl;
+//   if(resume) {
+//      for (int i = 0; i < allPositions.size(); ++i) {
+//      Vec3 &position = allPositions[i];
+//      SphereID sphere = createSphere(id, position, radius2, elastic, true);
+//      ++id;      
+//      } 
+//   }
+//   else {
+//   s = createSphere( id++, gpos, radius2, elastic );
+////   s->setLinearVel(Vec3(0.0,0, 0.5));
+//   gpos[2] += 2. * radius2 + epsilon;
+//   s1 = createSphere( id++, gpos, radius2, elastic );
+////   s1->setLinearVel(Vec3(0,0,1.0));
+//   gpos[2] += 2. * radius2 + epsilon;
+//   std::cout << "Pos: " << gpos << std::endl;
 //   s2 = createSphere( id++, gpos, radius2, elastic );
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s3 = createSphere( id++, gpos, radius2, elastic );
 //   gpos[2] += 2. * radius2 + epsilon;
 //   s4 = createSphere( id++, gpos, radius2, elastic );
-   }
+//   }
 
 
  

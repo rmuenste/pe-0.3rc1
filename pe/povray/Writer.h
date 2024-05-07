@@ -95,6 +95,7 @@ private:
    //**Declarations for nested structures**********************************************************
    struct Declaration;
    struct SphereData;
+   struct EllipsoidData;
    struct BoxData;
    struct CapsuleData;
    struct CylinderData;
@@ -110,6 +111,7 @@ private:
    typedef Vector<Declaration>        Declarations;       //!< Vector for declared POV-Ray identifiers.
    typedef Vector<LightSource>        LightSources;       //!< Vector of light sources.
    typedef Vector<SphereData>         Spheres;            //!< Vector of textured spheres.
+   typedef Vector<EllipsoidData>      Ellipsoids;         //!< Vector of textured ellipsoids.
    typedef Vector<BoxData>            Boxes;              //!< Vector of textured boxes.
    typedef Vector<CapsuleData>        Capsules;           //!< Vector of textured capsules.
    typedef Vector<CylinderData>       Cylinders;          //!< Vector of textured cylinders.
@@ -203,6 +205,7 @@ private:
    virtual void addBox          ( ConstBoxID           box      );
    virtual void addCapsule      ( ConstCapsuleID       capsule  );
    virtual void addCylinder     ( ConstCylinderID      cylinder );
+   virtual void addEllipsoid    ( ConstEllipsoidID     ellipsoid);
    virtual void addInnerCylinder( ConstInnerCylinderID cylinder );
    virtual void addPlane        ( ConstPlaneID         plane    );
    virtual void addMesh         ( ConstTriangleMeshID  mesh     );
@@ -218,6 +221,7 @@ private:
    virtual void removeBox          ( ConstBoxID           box      );
    virtual void removeCapsule      ( ConstCapsuleID       capsule  );
    virtual void removeCylinder     ( ConstCylinderID      cylinder );
+   virtual void removeEllipsoid    ( ConstEllipsoidID     ellipsoid);
    virtual void removeInnerCylinder( ConstInnerCylinderID cylinder );
    virtual void removePlane        ( ConstPlaneID         plane    );
    virtual void removeMesh         ( ConstTriangleMeshID  mesh     );
@@ -274,6 +278,7 @@ private:
    bool decorations_;           //!< Controls output of camera, lights and background.
    Spheres spheres_;            //!< Registered spheres for the visualization.
    Boxes boxes_;                //!< Registered boxes for the visualization.
+   Ellipsoids ellipsoids_;      //!< Registered boxes for the visualization.
    Capsules capsules_;          //!< Registered capsules for the visualization.
    Cylinders cylinders_;        //!< Registered capsules for the visualization.
    Planes planes_;              //!< Registered planes for the visualization.
@@ -534,6 +539,44 @@ private:
                                        assigned an individual texture. In this case the texture
                                        policy is applied to give the mesh an appearance. */
       ConstTriangleMeshID mesh_;  //!< Handle for the triangle mesh.
+      Texture texture_;           //!< The texture of the triangle mesh.
+      //@}
+      //*******************************************************************************************
+   };
+   /*! \endcond */
+   //**********************************************************************************************
+
+
+   //**Private struct MeshData*********************************************************************
+   /*! \cond PE_INTERNAL */
+   /*!\brief A textured triangle mesh primitive. */
+   struct EllipsoidData
+   {
+    public:
+      //**Constructors*****************************************************************************
+      /*!\name Constructors */
+      //@{
+      explicit inline EllipsoidData( ConstEllipsoidID ellipsoid, const Texture& texture );
+      // No explicitly declared copy constructor.
+      //@}
+      //*******************************************************************************************
+
+      //**Destructor*******************************************************************************
+      // No explicitly declared destructor.
+      //*******************************************************************************************
+
+      //**Copy assignment operator*****************************************************************
+      // No explicitly declared copy assignment operator.
+      //*******************************************************************************************
+
+      //**Member variables*************************************************************************
+      /*!\name Member variables */
+      //@{
+      bool default_;              //!< Default flag.
+                                  /*!< A value of \a true indicates the triangle mesh has not been
+                                       assigned an individual texture. In this case the texture
+                                       policy is applied to give the mesh an appearance. */
+      ConstEllipsoidID mesh_;  //!< Handle for the triangle mesh.
       Texture texture_;           //!< The texture of the triangle mesh.
       //@}
       //*******************************************************************************************

@@ -249,6 +249,21 @@ void Writer::addCylinder( ConstCylinderID /*cylinder*/ )
  * \param cylinder The cylinder to be registered.
  * \return void
  */
+void Writer::addEllipsoid( ConstEllipsoidID /*cylinder*/ )
+{
+   // The Writer is not able to visualize cylinders. Therefore the cylinder doesn't
+   // have to be registered.
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Registering a single cylinder for the OpenDX visualization.
+ *
+ * \param cylinder The cylinder to be registered.
+ * \return void
+ */
 void Writer::addInnerCylinder( ConstInnerCylinderID /*cylinder*/ )
 {
    // The Writer is not able to visualize cylinders. Therefore the cylinder doesn't
@@ -345,6 +360,17 @@ void Writer::removeSphere( ConstSphereID sphere )
 //*************************************************************************************************
 
 
+//*************************************************************************************************
+/*!\brief Removing a single ellipsoid from the OpenDX visualization.
+ *
+ * \param sphere The sphere to be removed.
+ * \return void
+ */
+void Writer::removeEllipsoid( ConstEllipsoidID ellipsoid )
+{
+   return;
+}
+//*************************************************************************************************
 //*************************************************************************************************
 /*!\brief Removing a single box from the OpenDX visualization.
  *

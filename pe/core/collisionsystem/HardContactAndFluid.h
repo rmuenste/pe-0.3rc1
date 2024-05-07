@@ -62,6 +62,7 @@
 #include <pe/core/rigidbody/BodyStorage.h>
 #include <pe/core/rigidbody/BodyCast.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/MPIRigidBodyTrait.h>
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/notifications/NotificationType.h>
@@ -3442,6 +3443,21 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                }
 
                switch( objparam.geomType_ ) {
+                  case ellipsoidType: {
+                     Ellipsoid::Parameters subobjparam;
+                     unmarshal( buffer, subobjparam, false );
+
+                     obj = instantiateEllipsoid(subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), 
+                                                subobjparam.rpos_, subobjparam.q_, 
+                                                subobjparam.radiusA_, subobjparam.radiusB_, subobjparam.radiusC_, 
+                                                subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+
+
+                     obj->setLinearVel( subobjparam.v_ );
+                     obj->setAngularVel( subobjparam.w_ );
+                     obj->setOwner( process->getRank(), *process );
+                     break;
+                  }
                   case sphereType: {
                      Sphere::Parameters subobjparam;
                      unmarshal( buffer, subobjparam, false );

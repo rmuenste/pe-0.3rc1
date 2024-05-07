@@ -50,6 +50,7 @@ Visualization::Spheres        Visualization::spheres_;
 Visualization::Boxes          Visualization::boxes_;
 Visualization::Capsules       Visualization::capsules_;
 Visualization::Cylinders      Visualization::cylinders_;
+Visualization::Ellipsoids     Visualization::ellipsoids_;
 Visualization::InnerCylinders Visualization::innerCylinders_;
 Visualization::Planes         Visualization::planes_;
 Visualization::Meshes         Visualization::meshes_;
@@ -116,6 +117,23 @@ void Visualization::add( ConstSphereID sphere )
 
    for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
       v->addSphere( sphere );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Registration function for a ellipsoid.
+ *
+ * \param sphere The sphere to be registered for visualization.
+ * \return void
+ */
+void Visualization::add( ConstEllipsoidID ellipsoid )
+{
+   ellipsoids_.pushBack( ellipsoid );
+
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->addEllipsoid( ellipsoid );
    }
 }
 //*************************************************************************************************
@@ -279,6 +297,25 @@ void Visualization::remove( ConstSphereID sphere )
 
    for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
       v->removeSphere( sphere );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Deregistration function for a sphere.
+ *
+ * \param sphere The sphere to be deregistered from visualization.
+ * \return void
+ */
+void Visualization::remove( ConstEllipsoidID ellipsoid )
+{
+   Ellipsoids::Iterator pos( std::find( ellipsoids_.begin(), ellipsoids_.end(), ellipsoid ) );
+   pe_INTERNAL_ASSERT( pos != ellipsoids_.end(), "Sphere is not registered for visualization" );
+   ellipsoids_.erase( pos );
+
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->removeEllipsoid( ellipsoid );
    }
 }
 //*************************************************************************************************
@@ -454,6 +491,22 @@ void Visualization::changeVisibility( ConstSphereID sphere )
 {
    for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
       v->changeSphereVisibility( sphere );
+   }
+}
+//*************************************************************************************************
+
+
+
+//*************************************************************************************************
+/*!\brief Signaling the change of the visibility of a sphere primitive.
+ *
+ * \param sphere The changed sphere primitive.
+ * \return void
+ */
+void Visualization::changeVisibility( ConstEllipsoidID ell )
+{
+   for( Viewer::Iterator v=viewer_.begin(); v!=viewer_.end(); ++v ) {
+      v->changeEllipsoidVisibility( ell );
    }
 }
 //*************************************************************************************************
@@ -785,6 +838,17 @@ void Visualization::changeVisibility( ConstSpringID spring )
  * \return void
  */
 void Visualization::changeSphereVisibility( ConstSphereID /*sphere*/ )
+{}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Default implementation of the handle function for visibility changes of spheres.
+ *
+ * \param sphere The changed sphere primitive.
+ * \return void
+ */
+void Visualization::changeEllipsoidVisibility( ConstEllipsoidID /*sphere*/ )
 {}
 //*************************************************************************************************
 

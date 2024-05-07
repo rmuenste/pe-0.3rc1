@@ -34,6 +34,7 @@
 #include <pe/core/rigidbody/Box.h>
 #include <pe/core/rigidbody/Capsule.h>
 #include <pe/core/rigidbody/Cylinder.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/GeomPrimitive.h>
 #include <pe/core/attachable/Gravity.h>
 #include <pe/core/rigidbody/Plane.h>
@@ -226,6 +227,9 @@ inline void marshalDynamically( Buffer& buffer, const RigidBody& obj ) {
    case cylinderType:
       marshal( buffer, static_cast<const Cylinder&>( obj ) );
       break;
+   case ellipsoidType:
+      marshal( buffer, static_cast<const Ellipsoid&>( obj ) );
+      break;
    case planeType:
       marshal( buffer, static_cast<const Plane&>( obj ) );
       break;
@@ -401,6 +405,40 @@ template< typename Buffer >
 inline void unmarshal( Buffer& buffer, Cylinder::Parameters& objparam, bool hasSuperBody ) {
    unmarshal( buffer, static_cast<GeomPrimitive::Parameters&>( objparam ), hasSuperBody );
    buffer >> objparam.radius_ >> objparam.length_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Marshalling a ellipsoid primitive.
+ *
+ * \param buffer The buffer to be filled.
+ * \param obj The object to be marshalled.
+ * \return void
+ */
+template< typename Buffer >
+inline void marshal( Buffer& buffer, const Ellipsoid& obj ) {
+   marshal( buffer, static_cast<const GeomPrimitive&>( obj ) );
+   Vec3 radii = obj.getRadius();
+   buffer << radii[0];
+   buffer << radii[1];
+   buffer << radii[2];
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Unmarshalling a ellipsoid primitive.
+ *
+ * \param buffer The buffer from where to read.
+ * \param objparam The object to be reconstructed.
+ * \param hasSuperBody False if body is not part of a union. Passed on to rigid body unmarshalling.
+ * \return void
+ */
+template< typename Buffer >
+inline void unmarshal( Buffer& buffer, Ellipsoid::Parameters& objparam, bool hasSuperBody ) {
+   unmarshal( buffer, static_cast<GeomPrimitive::Parameters&>( objparam ), hasSuperBody );
+   buffer >> objparam.radiusA_ >> objparam.radiusB_ >> objparam.radiusC_;
 }
 //*************************************************************************************************
 

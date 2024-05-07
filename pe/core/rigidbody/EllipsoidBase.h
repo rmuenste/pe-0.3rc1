@@ -1,6 +1,6 @@
 //=================================================================================================
 /*!
- *  \file pe/core/rigidbody/SphereBase.h
+ *  \file pe/core/rigidbody/EllipsoidBase.h
  *  \brief Base class for the sphere geometry
  *
  *  Copyright (C) 2009 Klaus Iglberger
@@ -21,8 +21,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_SPHEREBASE_H_
-#define _PE_CORE_RIGIDBODY_SPHEREBASE_H_
+#ifndef _PE_CORE_RIGIDBODY_ELLIPSOIDBASE_H_
+#define _PE_CORE_RIGIDBODY_ELLIPSOIDBASE_H_
 
 
 //*************************************************************************************************
@@ -51,25 +51,26 @@ namespace pe {
 /*!\brief Base class for the sphere geometry.
  * \ingroup sphere
  *
- * The SphereBase class represents the base class for the sphere geometry. It provides
+ * The EllipsoidBase class represents the base class for the sphere geometry. It provides
  * the basic functionality of a sphere. For a full description of the sphere geometry,
- * see the Sphere class description.
+ * see the Ellipsoid class description.
  */
-class SphereBase : public GeomPrimitive
+class EllipsoidBase : public GeomPrimitive
 {
 protected:
    //**Constructor*********************************************************************************
    /*!\name Constructor */
    //@{
-   explicit SphereBase( id_t sid, id_t uid, const Vec3& gpos,
-                        real radius, MaterialID material, bool visible );
+   explicit EllipsoidBase( id_t sid, id_t uid, const Vec3& gpos,
+                        real a, real b, real c,
+                        MaterialID material, bool visible );
    //@}
    //**********************************************************************************************
 
    //**Destructor**********************************************************************************
    /*!\name Destructor */
    //@{
-   virtual ~SphereBase() = 0;
+   virtual ~EllipsoidBase() = 0;
    //@}
    //**********************************************************************************************
 
@@ -77,7 +78,7 @@ public:
    //**Get functions*******************************************************************************
    /*!\name Get functions */
    //@{
-   inline real getRadius() const;
+   inline Vec3 getRadius() const;
    inline real getVolume() const;
    //@}
    //**********************************************************************************************
@@ -94,7 +95,7 @@ protected:
    //**Volume, mass and density functions**********************************************************
    /*!\name Volume, mass and density functions */
    //@{
-   static inline real calcVolume( real radius );
+   static inline real calcVolume( real A, real B, real C );
    static inline real calcMass( real radius, real density );
    static inline real calcDensity( real radius, real mass );
    //@}
@@ -111,7 +112,9 @@ protected:
    //**Member variables****************************************************************************
    /*!\name Member variables */
    //@{
-   real radius_;  //!< Radius of the sphere.
+   real radiusA_;  //!< Radius A of the ellipsoid.
+   real radiusB_;  //!< Radius B of the ellipsoid.
+   real radiusC_;  //!< Radius C of the ellipsoid.
                   /*!< The radius is constrained to values larger than 0.0. */
    //@}
    //**********************************************************************************************
@@ -129,12 +132,15 @@ protected:
 
 //*************************************************************************************************
 /*!\brief Returns the radius of the sphere.
+ * This code defines a method getRadius in the EllipsoidBase class 
+ * that returns the radius of an ellipsoid 
+ * as a Vec3 object containing the values of radiusA_, radiusB_, and radiusC_.
  *
  * \return The radius of the sphere.
  */
-inline real SphereBase::getRadius() const
+inline Vec3 EllipsoidBase::getRadius() const
 {
-   return radius_;
+   return Vec3(radiusA_, radiusB_, radiusC_);
 }
 //*************************************************************************************************
 
@@ -144,9 +150,9 @@ inline real SphereBase::getRadius() const
  *
  * \return The radius of the sphere.
  */
-inline real SphereBase::getVolume() const
+inline real EllipsoidBase::getVolume() const
 {
-   return real(4.0)/real(3.0) * M_PI * radius_ * radius_ * radius_;
+   return real(4.0)/real(3.0) * M_PI * radiusA_ * radiusB_ * radiusC_;
 }
 //*************************************************************************************************
 
@@ -163,9 +169,10 @@ inline real SphereBase::getVolume() const
  * \param radius The radius of the sphere.
  * \return The volume of the sphere.
  */
-inline real SphereBase::calcVolume( real radius )
+inline real EllipsoidBase::calcVolume( real A, real B, real C )
 {
-   return real(4.0)/real(3.0) * M_PI * radius * radius * radius;
+   return real(4.0)/real(3.0) * M_PI * A * B * C;
+
 }
 //*************************************************************************************************
 
@@ -177,7 +184,7 @@ inline real SphereBase::calcVolume( real radius )
  * \param density The density of the sphere.
  * \return The total mass of the sphere.
  */
-inline real SphereBase::calcMass( real radius, real density )
+inline real EllipsoidBase::calcMass( real radius, real density )
 {
    return real(4.0)/real(3.0) * M_PI * radius * radius * radius * density;
 }
@@ -191,7 +198,7 @@ inline real SphereBase::calcMass( real radius, real density )
  * \param mass The total mass of the sphere.
  * \return The density of the sphere.
  */
-inline real SphereBase::calcDensity( real radius, real mass )
+inline real EllipsoidBase::calcDensity( real radius, real mass )
 {
    return real(0.75) * mass / ( M_PI * radius * radius * radius );
 }
@@ -216,10 +223,11 @@ inline real SphereBase::calcDensity( real radius, real mass )
  * all dimensions by pe::contactThreshold to guarantee that rigid bodies in close proximity of
  * the sphere are also considered during the collision detection process.
  */
-inline void SphereBase::calcBoundingBox()
+inline void EllipsoidBase::calcBoundingBox()
 {
-   //const real length( radius_ + contactThreshold + lubricationThreshold );
-   const real length( radius_ + contactThreshold );
+   real rad = std::max(std::max(radiusA_, radiusB_), radiusC_);
+   const real length( rad + contactThreshold);
+   //const real length( radius_ + contactThreshold );
 
    aabb_[0] = gpos_[0] - length;
    aabb_[1] = gpos_[1] - length;
@@ -239,9 +247,11 @@ inline void SphereBase::calcBoundingBox()
  *
  * \return void
  */
-inline void SphereBase::calcInertia()
+inline void EllipsoidBase::calcInertia()
 {
-   I_[0] = I_[4] = I_[8] = real(0.4) * mass_ * radius_ * radius_;
+   I_[0] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusC_ * radiusC_);
+   I_[4] = real(0.2) * mass_ *(radiusA_ * radiusA_ + radiusC_ * radiusC_);
+   I_[8] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
    Iinv_ = I_.getInverse();
 }
 //*************************************************************************************************
@@ -253,11 +263,11 @@ inline void SphereBase::calcInertia()
  * \param d The normalized search direction in world-frame coordinates.
  * \return The support point in world-frame coordinates in direction a\ d.
  */
-inline Vec3 SphereBase::support( const Vec3& d ) const
+inline Vec3 EllipsoidBase::support( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised" );
-   return gpos_ + radius_*d;
+   return gpos_ + radiusA_*d;
 }
 //*************************************************************************************************
 
@@ -269,11 +279,11 @@ inline Vec3 SphereBase::support( const Vec3& d ) const
  * \return The support point in world-frame coordinates in direction a\ d extended by a vector in
  *         direction \a d of length \a pe::contactThreshold.
  */
-inline Vec3 SphereBase::supportContactThreshold( const Vec3& d ) const
+inline Vec3 EllipsoidBase::supportContactThreshold( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised" );
-   return gpos_ + d*(radius_ + contactThreshold);
+   return gpos_ + d*(radiusA_ + contactThreshold);
 }
 //*************************************************************************************************
 

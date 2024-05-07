@@ -386,6 +386,19 @@ void Writer::addSphere( ConstSphereID sphere )
 
 
 //*************************************************************************************************
+/*!\brief Registering a single sphere for the POV-Ray visualization.
+ *
+ * \param sphere The sphere to be registered.
+ * \return void
+ */
+void Writer::addEllipsoid( ConstEllipsoidID ell )
+{
+   return;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Registering a single box for the VTK visualization.
  *
  * \param box The box to be registered.
@@ -528,6 +541,19 @@ void Writer::removeSphere( ConstSphereID sphere )
       }
    }
    pe_INTERNAL_ASSERT( false, "Sphere is not registered for the VTK visualization" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Removing a single sphere from the POV-Ray visualization.
+ *
+ * \param sphere The sphere to be removed.
+ * \return void
+ */
+void Writer::removeEllipsoid( ConstEllipsoidID ell )
+{
+   return;
 }
 //*************************************************************************************************
 
