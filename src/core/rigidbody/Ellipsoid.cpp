@@ -939,8 +939,9 @@ bool Ellipsoid::containsRelPoint( const Vec3& rpos ) const
 bool Ellipsoid::containsPoint( real px, real py, real pz ) const
 {
    const Vec3 gpos( px, py, pz );
+   Vec3 rp = gpos - gpos_;
 
-   if( (px * px / radiusA_ * radiusA_ + py * py / radiusB_ * radiusB_ + pz * pz / radiusC_ * radiusC_) <= 1.0) {
+   if( (rp[0] * rp[0] / radiusA_ * radiusA_ + rp[1] * rp[1] / radiusB_ * radiusB_ + rp[2] * rp[2] / radiusC_ * radiusC_) <= 1.0) {
       return true;
    }
    else {
@@ -962,8 +963,10 @@ bool Ellipsoid::containsPoint( const Vec3& gpos ) const
    real px = gpos[0];
    real py = gpos[1];
    real pz = gpos[2];
+   Vec3 rp = gpos - gpos_;
 
-   if( (px * px / radiusA_ * radiusA_ + py * py / radiusB_ * radiusB_ + pz * pz / radiusC_ * radiusC_) <= 1.0) {
+   //if( (px * px / radiusA_ * radiusA_ + py * py / radiusB_ * radiusB_ + pz * pz / radiusC_ * radiusC_) <= 1.0) {
+   if( (rp[0] * rp[0] / radiusA_ * radiusA_ + rp[1] * rp[1] / radiusB_ * radiusB_ + rp[2] * rp[2] / radiusC_ * radiusC_) <= 1.0) {
       return true;
    }
    else {
