@@ -182,7 +182,8 @@ void setupCreep(MPI_Comm ex0) {
   if(world->ownsPoint(ellipsoidPos)) {
 
     std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << std::endl;
-    CapsuleID cap = createCapsule(++idx, ellipsoidPos, 0.0625, 0.125, elastic);
+    EllipsoidID ell = createEllipsoid(++idx, ellipsoidPos, 0.0625, 0.0625, 0.125, elastic);
+//    CapsuleID cap = createCapsule(++idx, ellipsoidPos, 0.0625, 0.125, elastic);
 //    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,
 //                                   elastic, true, true, Vec3(1.0, 1.0, 1.0),
 //                                   false, false);

@@ -3447,10 +3447,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      Ellipsoid::Parameters subobjparam;
                      unmarshal( buffer, subobjparam, false );
 
-                     obj = instantiateEllipsoid(subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), 
-                                                subobjparam.rpos_, subobjparam.q_, 
-                                                subobjparam.radiusA_, subobjparam.radiusB_, subobjparam.radiusC_, 
-                                                subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+                     obj = instantiateEllipsoid(subobjparam.sid_, subobjparam.uid_, 
+                           subobjparam.gpos_ - process->getOffset(), 
+                           subobjparam.rpos_, subobjparam.q_,
+                           subobjparam.radiusA_, subobjparam.radiusB_, subobjparam.radiusC_,
+                           subobjparam.material_, subobjparam.visible_, 
+                           subobjparam.fixed_, false );
 
 
                      obj->setLinearVel( subobjparam.v_ );
