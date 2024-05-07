@@ -37,10 +37,12 @@ void setupCreep(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  const real L( 0.1 );
+  const real L( 2.0 );
+  const real LY( 1.0 );
+  const real LZ( 0.05 );
   const real dx( L/processesX );
-  const real dy( L/processesY );
-  const real dz( L/processesZ );
+  const real dy( LY/processesY );
+  const real dz( LZ/processesZ );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -56,7 +58,8 @@ void setupCreep(MPI_Comm ex0) {
 
   // Computing the Cartesian coordinates of the neighboring processes
   int dims   [] = { processesX, processesY, processesZ };
-  int periods[] = { true, true, false };
+  //int periods[] = { true, true, false };
+  int periods[] = { false, false, false };
   int reorder   = false;
 
   int rank;           // Rank of the neighboring process
@@ -104,19 +107,22 @@ void setupCreep(MPI_Comm ex0) {
 
 //===========================================================================================================
 
-  real bx = 0.0;
-  real by = 0.0;
+//  real bx = 0.0;
+//  real by = 0.0;
+//  real bz = 0.0;
+
+  real bx = -1.0;
+  real by = -0.5;
   real bz = 0.0;
 
   // Size of the domain
   const real lx( L );
-  const real ly( L );
-  const real lz( L );
+  const real ly( LY);
+  const real lz( LZ);
 
-  decomposePeriodic3D_XY(center, bx, by, bz, 
-                                 dx, dy, dz, 
-                                 lx, ly, lz, 
-                                 px, py, pz);
+  decomposeDomain(center, bx, by, bz, 
+                   dx, dy, dz, 
+                   px, py, pz);
 
 //===========================================================================================================
 
@@ -153,7 +159,7 @@ void setupCreep(MPI_Comm ex0) {
   // Here is how to create some random positions on a grid up to a certain
   // volume fraction.
   //======================================================================================== 
-  bool resume               = true;
+  bool resume               = false;
   real epsilon              = 2e-4;
   real targetVolumeFraction = 0.35;
   real radius2              = 0.005 - epsilon;
@@ -167,25 +173,32 @@ void setupCreep(MPI_Comm ex0) {
   Vec3 gpos2(0.05 , 0.05, gpos[2]);
 
   //=========================================================================================  
-  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
+  Vec3 ellipsoidPos = Vec3(0.0 * L, 0.0 * L, 0.025); 
   TriangleMeshID ellipsoid;
+  CapsuleID cap;
 
+  if(!resume) {
   std::string fileName = std::string("ellipsoid.obj");
   if(world->ownsPoint(ellipsoidPos)) {
 
     std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << std::endl;
-    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,
-                                   elastic, true, true, Vec3(1.0, 1.0, 1.0),
-                                   false, false);
-    Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
-    ellipsoid->setOrientation(q);
+    CapsuleID cap = createCapsule(++idx, ellipsoidPos, 0.0625, 0.125, elastic);
+//    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,
+//                                   elastic, true, true, Vec3(1.0, 1.0, 1.0),
+//                                   false, false);
+//    Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
+//    ellipsoid->setOrientation(q);
 
     // Is this is local coordinates?
-    ellipsoid->setAngularVel(Vec3(0, 0, 5));
+    //ellipsoid->setAngularVel(Vec3(0, 0, 5));
 
-    std::cout << ellipsoid->getInertia() << std::endl;
-    std::cout << ellipsoid->getBodyInertia() << std::endl;
-    std::cout << ellipsoid->getMass() << std::endl;
+//    std::cout << ellipsoid->getInertia() << std::endl;
+//    std::cout << ellipsoid->getBodyInertia() << std::endl;
+//    std::cout << ellipsoid->getMass() << std::endl;
+
+//    std::cout << ellipsoid->getInertia() << std::endl;
+//    std::cout << ellipsoid->getBodyInertia() << std::endl;
+//    std::cout << ellipsoid->getMass() << std::endl;
 
     //Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
     //ellipsoid->setOrientation(q);
@@ -200,21 +213,21 @@ void setupCreep(MPI_Comm ex0) {
     //}
 
   }
+  }
+  else {
+   //checkpointer.read( "../start.1" );
+  }
   
   //=========================================================================================
   
-  BodyID botPlane; 
-  BodyID topPlane;
-
-  pe_GLOBAL_SECTION
-  {
-     createPlane( 99999, 0.0, 0.0, 1.0, 0.0, elastic, false ); // bottom border
-     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, elastic, false ); // top border
-  }
-
-  pe_EXCLUSIVE_SECTION( 0 ) {
-     std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
-  }
+//  BodyID botPlane; 
+//  BodyID topPlane;
+//
+//  pe_GLOBAL_SECTION
+//  {
+//     createPlane( 99999, 0.0, 0.0, 1.0, 0.0, elastic, false ); // bottom border
+//     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, elastic, false ); // top border
+//  }
 
   // Synchronization of the MPI processes
   world->synchronize();
