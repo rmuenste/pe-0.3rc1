@@ -61,6 +61,7 @@
 #include <pe/core/rigidbody/BodyStorage.h>
 #include <pe/core/rigidbody/BodyCast.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/MPIRigidBodyTrait.h>
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/notifications/NotificationType.h>

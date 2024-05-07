@@ -78,6 +78,7 @@
 #include <pe/core/rigidbody/PlaneVector.h>
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/SphereVector.h>
 #include <pe/core/rigidbody/SuperBody.h>
 #include <pe/core/rigidbody/TriangleMesh.h>

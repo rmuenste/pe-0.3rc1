@@ -38,6 +38,7 @@
 #include <stdexcept>
 #include <pe/core/MPI.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/math/Vector3.h>
 #include <pe/opendx/Writer.h>
 #include <pe/system/Precision.h>

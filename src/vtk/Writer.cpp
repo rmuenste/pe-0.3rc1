@@ -42,6 +42,7 @@
 #include <boost/version.hpp>
 #include <pe/core/MPI.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/Box.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/Serialization.h>

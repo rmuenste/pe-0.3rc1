@@ -36,6 +36,7 @@
 #include <pe/core/rigidbody/Box.h>
 #include <pe/core/rigidbody/Capsule.h>
 #include <pe/core/rigidbody/Cylinder.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/attachable/Gravity.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPIEntity.h>

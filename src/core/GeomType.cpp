@@ -36,6 +36,7 @@
 #include <pe/core/GeomType.h>
 #include <pe/core/MPI.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/Box.h>
 #include <pe/core/rigidbody/Capsule.h>
 #include <pe/core/rigidbody/Cylinder.h>
@@ -62,6 +63,7 @@ std::ostream& operator<<( std::ostream& os, GeomType type )
       case boxType:          os << "box";      break;
       case capsuleType:      os << "capsule";  break;
       case cylinderType:     os << "cylinder"; break;
+      case ellipsoidType:    os << "ellipsoid";break;
       case planeType:        os << "plane";    break;
       case triangleMeshType: os << "mesh";     break;
       case unionType:        os << "union";    break;
@@ -83,7 +85,18 @@ GeomType geomType<Sphere>() {
    return sphereType;
 }
 //*************************************************************************************************
+ 
 
+//*************************************************************************************************
+/*!\brief Returns the geometry type of an ellipsoid.
+ * \return The geometry type of an ellipsoid.
+ */
+template<>
+GeomType geomType<Ellipsoid>() {
+   return ellipsoidType;
+}
+//*************************************************************************************************
+ 
 
 //*************************************************************************************************
 /*!\brief Returns the geometry type of a box.

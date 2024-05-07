@@ -37,6 +37,7 @@
 #include <pe/core/rigidbody/Box.h>
 #include <pe/core/rigidbody/Capsule.h>
 #include <pe/core/rigidbody/Cylinder.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/Sphere.h>
 #include <pe/core/rigidbody/Union.h>
 #include <pe/core/attachable/Spring.h>

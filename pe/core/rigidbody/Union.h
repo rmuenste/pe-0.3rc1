@@ -34,6 +34,7 @@
 #include <pe/core/rigidbody/Capsule.h>
 #include <pe/core/Configuration.h>
 #include <pe/core/rigidbody/Cylinder.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/ExclusiveSection.h>
 #include <pe/core/Link.h>
 #include <pe/core/rigidbody/Plane.h>

@@ -34,6 +34,7 @@
 #include <pe/core/rigidbody/Cylinder.h>
 #include <pe/core/rigidbody/Plane.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/Union.h>
 #include <pe/core/Types.h>
 #include <pe/math/Functions.h>

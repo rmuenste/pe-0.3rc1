@@ -47,6 +47,7 @@
 #include <pe/core/rigidbody/Plane.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/rigidbody/Union.h>
 #include <pe/core/GeomTools.h>
 #include <pe/core/Thresholds.h>
