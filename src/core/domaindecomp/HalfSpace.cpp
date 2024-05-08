@@ -277,6 +277,9 @@ bool HalfSpace::intersectsWith( ConstBodyID b ) const
       case unionType:
          return HalfSpace::intersectsWith( static_body_cast<const Union>( b ) );
          break;
+      case ellipsoidType:
+         return HalfSpace::intersectsWith( static_body_cast<const Sphere>( b ) );
+         break;
       default:
          std::ostringstream oss;
          oss << "Unknown body type (" << b->getType() << ")!";

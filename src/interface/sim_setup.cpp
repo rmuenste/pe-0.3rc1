@@ -362,7 +362,10 @@ void stepSimulation() {
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType || body->getType() == capsuleType || body->getType() == triangleMeshType) {
+    if(body->getType() == sphereType || 
+       body->getType() == capsuleType || 
+       body->getType() == ellipsoidType || 
+       body->getType() == triangleMeshType) {
       Vec3 vel = body->getLinearVel();
       Vec3 ang = body->getAngularVel();
       real v = vel.length();

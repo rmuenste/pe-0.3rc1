@@ -63,7 +63,7 @@ namespace pe {
  */
 EllipsoidBase::EllipsoidBase( id_t sid, id_t uid, const Vec3& gpos,
                         real a, real b, real c, MaterialID material, bool visible )
-   : GeomPrimitive( sphereType, true, visible, sid, uid, material )  // Initializing the base object
+   : GeomPrimitive( ellipsoidType, true, visible, sid, uid, material )  // Initializing the base object
    , radiusA_( a )                                               // Radius of the sphere
    , radiusB_( b )                                               // Radius of the sphere
    , radiusC_( c )                                               // Radius of the sphere

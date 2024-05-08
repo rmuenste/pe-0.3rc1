@@ -675,7 +675,6 @@ void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, 
      HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
      HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
      HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz ) ) ) );
-     std::cout << MPISettings::rank() << ")" << bx+center[0]*dx  << std::endl;
 
   // Connecting the west neighbor
   if( west[0] >= 0 ) {

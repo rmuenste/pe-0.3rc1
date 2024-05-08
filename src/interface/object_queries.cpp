@@ -116,6 +116,10 @@ void getParticlesIndexMap(int *idxMap) {
       idxMap[count] = i;
       count++;
     }
+    else if(body->getType() == ellipsoidType) {
+      idxMap[count] = i;
+      count++;
+    }
     else if(body->getType() == triangleMeshType) {
       idxMap[count] = i;
       count++;
@@ -149,6 +153,11 @@ void getRemoteParticlesIndexMap(int *idxMap) {
       count++;
     }
     else if(body->getType() == capsuleType) {
+      idxMap[count] = i;
+//      std::cout << " " << i << " " << body->getSystemID();
+      count++;
+    }
+    else if(body->getType() == ellipsoidType) {
       idxMap[count] = i;
 //      std::cout << " " << i << " " << body->getSystemID();
       count++;
@@ -345,6 +354,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         return true;
       }
     }
+    else if(body->getType() == ellipsoidType) {
+      if(static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
     else if(body->getType() == triangleMeshType) {
       if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
@@ -374,6 +391,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
+    else if(body->getType() == ellipsoidType) {
+      if(static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
         int val = bytes[0] + 1;
         *inpr = val;
@@ -541,6 +566,9 @@ int getNumParts() {
       numBodies++;
     }
     else if(body->getType() == triangleMeshType) {
+      numBodies++;
+    }
+    else if(body->getType() == ellipsoidType) {
       numBodies++;
     }
   }
@@ -1091,14 +1119,6 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     particle->time = -1.0;
     
     uint64toByteArray(body->getSystemID(), particle->bytes); 
-//    if(rank==3) {
-//      std::cout << rank <<") sys=" << body->getSystemID() << " -> ";
-//      for( int i = 0; i < 8; ++i ) {
-//        std::cout << int(particle->bytes[i]) << " ";
-//      }
-//      std::cout << std::endl;
-//    }
-
   }
   else {
     unsigned int i(0);
