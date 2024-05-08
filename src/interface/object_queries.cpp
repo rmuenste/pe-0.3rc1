@@ -70,6 +70,14 @@ void synchronizeForces() {
       std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
       std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
     }
+    if (body->getType() == ellipsoidType) {
+      Vec3 tau = body->getTorque();
+      tau[0] = 0;
+      tau[1] = 0;
+      body->setTorque(tau);
+      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
+      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
+    }
     body->applyFluidForces(stepsize);
     if(body->getType() == triangleMeshType) {
       std::cout << "Omega_a: "  <<  body->getAngularVel().toString() << std::endl;

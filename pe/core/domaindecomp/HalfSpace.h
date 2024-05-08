@@ -109,6 +109,7 @@ public:
    virtual bool intersectsWith( ConstBoxID          b   ) const;
    virtual bool intersectsWith( ConstCapsuleID      c   ) const;
    virtual bool intersectsWith( ConstCylinderID     c   ) const;
+   virtual bool intersectsWith( ConstEllipsoidID    e   ) const;
    virtual bool intersectsWith( ConstTriangleMeshID obj ) const;
    virtual bool intersectsWith( ConstUnionID        u   ) const;
    virtual bool containsPoint        ( const Vec3& gpos ) const;

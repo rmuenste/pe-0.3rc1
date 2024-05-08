@@ -225,16 +225,42 @@ inline real EllipsoidBase::calcDensity( real radius, real mass )
  */
 inline void EllipsoidBase::calcBoundingBox()
 {
-   real rad = std::max(std::max(radiusA_, radiusB_), radiusC_);
-   const real length( rad + contactThreshold);
-   //const real length( radius_ + contactThreshold );
 
-   aabb_[0] = gpos_[0] - length;
-   aabb_[1] = gpos_[1] - length;
-   aabb_[2] = gpos_[2] - length;
-   aabb_[3] = gpos_[0] + length;
-   aabb_[4] = gpos_[1] + length;
-   aabb_[5] = gpos_[2] + length;
+   // Create the axis-aligned bounding box in body frame
+   Vec3 aabb[6];
+   aabb[0] = Vec3(radiusA_ + contactThreshold, 0, 0);
+   aabb[1] = Vec3(0, radiusB_ + contactThreshold, 0);
+   aabb[2] = Vec3(0, 0, radiusC_ + contactThreshold);
+   aabb[3] = Vec3(radiusA_ + contactThreshold, 0, 0);
+   aabb[4] = Vec3(0, radiusB_ + contactThreshold, 0);
+   aabb[5] = Vec3(0, 0, radiusC_ + contactThreshold);
+
+   real minX = std::numeric_limits<real>::max();
+   real minY = std::numeric_limits<real>::max();
+   real minZ = std::numeric_limits<real>::max();
+   real maxX = std::numeric_limits<real>::min();
+   real maxY = std::numeric_limits<real>::min();
+   real maxZ = std::numeric_limits<real>::min();
+
+   // Transform the axis-aligned bounding box to WF
+   for(int i(0); i < 6; ++i) {
+      Vec3 v( aabb[i] );
+      v = gpos_ + (R_ * v );
+      if(v[0] < minX) {minX = v[0];}
+      if(v[1] < minY) {minY = v[1];}
+      if(v[2] < minZ) {minZ = v[2];}
+
+      if(v[0] > maxX) {maxX = v[0];}
+      if(v[1] > maxY) {maxY = v[1];}
+      if(v[2] > maxZ) {maxZ = v[2];}
+   }
+
+   aabb_[0] = minX;
+   aabb_[1] = minY;
+   aabb_[2] = minZ;
+   aabb_[3] = maxX;
+   aabb_[4] = maxY;
+   aabb_[5] = maxZ;
 
    pe_INTERNAL_ASSERT( aabb_.isValid()        , "Invalid bounding box detected" );
    pe_INTERNAL_ASSERT( aabb_.contains( gpos_ ), "Invalid bounding box detected" );

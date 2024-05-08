@@ -310,6 +310,26 @@ bool HalfSpace::intersectsWith( ConstSphereID s ) const
 
 
 //*************************************************************************************************
+/*!\brief Returns whether the given sphere intersects with the half space.
+ *
+ * \param s The sphere to be tested.
+ * \return \a true if the sphere intersects with the half space, \a false if not.
+ *
+ * This function tests whether the given sphere is partially contained in the half space.
+ * In case the sphere is partially contained in the half space the function returns \a true,
+ * otherwise it returns \a false.
+ */
+bool HalfSpace::intersectsWith( ConstEllipsoidID e ) const
+{
+   Vec3 radii = e->getRadius();
+   real rad = std::max( radii[0], std::max( radii[1], radii[2] ) );
+   if( trans(normal_) * e->getPosition() - d_ < -( rad + dx_ ) )
+   return false;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Returns whether the given box intersects with the half space.
  *
  * \param b The box to be tested.
