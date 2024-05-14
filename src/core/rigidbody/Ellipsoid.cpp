@@ -48,6 +48,7 @@
 #include <pe/core/rigidbody/UnionSection.h>
 #include <pe/core/Visualization.h>
 #include <pe/math/Matrix3x3.h>
+#include <pe/math/RotationMatrix.h>
 #include <pe/math/Quaternion.h>
 #include <pe/system/VerboseMode.h>
 #include <pe/util/ColorMacros.h>
@@ -939,7 +940,7 @@ bool Ellipsoid::containsRelPoint( const Vec3& rpos ) const
 bool Ellipsoid::containsPoint( real px, real py, real pz ) const
 {
    const Vec3 gpos( px, py, pz );
-   Vec3 rp = gpos - gpos_;
+   Vec3 rp = trans(R_) * ( gpos - gpos_ );
 
    if((  (rp[0] * rp[0]) / (radiusA_ * radiusA_) + (rp[1] * rp[1]) / (radiusB_ * radiusB_) + (rp[2] * rp[2]) / (radiusC_ * radiusC_)) <= 1.0) {
       return true;
@@ -960,10 +961,7 @@ bool Ellipsoid::containsPoint( real px, real py, real pz ) const
 bool Ellipsoid::containsPoint( const Vec3& gpos ) const
 {
 
-   real px = gpos[0];
-   real py = gpos[1];
-   real pz = gpos[2];
-   Vec3 rp = gpos - gpos_;
+   Vec3 rp = trans(R_) * ( gpos - gpos_ );
 
    if((  (rp[0] * rp[0]) / (radiusA_ * radiusA_) + (rp[1] * rp[1]) / (radiusB_ * radiusB_) + (rp[2] * rp[2]) / (radiusC_ * radiusC_)) <= 1.0) {
       return true;
