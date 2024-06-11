@@ -303,11 +303,30 @@ int main( int argc, char* argv[] )
    allPositions = generateRandomPositions(LX, 2.0 * radius2, targetVolumeFraction, epsilon); 
    numPositions = allPositions.size();
 
-   Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
+   //Vec3 gpos (LX * 0.5 , LY * 0.5, radius2 + epsilon);
    BodyID s,s1,s2,s3,s4;
 
-   s = createEllipsoid( id++, gpos, radius2, radius2, radius2, elastic );
+   Vec3 gpos (0, 0, 0);
+   Vec3 spherePos (0, 0, -0.5);
+   real sphereRad = 1.0;
+   s  = createEllipsoid( id++, gpos, 2.0 * sphereRad, sphereRad, sphereRad, elastic );
+   s->rotate( Vec3(0, 0.5 * M_PI, 0) );
+   s1 = createSphere( id++, spherePos, sphereRad, elastic );
    
+   HalfSpace h = HalfSpace( Vec3(0,0,1), 1.0);
+   if(h.intersectsWith( s1 )) {
+      std::cout << "Sphere intersects with the halfspace" << std::endl;
+   } else {
+      std::cout << "Sphere does not intersect with the halfspace" << std::endl;
+   }
+
+   if(h.intersectsWith( s )) {
+      std::cout << "Ellipsoid intersects with the halfspace" << std::endl;
+   } else {
+      std::cout << "Ellipsoid does not intersect with the halfspace" << std::endl;
+   }
+
+   return 0;
 
 //   if(resume) {
 //      for (int i = 0; i < allPositions.size(); ++i) {

@@ -48,6 +48,7 @@
 #include <pe/core/Thresholds.h>
 #include <pe/core/rigidbody/Union.h>
 #include <pe/math/Functions.h>
+#include <pe/math/RotationMatrix.h>
 #include <pe/math/shims/Square.h>
 #include <pe/util/Logging.h>
 
@@ -279,7 +280,7 @@ bool HalfSpace::intersectsWith( ConstBodyID b ) const
          return HalfSpace::intersectsWith( static_body_cast<const Union>( b ) );
          break;
       case ellipsoidType:
-         return HalfSpace::intersectsWith( static_body_cast<const Sphere>( b ) );
+         return HalfSpace::intersectsWith( static_body_cast<const Ellipsoid>( b ) );
          break;
       default:
          std::ostringstream oss;
@@ -303,9 +304,14 @@ bool HalfSpace::intersectsWith( ConstBodyID b ) const
  */
 bool HalfSpace::intersectsWith( ConstSphereID s ) const
 {
-   if( trans(normal_) * s->getPosition() - d_ < -( s->getRadius() + dx_ ) )
-      return false;
-   else return true;
+   // If the term trans(normal_) * s->getPosition() - d_ 
+   // is smaller than -( s->getRadius() + dx_ ), then the sphere is fully on the negative side of the half space.
+   if( trans(normal_) * s->getPosition() - d_ < -( s->getRadius() + dx_ ) ) {
+     return false;
+   }
+   else {
+     return true;
+   }
 }
 //*************************************************************************************************
 
@@ -323,9 +329,48 @@ bool HalfSpace::intersectsWith( ConstSphereID s ) const
 bool HalfSpace::intersectsWith( ConstEllipsoidID e ) const
 {
    Vec3 radii = e->getRadius();
+   const Vec3& pos( e->getPosition() );
+   const Vec3& l = radii;
+   const Rot3& R = e->getRotation();
+
+   // Surrounding Sphere Version
+   /*
    real rad = std::max( radii[0], std::max( radii[1], radii[2] ) );
-   if( trans(normal_) * e->getPosition() - d_ < -( rad + dx_ ) )
-   return false;
+
+   real distCenter = trans(normal_) * e->getPosition() - d_;
+   if( trans(normal_) * e->getPosition() - d_ < -( rad + dx_ ) ) {
+     std::cout << "Distance to center: " << distCenter << std::endl;
+   }
+   else {
+     std::cout << "Distance to center: " << distCenter << std::endl;
+   }
+   */
+
+   // Bounding Box Version
+   // Projection of the box side lengths on the plane's normal vector.
+   const real px( std::fabs( normal_[0]*R[0]+normal_[1]*R[3]+normal_[2]*R[6] )*l[0] );
+   const real py( std::fabs( normal_[0]*R[1]+normal_[1]*R[4]+normal_[2]*R[7] )*l[1] );
+   const real pz( std::fabs( normal_[0]*R[2]+normal_[1]*R[5]+normal_[2]*R[8] )*l[2] );
+
+   if( trans(normal_)*pos - d_ < -( real(0.5)*( px+py+pz ) + dx_ ) )
+      return false;
+   else return true;
+
+   // Ellipsoid Version
+   /*
+   Vec3 origin_bf = trans(R) * ( -e->getPosition() );
+   Vec3 normal_bf = trans(R) * normal_;
+
+   real d1_bf = trans(normal_bf) *  (-origin_bf);
+   Vec3 parallel = origin_bf +  (normal_bf) * (normal_bf * d1_bf);
+   real dist = d_ - d1_bf;
+   real distToSurface = std::sqrt(radii[0]*radii[0] * normal_bf[0]*normal_bf[0] + 
+                                  radii[1]*radii[1] * normal_bf[1]*normal_bf[1] + 
+                                  radii[2]*radii[2] * normal_bf[2]*normal_bf[2]);
+   std::cout << "Distance to plane: " << dist << " d_: " << d_ << std::endl;
+   std::cout << "Directional " << normal_bf << " distance to surface in: " << distToSurface << " d_ - distToSurface: " << std::abs(d_) - std::abs(distToSurface) << std::endl;
+   return true;
+   */
 }
 //*************************************************************************************************
 
