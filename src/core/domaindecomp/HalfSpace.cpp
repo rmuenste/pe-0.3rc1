@@ -49,6 +49,7 @@
 #include <pe/core/rigidbody/Union.h>
 #include <pe/math/Functions.h>
 #include <pe/math/shims/Square.h>
+#include <pe/util/Logging.h>
 
 
 namespace pe {
@@ -399,6 +400,7 @@ bool HalfSpace::intersectsWith( ConstCylinderID c ) const
 {
    using std::sqrt;
 
+
    const real  r ( c->getRadius() );
    const real  hl( real(0.5) * c->getLength() );
    const Rot3& R ( c->getRotation() );
@@ -410,9 +412,38 @@ bool HalfSpace::intersectsWith( ConstCylinderID c ) const
    const real dist2( std::fabs( trans(normal_) * c_up ) );   // Projection of the cylinder length
    const real dist3( (r/hl) * sqrt( sq(hl) - sq(dist2) ) );  // Projection of the cylinder radius
 
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "Cylinder top point: ";
+      log << c_up << " ";
+      log << "Proj position: ";
+      log << dist1 << " ";
+      log << "Proj length: ";
+      log << dist2 << " ";
+      log << "Proj radius: ";
+      log << dist3 << " ";
+      log << "HS d: ";
+      log << d_ << " ";
+      log << "HS n: ";
+      log << normal_ << " ";
+      log << dist1 - d_ << " < " << -(dist2 - dist3 + dx_) << " ";
+      log << "]\n";
+   }
+
    if( dist1 - d_ < -( dist2 - dist3 + dx_ ) )
+   {
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "No Intersection!";
+      log << "]\n";
+   }
       return false;
-   else return true;
+   }
+   else {
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "Intersection!";
+      log << "]\n";
+   }
+      return true;
+   }
 }
 //*************************************************************************************************
 

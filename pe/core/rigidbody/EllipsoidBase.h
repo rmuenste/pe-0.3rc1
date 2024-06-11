@@ -80,6 +80,7 @@ public:
    //@{
    inline Vec3 getRadius() const;
    inline real getVolume() const;
+   inline real getMass() const;
    //@}
    //**********************************************************************************************
 
@@ -96,7 +97,7 @@ protected:
    /*!\name Volume, mass and density functions */
    //@{
    static inline real calcVolume( real A, real B, real C );
-   static inline real calcMass( real radius, real density );
+   static inline real calcMass( real A, real B, real C, real density );
    static inline real calcDensity( real radius, real mass );
    //@}
    //**********************************************************************************************
@@ -152,7 +153,20 @@ inline Vec3 EllipsoidBase::getRadius() const
  */
 inline real EllipsoidBase::getVolume() const
 {
-   return real(4.0)/real(3.0) * M_PI * radiusA_ * radiusB_ * radiusC_;
+   //return real(4.0)/real(3.0) * M_PI * radiusA_ * radiusB_ * radiusC_;
+   return M_PI * radiusA_ * radiusB_ * radiusC_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the mass of the ellipsoid.
+ *
+ * \return The radius of the sphere.
+ */
+inline real EllipsoidBase::getMass() const
+{
+   return mass_;
 }
 //*************************************************************************************************
 
@@ -171,7 +185,8 @@ inline real EllipsoidBase::getVolume() const
  */
 inline real EllipsoidBase::calcVolume( real A, real B, real C )
 {
-   return real(4.0)/real(3.0) * M_PI * A * B * C;
+   //return real(4.0)/real(3.0) * M_PI * A * B * C;
+   return M_PI * A * B * C;
 
 }
 //*************************************************************************************************
@@ -184,9 +199,10 @@ inline real EllipsoidBase::calcVolume( real A, real B, real C )
  * \param density The density of the sphere.
  * \return The total mass of the sphere.
  */
-inline real EllipsoidBase::calcMass( real radius, real density )
+inline real EllipsoidBase::calcMass( real A, real B, real C, real density )
 {
-   return real(4.0)/real(3.0) * M_PI * radius * radius * radius * density;
+   //return real(4.0)/real(3.0) * M_PI * radius * radius * radius * density;
+   return M_PI * A * B * C * density;
 }
 //*************************************************************************************************
 
@@ -275,9 +291,12 @@ inline void EllipsoidBase::calcBoundingBox()
  */
 inline void EllipsoidBase::calcInertia()
 {
+//   I_[0] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusC_ * radiusC_);
+//   I_[4] = real(0.2) * mass_ *(radiusA_ * radiusA_ + radiusC_ * radiusC_);
+//   I_[8] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
    I_[0] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusC_ * radiusC_);
    I_[4] = real(0.2) * mass_ *(radiusA_ * radiusA_ + radiusC_ * radiusC_);
-   I_[8] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
+   I_[8] = real(0.25) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
    Iinv_ = I_.getInverse();
 }
 //*************************************************************************************************

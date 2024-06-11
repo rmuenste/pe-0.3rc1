@@ -80,7 +80,7 @@ EllipsoidBase::EllipsoidBase( id_t sid, id_t uid, const Vec3& gpos,
    gpos_ = gpos;
 
    // Calculating the sphere mass
-   mass_ = calcMass( radiusA_, Material::getDensity( material ) );
+   mass_ = calcMass( radiusA_, radiusB_, radiusC_, Material::getDensity( material ) );
    invMass_ = real(1) / mass_;
 
    // Calculating the moment of inertia

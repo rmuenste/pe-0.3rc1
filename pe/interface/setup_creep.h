@@ -114,6 +114,9 @@ void setupCreep(MPI_Comm ex0) {
   real bx = -1.0;
   real by = -0.5;
   real bz = 0.0;
+//  const real L( 2.0 );
+//  const real LY( 1.0 );
+//  const real LZ( 0.05 );
 
   // Size of the domain
   const real lx( L );
@@ -173,7 +176,7 @@ void setupCreep(MPI_Comm ex0) {
   Vec3 gpos2(0.05 , 0.05, gpos[2]);
 
   //=========================================================================================  
-  Vec3 ellipsoidPos = Vec3(0.0 * L, 0.0 * L, 0.025); 
+  Vec3 ellipsoidPos = Vec3(0.0 * L, 0.0 * L, 0.0125); 
   //Vec3 ellipsoidPos = Vec3(0.05, 0.0 * L, 0.025); 
   TriangleMeshID ellipsoid;
   CapsuleID cap;
@@ -182,11 +185,27 @@ void setupCreep(MPI_Comm ex0) {
   std::string fileName = std::string("ellipsoid.obj");
   if(world->ownsPoint(ellipsoidPos)) {
 
-    std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << std::endl;
-    real c=0.0625, b=0.0625, a=0.125;
+//    CylinderID cylinder = createCylinder( ++idx, ellipsoidPos, 0.1, 0.051, elastic );
+//    cylinder->rotate( 0.0, 0.5 * M_PI, 0.0 );
+//    Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
+//    cylinder->setOrientation(q);
+    //real c=0.075, b=0.05, a=0.1;
+    //real c=0.0500001, b=0.02, a=0.04;
+    //real c=0.012500001, b=0.025, a=0.05;
+    real c=0.012500001, b=0.0125, a=0.025;
+    //real c=0.0500001, b=0.01, a=0.02;
+    //real c=0.05005, b=0.05, a=0.05;
+    std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << " size = (" << a << ", " << b << ", " << c << ")" << std::endl;
     //real a=0.25, b=0.25, c=0.25;
     EllipsoidID ell = createEllipsoid(++idx, ellipsoidPos, a, b, c, elastic);
-//    CapsuleID cap = createCapsule(++idx, ellipsoidPos, 0.0625, 0.125, elastic);
+    //ell->rotate( 0.0, 0, 0.5 * M_PI);
+    //ell->setAngularVel( 0.0, 0, -0.4);
+    std::cout << "I: " << ell->getBodyInertia() << std::endl;
+    std::cout << "I^-1: " << ell->getInvBodyInertia() << std::endl;
+    std::cout << "V: " << ell->getVolume() << std::endl;
+    std::cout << "M: " << ell->getMass() << std::endl;
+
+//    CapsuleID cap = createCapsule(++idx, ellipsoidPos, 0.05, 0.1, elastic);
 //    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,
 //                                   elastic, true, true, Vec3(1.0, 1.0, 1.0),
 //                                   false, false);
@@ -204,6 +223,28 @@ void setupCreep(MPI_Comm ex0) {
 //    std::cout << ellipsoid->getBodyInertia() << std::endl;
 //    std::cout << ellipsoid->getMass() << std::endl;
 
+/*
+ * - pe::createCylinder( id_t uid, real x, real y, real z, real radius, real length, MaterialID material, bool visible )
+ * - pe::createCylinder( id_t uid, const Vec3 &gpos, real radius, real length, MaterialID material, bool visible )
+ *
+ * In order to destroy a specific cylinder primitive (which can also be contained in a Union), the
+ * following function can be used:
+ *
+ * - pe::destroy( BodyID body )
+ *
+ * The following example demonstrates the creation and destruction of a cylinder primitive:
+
+   \code
+   // Creates the iron cylinder 1 at the global position ( 4.2, 3.7, -0.6 ) with radius 1.6
+   // and length 6.4. Per default the cylinder is visible in all visualizations. Note that
+   // the cylinder is automatically added to the simulation world and is immediately part
+   // of the entire simulation. The function returns a handle to the newly created cylinder,
+   // which can be used to for instance rotate the cylinder around the global y-axis.
+   CylinderID cylinder = createCylinder( 1, 4.2, 3.7, -0.6, 1.6, 6.4, iron );
+   cylinder->rotate( 0.0, PI/3.0, 0.0 );
+
+*/
+    
     //Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
     //ellipsoid->setOrientation(q);
     //ellipsoid->setAngularVel(Vec3(0, 5, 0));

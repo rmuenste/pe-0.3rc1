@@ -78,6 +78,14 @@ void synchronizeForces() {
       std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
       std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
     }
+    if (body->getType() == cylinderType && !(body->isFixed())) {
+      Vec3 tau = body->getTorque();
+      tau[0] = 0;
+      tau[1] = 0;
+      body->setTorque(tau);
+      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
+      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
+    }
     body->applyFluidForces(stepsize);
     if(body->getType() == triangleMeshType) {
       std::cout << "Omega_a: "  <<  body->getAngularVel().toString() << std::endl;
@@ -89,6 +97,10 @@ void synchronizeForces() {
     if (body->getType() == sphereType) {
 //      std::cout << rank << ")" << body << std::endl;
     }
+    Vec3 tau = body->getTorque();
+    tau[0] = 0;
+    tau[1] = 0;
+    body->setTorque(tau);
     body->applyFluidForces(stepsize);
   }
 
@@ -125,6 +137,10 @@ void getParticlesIndexMap(int *idxMap) {
       count++;
     }
     else if(body->getType() == ellipsoidType) {
+      idxMap[count] = i;
+      count++;
+    }
+    else if(body->getType() == cylinderType && !(body->isFixed())) {
       idxMap[count] = i;
       count++;
     }
@@ -166,6 +182,11 @@ void getRemoteParticlesIndexMap(int *idxMap) {
       count++;
     }
     else if(body->getType() == ellipsoidType) {
+      idxMap[count] = i;
+//      std::cout << " " << i << " " << body->getSystemID();
+      count++;
+    }
+    else if(body->getType() == cylinderType && !(body->isFixed())) {
       idxMap[count] = i;
 //      std::cout << " " << i << " " << body->getSystemID();
       count++;
@@ -370,6 +391,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         return true;
       }
     }
+    else if(body->getType() == cylinderType && !(body->isFixed())) {
+      if(static_cast<Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
     else if(body->getType() == triangleMeshType) {
       if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
@@ -407,6 +436,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == ellipsoidType) {
       if(static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
+    else if(body->getType() == cylinderType && !(body->isFixed())) {
+      if(static_cast<const Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
         int val = bytes[0] + 1;
         *inpr = val;
@@ -577,6 +614,9 @@ int getNumParts() {
       numBodies++;
     }
     else if(body->getType() == ellipsoidType) {
+      numBodies++;
+    }
+    else if(body->getType() == cylinderType && !(body->isFixed())) {
       numBodies++;
     }
   }

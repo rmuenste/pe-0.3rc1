@@ -31,8 +31,8 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.001 );  // Size of a single time step
+const size_t timesteps     ( 40000 );  // Number of time steps for the flowing granular media
+const real   stepsize      (  0.005 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 8 );    // Number of processes in x-direction
@@ -69,7 +69,7 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 bool g_povray  ( false );
 bool g_vtk( true );
 // 
-const unsigned int visspacing( 100 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 1000 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
