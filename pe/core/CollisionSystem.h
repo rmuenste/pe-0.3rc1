@@ -82,6 +82,7 @@ class CollisionSystem;
 #include <pe/core/collisionsystem/FFDSolver.h>
 #include <pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h>
 #include <pe/core/collisionsystem/HardContactAndFluid.h>
+#include <pe/core/collisionsystem/HardContactAndFluidWithLubrication.h>
 #include <pe/core/collisionsystem/OpenCLSolver.h>
 #include <pe/core/collisionsystem/Default.h>
 
