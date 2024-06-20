@@ -2069,6 +2069,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
 
    if( std::isnan(eps)) {
        std::cout << "NaN eps:  " << eps << "  " << dist << " / " << rad << std::endl;
+       throw std::runtime_error( "Found NaN as eps for lubrication forces." );
    }
 
 
@@ -2081,6 +2082,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
        (std::isnan(lubricationForce[1])) ||
        (std::isnan(lubricationForce[2])) ) {
      std::cout << "NaN lubrication found with another particle, eps:  " << eps << " "<< vr << normal << std::endl;
+     throw std::runtime_error( "Found NaN for lubrication forces." );
    }
    //================================================================================================================ 
 //#define SS_LUB_ENABLED   
@@ -2133,6 +2135,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
        (std::isnan(lubricationForce[1])) ||
        (std::isnan(lubricationForce[2])) ) {
      std::cout << "NaN fc* lubrication found with another particle, eps:  " << eps << std::endl;
+     throw std::runtime_error( "Found NaN for lubrication forces." );
    }
    
    //================================================================================================================ 
@@ -2277,54 +2280,23 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
 
    Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
 
-   bool ALWT = false;
    //===========================================================================================================
-   // If this is the top wall
-   if(disp < 0.0) {
-     ALWT = true;
-     // Computation of relative velocity is the opposite order of normal calculation
-     numTopWallContacts_++;
-     b1->wallContact_ = 1;
-     b1->contactDistance_ = c.getDistance();
+   // The relative velocity of the contact point with the plane
+   vr =  -b1->getLinearVel();
+   velNormal = trans(vr) * c.getNormal();
+   vs = vr - velNormal * c.getNormal();
 
-   }
-   else {
-     vr =  -b1->getLinearVel();
-     velNormal = trans(vr) * c.getNormal();
-     vs = vr - velNormal * c.getNormal();
+   lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
+   slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
 
-     lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
-     slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
-
-
-     b1->wallContact_ = 2;
-     b1->contactDistance_ = c.getDistance();
-   }
+   b1->wallContact_ = 2;
+   b1->contactDistance_ = c.getDistance();
    //===========================================================================================================
 
    real fc =  calculate_f_star(eps);
    lubricationForce *= fc;
    lubricationForce = lubricationForce.length() * c.getNormal(); 
    slidingLubricationForce *= fc; 
-
-
-#ifdef LUB_WARNINGS   
-   if( (b1->v_ + dv1).length() > 2.5 * b1->v_.length()) {
-     real normDist = c.getDistance();
-   if (ALWT) {
-     Vec3 dn1 = ( b1->getInvMass() * dt ) *  -lubricationForce;
-     if( (b1->v_ + dn1).length() > 2.5 * b1->v_.length()) {
-       real normDist = c.getDistance();
-       std::cout << "ALWTN Warning: " << b1->v_ + dn1 << " is significantly faster than " << b1->v_ <<  " force: " << -lubricationForce << " dist=" << normDist << " eps=" << eps << std::endl;
-     }
-   } else {
-     Vec3 dn1 = ( b1->getInvMass() * dt ) *  -lubricationForce;
-     if( (b1->v_ + dn1).length() > 2.5 * b1->v_.length()) {
-       real normDist = c.getDistance();
-       std::cout << "ALWBN Warning: " << b1->v_ + dn1 << " is significantly faster than " << b1->v_ <<  " force: " << -lubricationForce << " dist=" << normDist << " eps=" << eps << std::endl;
-     }
-   }
-#endif
 
    totalWallLubrication_ += slidingLubricationForce.length();
    real mag = lubricationForce.length();
@@ -2335,10 +2307,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
        mag = 1.3e-6;
      }
    }
+
    if( (std::isnan(lubricationForce[0])) ||
        (std::isnan(lubricationForce[1])) ||
        (std::isnan(lubricationForce[2])) ) {
      std::cout << "NaN lubrication found with the wall distance: " << eps << std::endl;
+     throw std::runtime_error( "Found NaN for lubrication forces." );
    }
 
    if (mag > maxLubrication_) {
@@ -2346,21 +2320,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
      lubricationDist_ = -1;
    }
 
-#ifdef LUB_WARNINGS   
-   Vec3 dv1 = ( b1->getInvMass() * dt ) *  -slidingLubricationForce;
-   if( (b1->v_ + dv1).length() > 2.5 * b1->v_.length()) {
-     real normDist = c.getDistance();
-     std::cout << "ALW Warning: " << b1->v_ + dv1 << " is significantly faster than " << b1->v_ <<  " force: " << slidingLubricationForce << " dist=" << normDist << " vt=" << vs << std::endl;
-   }
-#endif
-
-   b1->addForce( slidingLubricationForce );
+   //b1->addForce( slidingLubricationForce );
    if (-velNormal > 0) {
 #ifdef OUTPUT_LVL2
      std::cout << "Not adding normal lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
 #endif
    } else {
-     std::string wall= (ALWT) ? "top" : "bottom";
 //#define OUTPUT_TOPWALL
 #ifdef OUTPUT_TOPWALL
      std::cout << "Lubrication " << wall << " wall sliding force: " << slidingLubricationForce 
@@ -2381,28 +2346,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
                                                             << " | minEps: " 
                                                             << minEps 
                                                             << std::endl;
-//   std::cout << "Lub " << wall <<  " wall normal force: " << lubricationForce 
-//                                              << " | vr: " 
-//                                              << vr << trans(vr) 
-//                                              << " | vn: " 
-//                                              << velNormal 
-//                                              << " | n: " 
-//                                              << c.getNormal() 
-//                                              << " | Distance: " 
-//                                              << c.getDistance() 
-//                                              << " | Corrected Distance: " 
-//                                              << dist 
-//                                              << " | eps: " 
-//                                              << eps 
-//                                              << " | minEps: " 
-//                                              << dist / rad 
-//                                              << std::endl;
 #endif
-
-
+     // add the normal lubrication force
      b1->addForce( lubricationForce );
    }
-
   }
 }
 
@@ -2557,22 +2504,22 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
          }
       }
 
-      //if(c->getDistance() > 1e-6 &&  c->getDistance() <= 0.5 * lubricationThreshold) {
       if(c->getDistance() <= lubricationThreshold && useLubrication_) {
-      //if(false) {
 
-         BodyID b1( c->getBody1() );
-         BodyID b2( c->getBody2() );
+#ifdef OUTPUT_LVL2
+         std::cout << "Found a lubrication contact." << std::endl;
+#endif
 
-         if(b2->getType() == planeType || b1->getType() == planeType) {
+         BodyID b1l( c->getBody1() );
+         BodyID b2l( c->getBody2() );
+
+         if(b2l->getType() == planeType || b1l->getType() == planeType) {
            numWallSphereContacts++;
          }
 
          numLubricationContacts++;
          addLubricationForce(*c, dt);
-#ifdef OUTPUT_LVL2
-         std::cout << "Found a lubrication contact." << std::endl;
-#endif
+
          pe_LOG_DEBUG_SECTION( log ) {
           log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
          }
