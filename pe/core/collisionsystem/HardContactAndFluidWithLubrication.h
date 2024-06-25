@@ -5103,15 +5103,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
       if( !body->isFixed() ) {
          Vec3 dv_old = dv;
          dv = ( body->getInvMass() * dt ) * body->getForce();
-
 #ifdef LUB_WARNINGS   
          if( (body->v_ + dv).length() > 2.5 * body->v_.length()) {
            std::cout << "IVC Warning: " << body->v_ + dv << " is significantly faster than " << body->v_ << " dv: " << dv << " force: " << body->getForce() << body->getSystemID() << std::endl;
          }
 #endif
-//#ifdef OUTPUT_LVL2
-//         std::cout << "Velocity correction: " << dv << " force: " << body->getForce() << " body: " << body->getSystemID() << " rank: " << MPISettings::rank() << std::endl;
-//#endif
          dw = dt * ( body->getInvInertia() * body->getTorque() );
       }
    }
@@ -5180,9 +5176,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
 
       // Storing the velocities back in the body properties
       body->v_ = v;
-
-      // For the kroupa simulation we neglect the angular component
-      w = Vec3(0,0,0); 
       body->w_ = w;
 
       if( body->getType() == unionType ) {

@@ -6,7 +6,7 @@
 #include <numeric>
 #include <map>
 
-#define ONLY_ROTATION 
+//#define ONLY_ROTATION 
 using namespace pe;
 std::map<int, boost::uint64_t> particleMap;
 std::map<int, boost::uint64_t> remoteParticleMap;
@@ -94,13 +94,6 @@ void synchronizeForces() {
 
   for (std::size_t i=0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
     BodyID body = world->getShadowBody(i);
-    if (body->getType() == sphereType) {
-//      std::cout << rank << ")" << body << std::endl;
-    }
-    Vec3 tau = body->getTorque();
-    tau[0] = 0;
-    tau[1] = 0;
-    body->setTorque(tau);
     body->applyFluidForces(stepsize);
   }
 

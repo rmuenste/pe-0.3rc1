@@ -1227,7 +1227,7 @@ PE_PUBLIC EllipsoidID createEllipsoid( id_t uid, const Vec3& gpos, real a, real 
 {
    const bool global( GlobalSection::isActive() );
 
-   // Checking the radius
+   // Checking the radius for all 3 semi-axes
    if( a <= real(0) )
       throw std::invalid_argument( "Invalid a radius" );
    if( b <= real(0) )
