@@ -37,6 +37,7 @@
 #include <pe/system/Precision.h>
 #include <pe/util/constraints/BaseOf.h>
 #include <pe/util/NullType.h>
+#include <pe/util/Logging.h>
 
 
 namespace pe {

@@ -451,6 +451,9 @@ bool HalfSpace::intersectsWith( ConstCylinderID c ) const
    const Rot3& R ( c->getRotation() );
 
    // Computing the displacement of the upper cylinder end point
+   // of the cylinder in world frame coordinates, the top point is
+   // located at the center of the cylinder (hl, 0, 0). So we can shorten the Matrix-Vector multiplication
+   // to the expression below:
    const Vec3 c_up( hl*R[0], hl*R[3], hl*R[6] );
 
    const real dist1( trans(normal_) * c->getPosition() );    // Projection of the position
@@ -459,36 +462,70 @@ bool HalfSpace::intersectsWith( ConstCylinderID c ) const
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "Cylinder top point: ";
-      log << c_up << " ";
+      log << c_up << " \n";
       log << "Proj position: ";
-      log << dist1 << " ";
+      log << dist1 << " \n";
       log << "Proj length: ";
-      log << dist2 << " ";
+      log << dist2 << " \n";
       log << "Proj radius: ";
-      log << dist3 << " ";
+      log << dist3 << " \n";
       log << "HS d: ";
-      log << d_ << " ";
+      log << d_ << " \n";
       log << "HS n: ";
-      log << normal_ << " ";
-      log << dist1 - d_ << " < " << -(dist2 - dist3 + dx_) << " ";
+      log << normal_ << " \n";
+      log << dist1 - d_ << " < " << -(dist2 - dist3 + dx_) << " \n";
+      log << std::abs(d_ - std::abs(dist1)) << " < " <<  std::abs(dist2) + std::abs(dist3) << " \n";
       log << "]\n";
    }
 
-   if( dist1 - d_ < -( dist2 - dist3 + dx_ ) )
+   if( std::abs(d_ - std::abs(dist1)) < ( std::abs(dist2) + std::abs(dist3) ) )
    {
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "Intersection C1!";
+      log << "]\n";
+   }
+      return true;
+   }
+   else if(!( dist1 - d_ < -( dist2 - dist3 + dx_ ) ) )
+   {
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "Intersection C2!";
+      log << "]\n";
+   }
+      return true;
+   }
+   else if(d_ < 0 && dist1 < 0){
+      if( std::abs(std::abs(d_) - std::abs(dist1)) < ( std::abs(dist2) + std::abs(dist3) )) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "Intersection C3!";
+            log << "]\n";
+         }
+            return true;
+      }
+   }
+   else {
    pe_LOG_DEBUG_SECTION( log ) {
       log << "No Intersection!";
       log << "]\n";
    }
       return false;
    }
-   else {
-   pe_LOG_DEBUG_SECTION( log ) {
-      log << "Intersection!";
-      log << "]\n";
-   }
-      return true;
-   }
+
+//   if( dist1 - d_ < -( dist2 - dist3 + dx_ ) )
+//   {
+//   pe_LOG_DEBUG_SECTION( log ) {
+//      log << "No Intersection!";
+//      log << "]\n";
+//   }
+//      return false;
+//   }
+//   else {
+//   pe_LOG_DEBUG_SECTION( log ) {
+//      log << "Intersection!";
+//      log << "]\n";
+//   }
+//      return true;
+//   }
 }
 //*************************************************************************************************
 

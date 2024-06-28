@@ -185,7 +185,7 @@ void setupCreep(MPI_Comm ex0) {
   std::string fileName = std::string("ellipsoid.obj");
   if(world->ownsPoint(ellipsoidPos)) {
 
-//    CylinderID cylinder = createCylinder( ++idx, ellipsoidPos, 0.1, 0.051, elastic );
+    CylinderID cylinder = createCylinder( ++idx, ellipsoidPos, 0.1, 0.051, elastic );
 //    cylinder->rotate( 0.0, 0.5 * M_PI, 0.0 );
 //    Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
 //    cylinder->setOrientation(q);

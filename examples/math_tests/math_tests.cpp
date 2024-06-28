@@ -100,16 +100,14 @@ int main( int argc, char* argv[] )
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
-   bool povray  ( true );
+   bool povray  ( false );
    bool irrlicht( false );
-   bool vtk( true );
+   bool vtk( false );
 
    setSeed( 12345 );  // Setup of the random number generation
 
    // Parsing the command line arguments
    CommandLineInterface& cli = CommandLineInterface::getInstance();
-   cli.getDescription().add_options()
-     ( "file", value<std::string>()->default_value(""), "obj mesh file to be loaded" );
    cli.parse( argc, argv );
    cli.evaluateOptions();
    variables_map& vm = cli.getVariablesMap();
@@ -119,13 +117,6 @@ int main( int argc, char* argv[] )
       irrlicht = false;
    if( vm.count( "no-vtk" ) > 0 )
       vtk = false;
-
-   std::string fileName(vm["file"].as<std::string>());
-
-   if( fileName.empty() ) {
-     std::cout << "Need to enter a file via the --file command line parameter. Setting a default value." << std::endl;
-     fileName = std::string("span_aligned.obj");
-   }
 
    // Simulation world setup
    WorldID world = theWorld();
@@ -138,64 +129,24 @@ int main( int argc, char* argv[] )
    createPlane( id++, 0.0, 1.0, 0.0, -0.1, granite );
    // -y
    createPlane( id++, 0.0,-1.0, 0.0,  -0.1, granite );
-   TriangleMeshID span = createTriangleMesh(++id, Vec3(0, 0, 0.374807), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
-   span->setAngularVel(Vec3(0.314, 0, 0));
 
-   //std::cout << "Number of vertices: " << span->getWFVertices().size() << std::endl;
+   real dx = 1, dy = 1, dz = 1;
+  defineLocalDomain( intersect(
+     intersect(
+     HalfSpace( Vec3(+1,0,0), +(0) ),
+     HalfSpace( Vec3(-1,0,0), -( 1 ) ) ),
+     HalfSpace( Vec3(0,+1,0), +(-0.5) ),
+     HalfSpace( Vec3(0,-1,0), -(0.5 ) ),
+     HalfSpace( Vec3(0,0,+1), +(0) ),
+     HalfSpace( Vec3(0,0,-1), -(0.025 ) ) ) );
 
-   // Setup of the metal sphere
-//   SphereID s = createSphere( ++id, 0.0, 0.05, 1.4, 0.04, granite );
-//   s->setLinearVel( 0.0, 0.0,-1.0 );
+   Vec3 pos = Vec3(1, 0.0, 0.0125);
+   CylinderID cyl = createCylinder(id++, pos, 0.1, 0.025, granite);
+   cyl->rotate(0.0, -0.5 * M_PI, 0.0);
+   SphereID sph = createSphere(id++, pos, 0.1, granite);
 
-   // Setup of the VTK visualization
-   if( vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
-   }
-   // Setup of the POV-Ray visualization
-   if( povray ) {
-      WriterID pov = activateWriter();
-      pov->setSpacing( visspacing );
-      pov->include( "colors.inc" );
-      pov->include( "woods.inc" );
-      pov->include( "metals.inc" );
-      pov->setFilename( "./video/box%.pov" );
-      pov->setBackground( 1.0, 1.0, 1.0 );
-      pov->addLightSource( PointLight( Vec3( 0.0, -10.0, 30.0 ), Color( 0.95, 0.95, 0.95 ) ) );
-
-      // Configuring the POV-Ray camera
-      CameraID camera = theCamera();
-      camera->setLocation( 8.0, -25.0, 2.0 );
-      camera->setFocus   ( 0.0,   0.0, 7.5 );
-
-      // Setting the ground plane texture
-      Finish grassFinish(
-         Ambient( 0.2 )
-      );
-      PlainTexture grassTexture(
-         ImagePigment( gif, "grass.gif", planar, true ),
-         grassFinish,
-         Scale( 20.0 ),
-         Rotation( M_PI/2.0, 0.0, 0.0 )
-      );
-      pov->setTexture( plane, grassTexture );
-
-      // Setting the sphere texture
-      //pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
-   }
-
-   // Simulation loop
-   std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
-             << "---------------------------------------------------------" << std::endl;
-
-   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
-      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-      world->simulationStep( 0.004 );
-      //std::cout << "[particle position]: " << s->getPosition() << std::endl;
-   }
-
-   std::cout << "\n--------------------------------------------------------------------------------\n"
-             << std::endl;
-
+   theCollisionSystem()->getDomain().getGeometry()->intersectsWith(cyl);
+   theCollisionSystem()->getDomain().getGeometry()->intersectsWith(sph);
 
    return 0;
 }
