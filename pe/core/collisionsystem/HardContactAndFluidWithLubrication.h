@@ -268,17 +268,21 @@ private:
    void simulationStep( real dt );
    void resolveContacts( const Contacts& contacts, real dt );
    void addLubricationForce( const Contact& c, real dt );
+   void addLubricationForce2( const Contact& c, real dt );
+   void addLubricationForce3( const Contact& c, real dt );
    real relaxInelasticFrictionlessContacts( real dtinv );
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
    real relaxInelasticGeneralizedMaximumDissipationContacts( real dtinv );
+   Vec3 calculateLubricationForce2(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateWallLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateWallLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
    Vec3 calculateLubricationForceGorb(real R_b, real R_p, Vec3 U, real mu, real d);
    real calculate_f_star(real h); 
+   real stokesAmplificationFactor(double kappa, double epsilon);
    //@}
    //**********************************************************************************************
 
@@ -1868,6 +1872,54 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Implementation of the discrete element solver simulationStep() function.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >::calculateLubricationForce2(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius) {
+
+    const real pi = 3.14159265358979323846;
+    const Vec3 coefficient = -6 * pi * radius * eta_f * v_r * n;
+
+    if( std::isnan(epsilon) ) { 
+      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
+    }
+
+    real term1 = 1.0 / 4.0 * std::pow(epsilon, -1);
+    if( std::isnan(epsilon) ) { 
+      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
+    }
+//    real term2 = 0.0;
+    real term2 = -9.0 / 40.0 * std::log(epsilon);
+    if( std::isnan(epsilon) ) { 
+      std::cout << "NaN epsilon given:  " << epsilon << " log epsilon: " << std::log(epsilon) << std::endl;
+    }
+    real term3 = -3.0 / 112.0 * epsilon * std::log(epsilon);
+//    real term3 = 0.0;
+
+    if( (std::isnan(term1)) ||
+        (std::isnan(term2)) ||
+        (std::isnan(term3)) ) {
+      std::cout << "NaN lubrication found with another particle, epsilon, term:  " << epsilon << " " << term1 << " " << term2 << " log epsilon: " << std::log(epsilon) << std::endl;
+    }
+
+    return coefficient * (term1 + term2 + term3);
+}
+//*************************************************************************************************
+
+
 //*************************************************************************************************
 /*!\brief Implementation of the discrete element solver simulationStep() function.
  *
@@ -1929,6 +1981,260 @@ Vec3 CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
 
 
 //*************************************************************************************************
+// Function to calculate the Stokes amplification factor for equal spheres
+//double stokes_amplification_factor(double kappa, double epsilon) {
+//    if (kappa == 1) {
+//        double f1 = (1. / (2. * epsilon)
+//                    - (9. / 20.) * std::log(epsilon)
+//                    + 1.34558
+//                    - (3. / 56.) * epsilon * std::log(epsilon));
+//        return f1;
+//    } else {
+//        // Placeholder for general case (not implemented)
+//        return 1.0;  // Simplified, should be replaced with the actual function
+//    }
+//}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the lubrication forces for close contacts.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+real CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication> >::stokesAmplificationFactor(double kappa, double epsilon)
+{
+    if (kappa == 1) {
+      
+        real L1_kappa = 0.19;
+        real   f1 = (1. / (2. * epsilon)
+                    - (9. / 20.) * std::log(epsilon)
+                    + 1.34558
+                    - (3. / 56.) * epsilon * std::log(epsilon)
+                    + L1_kappa * epsilon);
+        return f1;
+    } else {
+        // Placeholder for general case (not implemented)
+        return 1.0;  // Simplified, should be replaced with the actual function
+    }
+  return 1.0;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the lubrication forces for close contacts.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication> >::addLubricationForce3(const Contact &c, real dt)
+{
+
+  BodyID b1( c.getBody1() );
+  BodyID b2( c.getBody2() );
+
+  SphereID s1(nullptr);
+  SphereID s2(nullptr);
+  real rad(0.0);
+
+//  std::array<real, 4> values = {0.1, 0.05, 0.03, 0.01};
+//  for (auto &eps: values) {
+//    std::cout << "f_h(" << eps << ") = " << stokesAmplificationFactor(1.0, eps) << std::endl;
+//  }
+//  std::cout << "WARNING: had to swap the order for lubrication contacts, check this!" << std::endl;
+
+  const double mu = Settings::liquidViscosity();  // Dynamic viscosity (example value)
+  const double epsilon_L = 0.025;
+  const double epsilon_r = 0.001;
+
+  if (b1->getType() == sphereType) {
+    s1 = static_body_cast<Sphere>(b1); 
+    rad = s1->getRadius();
+  }   
+  else if (b2->getType() == sphereType) {
+    std::cout << "WARNING: had to swap the order for lubrication contacts, check this!" << std::endl;
+    // swap the pointers
+    BodyID b_temp = b1;
+    b1 = c.getBody2(); 
+    b2 = c.getBody1(); 
+    s1 = static_body_cast<Sphere>(b1); 
+    rad = s1->getRadius();
+  }
+  else {
+    throw std::runtime_error( "Cannot add lubrication force for contacts without at least one sphere." );
+  }
+
+  //=====================================================================================================
+  // In pe the convention is:
+  // points from body 2 towards body 1 and is normalized
+  //=====================================================================================================
+
+  Vec3 normal = b1->getPosition() - b2->getPosition();
+  normal.normalize();
+
+  //=====================================================================================================
+  // In pe the relative velocity is:
+  // Vec3 gdot = ( ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] ) //<- here we deal with the linear part of the velocity
+  //               + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i] - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i]; //<- here is the angular part
+  //
+  // This way we get a negative normal relative velocity when the bodies are getting closer to each other
+  //=====================================================================================================
+
+  // Computation of relative velocity is the opposite order of normal calculation
+  Vec3 rel_vel( b2->getLinearVel() - b1->getLinearVel() );
+  Vec3 rel_pos( b2->getPosition()  - b1->getPosition()  );
+
+  bool limiting = false;
+
+  // Distance between the spheres
+  real dist = c.getDistance();
+
+  //============================================================================
+  // SKIPPING PENETRATING CONTACTS
+  // In case of a negative distance, we are dealing with a penetrating 
+  // contact. In this case we skip the contact.
+  //============================================================================
+  if (dist < 0.0) {
+    return;
+  }
+
+  //================================================================================================
+  // Lubrication Force with between a sphere and another sphere
+  //================================================================================================
+  if (b2->getType() == sphereType) {
+
+   s1 = static_body_cast<Sphere>(b1); 
+   s2 = static_body_cast<Sphere>(b2); 
+   real rad1 = s1->getRadius();
+   real rad2 = s2->getRadius();
+
+   // Radii and ratio of radii
+   double R1 = rad1;
+   double R2 = rad2;
+   double R_max = std::max(R1, R2);
+   double kappa = R2 / R1;
+
+   // Normalized gap width
+   double epsilon = (dist - R1 - R2) / R_max;
+
+   // Check if the lubrication model is active
+   if (epsilon > epsilon_L) {
+     return;
+   }
+
+   // Normal component of the relative velocity
+   real U_rel_n = trans(rel_vel) * normal;
+   Vec3 vs = rel_vel - U_rel_n * normal;
+
+   // This is our tangent vector
+   Vec3 vsn = vs.getNormalized();
+   
+   // Calculate the Stokes amplification factors
+   double lambda_eps   = stokesAmplificationFactor(kappa, epsilon);
+   double lambda_eps_L = stokesAmplificationFactor(kappa, epsilon_L);
+   double lambda_eps_r = stokesAmplificationFactor(kappa, epsilon_r);
+
+   // Apply threshold for surface roughness
+   if (epsilon <= epsilon_r) {
+       lambda_eps = lambda_eps_r;
+   }
+
+   // Calculate the lubrication force
+   double Ri = R1;  // Assuming equal-sized spheres, or choose appropriate radius
+   double factor = -6 * M_PI * mu * Ri * U_rel_n * (lambda_eps - lambda_eps_L);
+
+   Vec3 delta_F_lub = factor * normal;
+
+   if( std::isnan(epsilon)) {
+       std::cout << "NaN eps:  " << epsilon << "  " << dist << " / " << rad << std::endl;
+       throw std::runtime_error( "Found NaN as eps for lubrication forces." );
+   }
+
+   //============================================================================================== 
+   // Here we have the normal lubrication force
+   //============================================================================================== 
+   Vec3 lubricationForce = delta_F_lub;
+
+   if( (std::isnan(lubricationForce[0])) ||
+       (std::isnan(lubricationForce[1])) ||
+       (std::isnan(lubricationForce[2])) ) {
+     std::cout << "NaN lubrication found with another particle, eps:  " << epsilon << " "<< rel_vel << normal << std::endl;
+     throw std::runtime_error( "Found NaN for lubrication forces." );
+   }
+   //============================================================================================== 
+#define SS_LUB_ENABLED_OUTPUT   
+#ifdef SS_LUB_ENABLED_OUTPUT   
+   std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
+                                               << " | pos: " 
+                                               << b1->getPosition() 
+                                               << " | and: " 
+                                               << b2->getSystemID() 
+                                               << " | pos: " 
+                                               << b2->getPosition() 
+                                               << "\n | global normal: " 
+                                               << c.getNormal() 
+                                               << " | Distance: " 
+                                               << dist 
+                                               << " | eps: " 
+                                               << epsilon 
+                                               << std::endl;
+
+   std::cout << "Lubrication particle force: " << lubricationForce 
+                                               << " | vr: " 
+                                               << rel_vel 
+                                               << " | normal velocity: " 
+                                               << U_rel_n 
+                                               << " | Distance: " 
+                                               << dist 
+                                               << " | eps: " 
+                                               << epsilon 
+                                               << std::endl;
+#endif                                               
+   
+   //============================================================================================== 
+   // If the relative velocity is positive we do not use the normal lubrication force
+   //============================================================================================== 
+   if (-U_rel_n > 0) {
+#ifdef SS_LUB_ENABLED_OUTPUT
+     std::cout << "Not adding lubrication s-s force because positive normal velocity: " << -U_rel_n  << std::endl;
+#endif                                               
+     lubricationForce = Vec3(0,0,0);
+   }
+
+  //================================================================================================
+  // Enable normal lubrication force for s-s
+  // The normal points from b2 to b1 so the lubrication force is
+  // in the opposite direction of the normal for b2 and in the
+  // same direction for b1.
+  //================================================================================================
+  b1->addForce(-lubricationForce );
+  b2->addForce( lubricationForce );
+  }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Implementation of the discrete element solver simulationStep() function.
  *
  * \param timestep Size of the time step.
@@ -1943,16 +2249,231 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename> class                    // Template signature of the batch generation algorithm
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
-
 real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >::calculate_f_star(real h) {
-    double f_star = (h / hc_) * ((1. + (h / (6. * hc_)) * std::log(1. + (6. * hc_) / h)) - 1.0);
+    //double   f_star = (h / hc_) * ((1. + (h / (6. * hc_)) * std::log(1. + (6. * hc_) / h)) - 1.0);
+    double f_star = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.0);
+    //     f_star   = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.);
     return f_star;
 }
 //*************************************************************************************************
 
 
 //*************************************************************************************************
-/*!\brief Implementation of the discrete element solver simulationStep() function.
+/*!\brief Implementation of the lubrication forces for close contacts.
+ *
+ * \param timestep Size of the time step.
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication> >::addLubricationForce2(const Contact &c, real dt)
+{
+
+  BodyID b1( c.getBody1() );
+  BodyID b2( c.getBody2() );
+
+  SphereID s1(nullptr);
+  SphereID s2(nullptr);
+  real rad(0.0);
+
+  if (b1->getType() == sphereType) {
+    s1 = static_body_cast<Sphere>(b1); 
+    rad = s1->getRadius();
+  }   
+  else if (b2->getType() == sphereType) {
+    std::cout << "WARNING: had to swap the order for lubrication contacts, check this!" << std::endl;
+    // swap the pointers
+    BodyID b_temp = b1;
+    b1 = c.getBody2(); 
+    b2 = c.getBody1(); 
+    s1 = static_body_cast<Sphere>(b1); 
+    rad = s1->getRadius();
+  }
+  else {
+    throw std::runtime_error( "Cannot add lubrication force for contacts without at least one sphere." );
+  }
+
+
+  //=====================================================================================================
+  // In pe the convention is:
+  // points from body 2 towards body 1 and is normalized
+  //=====================================================================================================
+
+  Vec3 normal = b1->getPosition() - b2->getPosition();
+  normal.normalize();
+
+  //=====================================================================================================
+  // In pe the relative velocity is:
+  // Vec3 gdot = ( ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] ) //<- here we deal with the linear part of the velocity
+  //               + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i] - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i]; //<- here is the angular part
+  //
+  // This way we get a negative normal relative velocity when the bodies are getting closer to each other
+  //=====================================================================================================
+
+  // Computation of relative velocity is the opposite order of normal calculation
+  Vec3 vr     ( b2->getLinearVel() - b1->getLinearVel() );
+
+  bool limiting = false;
+  
+  real visc = Settings::liquidViscosity();
+  real h = c.getDistance();
+
+  //============================================================================
+  // SKIPPING PENETRATING CONTACTS
+  // In case of a negative distance, we are dealing with a penetrating 
+  // contact. In this case we skip the contact.
+  //============================================================================
+  if (h < 0.0) {
+    return;
+  }
+
+  //============================================================================
+  // LIMITING OF THE DISTANCE  
+  // Our strategy is to not let the distance drop below a certain threshold 
+  // to avoid a blow-up of the log functions.
+  // We could do it like this:
+  // if (eps < 1.6e-6) {
+  //   eps = 1.6e-6;
+  // }
+  // or
+  // if(c.getDistance() < 5e-6) {
+  //  dist = 5e-6;
+  // }
+  // Limiting according to Kroupa et al.:
+  // if dist < h_c -> dist = h_c; eps = h_c / rad
+  //============================================================================
+
+  //===========================================================================================================
+  // Lubrication Force with between a sphere and another sphere
+  //===========================================================================================================
+  if (b2->getType() == sphereType) {
+
+    SphereID s2 = static_body_cast<Sphere>(b2);
+
+    s1 = static_body_cast<Sphere>(b1); 
+    real maxRad = std::max(s1->getRadius(), s2->getRadius());
+
+    real eps = h / maxRad;
+
+    real velNormal = trans(vr) * normal;
+    Vec3 vs = vr - velNormal * normal;
+
+    // This is our tangent vector
+    Vec3 vsn = vs.getNormalized();
+
+    real f_star;
+    if (h > hc_) {
+      // Calculate the correction factor for h > h_c
+      f_star = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.);
+    } else {
+      h = hc_;
+      eps = h / maxRad;
+      f_star = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.);
+    }
+  
+  
+    if(eps < minEps_) {
+      eps = minEps_;
+      std::cout << "Suspicious eps value warning" << std::endl;
+    }
+
+    if( std::isnan(eps)) {
+        std::cout << "NaN eps:  " << eps << "  " << h << " / " << rad << std::endl;
+        throw std::runtime_error( "Found NaN as eps for lubrication forces." );
+    }
+
+
+    //================================================================================================================ 
+    // Here we have the normal lubrication force
+    //================================================================================================================ 
+    //Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, maxRad);
+
+    real log_epsilon = std::log(eps);
+    real F_nl = -6. * M_PI * visc * maxRad * velNormal * (
+                 0.25 * std::pow(eps, -1.0) - 
+                 (9.0 / 40.0) * log_epsilon - 
+                 (3.0 / 112.0) * eps * log_epsilon) * f_star;
+
+    Vec3 lubricationForce = F_nl * normal;
+    
+    if( (std::isnan(lubricationForce[0])) ||
+        (std::isnan(lubricationForce[1])) ||
+        (std::isnan(lubricationForce[2])) ) {
+      std::cout << "NaN lubrication found with another particle, eps:  " << eps << " "<< vr << normal << std::endl;
+      throw std::runtime_error( "Found NaN for lubrication forces." );
+    }
+    //================================================================================================================ 
+#define SS_LUB_ENABLED   
+#ifdef SS_LUB_ENABLED_OUTPUT   
+    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
+                                                << " | pos: " 
+                                                << b1->getPosition() 
+                                                << " | and: " 
+                                                << b2->getSystemID() 
+                                                << " | pos: " 
+                                                << b2->getPosition() 
+                                                << "\n | global normal: " 
+                                                << c.getNormal() 
+                                                << " | Distance: " 
+                                                << h 
+                                                << " | eps: " 
+                                                << eps 
+                                                << std::endl;
+
+    std::cout << "Lubrication particle force: " << lubricationForce 
+                                                << " | vr: " 
+                                                << vr 
+                                                << " | normal velocity: " 
+                                                << velNormal 
+                                                << " | Distance: " 
+                                                << h 
+                                                << " | eps: " 
+                                                << eps 
+                                                << std::endl;
+#endif                                               
+    
+#define SS_LUB_ENABLED_OUTPUT
+#ifdef SS_LUB_ENABLED_OUTPUT
+    std::cout << "Corrected particle force: "   << lubricationForce 
+                                                << " | correction fc: " 
+                                                << f_star 
+                                                << " | eps: " 
+                                                << eps 
+                                                << std::endl;
+#endif                                               
+
+    //================================================================================================================ 
+    // If the relative velocity is positive we do not use the normal lubrication force
+    //================================================================================================================ 
+    if (-velNormal > 0) {
+#ifdef SS_LUB_ENABLED_OUTPUT
+      std::cout << "Not adding lubrication s-s force because positive normal velocity: " << -velNormal  << std::endl;
+#endif                                               
+      lubricationForce = Vec3(0,0,0);
+    }
+
+   //================================================================================================
+   // Enable normal lubrication force for s-s
+   // The normal points from b2 to b1 so the lubrication force is
+   // in the opposite direction of the normal for b2 and in the
+   // same direction for b1.
+   //================================================================================================
+   b1->addForce( lubricationForce );
+   b2->addForce(-lubricationForce );
+  }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Implementation of the lubrication forces for close contacts.
  *
  * \param timestep Size of the time step.
  * \return void
@@ -1992,7 +2513,6 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
   else {
     throw std::runtime_error( "Cannot add lubrication force for contacts without at least one sphere." );
   }
-
 
   //=====================================================================================================
   // In pe the convention is:
@@ -2072,7 +2592,6 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
        throw std::runtime_error( "Found NaN as eps for lubrication forces." );
    }
 
-
    //================================================================================================================ 
    // Here we have the normal lubrication force
    //================================================================================================================ 
@@ -2085,7 +2604,7 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
      throw std::runtime_error( "Found NaN for lubrication forces." );
    }
    //================================================================================================================ 
-//#define SS_LUB_ENABLED   
+#define SS_LUB_ENABLED_OUTPUT   
 #ifdef SS_LUB_ENABLED_OUTPUT   
    std::cout << "Lubrication s-s contact: "    << b1->getSystemID() 
                                                << " | pos: " 
@@ -2128,7 +2647,6 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
                                                << std::endl;
 #endif                                               
 
-
    //================================================================================================================ 
 
    if( (std::isnan(lubricationForce[0])) ||
@@ -2147,211 +2665,15 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
 #endif                                               
      lubricationForce = Vec3(0,0,0);
    }
-   
-   //================================================================================================================ 
-   // Here we deal with the sliding lubrication force
-   //================================================================================================================ 
-   Vec3 slidingLubricationForce = calculateLubricationSlidingForce(visc, vs, normal, eps, rad);
 
-   slidingLubricationForce *= fc;
-   Vec3 dv1 = ( b1->getInvMass() * dt ) *  slidingLubricationForce;
-   Vec3 dv2 = ( b2->getInvMass() * dt ) * -slidingLubricationForce;
-
-//#define OUTPUT_SS_S_CONTACT
-#ifdef OUTPUT_SS_S_CONTACT
-//  b1->addForce(-slidingLubricationForce );
-//  b2->addForce( slidingLubricationForce );
-
-   std::cout << "Lubrication s-s (" << b1->getSystemID() << ", " << b2->getSystemID() << ") sliding force: " << slidingLubricationForce 
-                                                       << " | vr(b2-b1): " 
-                                                       << vr 
-                                                       << " | vt: " 
-                                                       << vs 
-                                                       << " | vxs(+1,-2): " 
-                                                       << b1->getLinearVel()[0]
-                                                       << " "
-                                                       << b2->getLinearVel()[0]
-                                                       << " | dp(1,2): " 
-                                                       << b1->getPosition()[2]
-                                                       << " "
-                                                       << b2->getPosition()[2]
-                                                       << " | nv: " 
-                                                       << velNormal 
-                                                       << " | dist: " 
-                                                       << dist 
-                                                       << " | eps: " 
-                                                       << eps 
-                                                       << std::endl;
-#endif
-
-#ifdef LUB_WARNINGS   
-   if( (b1->v_ + dv1).length() > 2.5 * b1->v_.length()) {
-     real normDist = c.getDistance();
-     std::cout << "ALSS Warning: " << b1->v_ + dv1 << " is significantly faster than " << b1->v_ <<  " force: " << slidingLubricationForce << " dist=" << normDist << " vt=" << vs << std::endl;
-   }
-
-   if( (b2->v_ + dv2).length() > 2.5 * b2->v_.length()) {
-     real normDist = c.getDistance();
-     std::cout << "ALSS Warning: " << b2->v_ + dv2 << " is significantly faster than " << b2->v_ << " force: " << slidingLubricationForce << " dist=" << normDist << " vt=" << vs << std::endl;
-   }
-#endif
-
-#ifdef OUTPUT_S_S_CONTACT
-   std::cout << "Corrected sliding force: "        << (slidingLubricationForce) << std::endl; 
-#endif
-  //===========================================================================================================
-  // Apply the sliding lubrication force
-  //===========================================================================================================
-  b1->addForce( slidingLubricationForce );
-  b2->addForce(-slidingLubricationForce );
-//  b1->addForce(-slidingLubricationForce );
-//  b2->addForce( slidingLubricationForce );
-
-
-   real mag = lubricationForce.length();
-   if(limiting) {
-     if (mag > 1.2e-6) {
-       lubricationForce = 1.2e-6 * lubricationForce.getNormalized();
-       mag = 1.2e-6;
-     }
-   }
-
-   if (mag > maxLubrication_) {
-     maxLubrication_ = mag;
-     lubricationDist_ = eps;
-   }
-
-  //===========================================================================================================
-  // TODO: enable normal lubrication force for s-s
-  //===========================================================================================================
-  //b1->addForce( lubricationForce );
-  //b2->addForce(-lubricationForce );
-  }
-  //===========================================================================================================
-  // Lubrication Force with between a sphere and an inner cylinder 
-  //===========================================================================================================
-  else if(b2->getType() == innerCylinderType) {
-
-   real velNormal = trans(vr) * c.getNormal();
-   Vec3 vs = vr - velNormal * c.getNormal();
-
-   Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
-   real fc =  calculate_f_star(eps);
-   lubricationForce *= fc;
-
-   real mag = lubricationForce.length();
-   bool wallLimiting = false;
-   if(wallLimiting) {
-     if (mag > 1.3e-6) {
-       lubricationForce = 1.3e-6 * lubricationForce.getNormalized();
-       mag = 1.3e-6;
-     }
-   }
-   if( (std::isnan(lubricationForce[0])) ||
-       (std::isnan(lubricationForce[1])) ||
-       (std::isnan(lubricationForce[2])) ) {
-     std::cout << "NaN lubrication found with the wall distance: " << eps << std::endl;
-   }
-
-   if (mag > maxLubrication_) {
-     maxLubrication_ = mag;
-     lubricationDist_ = -1;
-   }
-
-   b1->addForce(-lubricationForce );
-  }
-  //===========================================================================================================
-  // Lubrication Force with between a sphere and a plane
-  //===========================================================================================================
-  else if(b2->getType() == planeType) {
-
-   PlaneID plane = static_body_cast<Plane>( b2 );
-   real disp = plane->getDisplacement();
-
-   vr =  Vec3(1.0, 0, 0) - b1->getLinearVel();
-   real velNormal = trans(vr) * c.getNormal();
-   Vec3 vs = vr - velNormal * c.getNormal();
-
-   if(std::abs(b1->getLinearVel()[0]) > maxVx_) {
-     maxVx_ = b1->getLinearVel()[0];
-   }
-   real minEps = minEps_;
-   Vec3 lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
-
-   Vec3 slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
-
-   //===========================================================================================================
-   // The relative velocity of the contact point with the plane
-   vr =  -b1->getLinearVel();
-   velNormal = trans(vr) * c.getNormal();
-   vs = vr - velNormal * c.getNormal();
-
-   lubricationForce = calculateWallLubricationForce(visc, vr, c.getNormal(), eps, rad);
-   slidingLubricationForce = calculateWallLubricationSlidingForce(visc, vs, normal, eps, rad);
-
-   b1->wallContact_ = 2;
-   b1->contactDistance_ = c.getDistance();
-   //===========================================================================================================
-
-   real fc =  calculate_f_star(eps);
-   lubricationForce *= fc;
-   lubricationForce = lubricationForce.length() * c.getNormal(); 
-   slidingLubricationForce *= fc; 
-
-   totalWallLubrication_ += slidingLubricationForce.length();
-   real mag = lubricationForce.length();
-   bool wallLimiting = false;
-   if(wallLimiting) {
-     if (mag > 1.3e-6) {
-       lubricationForce = 1.3e-6 * lubricationForce.getNormalized();
-       mag = 1.3e-6;
-     }
-   }
-
-   if( (std::isnan(lubricationForce[0])) ||
-       (std::isnan(lubricationForce[1])) ||
-       (std::isnan(lubricationForce[2])) ) {
-     std::cout << "NaN lubrication found with the wall distance: " << eps << std::endl;
-     throw std::runtime_error( "Found NaN for lubrication forces." );
-   }
-
-   if (mag > maxLubrication_) {
-     maxLubrication_ = mag;
-     lubricationDist_ = -1;
-   }
-
-   //b1->addForce( slidingLubricationForce );
-   if (-velNormal > 0) {
-#ifdef OUTPUT_LVL2
-     std::cout << "Not adding normal lubrication Wall force because positive normal velocity: " << -velNormal  << std::endl;
-#endif
-   } else {
-//#define OUTPUT_TOPWALL
-#ifdef OUTPUT_TOPWALL
-     std::cout << "Lubrication " << wall << " wall sliding force: " << slidingLubricationForce 
-                                                            << " | vr: " 
-                                                            << vr 
-                                                            << " | vt(): " 
-                                                            << vs 
-                                                            << " | vx: " 
-                                                            << b1->getLinearVel()[0]
-                                                            << " | normal velocity: " 
-                                                            << velNormal 
-                                                            << " | normal: " 
-                                                            << c.getNormal() 
-                                                            << " | sep Dist(h): " 
-                                                            << dist 
-                                                            << " | h/r: " 
-                                                            << eps 
-                                                            << " | minEps: " 
-                                                            << minEps 
-                                                            << std::endl;
-#endif
-     // add the normal lubrication force
-     b1->addForce( lubricationForce );
-   }
+  //================================================================================================
+  // enable normal lubrication force for s-s
+  //================================================================================================
+  b1->addForce(-lubricationForce );
+  b2->addForce( lubricationForce );
   }
 }
+//*************************************************************************************************
 
 
 //*************************************************************************************************
@@ -2506,9 +2828,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
 
       if(c->getDistance() <= lubricationThreshold && useLubrication_) {
 
-#ifdef OUTPUT_LVL2
          std::cout << "Found a lubrication contact." << std::endl;
-#endif
 
          BodyID b1l( c->getBody1() );
          BodyID b2l( c->getBody2() );
