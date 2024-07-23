@@ -93,6 +93,99 @@ inline ContactTrait<C>::ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
 
 
 
+//=================================================================================================
+//
+//  SPECIALIZATION FOR THE LUBRICATION CONTACT SOLVER
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Specialization of the ContactTrait class template for the box friction contact solver.
+ * \ingroup collision_response
+ *
+ * This specialization of the ContactTrait class template adapts contacts to the box friction
+ * contact solver.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+struct ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >
+{
+public:
+   //**Constructor*********************************************************************************
+   /*!\name Constructor */
+   //@{
+   explicit ContactTrait( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal );
+   //@}
+   //**********************************************************************************************
+
+   //**Get functions*******************************************************************************
+   /*!\name Get functions */
+   //@{
+   inline bool getLubricationFlag() const;
+   //@}
+   //**********************************************************************************************
+
+private:
+   //**Member variables****************************************************************************
+   /*!\name Member variables */
+   //@{
+   bool isLubricationContact_;
+   //@}
+   //**********************************************************************************************
+};
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Constructor for the ContactTrait<BoxFrictionSolver> specialization.
+ *
+ * \param g1 The first contacting geometric primitive.
+ * \param g2 he second contacting geometric primitive.
+ * \param gpos The global position of the contact.
+ * \param normal The global normal of the contact (running from body 2 to body 1).
+ * \return void
+ *
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::ContactTrait( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal ) :
+   isLubricationContact_( false )
+{
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the lubrication flag.
+ *
+ * \return Reference to the first tangent of the contact.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline bool ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::getLubricationFlag() const
+{
+   return isLubricationContact_;
+}
+//*************************************************************************************************
+
 
 //=================================================================================================
 //
