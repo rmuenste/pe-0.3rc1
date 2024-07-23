@@ -1,5 +1,6 @@
 #include <pe/interface/sim_setup.h>
 #include <map>
+#include <iomanip>
 #include <cstdint>
 #include <pe/engine.h>
 #include <pe/support.h>
@@ -32,12 +33,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 40000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.005 );  // Size of a single time step
+const real   stepsize      (  0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 8 );    // Number of processes in x-direction
-const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 1 );    // Number of processes in y-direction
+const int    processesX( 3 );    // Number of processes in x-direction
+const int    processesY( 3 );    // Number of processes in y-direction
+const int    processesZ( 3 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -382,10 +383,25 @@ void stepSimulation() {
 #define OUTPUT_LEVEL4
 #ifdef OUTPUT_LEVEL4
       std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition().toString()   << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel().toString()  << " " << timestep * stepsize << std::endl;
-      std::cout << "Omega   : " << body->getSystemID() << " " << body->getAngularVel().toString() << " " << timestep * stepsize << std::endl;
-      std::cout << "Theta   : " << body->getSystemID() << " " << body->getRotation().getEulerAnglesXYZ().toString() << " " << timestep * stepsize << std::endl;
+      std::cout << "Position: " << std::left << std::setw(10) << body->getSystemID() 
+                << " " << std::setw(12) << body->getPosition()[0] 
+                << " " << std::setw(12) << body->getPosition()[1] 
+                << " " << std::setw(12) << body->getPosition()[2] 
+                << " " << std::setw(12) << timestep * stepsize << std::endl;
+
+      std::cout << "Velocity: " << std::left << std::setw(10) << body->getSystemID() 
+                << " " << std::setw(12) << body->getLinearVel()[0] 
+                << " " << std::setw(12) << body->getLinearVel()[1] 
+                << " " << std::setw(12) << body->getLinearVel()[2] 
+                << " " << std::setw(12) << timestep * stepsize << std::endl;
+
+      std::cout << "Omega   : " << std::left << std::setw(10) << body->getSystemID() 
+                << " " << std::setw(12) << body->getAngularVel()[0] 
+                << " " << std::setw(12) << body->getAngularVel()[1] 
+                << " " << std::setw(12) << body->getAngularVel()[2] 
+                << " " << std::setw(12) << timestep * stepsize << std::endl;
+
+//      std::cout << "Theta   : " << body->getSystemID() << " " << body->getRotation().getEulerAnglesXYZ().toString() << " " << timestep * stepsize << std::endl;
 #endif
     }
   }

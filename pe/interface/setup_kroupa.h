@@ -105,7 +105,9 @@ void setupKroupa(MPI_Comm ex0) {
   world->setLiquidDensity( simRho );
 
   // Particle Bench Config 
+  //real slipLength( 1.041e-3 );
   real slipLength( 0.01 );
+  // static inline double lubricationThreshold() { return 1.041e-3; }
   world->setLiquidSolid(true);
   world->setDamping( 1.0 );
 
@@ -238,7 +240,8 @@ void setupKroupa(MPI_Comm ex0) {
   real radius2              = 0.005 - epsilon;
 
   int idx = 0;
-  real h = 0.0075;
+  real h  = 0.0075;
+  real ds = 0.001041;
 
   std::vector<Vec3> allPositions;
   int numPositions;
@@ -337,15 +340,20 @@ void setupKroupa(MPI_Comm ex0) {
 
   //=========================================================================================  
   Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
-  TriangleMeshID ellipsoid;
 
-  std::string fileName = std::string("ellipsoid.obj");
+  radius2 = 0.005 - epsilon;
   if(world->ownsPoint(ellipsoidPos)) {
 
-    std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << std::endl;
-    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,
-                                   elastic, true, true, Vec3(1.0, 1.0, 1.0),
-                                   false, false);
+    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
+    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
+    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
+  }
+  ellipsoidPos = Vec3(0.5 * L + 3.5 * radius2 - ds, 0.5 * L, 0.5 * L); 
+  if(world->ownsPoint(ellipsoidPos)) {
+
+    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
+    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
+    sphere->setLinearVel(Vec3(-0.1, 0.0, 0.0));
   }
   
   //=========================================================================================

@@ -2057,15 +2057,12 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
   SphereID s2(nullptr);
   real rad(0.0);
 
-//  std::array<real, 4> values = {0.1, 0.05, 0.03, 0.01};
-//  for (auto &eps: values) {
-//    std::cout << "f_h(" << eps << ") = " << stokesAmplificationFactor(1.0, eps) << std::endl;
-//  }
-//  std::cout << "WARNING: had to swap the order for lubrication contacts, check this!" << std::endl;
-
   const double mu = Settings::liquidViscosity();  // Dynamic viscosity (example value)
-  const double epsilon_L = 0.025;
-  const double epsilon_r = 0.001;
+  //const double epsilon_L = 0.025;
+  //const double epsilon_L = 0.035;
+  const double epsilon_L = 0.22;
+  //const double epsilon_r = 0.001;
+  const double epsilon_r = 0.01;
 
   if (b1->getType() == sphereType) {
     s1 = static_body_cast<Sphere>(b1); 
@@ -2135,11 +2132,16 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
    double kappa = R2 / R1;
 
    // Normalized gap width
-   double epsilon = (dist - R1 - R2) / R_max;
+   //double epsilon = (dist - R1 - R2) / R_max;
+   // Dist is already the separation distance
+   double epsilon = (dist) / R_max;
 
    // Check if the lubrication model is active
    if (epsilon > epsilon_L) {
+     std::cout << "eps:  " << epsilon << " > " << epsilon_L << " | Lubrication model not triggered. " << std::endl;
      return;
+   } else {
+     std::cout << "eps:  " << epsilon << " <= " << epsilon_L << " | Lubrication model triggered. " << std::endl;
    }
 
    // Normal component of the relative velocity
@@ -2204,8 +2206,10 @@ void CollisionSystem< C<CD, FD, BG, response::HardContactAndFluidWithLubrication
                                                << rel_vel 
                                                << " | normal velocity: " 
                                                << U_rel_n 
-                                               << " | Distance: " 
-                                               << dist 
+                                               << " | dist - R1 - R2: " 
+                                               << dist - R1 - R2 
+                                               << " | R_max: " 
+                                               << R_max 
                                                << " | eps: " 
                                                << epsilon 
                                                << std::endl;
@@ -2252,7 +2256,7 @@ template< template<typename> class CD                           // Type of the c
 real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >::calculate_f_star(real h) {
     //double   f_star = (h / hc_) * ((1. + (h / (6. * hc_)) * std::log(1. + (6. * hc_) / h)) - 1.0);
     double f_star = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.0);
-    //     f_star   = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.);
+    //     f_star = (h / (3. * hc_)) * ((1. + (h / (6. * hc_))) * std::log(1. + (6. * hc_ / h)) - 1.0);
     return f_star;
 }
 //*************************************************************************************************
@@ -2838,7 +2842,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
          }
 
          numLubricationContacts++;
-         addLubricationForce(*c, dt);
+         addLubricationForce3(*c, dt);
 
          pe_LOG_DEBUG_SECTION( log ) {
           log << "Found a lubrication contact," << *c << " we apply lubrication force and mask the contact.\n";
