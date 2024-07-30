@@ -99,6 +99,7 @@ public:
    /*!\name Contact setup functions */
    //@{
    inline void addVertexFaceContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, real dist );
+   inline void addLubricationContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, real dist );
    inline void addEdgeEdgeContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal,
                                    const Vec3& e1, const Vec3& e2, real dist );
    //@}
@@ -173,6 +174,33 @@ inline void ContactVector<C,D,G>::addVertexFaceContact( GeomID g1, GeomID g2, co
          dist     // Distance between the surfaces (negative distance means penetration)
       )
    );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Adding a new lubrication contact to the contact vector.
+ *
+ * \param g1 The first colliding geometric primitive.
+ * \param g2 The second colliding geometric primitive.
+ * \param gpos The global position of the contact.
+ * \param normal The normal of the contact.
+ * \param dist The distance between the surfaces of the two colliding rigid bodies.
+ * \return void
+ *
+ * Creating a lubrication contact between the superordinate bodies of the (potentially)
+ * subordinate bodies \a b1 and \a b2 and adding it to the contact vector.
+ */
+template< typename C    // Type of the contact
+        , typename D    // Deletion policy
+        , typename G >  // Growth policy
+inline void ContactVector<C,D,G>::addLubricationContact( GeomID g1, GeomID g2, const Vec3& gpos,
+                                                        const Vec3& normal, real dist )
+{
+   // Creating a new vertex/face contact
+   Contact *contact = new Contact(g1, g2, gpos, normal, dist);
+   contact->setLubricationFlag();
+   Base::pushBack(contact);
 }
 //*************************************************************************************************
 

@@ -124,6 +124,13 @@ public:
    //@}
    //**********************************************************************************************
 
+   //**Set functions*******************************************************************************
+   /*!\name Get functions */
+   //@{
+   inline void setLubricationFlag();
+   //@}
+   //**********************************************************************************************
+
    //**Get functions*******************************************************************************
    /*!\name Get functions */
    //@{
@@ -187,6 +194,24 @@ inline bool ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::getL
 //*************************************************************************************************
 
 
+//*************************************************************************************************
+/*!\brief Sets the lubrication flag.
+ *
+ * \return Reference to the first tangent of the contact.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::setLubricationFlag() 
+{
+   isLubricationContact_ = true;
+}
+//*************************************************************************************************
 //=================================================================================================
 //
 //  SPECIALIZATION FOR THE BOX FRICTION CONTACT SOLVER

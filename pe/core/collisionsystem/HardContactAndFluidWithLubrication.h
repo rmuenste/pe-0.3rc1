@@ -251,6 +251,18 @@ public:
    //**********************************************************************************************
    void synchronizeForces();
 
+   void addLubricationForce( const Contact& c, real dt );
+   void addLubricationForce2( const Contact& c, real dt );
+   void addLubricationForce3( const Contact& c, real dt );
+   Vec3 calculateLubricationForce2(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateWallLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateWallLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
+   Vec3 calculateLubricationForceGorb(real R_b, real R_p, Vec3 U, real mu, real d);
+   real calculate_f_star(real h); 
+   real stokesAmplificationFactor(double kappa, double epsilon);
+
 private:
    //**Add/remove functions************************************************************************
    /*!\name Add/remove functions */
@@ -267,22 +279,13 @@ private:
    //@{
    void simulationStep( real dt );
    void resolveContacts( const Contacts& contacts, real dt );
-   void addLubricationForce( const Contact& c, real dt );
-   void addLubricationForce2( const Contact& c, real dt );
-   void addLubricationForce3( const Contact& c, real dt );
+
    real relaxInelasticFrictionlessContacts( real dtinv );
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
    real relaxInelasticGeneralizedMaximumDissipationContacts( real dtinv );
-   Vec3 calculateLubricationForce2(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
-   Vec3 calculateLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
-   Vec3 calculateWallLubricationForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
-   Vec3 calculateLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
-   Vec3 calculateWallLubricationSlidingForce(real eta_f, Vec3 v_r, Vec3 n, real epsilon, real radius);
-   Vec3 calculateLubricationForceGorb(real R_b, real R_p, Vec3 U, real mu, real d);
-   real calculate_f_star(real h); 
-   real stokesAmplificationFactor(double kappa, double epsilon);
+
    //@}
    //**********************************************************************************************
 
