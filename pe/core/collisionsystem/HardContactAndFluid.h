@@ -28,7 +28,7 @@
 //*************************************************************************************************
 // Includes
 //*************************************************************************************************
-
+#include <sstream>
 #include <algorithm>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
@@ -1877,6 +1877,24 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
+           else if(body->getType() == cylinderType) {
+             BodyID b( *body );
+             CylinderID cyl = static_body_cast<Cylinder>(b);
+             mat = cyl->getMaterial();
+             real rho = Material::getDensity( mat );
+
+             real vol = cyl->getVolume();
+
+             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
+
+             // TODO: find out what happens here
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
+             w_[j] = body->getAngularVel() + dt * 
+                                         ( body->getInvInertia() * 
+                                         ( ( body->getInertia() * body->getAngularVel() ) 
+                                           % body->getAngularVel() 
+                                         ) );
+           }
            else if(body->getType() == boxType) {
              BodyID b( *body );
              BoxID s = static_body_cast<Box>(b);
@@ -3608,9 +3626,13 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
 
                   if( it != processstorage_.end() )
                      b->registerProcess( *it );
-                  else
+                  else {
                      // TODO
-                     throw std::runtime_error( "Registering distant processes is not yet implemented." );
+                     std::stringstream ss;
+                     ss << "Registering distant processes is not yet implemented from source " << myRank << " to " << objparam.reglist_[i];
+                     throw std::runtime_error( ss.str() );
+                     //throw std::runtime_error( "Registering distant processes is not yet implemented." );
+                  }
                }
 
                pe_LOG_DEBUG_SECTION( log ) {

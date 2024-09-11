@@ -746,7 +746,7 @@ void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, 
   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
      MPI_Cart_rank( cartcomm, southwest, &rank );
      connect( rank, intersect(
-        HalfSpace( Vec3(-1,0,0), -(bz+center[0]*dx) ),
+        HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );

@@ -33,12 +33,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 40000 );  // Number of time steps for the flowing granular media
-const real   stepsize      (  0.001 );  // Size of a single time step
+const real   stepsize      (  0.00005 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
-const int    processesY( 3 );    // Number of processes in y-direction
-const int    processesZ( 3 );    // Number of processes in y-direction
+const int    processesX( 5 );    // Number of processes in x-direction
+const int    processesY( 5 );    // Number of processes in y-direction
+const int    processesZ( 1 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -330,7 +330,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.002222;
+  real h = 0.125;
   real epsilon              = 2e-4;
   real radius2              = 0.01 - epsilon;
 
@@ -366,6 +366,7 @@ void stepSimulation() {
     if(body->getType() == sphereType || 
        body->getType() == capsuleType || 
        body->getType() == ellipsoidType || 
+       body->getType() == cylinderType || 
        body->getType() == triangleMeshType) {
       Vec3 vel = body->getLinearVel();
       Vec3 ang = body->getAngularVel();
@@ -408,9 +409,6 @@ void stepSimulation() {
 
   MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
-  if(vv.length() > 3) {
-    std::cout << "Big Vp : " << vv << " " << maxPos << " " << maxParticle->getSystemID() << " norm: " << vv.length() << " rank: " << mpisystem->getRank() << std::endl;
-  }
   pe_EXCLUSIVE_SECTION(0) {
       std::cout << "==Particle Group Data=========================================================" << std::endl;
       //std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;

@@ -77,6 +77,7 @@ public:
    //@{
    inline real getRadius() const;
    inline real getLength() const;
+   inline real getVolume() const;
    //@}
    //**********************************************************************************************
 
@@ -145,6 +146,20 @@ inline real CylinderBase::getRadius() const
 inline real CylinderBase::getLength() const
 {
    return length_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the volume of the cylinder.
+ *
+ * \param radius The radius of the cylinder.
+ * \param length The length of the cylinder.
+ * \return The volume of the cylinder.
+ */
+inline real CylinderBase::getVolume() const
+{
+   return M_PI*radius_*radius_*length_;
 }
 //*************************************************************************************************
 

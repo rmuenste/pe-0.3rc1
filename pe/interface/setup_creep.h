@@ -20,7 +20,7 @@ void setupCreep(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, 0.0 );
 
   // Re 1.5 configuration
-  real simViscosity( 1.0e-3 );
+  real simViscosity( 1.0e0 );
   real simRho( 1.0 );
   world->setViscosity( simViscosity );
   world->setLiquidDensity( simRho );
@@ -37,9 +37,9 @@ void setupCreep(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  const real L( 2.0 );
-  const real LY( 1.0 );
-  const real LZ( 0.05 );
+  const real L( 45.0 );
+  const real LY( 25.0 );
+  const real LZ( 0.5 );
   const real dx( L/processesX );
   const real dy( LY/processesY );
   const real dz( LZ/processesZ );
@@ -111,9 +111,9 @@ void setupCreep(MPI_Comm ex0) {
 //  real by = 0.0;
 //  real bz = 0.0;
 
-  real bx = -1.0;
-  real by = -0.5;
-  real bz = 0.0;
+  real bx = -10.0;
+  real by = -5.0;
+  real bz =  0.0;
 //  const real L( 2.0 );
 //  const real LY( 1.0 );
 //  const real LZ( 0.05 );
@@ -176,34 +176,44 @@ void setupCreep(MPI_Comm ex0) {
   Vec3 gpos2(0.05 , 0.05, gpos[2]);
 
   //=========================================================================================  
-  Vec3 ellipsoidPos = Vec3(0.0 * L, 0.0 * L, 0.0125); 
-  //Vec3 ellipsoidPos = Vec3(0.05, 0.0 * L, 0.025); 
+  //                   We have a heavy throwing ball
+  //=========================================================================================  
+  MaterialID heavy = createMaterial( "heavy", 10.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+  //=========================================================================================  
+  Vec3 ellipsoidPos = Vec3(0.001, 0.0, 0.25); 
+  //Vec3 ellipsoidPos = Vec3(7.4977699, 0.036892558, 0.025); 
   TriangleMeshID ellipsoid;
   CapsuleID cap;
-
+  //7.4977699    0.036892558  0.25
   if(!resume) {
   std::string fileName = std::string("ellipsoid.obj");
   if(world->ownsPoint(ellipsoidPos)) {
 
-    CylinderID cylinder = createCylinder( ++idx, ellipsoidPos, 0.1, 0.051, elastic );
-//    cylinder->rotate( 0.0, 0.5 * M_PI, 0.0 );
+    CylinderID cylinder = createCylinder( ++idx, ellipsoidPos, 1.0, 0.5001, heavy );
+    cylinder->rotate( 0.0, 0.5 * M_PI, 0.0 );
+    cylinder->setAngularVel( 0.0, 0,-50.0);
+    cylinder->setLinearVel( 100.0, 0, 0.0);
+    real x0 = cylinder->getAABB()[0];
+    real x1 = cylinder->getAABB()[3];
+    std::cout << "Bounding box size = " << x1 - x0 << std::endl;
+    
 //    Quaternion<real> q = Quaternion<real>( 0, 0.5 * M_PI, 0 );
-//    cylinder->setOrientation(q);
+//  cylinder->setOrientation(q);
     //real c=0.075, b=0.05, a=0.1;
     //real c=0.0500001, b=0.02, a=0.04;
     //real c=0.012500001, b=0.025, a=0.05;
     real c=0.012500001, b=0.0125, a=0.025;
     //real c=0.0500001, b=0.01, a=0.02;
     //real c=0.05005, b=0.05, a=0.05;
-    std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << " size = (" << a << ", " << b << ", " << c << ")" << std::endl;
-    //real a=0.25, b=0.25, c=0.25;
-    EllipsoidID ell = createEllipsoid(++idx, ellipsoidPos, a, b, c, elastic);
-    //ell->rotate( 0.0, 0, 0.5 * M_PI);
-    //ell->setAngularVel( 0.0, 0, -0.4);
-    std::cout << "I: " << ell->getBodyInertia() << std::endl;
-    std::cout << "I^-1: " << ell->getInvBodyInertia() << std::endl;
-    std::cout << "V: " << ell->getVolume() << std::endl;
-    std::cout << "M: " << ell->getMass() << std::endl;
+//    std::cout << "Creating Ellipsoid in domain " << MPISettings::rank() << " size = (" << a << ", " << b << ", " << c << ")" << std::endl;
+//    //real a=0.25, b=0.25, c=0.25;
+//    EllipsoidID ell = createEllipsoid(++idx, ellipsoidPos, a, b, c, elastic);
+//    //ell->rotate( 0.0, 0, 0.5 * M_PI);
+//    //ell->setAngularVel( 0.0, 0, -0.4);
+//    std::cout << "I: " << ell->getBodyInertia() << std::endl;
+//    std::cout << "I^-1: " << ell->getInvBodyInertia() << std::endl;
+//    std::cout << "V: " << ell->getVolume() << std::endl;
+//    std::cout << "M: " << ell->getMass() << std::endl;
 
 //    CapsuleID cap = createCapsule(++idx, ellipsoidPos, 0.05, 0.1, elastic);
 //    ellipsoid = createTriangleMesh(++idx, ellipsoidPos, fileName,

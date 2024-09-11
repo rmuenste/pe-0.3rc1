@@ -272,9 +272,26 @@ void MPISystem::checkProcesses() const
    {
       theCollisionSystem()->getDomain().getGeometry()->extractHalfSpaces( localDescriptionOfLocalDomain );
 
+      pe_LOG_INFO_SECTION( log ) {
+         {
+            log << "Description of the local domain " << rank << " (necessarily exact):\n";
+            for( std::list< std::pair<Vec3, real> >::iterator it2 = localDescriptionOfLocalDomain.begin(); it2 != localDescriptionOfLocalDomain.end(); ++it2 )
+               log << "   n = " << it2->first << ", d = " << it2->second << "\n";
+         }
+      }
+
       SendBuffer<NoEndiannessConversion> sendbuffer( 10000 );
 
       int numHalfspaces( numeric_cast<int>( localDescriptionOfLocalDomain.size() ) );
+
+      if(numHalfspaces > 6) {
+        pe_LOG_WARNING_SECTION( log ) {
+          log << "Description of the local domain " << rank << " has more than 6 half-spaces:\n";
+          for( std::list< std::pair<Vec3, real> >::iterator it2 = localDescriptionOfLocalDomain.begin(); it2 != localDescriptionOfLocalDomain.end(); ++it2 )
+             log << "   n = " << it2->first << ", d = " << it2->second << "\n";
+        }
+      }
+
       sendbuffer << numHalfspaces;
       for( std::list< std::pair<Vec3, real> >::iterator it = localDescriptionOfLocalDomain.begin(); it != localDescriptionOfLocalDomain.end(); ++it ) {
          marshal( sendbuffer, it->first );
@@ -347,7 +364,9 @@ void MPISystem::checkProcesses() const
 
          if( onedeficient ) {
             pe_LOG_WARNING_SECTION( log ) {
-               log << "The description of the remote domain of rank " << it->getRank() << " on process " << rank << " contains at least one halfspace not present in the description of the corresponding domain on process " << it->getRank() << ".\n";
+               log << "The description of the remote domain of rank " << it->getRank() << " on process " << rank << 
+                 " contains at least one halfspace not present in the description of the corresponding domain on process " << it->getRank() << ".\n";
+
                log << "Local description of the remote domain (possibly a superset):\n";
                i = 0;
                for( std::list< std::pair<Vec3, real> >::iterator it2 = localDescriptionOfRemoteDomain.begin(); it2 != localDescriptionOfRemoteDomain.end(); ++it2, ++i )
@@ -355,6 +374,7 @@ void MPISystem::checkProcesses() const
                log << "Remote description of the remote domain (necessarily exact):\n";
                for( std::list< std::pair<Vec3, real> >::iterator it2 = remoteDescriptionOfRemoteDomain.begin(); it2 != remoteDescriptionOfRemoteDomain.end(); ++it2 )
                   log << "   n = " << it2->first << ", d = " << it2->second << "\n";
+
             }
          }
       }
