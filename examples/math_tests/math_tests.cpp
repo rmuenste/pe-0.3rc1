@@ -202,34 +202,34 @@ int main( int argc, char* argv[] )
    real dist(0.01);
    real eps(2.08333);
    real rad = radius;
-   Vec3 lubricationForce = theCollisionSystem()->calculateLubricationForce(simViscosity, vr, n, eps, rad);
-   std::cout << "Lubrication particle force: " << lubricationForce 
-                                               << " | vr: " 
-                                               << vr 
-                                               << " | Distance: " 
-                                               << dist 
-                                               << " | eps: " 
-                                               << eps 
-                                               << std::endl;
-   eps = 0.1;
-   lubricationForce = calculateLub(simViscosity, vr, n, eps, rad);
-   std::cout << "Lubrication particle force: " << lubricationForce 
-                                               << " | vr: " 
-                                               << vr 
-                                               << " | eps: " 
-                                               << eps 
-                                               << std::endl;
-
-   real slipLength( 0.001 );
-   real fc =  calc_f_star(eps, slipLength);
-   std::cout << "Corrected particle force: "   << lubricationForce  * fc
-                                               << " | correction fc: " 
-                                               << fc 
-                                               << " | eps: " 
-                                               << eps 
-                                               << " | hc: " 
-                                               << slipLength 
-                                               << std::endl;
+//   Vec3 lubricationForce = theCollisionSystem()->calculateLubricationForce(simViscosity, vr, n, eps, rad);
+//   std::cout << "Lubrication particle force: " << lubricationForce 
+//                                               << " | vr: " 
+//                                               << vr 
+//                                               << " | Distance: " 
+//                                               << dist 
+//                                               << " | eps: " 
+//                                               << eps 
+//                                               << std::endl;
+//   eps = 0.1;
+//   lubricationForce = calculateLub(simViscosity, vr, n, eps, rad);
+//   std::cout << "Lubrication particle force: " << lubricationForce 
+//                                               << " | vr: " 
+//                                               << vr 
+//                                               << " | eps: " 
+//                                               << eps 
+//                                               << std::endl;
+//
+//   real slipLength( 0.001 );
+//   real fc =  calc_f_star(eps, slipLength);
+//   std::cout << "Corrected particle force: "   << lubricationForce  * fc
+//                                               << " | correction fc: " 
+//                                               << fc 
+//                                               << " | eps: " 
+//                                               << eps 
+//                                               << " | hc: " 
+//                                               << slipLength 
+//                                               << std::endl;
 
    //Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
    //Vec3 pos = Vec3(1, 0.0, 0.0125);

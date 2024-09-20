@@ -692,8 +692,8 @@ int main( int argc, char** argv )
         localPoints.push_back(pos);
         systemIDs.push_back(body->getSystemID());
         //std::cout << "Wall contact: " << body->wallContact_ << " distance: " << body->contactDistance_ << std::endl;
-        localWallContacts.push_back(body->wallContact_);
-        localWallDistances.push_back(body->contactDistance_);
+//        localWallContacts.push_back(body->wallContact_);
+//        localWallDistances.push_back(body->contactDistance_);
 //        std::cout << "Real System Id: " << body->getSystemID() << std::endl;
 //        Vec3 vel = body->getLinearVel();
 //        Vec3 ang = body->getAngularVel();
