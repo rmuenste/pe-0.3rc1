@@ -2523,6 +2523,8 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    std::cout << "X center = " << center[0] << std::endl; //xCenter/totalVolume
    std::cout << "Y center = " << center[1] << std::endl; //yCenter/totalVolume
    std::cout << "Z center = " << center[2] << std::endl; //zCenter/totalVolume
+   std::cout << "#Verts   = " << vertices.size() << std::endl; //zCenter/totalVolume
+   std::cout << "#Faces   = " << faceIndices.size() << std::endl; //zCenter/totalVolume
 
    //move the triangle mesh so that the COM is the coordinate origin
    //and scale it

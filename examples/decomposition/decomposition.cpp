@@ -29,7 +29,9 @@
 
 
 //*************************************************************************************************
-// Includes
+// Includes 1 Termin im Nov, 1 Termin im Dez.
+// 4 Dokumente, Master/Bacherlor Tech/math  + Wima Master/Bachelor
+// Hinweisblätter
 //*************************************************************************************************
 
 #include <cstring>
@@ -183,7 +185,7 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 0 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 11 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Visualization variables
@@ -219,7 +221,7 @@ int main( int argc, char* argv[] )
 
    if( fileName.empty() ) {
      std::cout << "Need to enter a file via the --file command line parameter. Setting a default value." << std::endl;
-     fileName = std::string("span_aligned.obj");
+     fileName = std::string("archimedes.obj");
    }
 
    // Simulation world setup
@@ -236,7 +238,7 @@ int main( int argc, char* argv[] )
    real minEps( 0.01 );
    world->setLiquidSolid(true);
    world->setDamping( 1.0 );
-
+ 
    // Setup of the VTK visualization
    if( vtk ) {
       vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
@@ -284,6 +286,14 @@ int main( int argc, char* argv[] )
    std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
    std::cout << "botPlaneID: "  << botPlane->getSystemID() << std::endl;
 
+   TriangleMeshID archimedes = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+   archimedes->setFixed(true);
+
+   Vec3 spherePos (0,-2.8, 0.1);
+   real sphereRad = 0.1;
+   SphereID s1 = createSphere( id++, spherePos, sphereRad, elastic );
+
+
    std::vector<Vec3> allPositions;
    int numPositions;
  
@@ -295,7 +305,6 @@ int main( int argc, char* argv[] )
    //numPositions = allPositions.size();
 
    Vec3 gpos (0, 0, 0);
-   TriangleMeshID archimedes = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
  
    unsigned int particlesTotal = allPositions.size();
    real domainVol = LX * LY * LZ;
@@ -327,10 +336,9 @@ int main( int argc, char* argv[] )
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
 
-   real dt = 0.0005;
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
-      world->simulationStep( dt );
+      world->simulationStep( stepsize );
    }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"

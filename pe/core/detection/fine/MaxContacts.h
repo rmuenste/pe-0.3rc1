@@ -974,22 +974,65 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideSphereTMesh( SphereID s, TriangleMeshID m, CC& contacts )
 {
-   Vec3 normal;
-   Vec3 contactPoint;
-   real penetrationDepth;
+
+   //===========================================================================================
+   //Vec3 normal;
+   //Vec3 contactPoint;
+   //real penetrationDepth;
+
+   //if(gjkEPAcollideHybrid< SphereID >(s, m, normal, contactPoint, penetrationDepth)) {
+   //   //bodys possibly overlap
+   //   //normal points form object2 (m) to object1 (s)
+   //   contacts.addVertexFaceContact( s, m, contactPoint, normal, penetrationDepth );
+   //   if(normal[2] < 0) {
+   //      //std::cerr << normal << "\t depth=" << penetrationDepth << std::endl;
+   //   }
+   //   pe_LOG_DEBUG_SECTION( log ) {
+   //      log << "      Contact created between sphere " << s->getID()
+   //         << " and triangle mesh " << m->getID() << " (dist=" << penetrationDepth << ")";
+   //   }
+   //}
+   //===========================================================================================
+
+   const Vec3 &point = s->getPosition();
+
+   // Minimum distance and closest point on the triangle
+   real minDistanceSqr = std::numeric_limits<real>::max();
+   Vec3 closestPoint;
+    
+   const Vertices& vertices = m->getWFVertices();
+   const IndicesLists& faceIndices = m->getFaceIndices();
    
-   if(gjkEPAcollideHybrid< SphereID >(s, m, normal, contactPoint, penetrationDepth)) {
-      //bodys possibly overlap
-      //normal points form object2 (m) to object1 (s)
-      contacts.addVertexFaceContact( s, m, contactPoint, normal, penetrationDepth );
-      if(normal[2] < 0) {
-         //std::cerr << normal << "\t depth=" << penetrationDepth << std::endl;
-      }
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      Contact created between sphere " << s->getID()
-            << " and triangle mesh " << m->getID() << " (dist=" << penetrationDepth << ")";
-      }
+
+   // Iterate over each triangle in the mesh
+   for (const auto& face : faceIndices) {
+       // Get the indices of the three vertices that form the triangle
+       size_t iA = face[0];
+       size_t iB = face[1];
+       size_t iC = face[2];
+
+       // Retrieve the actual vertex positions from the current vertices list
+       const Vec3& A = vertices[iA];
+       const Vec3& B = vertices[iB];
+       const Vec3& C = vertices[iC];
+
+       // Compute the closest point on this triangle to the input point
+       Vec3 currentClosestPoint = closestPointToTriangle(point, A, B, C);
+
+       // Compute the squared distance from the input point to this closest point
+       float distanceSqr = (currentClosestPoint - point).sqrLength();
+
+       // If this is the closest point so far, update the minimum distance and store the point
+       if (distanceSqr < minDistanceSqr) {
+           minDistanceSqr = distanceSqr;
+           closestPoint = currentClosestPoint;
+       }
    }
+   std::cout << "closest point is: " << closestPoint << " | min distance: " << std::sqrt(minDistanceSqr) << std::endl;
+
+   // Return the closest point found
+   //return closestPoint;
+   
 }
 //*************************************************************************************************
 
