@@ -62,6 +62,13 @@ namespace pe {
  * The triangle mesh module combines all necessary functionality for the geometric primitive triangle
  * mesh. A detailed description of the triangle mesh primitive can be found with the class TriangleMesh.
  * This description also contains examples for the setup and destruction of a triangle mesh.
+ * When a triangle mesh is created the center of mass is calculated. By default pe then aligns the
+ * the global position with the center of mass and recalculates the vertices relative to the com. This
+ * way a local coordinate system is created. After that user-defined transformations are applied.
+ * 
+ * VTK output:
+ * In the vtk output the vertex indices match the vtk vertex indices. The face indices are the
+ * vtk indices - 1. So vtk_cell_index = TriangMesh_index + 1
  */
 /*!\brief Triangle mesh geometry.
  * \ingroup triangleMesh
@@ -187,6 +194,7 @@ public:
    inline real getRelDistance( const Vec3& rpos )          const;
    inline real getDistance   ( real px, real py, real pz ) const;
    inline real getDistance   ( const Vec3& gpos )          const;
+   inline Vec3 getFaceNormal ( std::size_t idx)            const;
 
    virtual void calcBoundingBox();  // Calculation of the axis-aligned bounding box
 
@@ -458,6 +466,23 @@ inline real TriangleMesh::getRelDistance( const Vec3& rpos ) const
 inline real TriangleMesh::getDistance( real px, real py, real pz ) const
 {
    return -getRelDepth( pointFromWFtoBF( px, py, pz ) );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Calculates the distance of a point in global coordinates.
+ *
+ * \param idx The face index 
+ * \return The face normal
+ *
+ * Returns a positive value, if the point lies outside the triangle mesh and a negative value, if the
+ * point lies inside the triangle mesh. The returned distance is calculated relative to the closest
+ * side of the triangle mesh.
+ */
+inline Vec3 TriangleMesh::getFaceNormal( std::size_t idx) const
+{
+   return faceNormals_[idx]; 
 }
 //*************************************************************************************************
 

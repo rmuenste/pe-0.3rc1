@@ -185,8 +185,8 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 11 );  // Number of time steps for the flowing granular media
-   const real   stepsize      ( 0.0005 );  // Size of a single time step
+   const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
+   const real   stepsize      ( 0.01 );  // Size of a single time step
 
    // Visualization variables
    const size_t visspacing    (   10 );  // Number of time steps in-between two POV-Ray files
@@ -226,7 +226,7 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, 1.0 );
+   world->setGravity( 0.0,-1.0, 0.0 );
 
    real simViscosity( 8.37e-5 );
    real simRho( 1.0 );
@@ -237,7 +237,7 @@ int main( int argc, char* argv[] )
    real slipLength( 0.01 );
    real minEps( 0.01 );
    world->setLiquidSolid(true);
-   world->setDamping( 1.0 );
+   world->setDamping( 0.98 );
  
    // Setup of the VTK visualization
    if( vtk ) {
@@ -273,25 +273,22 @@ int main( int argc, char* argv[] )
    //  - dampingN                       : 10
    //  - dampingT                       : 11
    //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.5, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   MaterialID sphere = createMaterial( "sphere", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   MaterialID archi  = createMaterial( "archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    int planeId = 99999;
    //======================================================================================== 
-   // Here we add some planes
-   BodyID botPlane = createPlane( 6666, 0.0, 0.0, 1.0, 0.0, elastic, false ); // bottom border
-   BodyID topPlane = createPlane( 7777, 0.0, 0.0, -1.0, -LZ, elastic, false ); // top border
-   BodyID rightPlane = createPlane( 8888, 1.0, 0.0, 0.0, 0.0, elastic, false ); // right border
-   BodyID leftPlane = createPlane( 9999,-1.0, 0.0,  0.0, -LX, elastic, false ); // left border
-   BodyID frontPlane = createPlane( 5555, 0.0, 1.0, 0.0, 0.0, elastic, false ); // front border
-   BodyID backPlane = createPlane( 4444, 0.0,-1.0,  0.0, -LY, elastic, false ); // back border
-   std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
-   std::cout << "botPlaneID: "  << botPlane->getSystemID() << std::endl;
 
-   TriangleMeshID archimedes = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
+   TriangleMeshID archimedes = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, archi, true, true, Vec3(1.0,1.0,1.0), false, false);
    archimedes->setFixed(true);
 
-   Vec3 spherePos (0,-2.8, 0.1);
+   Vec3 spherePos   (-1.9, 0.4, 0.1);
+   Vec3 spherePos2  ( 0.42236, -0.300538, 0.08);
+   //Vec3 spherePos (-2.15, 0.65, 0.1);
+   //Vec3 spherePos ( 0.0,-0.2, 0.1);
+   //Vec3 spherePos (-1.9,-2.2, 0.1);
    real sphereRad = 0.1;
-   SphereID s1 = createSphere( id++, spherePos, sphereRad, elastic );
+   SphereID s1 = createSphere( id++, spherePos, sphereRad, sphere );
+   SphereID s2 = createSphere( id++, spherePos2, sphereRad, sphere );
 
 
    std::vector<Vec3> allPositions;
@@ -339,6 +336,7 @@ int main( int argc, char* argv[] )
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep << " of " << timesteps << "   " << std::flush;
       world->simulationStep( stepsize );
+      //std::cout << "\r Sphere pos " << s1->getPosition() << std::endl;
    }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"

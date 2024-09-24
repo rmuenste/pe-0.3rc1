@@ -1003,7 +1003,10 @@ void MaxContacts::collideSphereTMesh( SphereID s, TriangleMeshID m, CC& contacts
    const Vertices& vertices = m->getWFVertices();
    const IndicesLists& faceIndices = m->getFaceIndices();
    
-
+   Vec3 A0, B0, C0;
+   std::size_t faceIdx = 0;
+   std::size_t minIdx = 0;
+   Vec3 normal(0,0,0);
    // Iterate over each triangle in the mesh
    for (const auto& face : faceIndices) {
        // Get the indices of the three vertices that form the triangle
@@ -1022,16 +1025,62 @@ void MaxContacts::collideSphereTMesh( SphereID s, TriangleMeshID m, CC& contacts
        // Compute the squared distance from the input point to this closest point
        float distanceSqr = (currentClosestPoint - point).sqrLength();
 
+
        // If this is the closest point so far, update the minimum distance and store the point
        if (distanceSqr < minDistanceSqr) {
            minDistanceSqr = distanceSqr;
            closestPoint = currentClosestPoint;
+           normal = point - currentClosestPoint;
+           A0 = A;
+           B0 = B;
+           C0 = C;
+           minIdx = faceIdx;
        }
+       faceIdx++;
    }
-   std::cout << "closest point is: " << closestPoint << " | min distance: " << std::sqrt(minDistanceSqr) << std::endl;
 
-   // Return the closest point found
-   //return closestPoint;
+   real dist = std::sqrt(minDistanceSqr) - s->getRadius();
+   const Vec3& faceNormal = m->getFaceNormal(minIdx);
+
+   normal.normalize();
+
+   real dot = trans(normal) * faceNormal;
+
+//   std::cout << "closest point is: " << closestPoint << " | min distance: " << std::sqrt(minDistanceSqr) - s->getRadius() << std::endl;
+//   std::cout << "Dot: " << dot << std::endl;
+//   std::cout << "Triangle ABC: " << A0 << " " << B0 << " " << C0 <<  " face id: " << minIdx << std::endl;
+//   std::cout << "Triangle indices: " << faceIndices[minIdx][0] << " " << faceIndices[minIdx][1] << " " << faceIndices[minIdx][2] << std::endl;
+
+   // Penetration
+   //if(dist < s->getRadius()) {
+   if(dist < 0) {
+
+     //dist = -dist;
+//     std::cout << "Penetration " << dist << std::endl;
+//     if (dot < 0.0) {
+//     // Situation 1) Penetration, sphere center is "outside"
+//       
+//     }
+//     else {
+//     // Situation 2) Penetration, sphere center is "inside"
+//     dist = -dist;
+//     }
+
+   }
+
+
+   if( dist < contactThreshold ) {
+
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between sphere " << s->getID()
+             << " and TMesh " << m->getID() << " (dist=" << dist << ")";
+      }
+
+      normal.normalize();
+      contacts.addVertexFaceContact( s, m, closestPoint, normal, dist );
+   }
+
    
 }
 //*************************************************************************************************
