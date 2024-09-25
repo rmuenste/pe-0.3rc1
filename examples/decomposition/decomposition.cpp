@@ -166,6 +166,40 @@ std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFrac
     return positions;
 }
 
+// Function to load planes from file and create HalfSpace instances
+void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<HalfSpace> &halfSpaces) {
+    std::ifstream file(filename);
+    std::string line;
+    
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << "\n";
+        return;
+    }
+
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        double px, py, pz, nx, ny, nz;
+        
+        // Read the plane's point and normal from the line
+        if (!(iss >> px >> py >> pz >> nx >> ny >> nz)) {
+            std::cerr << "Error: Malformed line: " << line << "\n";
+            continue;
+        }
+
+        // Create a Vec3 for the normal vector
+        Vec3 normal(nx, ny, nz);
+        
+        // Calculate the distance from the origin using the point-normal formula
+        double dO = std::abs(nx * px + ny * py + nz * pz) / normal.length();
+        
+        // Create the HalfSpace instance
+        //halfSpaces.emplace_back(normal, dO);
+        //HalfSpace(normal.normalize(), Vec3(px, py, pz));
+        halfSpaces.emplace_back(normal.normalize(), Vec3(px, py, pz));
+    }
+    
+    file.close();
+}
 
 
 //=================================================================================================
@@ -238,6 +272,22 @@ int main( int argc, char* argv[] )
    real minEps( 0.01 );
    world->setLiquidSolid(true);
    world->setDamping( 0.98 );
+
+   std::vector<HalfSpace> halfSpaces;
+   loadPlanesAndCreateHalfSpaces("my_planes.txt", halfSpaces);
+
+   Vec3 p2(-0.52232, -2.5464, 0.13586);
+   Vec3 p3( 0.37061, -2.573, 0.091369);
+   Vec3 p4( 1.5182, -2.1098, 0.047162);
+   for (const auto& hs : halfSpaces) {
+      hs.print(std::cout, "\t");
+      std::cout << "Contains point " << Vec3(-1.5486, -2.0881, 0.18783) << " " << hs.containsPoint(Vec3(-1.5486, -2.0881, 0.18783)) << std::endl;
+      std::cout << "Contains point " << p2 << " " << hs.containsPoint(p2) << std::endl;
+      std::cout << "Contains point " << p3 << " " << hs.containsPoint(p3) << std::endl;
+      std::cout << "Contains point " << p4 << " " << hs.containsPoint(p4) << std::endl;
+   }
+
+   return 0;
  
    // Setup of the VTK visualization
    if( vtk ) {

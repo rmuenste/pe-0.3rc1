@@ -1,8 +1,8 @@
+#ifdef HAVE_MPI
 #include <pe/core/MPI.h>
+
 extern "C" void step_simulation_();
 void stepSimulation();
-
-#ifdef HAVE_MPI
 void setupParticleBench(MPI_Comm ex0);
 void setupFSIBench(MPI_Comm ex0);
 void setup2x2x2(MPI_Comm ex0);

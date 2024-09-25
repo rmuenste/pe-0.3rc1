@@ -1,7 +1,7 @@
 #include <pe/interface/c2f_interface.h>
-#include <pe/interface/sim_setup.h>
 
 #if HAVE_MPI
+#include <pe/interface/sim_setup.h>
 #include <pe/interface/object_queries.h>
 
 #include <pe/interface/c_interface_queries.h>

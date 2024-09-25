@@ -1,4 +1,3 @@
-#include <pe/interface/sim_setup.h>
 #include <map>
 #include <iomanip>
 #include <cstdint>
@@ -14,6 +13,7 @@ using boost::filesystem::path;
 
 using namespace pe;
 #ifdef HAVE_MPI
+#include <pe/interface/sim_setup.h>
 //=================================================================================================
 //
 //    Global Definitions
@@ -432,6 +432,7 @@ void stepSimulation() {
 
 }
 
+#ifdef WURST_HAVE_MPI
 #include <pe/interface/setup_part_bench.h>
 #include <pe/interface/setup_nxnxn.h>
 #include <pe/interface/setup_cyl.h>
@@ -440,6 +441,7 @@ void stepSimulation() {
 #include <pe/interface/setup_fsi_bench.h>
 #include <pe/interface/setup_kroupa.h>
 #include <pe/interface/setup_creep.h>
+#endif
 //
 //=================================================================================================
 //
