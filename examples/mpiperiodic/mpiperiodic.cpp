@@ -44,67 +44,54 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR,
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 
 
-// Function to generate random positions within a cubic domain
-std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFraction) {
-
-    WorldID world = theWorld();
-
-    std::vector<Vec3> positions;
-
-    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
-    real domainVol = L * L * L;
-
-    std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
-
-    // Calculate the number of cells along one side of the cubic grid
-    int gridSize = static_cast<int>(L / cellSize);
-
-    // Calculate the total number of cells in the grid
-    int totalCells = gridSize * gridSize * gridSize;
-
-    // Initialize a vector to keep track of visited cells
-    std::vector<bool> cellVisited(totalCells, false);
-
-    // Initialize random number generator
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<real> dis(-cellSize / 2.0, cellSize / 2.0);
-
-    // Generate random positions until the grid is full or the volume fraction is reached
-    while (positions.size() < totalCells && (static_cast<real>(positions.size()) / totalCells) < volumeFraction) {
-        // Generate random cell indices
-        int x = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
-        int y = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
-        int z = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
-
-        int cellIndex = x + y * gridSize + z * gridSize * gridSize;
-        
-        // Calculate the position of the cell center
-        real posX = (x + 0.5) * cellSize;
-        real posY = (y + 0.5) * cellSize;
-        real posZ = (z + 0.5) * cellSize;
-
-        Vec3 gpos(posX, posY, posZ);
-
-        // Check if the cell has not been visited
-        if (!cellVisited[cellIndex] && world->ownsPoint( gpos ) ) {
-            // Mark the cell as visited
-            cellVisited[cellIndex] = true;
-
-            // Calculate the position of the cell center
-            double posX = (x + 0.5) * cellSize;
-            double posY = (y + 0.5) * cellSize;
-            double posZ = (z + 0.5) * cellSize;
-
-            // Create a Vec3 object for the position and add it to the positions vector
-            positions.push_back(Vec3(posX, posY, posZ));
-        }
+// Function to load planes from file and create HalfSpace instances
+void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<HalfSpace> &halfSpaces) {
+    std::ifstream file(filename);
+    std::string line;
+    
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << "\n";
+        return;
     }
+    int counter = 0;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        double px, py, pz, nx, ny, nz;
+        
+        // Read the plane's point and normal from the line
+        if (!(iss >> px >> py >> pz >> nx >> ny >> nz)) {
+            std::cerr << "Error: Malformed line: " << line << "\n";
+            continue;
+        }
 
-    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
-    //std::cout << "Volume fraction:  " << solidFraction << std::endl;
-    //std::cout << "local:  " << positions.size() << std::endl;
-    return positions;
+        // Create a Vec3 for the normal vector
+        Vec3 normal(nx, ny, nz);
+        Vec3 point(px, py, pz);
+
+        //std::cout << "Plane " << counter << " If " << trans(-point) * normal << " < 0 then the origin is outside." << std::endl;
+
+        bool originOutside = (trans(-point) * normal < 0.0);
+        //*  - > 0: The global origin is outside the half space\n
+        //*  - < 0: The global origin is inside the half space\n
+        //*  - = 0: The global origin is on the surface of the half space
+        
+        // Calculate the distance from the origin using the point-normal formula
+        double dO = std::abs(nx * px + ny * py + nz * pz) / normal.length();
+        if (!originOutside) {
+          dO = -dO; 
+        } 
+        
+        // Create the HalfSpace instance
+        halfSpaces.emplace_back(normal, dO);
+        counter++;
+    }
+    
+//    // Use the print function to print each HalfSpace to stdout
+//    for (const auto& hs : halfSpaces) {
+//        hs.print(std::cout, "\t");  // Passing std::cout for stdout and "\t" for tabbing
+//    }
+    
+    file.close();
 }
 
 
@@ -127,20 +114,21 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
  */
 int main( int argc, char** argv )
 {
+   //loadPlanesAndCreateHalfSpaces("my_planes.txt");
 
    /////////////////////////////////////////////////////
    // Simulation parameters
 
    // Particle parameters
    const bool   spheres ( true   );  // Switch between spheres and granular particles
-   const real   radius  ( 0.005  );  // The radius of spheres of the granular media
+   const real   radius  ( 0.05  );  // The radius of spheres of the granular media
    const real   spacing ( 0.001  );  // Initial spacing in-between two spheres
    const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 366 );  // Number of time steps for the flowing granular media
-   const real   stepsize      ( 0.0005 );  // Size of a single time step
+   const size_t timesteps     ( 10 );  // Number of time steps for the flowing granular media
+   const real   stepsize      ( 0.01 );  // Size of a single time step
 
    // Process parameters
    const int processesX( 4 );  // Number of processes in x-direction
@@ -159,9 +147,12 @@ int main( int argc, char** argv )
    // Visualization parameters
    const bool   colorProcesses( false );  // Switches the processes visualization on and off
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   5 );  // Number of time steps in-between two POV-Ray files
+   const size_t visspacing    (   1 );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (    51 );  // Number of particles in x-dimension with a specific color
 
+//   std::vector<HalfSpace> halfSpaces1;
+//   loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces1);
+//   return EXIT_SUCCESS;
 
    /////////////////////////////////////////////////////
    // MPI Initialization
@@ -188,19 +179,12 @@ int main( int argc, char** argv )
    }
 
    // Checking the total number of MPI processes
-   if( processesX < 2 || processesZ < 1 || processesX*processesZ != mpisystem->getSize() ) {
+   if( processesX != 4 || processesZ < 1 || processesX*processesZ != mpisystem->getSize() ) {
       std::cerr << pe_RED
                 << "\n Invalid number of MPI processes!\n\n"
                 << processesX*processesZ << " : " << mpisystem->getSize()
                 << pe_OLDCOLOR;
       return EXIT_FAILURE;
-   }
-
-   // Parsing the command line arguments
-   for( int i=1; i<argc; ++i ) {
-      if( std::strncmp( argv[i], "-no-povray", 10 ) == 0 ) {
-         povray = false;
-      }
    }
 
    // Setup of the random number generation
@@ -218,7 +202,6 @@ int main( int argc, char** argv )
    const real lz( L );                         // Size of the domain in z-direction
    const real space( real(2)*radius+spacing );  // Space initially required by a single particle
 
-
    /////////////////////////////////////////////////////
    // Setup of the MPI processes: Periodic 2D Regular Domain Decomposition
 
@@ -226,11 +209,15 @@ int main( int argc, char** argv )
    const real lpz( lz / processesZ );  // Size of a process subdomain in z-direction
 
    int dims   [] = { processesX, processesZ };
-   int periods[] = { true      , true       };
+   int periods[] = { false     , false      };
 
    int rank;           // Rank of the neighboring process
    int center[2];      // Definition of the coordinates array 'center'
    MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
+
+   std::vector<HalfSpace> halfSpaces;
+   loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces);
+
 
    MPI_Cart_create( MPI_COMM_WORLD, 2, dims, periods, false, &cartcomm );
    mpisystem->setComm( cartcomm );
@@ -253,141 +240,144 @@ int main( int argc, char** argv )
    int topwest   [] = { center[0]-1, center[1]+1 };
    int topeast   [] = { center[0]+1, center[1]+1 };
 
-   // Specify local subdomain (Since the domain is periodic we do not have to remove intersections at the border)
-   // A displacement of a plane in the +x direction is expressed by a negative displacement -d
-   // Here the half-space with normal (-1, 0, 0) is displaced 6 units from the origin to +x direction 
-   // HalfSpace( Vec3(-1,0,0), -6 ),
-   defineLocalDomain( intersect(
-      HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-      HalfSpace( Vec3(-1,0,0), -east[0]*lpx ),
-      HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
-      HalfSpace( Vec3(0,0,-1), -top[1]*lpz ) ) );
+//   Vec3 p1 = Vec3(-1.4170880317687988, -2.5206289291381836, 0.4262872040271759);
+//   Vec3 p2 = Vec3(-0.44539201259613037, -2.9075939655303955, 0.3683735132217407);
+//   Vec3 p3 = Vec3(0.700677216053009, -2.8551599979400635, 0.3209492862224579);
+//   Vec3 p4 = Vec3(1.7178499698638916, -2.3712100982666016, 0.27770888805389404);
 
-   pe_LOG_DEBUG_SECTION( log ) {
-     log << "Rank: " << mpisystem->getRank() << " +1,0,0: " << +center[0]*lpx << "| -1,0,0: " << -east[0]*lpx << "| 0,0,+1: " << +center[1]*lpz << "| 0,0,-1: " << -top[1]*lpz << "\n";
+   Vec3 p1 = Vec3(-1.1335910558700562, -2.659374952316284, 0.41303178668022156);
+   Vec3 p2 = Vec3(-1.0874,-2.67839,0.410885);
+   //Vec3 p2 = Vec3(-0.0776035264134407, -2.939215898513794, 0.3535797894001007);
+   Vec3 p3 = Vec3(1.0964399576187134, -2.727055072784424, 0.30383288860321045);
+   Vec3 p4 = Vec3(2.1420280933380127, -2.0990099906921387, 0.22060100734233856);
+
+   pe_LOG_INFO_SECTION( log ) {
+     log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
    }
 
+   if (west[0] < 0) {
+      defineLocalDomain(
+         halfSpaces[center[0]]
+      );
 
-   // Connecting the west neighbor
-   {
-      MPI_Cart_rank( cartcomm, west, &rank );
-      // If we are dealing with the west neighbor, then set the x-offset to lx 
-      const Vec3 offset( ( ( west[0] < 0 ) ? ( lx ) : ( 0 ) ), 0, 0 );
+      pe_LOG_INFO_SECTION( log ) {
+      std::ostringstream oss;
+      halfSpaces[center[0]].print(oss, "\t");
+      
+      log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
+      log << oss.str() << "\n";
+      }
+      pe_LOG_INFO_SECTION( log ) {
+      
+//      log << ") test point " << p1 << theWorld()->ownsPoint(p1)  << "\n";
+      log << ") test point " << p2 << theWorld()->ownsPoint(p2)  << "\n";
+//      log << ") test point " << p3 << theWorld()->ownsPoint(p3)  << "\n";
+//      log << ") test point " << p4 << theWorld()->ownsPoint(p4)  << "\n";
+      }
+//   } else if (east[0] >= processesX) {
+//      HalfSpace hs = halfSpaces[center[0]-1];
+//      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), hs.getDisplacement());
+//      defineLocalDomain(
+//         hs_flip
+//      );
+//
+//      pe_LOG_INFO_SECTION( log ) {
+//      std::ostringstream oss;
+//      hs_flip.print(oss, "\t");
+//      
+//      log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
+//      log << oss.str() << "\n";
+//      }
+//
+//      pe_LOG_INFO_SECTION( log ) {
+//      
+//      log << ") test point " << p1 << theWorld()->ownsPoint(p1)  << "\n";
+//      log << ") test point " << p2 << theWorld()->ownsPoint(p2)  << "\n";
+//      log << ") test point " << p3 << theWorld()->ownsPoint(p3)  << "\n";
+//      log << ") test point " << p4 << theWorld()->ownsPoint(p4)  << "\n";
+//      } 
+   } else {
+      // -x of halfSpaces[mpisystem->getRank()] and +x of halfSpaces[mpisystem->getRank()-1]
+      HalfSpace hs = halfSpaces[center[0]-1];
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), hs.getDisplacement());
+      defineLocalDomain(intersect(
+         halfSpaces[center[0]],
+         hs_flip
+         )
+      );
 
-
-   pe_LOG_DEBUG_SECTION( log ) {
-      log << "west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| -1,0,0: " << -center[0]*lpx 
-                            << "| 0,0,+1: " << +center[1]*lpz 
-                            << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << "\n";
-
+      pe_LOG_INFO_SECTION( log ) {
+      std::ostringstream oss;
+      halfSpaces[center[0]].print(oss, "\t");
+      hs_flip.print(oss, "\t");
+      
+      log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
+      log << oss.str() << "\n";
       }
 
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
-                                HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
-                                HalfSpace( Vec3(0,0,-1), -top[1]*lpz ) ), offset );
-   }
+      pe_LOG_INFO_SECTION( log ) {
+      
+//      log << ") test point " << p1 << theWorld()->ownsPoint(p1)  << "\n";
+      log << ") test point " << p2 << theWorld()->ownsPoint(p2)  << "\n";
+//      log << ") test point " << p3 << theWorld()->ownsPoint(p3)  << "\n";
+//      log << ") test point " << p4 << theWorld()->ownsPoint(p4)  << "\n";
 
-   // Connecting the east neighbor
-   {
-      MPI_Cart_rank( cartcomm, east, &rank );
+      HalfSpace hs = halfSpaces[center[0]-1];
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), hs.getDisplacement());
+      HalfSpace mine = halfSpaces[center[0]];
 
-      // If we are dealing with the east neighbor, then set the x-offset to -lx (which is -lx units to the left, in -x direction) 
-      const Vec3 offset( ( ( east[0]==processesX )?( -lx ) : ( 0 ) ), 0, 0 );
-      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
-                                HalfSpace( Vec3(0,0,+1), +center[1]*lpz ),
-                                HalfSpace( Vec3(0,0,-1), -top[1]*lpz ) ), offset );
-
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank() << "| +1,0,0: " << +east[0]*lpx 
-                               << "| 0,0,+1: " << +center[1]*lpz 
-                               << "| 0,0,-1: " << -top[1]*lpz << " offset: " << offset << "\n";
+      log << ") mine " << p2 << mine.containsPoint(p2)  << "\n";
+      log << ") flip " << p2 << hs_flip.containsPoint(p2)  << "\n";
       }
+
    }
 
-//   // Connecting the bottom neighbor
-//   {
-//      const Vec3 offset( ( ( west[0] < 0 ) ? ( lx ) : ( 0 ) ), 0, 0 );
-//      std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| 0,0,-1: " << -center[1]*lpz
-//               << "| +1,0,0: " << +center[0]*lpx
-//               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-//      MPI_Cart_rank( cartcomm, bottom, &rank );
-//
-//      connect( rank, intersect( HalfSpace( Vec3(0,0,-1), -center[1]*lpz ),
-//                                HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-//                                HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-//
-//      std::cout << "bottom neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| 0,0,-1: " << -center[1]*lpz
-//               << "| +1,0,0: " << +center[0]*lpx
-//               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-//
-//
-//   }
-//
-//   // Connecting the top neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, top, &rank );
-//      const Vec3 offset( 0, 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(0,0,+1), +top[1]*lpz ),
-//                                HalfSpace( Vec3(+1,0,0), +center[0]*lpx ),
-//                                HalfSpace( Vec3(-1,0,0), -east[0]*lpx ) ), offset );
-//
-//      std::cout << "top neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| 0,0,+1: " << +top[1]*lpz
-//               << "| +1,0,0: " << +center[0]*lpx
-//               << "| -1,0,0: " << -east[0]*lpx << " offset: " << offset << std::endl;
-//
-//
-//   }
-//
-//   // Connecting the bottom-west neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, bottomwest, &rank );
-//      const Vec3 offset( ( ( west[0]<0 )?( lx ):( 0 ) ), 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,-1), -center[1]*lpz ) ), offset );
-//
-//      std::cout << "bottom-west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| -1,0,0: " << -center[0]*lpx
-//               << "| 0,0,-1: " << -center[1]*lpz << " offset: " << offset << std::endl;
-//   }
+   // MPI Finalization
+   MPI_Finalize();
+   return EXIT_SUCCESS;
 
-//   // Connecting the bottom-east neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, bottomeast, &rank );
-//      const Vec3 offset( ( ( east[0]==processesX )?( -lx ):( 0 ) ), 0, ( ( bottom[1]<0 )?( lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,-1), -center[1]*lpz ) ), offset );
-//
-//      std::cout << "bottom-east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| +1,0,0: " << +east[0]*lpx
-//               << "| 0,0,-1: " << -center[1]*lpz << " offset: " << offset << std::endl;
-//   }
-//
-//   // Connecting the top-west neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, topwest, &rank );
-//      const Vec3 offset( ( ( west[0]<0 )?( lx ):( 0 ) ), 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,+1), +top[1]*lpz ) ), offset );
-//
-//      std::cout << "top-west neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| -1,0,0: " << -center[0]*lpx
-//               << "| 0,0,+1: " << +top[1]*lpz << " offset: " << offset << std::endl;
-//   }
-//
-//   // Connecting the top-east neighbor
-//   {
-//      MPI_Cart_rank( cartcomm, topeast, &rank );
-//      const Vec3 offset( ( ( east[0]==processesX )?( -lx ):( 0 ) ), 0, ( ( top[1]==processesZ )?( -lz ):( 0 ) ) );
-//      connect( rank, intersect( HalfSpace( Vec3(+1,0,0), +east[0]*lpx ),
-//                                HalfSpace( Vec3(0,0,+1), +top[1]*lpz ) ), offset );
-//
-//      std::cout << "top-east neighbor Rank/myrank: " << rank << "/" << mpisystem->getRank()
-//               << "| +1,0,0: " << +east[0]*lpx
-//               << "| 0,0,+1: " << +top[1]*lpz << " offset: " << offset << std::endl;
-//   }
+  // Connecting the west neighbor
+  if( west[0] > 0 ) {
+     MPI_Cart_rank( cartcomm, west, &rank );
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+      HalfSpace hs = halfSpaces[west[0]-1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), hs.getDisplacement());
+
+      connect(rank, 
+         intersect(
+         hs1, 
+         hs_flip)
+      );
+  }
+
+  if( west[0] == 0 ) {
+     MPI_Cart_rank( cartcomm, west, &rank );
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+
+      connect(rank, 
+         hs1 
+      );
+  }
+
+  // Connecting the east neighbor
+  if( east[0] < processesX ) {
+     MPI_Cart_rank( cartcomm, east, &rank );
+
+      HalfSpace hs1 = halfSpaces[east[0]];
+      HalfSpace hs = halfSpaces[east[0]-1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), hs.getDisplacement());
+
+      connect(rank, 
+         intersect(
+         hs1, 
+         hs_flip)
+      );
+
+  }
 
    //Checking the process setup
    theMPISystem()->checkProcesses();
@@ -420,10 +410,14 @@ int main( int argc, char** argv )
   // particle is close in size to the size of a domain part!
   //======================================================================================== 
   BodyID particle;
-  Vec3 gpos (0.05 , 0.05, 0.05);
-  Vec3 gpos2(0.05 + 3. * radius, 0.05, 0.05);
+  Vec3 gpos (p1);
   Vec3 vel(0.025, 0.0, 0.0);
   int id = 0;
+
+  if( world->ownsPoint( gpos ) ) {
+     particle = createSphere( id++, gpos, radius, elastic );
+     particle->setLinearVel( -halfSpaces[0].getNormal() );
+  }
 
 
   //======================================================================================== 
@@ -431,80 +425,19 @@ int main( int argc, char** argv )
   // volume fraction.
   //======================================================================================== 
   // const real   radius  ( 0.005  );
-  bool resume = true;
-  real radius2 = 0.005;
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.1 / 4.0); 
-  if(!resume) {
-    for (int i = 0; i < allPositions.size(); ++i) {
-      Vec3 &position = allPositions[i];
-      SphereID sphere = createSphere(id, position, radius2, elastic, true);
-      sphere->setLinearVel(0.01, 0.0, 0.0);
-      ++id;      
-    }
-  } else {
-   if( world->ownsPoint( gpos ) ) {
-      particle = createSphere( id++, gpos, radius, elastic );
-      particle->setLinearVel( vel );
-      particle->getID();
-   }
-   if( world->ownsPoint( gpos2 ) ) {
-      particle = createSphere( id++, gpos2, radius, elastic );
-   }
-  }
   //======================================================================================== 
-
-  // Here we add some planes
-  pe_GLOBAL_SECTION
-  {
-     createPlane( 99999, 0.0, 0.0, 1.0, 1.0e-4, granite, false ); // bottom border
-     BodyID topPlane = createPlane( 88888, 0.0, 0.0, -1.0, -L, granite, false ); // top border
-     std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
-  }
 
 
   // Synchronization of the MPI processes
   world->synchronize();
 
-  //======================================================================================== 
-  unsigned long particlesTotal ( 0 );
-  unsigned long primitivesTotal( 0 );
-  int numBodies (0);
-  int numTotal (0);
-  unsigned int j(0);
-  for (; j < theCollisionSystem()->getBodyStorage().size(); j++) {
-    World::SizeType widx = static_cast<World::SizeType>(j);
-    BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType) {
-      numBodies++;
-      numTotal++;
-    } else {
-      numTotal++;
-    }
-  }
-
-  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-  unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
-  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  //======================================================================================== 
-
-  real domainVol = L * L * L;
-  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
-
-  std::string resOut = (resume) ? " resuming " : " not resuming ";
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << processesX * processesZ << "\n"
       << " Total timesteps                         = " << timesteps << "\n"
-      << " Timestep size                           = " << stepsize << "\n"
-      << " Total particles                         = " << particlesTotal << "\n"
-      << " particle volume                         = " << partVol << "\n"
-      << " Domain volume                           = " << L * L * L << "\n"
-      << " Resume                                  = " << resOut  << "\n"
-      << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
-      << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
+      << " Timestep size                           = " << stepsize << "\n" << std::endl;
     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 
@@ -512,30 +445,18 @@ int main( int argc, char** argv )
   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
     pe_EXCLUSIVE_SECTION( 0 ) {
      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-//     std::cout << particle->getPosition() << std::endl;
-//     std::cout << particle->getLinearVel() << std::endl;
     }
     world->simulationStep( stepsize );
-
-#ifdef OUTPUT_LVL2
-    for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
+   for (int i=0; i < theCollisionSystem()->getBodyStorage().size(); i++) {
       World::SizeType widx = static_cast<World::SizeType>(i);
       BodyID body = world->getBody(static_cast<unsigned int>(widx));
-      if(body->getType() == sphereType || body->getType() == capsuleType) {
-        Vec3 vel = body->getLinearVel();
-        Vec3 ang = body->getAngularVel();
-        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition() << std::endl;
-        std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel() << std::endl;
-      }
-    }
-#endif
-
+      std::cout << body->getPosition() << std::endl;
+   }
   }
 
    /////////////////////////////////////////////////////
    // MPI Finalization
-   MPI_Barrier(MPI_COMM_WORLD);
-   //MPI_Finalize();
+   MPI_Finalize();
 
 }
 //*************************************************************************************************
