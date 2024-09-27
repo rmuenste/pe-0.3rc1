@@ -38,6 +38,7 @@
 #include <pe/core/MPISettings.h>
 #include <pe/core/MPITrait.h>
 #include <pe/core/ProfilingSection.h>
+#include <pe/util/logging/DebugSection.h>
 #include <pe/math/Vector3.h>
 #include <utility>
 
@@ -222,7 +223,12 @@ std::pair<int, ProcessID> MPICommunication::findOwner( const Vec3& gpos )
       if( process->getRank() < ownerRank && process->containsPoint( gpos ) ) {
          ownerRank = process->getRank();
          ownerHandle = *process;
+      } else {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "Position " << gpos << " is not on process " << process->getRank() << ".\n";
+         }
       }
+
    }
 
    if( ownerRank == std::numeric_limits<int>::max() )
