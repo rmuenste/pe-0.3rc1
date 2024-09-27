@@ -105,7 +105,6 @@ MPISystem::~MPISystem()
    // WARNING: Using friend relationship to clear process storage.
    theCollisionSystem()->processstorage_.clear();
 
-   std::cout << "MPI system destructor" << std::endl;
    // Logging the successful destruction of the MPI system
    pe_LOG_PROGRESS_SECTION( log ) {
       log << "Successfully destroyed the MPI system instance";

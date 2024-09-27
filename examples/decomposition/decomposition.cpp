@@ -219,7 +219,7 @@ int main( int argc, char* argv[] )
 {
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 10000 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 100 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.01 );  // Size of a single time step
 
    // Visualization variables
@@ -273,21 +273,21 @@ int main( int argc, char* argv[] )
    world->setLiquidSolid(true);
    world->setDamping( 0.98 );
 
-   std::vector<HalfSpace> halfSpaces;
-   loadPlanesAndCreateHalfSpaces("my_planes.txt", halfSpaces);
-
-   Vec3 p2(-0.52232, -2.5464, 0.13586);
-   Vec3 p3( 0.37061, -2.573, 0.091369);
-   Vec3 p4( 1.5182, -2.1098, 0.047162);
-   for (const auto& hs : halfSpaces) {
-      hs.print(std::cout, "\t");
-      std::cout << "Contains point " << Vec3(-1.5486, -2.0881, 0.18783) << " " << hs.containsPoint(Vec3(-1.5486, -2.0881, 0.18783)) << std::endl;
-      std::cout << "Contains point " << p2 << " " << hs.containsPoint(p2) << std::endl;
-      std::cout << "Contains point " << p3 << " " << hs.containsPoint(p3) << std::endl;
-      std::cout << "Contains point " << p4 << " " << hs.containsPoint(p4) << std::endl;
-   }
-
-   return 0;
+//   std::vector<HalfSpace> halfSpaces;
+//   loadPlanesAndCreateHalfSpaces("my_planes.txt", halfSpaces);
+//
+//   Vec3 p2(-0.52232, -2.5464, 0.13586);
+//   Vec3 p3( 0.37061, -2.573, 0.091369);
+//   Vec3 p4( 1.5182, -2.1098, 0.047162);
+//   for (const auto& hs : halfSpaces) {
+//      hs.print(std::cout, "\t");
+//      std::cout << "Contains point " << Vec3(-1.5486, -2.0881, 0.18783) << " " << hs.containsPoint(Vec3(-1.5486, -2.0881, 0.18783)) << std::endl;
+//      std::cout << "Contains point " << p2 << " " << hs.containsPoint(p2) << std::endl;
+//      std::cout << "Contains point " << p3 << " " << hs.containsPoint(p3) << std::endl;
+//      std::cout << "Contains point " << p4 << " " << hs.containsPoint(p4) << std::endl;
+//   }
+//
+//   return 0;
  
    // Setup of the VTK visualization
    if( vtk ) {
@@ -327,8 +327,9 @@ int main( int argc, char* argv[] )
    MaterialID archi  = createMaterial( "archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    int planeId = 99999;
    //======================================================================================== 
-
+   Vec3 archimedesPos(0.0274099, -2.56113, 0.116155);
    TriangleMeshID archimedes = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, archi, true, true, Vec3(1.0,1.0,1.0), false, false);
+   archimedes->setPosition(archimedesPos);
    archimedes->setFixed(true);
 
    Vec3 spherePos   (-1.9, 0.4, 0.1);
