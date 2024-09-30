@@ -432,7 +432,6 @@ void stepSimulation() {
 
 }
 
-#ifdef WURST_HAVE_MPI
 #include <pe/interface/setup_part_bench.h>
 #include <pe/interface/setup_nxnxn.h>
 #include <pe/interface/setup_cyl.h>
@@ -441,7 +440,6 @@ void stepSimulation() {
 #include <pe/interface/setup_fsi_bench.h>
 #include <pe/interface/setup_kroupa.h>
 #include <pe/interface/setup_creep.h>
-#endif
 //
 //=================================================================================================
 //
