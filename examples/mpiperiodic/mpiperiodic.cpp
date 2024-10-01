@@ -28,8 +28,11 @@ using namespace pe::timing;
 using namespace pe::povray;
 using boost::filesystem::path;
 
+std::vector<Vec3> planePoints;
 
 
+
+std::vector<Vec3> planeNormals;
 
 // Assert statically that only the FFD solver or a hard contact solver is used since parameters are tuned for them.
 #define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C) typedef \
@@ -43,6 +46,43 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR,
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
 pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 
+// Function to load planes from file and create HalfSpace instances
+void makePlanesAndCreateHalfSpaces(std::vector<HalfSpace> &halfSpaces) {
+
+    int counter = 0;
+    for(auto idx(0); idx < planePoints.size(); ++idx) {
+
+        // Create a Vec3 for the normal vector
+        Vec3 normal = planeNormals[idx];
+        if (normal[0] > 0.0) {
+          normal = -normal;
+        }
+        Vec3 point = planePoints[idx];
+
+        bool originOutside = (trans(-point) * normal < 0.0);
+        //*  - > 0: The global origin is outside the half space\n
+        //*  - < 0: The global origin is inside the half space\n
+        //*  - = 0: The global origin is on the surface of the half space
+        
+        // Calculate the distance from the origin using the point-normal formula
+        double dO = std::abs(trans(point) * normal) / normal.length();
+        if (!originOutside) {
+          dO = -dO; 
+        } 
+        
+        // Create the HalfSpace instance
+        halfSpaces.emplace_back(normal, dO);
+        counter++;
+    }
+
+pe_EXCLUSIVE_SECTION(0) {   
+    // Use the print function to print each HalfSpace to stdout
+    for (const auto& hs : halfSpaces) {
+        hs.print(std::cout, "\t");  // Passing std::cout for stdout and "\t" for tabbing
+    }
+}
+    
+}
 
 // Function to load planes from file and create HalfSpace instances
 void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<HalfSpace> &halfSpaces) {
@@ -117,7 +157,16 @@ void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<Half
  */
 int main( int argc, char** argv )
 {
-   //loadPlanesAndCreateHalfSpaces("my_planes.txt");
+   planePoints.push_back(Vec3(2.1019248962402344, -1.9163930416107178, 0.02711978182196617));
+   planePoints.push_back(Vec3(-1.047705888748169, -2.5512213706970215, 0.24490927159786224 ));
+   planePoints.push_back(Vec3(-0.035260219126939774, -2.7580153942108154, 0.1991162747144699));
+   planePoints.push_back(Vec3(1.0637520551681519, -2.544778823852539, 0.14949828386306763));
+
+   planeNormals.push_back(Vec3(-0.7013657689094543, -0.7127944231033325 , -0.0031759117264300585));
+   planeNormals.push_back(Vec3(-0.9239068627357483, 0.3802013397216797  , 0.042931802570819855));
+   planeNormals.push_back(Vec3(-0.9990096688270569, 0.012757861986756325, 0.04262349754571915));
+   planeNormals.push_back(Vec3(-0.9221128225326538, -0.38450124859809875, 0.043206337839365005));
+   planeNormals.push_back(Vec3(-0.7013657689094543, -0.7127944231033325 , -0.0031759117264300585));
 
    /////////////////////////////////////////////////////
    // Simulation parameters
@@ -152,10 +201,6 @@ int main( int argc, char** argv )
    const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
    const size_t visspacing    (   10  );  // Number of time steps in-between two POV-Ray files
    const size_t colorwidth    (   51  );  // Number of particles in x-dimension with a specific color
-
-//   std::vector<HalfSpace> halfSpaces1;
-//   loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces1);
-//   return EXIT_SUCCESS;
 
    /////////////////////////////////////////////////////
    // MPI Initialization
@@ -221,7 +266,12 @@ int main( int argc, char** argv )
    MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
 
    std::vector<HalfSpace> halfSpaces;
-   loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces);
+   //loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces);
+
+   makePlanesAndCreateHalfSpaces(halfSpaces);
+//   MPI_Barrier(MPI_COMM_WORLD);
+//   MPI_Finalize();
+//   return EXIT_SUCCESS;
 
 
    MPI_Cart_create( MPI_COMM_WORLD, 2, dims, periods, false, &cartcomm );
@@ -485,7 +535,10 @@ int main( int argc, char** argv )
 //      BodyID body = world->getBody(static_cast<unsigned int>(widx));
 //      std::cout << body->getPosition() << std::endl;
 //   }
-  }
+   }
+   pe_EXCLUSIVE_SECTION( 0 ) {
+     std::cout << std::endl;
+   }
 
    /////////////////////////////////////////////////////
    // MPI Finalization
