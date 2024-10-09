@@ -272,7 +272,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     }
 
     // Step 4: Traverse the curve in increments of ds
-    for (double s = ds; s <= curve_length; s += ds) {
+    for (double s = ds; s <= curve_length-ds; s += ds) {
         // Find the edge that contains the current distance s
         size_t edge_index = 0;
         while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {
@@ -311,11 +311,14 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
         real circle_radius = sphereRadius + dt;
         real circumference = 2. * M_PI * circle_radius;
 
+        std::cout << "circumference = " << circumference << std::endl;
         // Compute maximum number of spheres without overlap
-        int max_spheres = int(circumference / 2. * sphereRadius) - 1;
+        int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
 
         if (max_spheres < 1)
           max_spheres = 1;
+
+        std::cout << "max_spheres = " << max_spheres << std::endl;
 
         // Compute exact angle step
         real theta_step = 2. * M_PI / max_spheres;
@@ -413,8 +416,7 @@ int main( int argc, char* argv[] )
    world->setDamping( 0.98 );
 
    std::vector<Vec3> edges = readVectorsFromFile("vertices.txt");
-   generatePointsAlongCenterline(edges);
-   return EXIT_SUCCESS;
+   std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges);
 //   std::vector<HalfSpace> halfSpaces;
 //   loadPlanesAndCreateHalfSpaces("my_planes.txt", halfSpaces);
 //
@@ -493,6 +495,10 @@ int main( int argc, char* argv[] )
    //======================================================================================== 
    //allPositions = generateRandomPositions(LX, 2.0 * radius2, targetVolumeFraction, epsilon); 
    //numPositions = allPositions.size();
+   real sphereRad = 0.05;  // Radius of each sphere
+   for (auto spherePos: spherePositions) {
+     createSphere( id++, spherePos, sphereRad, sphere );
+   }
 
    Vec3 gpos (0, 0, 0);
  
