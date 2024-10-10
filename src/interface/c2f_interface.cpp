@@ -37,7 +37,10 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
       setupParticleBench(CcommEx0);
     } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
 extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   // force 4.0 multiplier take it out
@@ -60,7 +63,10 @@ extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
     setup2x2x2(CcommEx0);
   } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
 extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   // force 4.0 multiplier take it out
@@ -83,7 +89,10 @@ extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
     setupCyl(CcommEx0);
   } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
 extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;
@@ -105,7 +114,10 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
     //setupBench(CcommEx0);
   } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
 extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;
@@ -127,7 +139,10 @@ extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
     setupFSIBench(CcommEx0);
   } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
 extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;
@@ -149,7 +164,10 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
     setupKroupa(CcommEx0);
   } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
 extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;
@@ -171,7 +189,35 @@ extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
     setupCreep(CcommEx0);
   } 
 }
+//=================================================================================================
 
+
+//=================================================================================================
+extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{   
+  int remRank = *remoteRank;
+
+  if(remRank != 0) { 
+    int rank, size;
+
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
+    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
+    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
+
+    if (rank == 1) {
+      printf( "%d> C) Configuration Creep with %d processes.\n", remRank, size );
+    }
+    if( CcommEx0 == MPI_COMM_NULL ) {
+      printf( "%d> C)Error converting fortran communicator\n", rank);
+       return;
+    }
+    setupArchimedes(CcommEx0);
+  } 
+}
+//=================================================================================================
+
+
+//=================================================================================================
 extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   // force 4.0 multiplier take it out
@@ -194,5 +240,7 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
     setupDraftKissTumbBench(CcommEx0);
   } 
 }
+//=================================================================================================
+
 
 #endif

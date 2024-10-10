@@ -589,7 +589,6 @@ bool HalfSpace::intersectsWith( ConstUnionID u ) const
  */
 bool HalfSpace::containsPoint( const Vec3& gpos ) const
 {
-   std::cout << "normal: " << normal_ << " d: " << d_ << " : " << gpos  << " => " << (trans(normal_) * gpos ) - d_ << std::endl; 
    return ( trans(normal_) * gpos ) - d_ >=  real(0);
 }
 //*************************************************************************************************

@@ -70,19 +70,14 @@ void synchronizeForces() {
                 << " " << std::setw(12) << fd 
                 << " " << std::setw(12) << fd 
                 << std::endl;
-
-//      std::cout << "Force: "  <<  body->getForce() << std::endl;
-//      std::cout << "Torque: "  <<  body->getTorque() << std::endl;
     }
     else if(body->getType() == triangleMeshType) {
-      Vec3 tau = body->getTorque();
-      tau[0] = 0;
-      tau[2] = 0;
-      body->setTorque(tau);
-      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
-      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
-//      std::cout << "Force: "  <<  body->getForce().toString() << std::endl;
-//      std::cout << "Torque: "  <<  body->getTorque().toString() << std::endl;
+//      Vec3 tau = body->getTorque();
+//      tau[0] = 0;
+//      tau[2] = 0;
+//      body->setTorque(tau);
+//      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
+//      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
     }
     if (body->getType() == capsuleType) {
       Vec3 tau = body->getTorque();
@@ -109,9 +104,6 @@ void synchronizeForces() {
       std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
     }
     body->applyFluidForces(stepsize);
-    if(body->getType() == triangleMeshType) {
-      std::cout << "Omega_a: "  <<  body->getAngularVel().toString() << std::endl;
-    }
   }
 
   for (std::size_t i=0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
