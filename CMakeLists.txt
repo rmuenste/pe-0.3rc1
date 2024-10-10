@@ -20,12 +20,12 @@
 #
 #==================================================================================================
 
-CMAKE_MINIMUM_REQUIRED( VERSION 3.5 )
-PROJECT( pe )
+cmake_minimum_required( VERSION 3.5 )
+project( pe )
 
-IF( POLICY CMP0015 )
-   CMAKE_POLICY( SET CMP0015 NEW )
-ENDIF()
+if( POLICY CMP0015 )
+   cmake_policy( SET CMP0015 NEW )
+endif()
 cmake_policy(SET CMP0057 NEW)
 #==================================================================================================
 #
@@ -33,45 +33,47 @@ cmake_policy(SET CMP0057 NEW)
 #
 #==================================================================================================
 
-SET( CMAKE_BUILD_TYPE RELEASE CACHE STRING "The default build type for the whole project is RELEASE." )
-SET( LIBRARY_TYPE     STATIC  CACHE STRING "Build type of library (STATIC/SHARED/BOTH)."              )
-SET( BLAS             OFF     CACHE BOOL   "Build support for BLAS."                                  )
-SET( MPI              OFF     CACHE BOOL   "Build support for MPI."                                   )
-SET( MPI_PREINCLUDE   OFF     CACHE BOOL   "Include mpi.h ahead of all other headers."                )
-SET( OPENCL           OFF     CACHE BOOL   "Build support for OpenCL."                                )
-SET( IRRLICHT         OFF     CACHE BOOL   "Build support for Irrlicht engine."                       )
-SET( EXAMPLES         OFF     CACHE BOOL   "Build examples."                                          )
-SET( PACKAGE_NAME     pe                                                                              )
-SET( PACKAGE_VERSION  trunk                                                                           )
-SET( BOOST_INCLUDEDIR ""      CACHE PATH   "The boost include directory."                             )
-SET( BOOST_LIBRARYDIR ""      CACHE PATH   "The boost library directory."                             )
-SET( PREPROCESSOR_FLAGS ""    CACHE PATH   "Additional preprocessor flags."                           )
-SET( COMPILER_FLAGS   ""      CACHE PATH   "Additional compiler flags."                               )
-SET( LINKER_FLAGS     ""      CACHE PATH   "Additional linker flags when linking the examples."       )
+set( CMAKE_BUILD_TYPE RELEASE CACHE STRING "The default build type for the whole project is RELEASE." )
+set( LIBRARY_TYPE     STATIC  CACHE STRING "Build type of library (STATIC/SHARED/BOTH)."              )
+set( BLAS             OFF     CACHE BOOL   "Build support for BLAS."                                  )
+set( MPI              OFF     CACHE BOOL   "Build support for MPI."                                   )
+set( MPI_PREINCLUDE   OFF     CACHE BOOL   "Include mpi.h ahead of all other headers."                )
+set( OPENCL           OFF     CACHE BOOL   "Build support for OpenCL."                                )
+set( IRRLICHT         OFF     CACHE BOOL   "Build support for Irrlicht engine."                       )
+set( EXAMPLES         OFF     CACHE BOOL   "Build examples."                                          )
+set( PACKAGE_NAME     pe                                                                              )
+set( PACKAGE_VERSION  trunk                                                                           )
+set( BOOST_INCLUDEDIR ""      CACHE PATH   "The boost include directory."                             )
+set( BOOST_LIBRARYDIR ""      CACHE PATH   "The boost library directory."                             )
+set( PREPROCESSOR_FLAGS ""    CACHE PATH   "Additional preprocessor flags."                           )
+set( COMPILER_FLAGS   ""      CACHE PATH   "Additional compiler flags."                               )
+set( LINKER_FLAGS     ""      CACHE PATH   "Additional linker flags when linking the examples."       )
 #OPTION(USE_CGAL       "Build the project using the CGAL library" OFF                                  )
 
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+
 # Guide selection of boost libraries by FindBoost.cmake
-SET( Boost_USE_STATIC_LIBS OFF CACHE BOOL "Force static linking of Boost libraries." )
+set( Boost_USE_STATIC_LIBS OFF CACHE BOOL "Force static linking of Boost libraries." )
 
 # Boost threads is only available as a multithreaded version so force FindBoost.cmake to use the multithreaded versions.
-SET( Boost_USE_MULTITHREADED ON )
+set( Boost_USE_MULTITHREADED ON )
 
 # Setting the build type (default=release)
-IF( NOT CMAKE_BUILD_TYPE )
+if( NOT CMAKE_BUILD_TYPE )
    SET ( CMAKE_BUILD_TYPE "RELEASE" CACHE STRING "The default build type is RELEASE." FORCE )
-ENDIF()
+endif()
 
 # Setting proper options for the compiler
-IF( NOT CMAKE_BUILD_TYPE STREQUAL RELEASE AND 
+if( NOT CMAKE_BUILD_TYPE STREQUAL RELEASE AND 
     NOT CMAKE_BUILD_TYPE STREQUAL Release AND 
     NOT CMAKE_BUILD_TYPE STREQUAL Debug   AND 
     NOT CMAKE_BUILD_TYPE STREQUAL DEBUG )
-  MESSAGE( ERROR ": Unknown build type! ${CMAKE_BUILD_TYPE}" )
-ENDIF()
+  message( ERROR ": Unknown build type! ${CMAKE_BUILD_TYPE}" )
+endif()
 
 # Setting compiler flags analogously to the configure script (and clear default compiler flags set
 # by cmake for all compilers supported by the configure script to ensure compatibility)
-IF( CMAKE_COMPILER_IS_GNUCXX )
+if( CMAKE_COMPILER_IS_GNUCXX )
    # Check if the compiler supports C++17
    include(CheckCXXCompilerFlag)
    check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
@@ -88,28 +90,27 @@ IF( CMAKE_COMPILER_IS_GNUCXX )
    else()
       message(FATAL_ERROR "The compiler does not support C++14 or C++17.")
    endif()
-   message(STATUS "We found a GNU compiler")
-   SET( CMAKE_CXX_FLAGS "-DMOBILE_INFINITE=1 -Wall -Wextra -Wshadow -Wfatal-errors -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
-ENDIF()
+   set( CMAKE_CXX_FLAGS "-DMOBILE_INFINITE=1 -Wall -Wextra -Wshadow -Wfatal-errors -Woverloaded-virtual -Wno-unused-local-typedefs -ansi --param inline-unit-growth=150 --param max-inline-insns-single=500 --param large-function-growth=600" CACHE STRING "Compiler flags for GNU C++ compiler." FORCE )
+endif()
 
-IF( ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
-   SET( CMAKE_CXX_FLAGS "-Wall -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
-ENDIF()
+if( ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
+   set( CMAKE_CXX_FLAGS "-Wall -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
+endif()
 
-IF( ${CMAKE_CXX_COMPILER} MATCHES "clang\\+\\+" )
-   SET( CMAKE_CXX_FLAGS "-Wall -Wextra -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
-ENDIF()
+if( ${CMAKE_CXX_COMPILER} MATCHES "clang\\+\\+" )
+   set( CMAKE_CXX_FLAGS "-Wall -Wextra -Wshadow -Woverloaded-virtual -ansi" CACHE STRING "Compiler flags for Intel C++ compiler." FORCE )
+endif()
 
 # Setting user compiler and linker flags
-SET( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${PREPROCESSOR_FLAGS} ${COMPILER_FLAGS}" )
-SET( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${LINKER_FLAGS}" )
+set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${PREPROCESSOR_FLAGS} ${COMPILER_FLAGS}" )
+set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${LINKER_FLAGS}" )
 
 # Assert that static library is built
-IF ( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
-   SET( PE_SHARED_LIB_BUILD BOOL ON )
-   SET( DEFINES "${DEFINES} PE_SHARED_LIB_BUILD=1" )
-   MESSAGE( WARNING ": Shared library builds are currently experimental." )
-ENDIF()
+if ( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
+   set( PE_SHARED_LIB_BUILD BOOL ON )
+   set( DEFINES "${DEFINES} PE_SHARED_LIB_BUILD=1" )
+   message( WARNING ": Shared library builds are currently experimental." )
+endif()
 
 
 
@@ -120,12 +121,12 @@ ENDIF()
 #
 #==================================================================================================
 
-IF ( MSVC )
+if ( MSVC )
    ADD_DEFINITIONS ( "-DNOMINMAX" )                # Disable Min/Max-Macros
    ADD_DEFINITIONS ( "-D_CRT_SECURE_NO_WARNINGS" ) # disable warnings promoting Microsoft's security enhanced CRT
    ADD_DEFINITIONS ( "-D_SCL_SECURE_NO_WARNINGS" ) # disable warnings triggered by Microsoft's checked iterators
-   SET( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -MP" ) # enable multi-threaded compiling
-ENDIF ( MSVC )
+   set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -MP" ) # enable multi-threaded compiling
+endif ( MSVC )
 
 
 
@@ -136,21 +137,21 @@ ENDIF ( MSVC )
 #
 #==================================================================================================
 
-SET( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
+set( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-FIND_PACKAGE( Boost COMPONENTS thread system filesystem program_options random REQUIRED)
+find_package( Boost COMPONENTS thread system filesystem program_options random REQUIRED)
 
-IF( NOT Boost_FOUND )
-   MESSAGE( ERROR ": Boost library not found! " )
-ENDIF()
+if( NOT Boost_FOUND )
+   message( ERROR ": Boost library not found! " )
+endif()
 
 INCLUDE_DIRECTORIES( SYSTEM ${Boost_INCLUDE_DIRS} )
 LINK_DIRECTORIES   ( ${Boost_LIBRARY_DIRS} )
 
 if(USE_CGAL)
   LINK_LIBRARIES     ( ${Boost_LIBRARIES} ${GMP_LIBRARIES} ${MPFR_LIBRARIES}   )
-ELSE()
+else()
   LINK_LIBRARIES     ( ${Boost_LIBRARIES} )
 endif()
 
@@ -158,88 +159,88 @@ endif()
 ADD_DEFINITIONS    ( -DBOOST_ALL_NO_LIB    )
 
 # Configuration of the BLAS library
-IF( BLAS )
-   SET( BLAS_INCLUDE_DIR "" CACHE STRING "BLAS include path." )
-   SET( BLAS_LIBRARY_1   "" CACHE STRING "BLAS library 1."    )
-   SET( BLAS_LIBRARY_2   "" CACHE STRING "BLAS library 2."    )
-   SET( BLAS_LIBRARY_3   "" CACHE STRING "BLAS library 3."    )
+if( BLAS )
+   set( BLAS_INCLUDE_DIR "" CACHE STRING "BLAS include path." )
+   set( BLAS_LIBRARY_1   "" CACHE STRING "BLAS library 1."    )
+   set( BLAS_LIBRARY_2   "" CACHE STRING "BLAS library 2."    )
+   set( BLAS_LIBRARY_3   "" CACHE STRING "BLAS library 3."    )
    INCLUDE_DIRECTORIES( SYSTEM ${BLAS_INCLUDE_DIR} )
    LINK_LIBRARIES     ( ${BLAS_LIBRARY_1} ${BLAS_LIBRARY_2} ${BLAS_LIBRARY_3} )
-   SET( HAVE_BLAS BOOL ON )
-   SET( DEFINES "${DEFINES} HAVE_BLAS=1" )
-ELSE()
-   SET( DEFINES "${DEFINES} HAVE_BLAS=0" )
-ENDIF()
+   set( HAVE_BLAS BOOL ON )
+   set( DEFINES "${DEFINES} HAVE_BLAS=1" )
+else()
+   set( DEFINES "${DEFINES} HAVE_BLAS=0" )
+endif()
 
 # Configuration of the Irrlicht library
-IF( IRRLICHT )
-   FIND_PACKAGE( Irrlicht REQUIRED )
+if( IRRLICHT )
+   find_package( Irrlicht REQUIRED )
 
-   IF( NOT IRRLICHT_FOUND )
-      MESSAGE( ERROR ": Irrlicht engine not found!" )
-   ENDIF()
+   if( NOT IRRLICHT_FOUND )
+      message( ERROR ": Irrlicht engine not found!" )
+   endif()
 
    INCLUDE_DIRECTORIES( SYSTEM ${IRRLICHT_INCLUDE_DIR} )
    LINK_DIRECTORIES   ( ${IRRLICHT_LIBRARY_DIR} )
    LINK_LIBRARIES     ( ${IRRLICHT_LIBRARY}     )
 
-   SET( MEDIA_PATH "${PROJECT_SOURCE_DIR}/media/" )
-   SET( HAVE_IRRLICHT BOOL ON )
-   SET( DEFINES "${DEFINES} PE_MEDIA_PATH=${MEDIA_PATH} HAVE_IRRLICHT=1" )
-ELSE()
-   SET( DEFINES "${DEFINES} PE_MEDIA_PATH= HAVE_IRRLICHT=0" )
-ENDIF()
+   set( MEDIA_PATH "${PROJECT_SOURCE_DIR}/media/" )
+   set( HAVE_IRRLICHT BOOL ON )
+   set( DEFINES "${DEFINES} PE_MEDIA_PATH=${MEDIA_PATH} HAVE_IRRLICHT=1" )
+else()
+   set( DEFINES "${DEFINES} PE_MEDIA_PATH= HAVE_IRRLICHT=0" )
+endif()
 
 # Configuration of the CGAL library
 # Check if USE_CGAL is enabled
 if (USE_CGAL)
     message(STATUS "CGAL support is enabled.")
     # Add a compiler define if USE_CGAL is true
-    SET( DEFINES "${DEFINES} HAVE_CGAL=1" )
+    set( DEFINES "${DEFINES} HAVE_CGAL=1" )
     INCLUDE_DIRECTORIES( SYSTEM ${CGAL_INCLUDE_DIRS} )
 else()
     message(STATUS "CGAL support is disabled.")
     # Add a compiler define if USE_CGAL is false (optional)
-    SET( DEFINES "${DEFINES} HAVE_CGAL=0" )
+    set( DEFINES "${DEFINES} HAVE_CGAL=0" )
 endif()
 
 # Configuration of the MPI library
-IF( MPI )
-   FIND_PACKAGE( MPI )
-   IF( MPI_FOUND )
+if( MPI )
+   find_package( MPI )
+   if( MPI_FOUND )
       INCLUDE_DIRECTORIES( SYSTEM ${MPI_CXX_INCLUDE_PATH} )
       LINK_DIRECTORIES( ${MPI_CXX_LIBRARY_PATH} )
       LINK_LIBRARIES( ${MPI_CXX_LIBRARIES} )
-      SET( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS}" )
-      SET( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MPI_CXX_LINK_FLAGS}" )
-      SET( HAVE_MPI BOOL ON )
-      SET( DEFINES "${DEFINES} HAVE_MPI=1" )
-   ELSE()
-      SET( DEFINES "${DEFINES} HAVE_MPI=0" )
-   ENDIF( MPI_FOUND )
-ELSE()
-   SET( DEFINES "${DEFINES} HAVE_MPI=0" )
-ENDIF()
+      set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS}" )
+      set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MPI_CXX_LINK_FLAGS}" )
+      set( HAVE_MPI BOOL ON )
+      set( DEFINES "${DEFINES} HAVE_MPI=1" )
+   else()
+      set( DEFINES "${DEFINES} HAVE_MPI=0" )
+   endif( MPI_FOUND )
+else()
+   set( DEFINES "${DEFINES} HAVE_MPI=0" )
+endif()
 
 # Configuration of the OpenCL library
-IF( OPENCL )
-   SET( OPENCL_KERNEL_PATH "${PROJECT_SOURCE_DIR}/src/core/opencl/" )
-   SET( HAVE_OPENCL BOOL ON )
-   SET( DEFINES "${DEFINES} PE_OPENCL_KERNEL_PATH=${OPENCL_KERNEL_PATH} HAVE_OPENCL=1" )
-ELSE()
-   SET( DEFINES "${DEFINES} PE_OPENCL_KERNEL_PATH= HAVE_OPENCL=0" )
-ENDIF()
+if( OPENCL )
+   set( OPENCL_KERNEL_PATH "${PROJECT_SOURCE_DIR}/src/core/opencl/" )
+   set( HAVE_OPENCL BOOL ON )
+   set( DEFINES "${DEFINES} PE_OPENCL_KERNEL_PATH=${OPENCL_KERNEL_PATH} HAVE_OPENCL=1" )
+else()
+   set( DEFINES "${DEFINES} PE_OPENCL_KERNEL_PATH= HAVE_OPENCL=0" )
+endif()
 
 # Create config.h from template and force inclusion
 CONFIGURE_FILE( ${pe_SOURCE_DIR}/cmake/config.h.in ${PROJECT_BINARY_DIR}/config.h )
-IF( MPI AND MPI_PREINCLUDE )
+if( MPI AND MPI_PREINCLUDE )
 	FILE( APPEND ${PROJECT_BINARY_DIR}/config.h "#include <mpi.h>" )
-ENDIF()
-IF ( MSVC )
-   SET( CMAKE_CXX_FLAGS "\"/FI ${PROJECT_BINARY_DIR}/config.h\" ${CMAKE_CXX_FLAGS}" )
-ELSE()
-   SET( CMAKE_CXX_FLAGS "-include ${PROJECT_BINARY_DIR}/config.h ${CMAKE_CXX_FLAGS}" )
-ENDIF()
+endif()
+if ( MSVC )
+   set( CMAKE_CXX_FLAGS "\"/FI ${PROJECT_BINARY_DIR}/config.h\" ${CMAKE_CXX_FLAGS}" )
+else()
+   set( CMAKE_CXX_FLAGS "-include ${PROJECT_BINARY_DIR}/config.h ${CMAKE_CXX_FLAGS}" )
+endif()
 
 #==================================================================================================
 #
@@ -270,7 +271,7 @@ FILE( GLOB_RECURSE UTIL_SOURCES       src/util/*.cpp         )
 FILE( GLOB_RECURSE VTK_SOURCES        src/vtk/*.cpp          )
 FILE( GLOB_RECURSE INTF_SOURCES       src/interface/*.cpp    )
 
-IF( MSVC )
+if( MSVC )
    SOURCE_GROUP( "pe"                 FILES ${PE_HEADERS}         )
    SOURCE_GROUP( "pe\\config"         FILES ${CONFIG_HEADERS}     )
    SOURCE_GROUP( "pe\\core"           FILES ${CORE_HEADERS}       )
@@ -294,40 +295,45 @@ IF( MSVC )
    SOURCE_GROUP( "src\\util"          FILES ${UTIL_SOURCES}       )
    SOURCE_GROUP( "src\\vtk"           FILES ${VTK_SOURCES}        )
    SOURCE_GROUP( "src\\interface"     FILES ${INTF_SOURCES}       )
-ENDIF()
+endif()
 
-SET( PE_SOURCES ${CORE_SOURCES} ${MATH_SOURCES} ${OPENDX_SOURCES} ${POVRAY_SOURCES} ${UTIL_SOURCES} ${SUPPORT_SOURCES} ${VTK_SOURCES} ${INTF_SOURCES})
-SET( PE_HEADERS ${PE_HEADERS} ${CONFIG_HEADERS} ${CORE_HEADERS} ${MATH_HEADERS} ${OPENDX_HEADERS} ${POVRAY_HEADERS} ${UTIL_HEADERS} ${SUPPORT_HEADERS} ${SYSTEM_HEADERS} ${VTK_HEADERS} ${INTF_HEADERS})
+set( PE_SOURCES ${CORE_SOURCES} ${MATH_SOURCES} ${OPENDX_SOURCES} ${POVRAY_SOURCES} ${UTIL_SOURCES} ${SUPPORT_SOURCES} ${VTK_SOURCES} ${INTF_SOURCES})
+set( PE_HEADERS ${PE_HEADERS} ${CONFIG_HEADERS} ${CORE_HEADERS} ${MATH_HEADERS} ${OPENDX_HEADERS} ${POVRAY_HEADERS} ${UTIL_HEADERS} ${SUPPORT_HEADERS} ${SYSTEM_HEADERS} ${VTK_HEADERS} ${INTF_HEADERS})
 
-IF( IRRLICHT )
-   SET( PE_SOURCES ${PE_SOURCES} ${IRRLICHT_SOURCES} )
-   SET( PE_HEADERS ${PE_HEADERS} ${IRRLICHT_HEADERS} )
-ENDIF()
+if( IRRLICHT )
+   set( PE_SOURCES ${PE_SOURCES} ${IRRLICHT_SOURCES} )
+   set( PE_HEADERS ${PE_HEADERS} ${IRRLICHT_HEADERS} )
+endif()
 
 INCLUDE_DIRECTORIES( . )
 
-SET( LIBRARY_OUTPUT_PATH lib )
+set( LIBRARY_OUTPUT_PATH lib )
 
-SET( PE_ALL ${PE_SOURCES} ${PE_HEADERS} )
+set( PE_ALL ${PE_SOURCES} ${PE_HEADERS} )
 
-IF( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
+#==================================================================================================
+#
+# CONFIGURATION OF THE pe_static AND pe_shared LIBRARIES
+#
+#=================================================================================================
+if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
    ADD_LIBRARY( pe_static STATIC ${PE_ALL} )
    SET_TARGET_PROPERTIES( pe_static PROPERTIES OUTPUT_NAME pe )
    # The library target "pe_static" will be named "pe.lib" with Microsoft tools.
    # This conflicts with the "pe.lib" import library corresponding to "pe.dll",
    # so we add a "lib" prefix (which is default on other platforms anyway):
    SET_TARGET_PROPERTIES( pe_static PROPERTIES PREFIX "lib" )
-ENDIF()
+endif()
 
-IF( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
+if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
    ADD_LIBRARY( pe_shared SHARED ${PE_ALL} )
-   IF( CMAKE_COMPILER_IS_GNUCXX OR ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
+   if( CMAKE_COMPILER_IS_GNUCXX OR ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
       # CXXFLAGS automatically also used for linking
       SET_TARGET_PROPERTIES( pe_shared PROPERTIES COMPILE_FLAGS "-fPIC -fvisibility=hidden -fvisibility-inlines-hidden" )
-   ENDIF()
+   endif()
    SET_TARGET_PROPERTIES( pe_shared PROPERTIES OUTPUT_NAME pe )
    SET_TARGET_PROPERTIES( pe_shared PROPERTIES COMPILE_DEFINITIONS PE_SHARED_LIB_SELECT_EXPORTS )
-ENDIF()
+endif()
 
 
 
@@ -337,23 +343,22 @@ ENDIF()
 # Build of the examples
 #
 #=================================================================================================
-
-IF( EXAMPLES )
+if( EXAMPLES )
    message(STATUS "Building PE examples")
    # General settings for all examples
    INCLUDE_DIRECTORIES( . )
    LINK_DIRECTORIES( "${PROJECT_BINARY_DIR}" )
    LINK_LIBRARIES( ${Boost_LIBRARIES} )
 
-   IF( LIBRARY_TYPE STREQUAL STATIC )
+   if( LIBRARY_TYPE STREQUAL STATIC )
       LINK_LIBRARIES( pe_static )
-   ELSE()
+   else()
       LINK_LIBRARIES( pe_shared )
-   ENDIF()
+   endif()
 
-   IF( IRRLICHT )
+   if( IRRLICHT )
       LINK_LIBRARIES( Irrlicht GLU Xxf86vm Xext X11 )
-   ENDIF()
+   endif()
 
    # Boxstack example
    ADD_EXECUTABLE( boxstack examples/boxstack/BoxStack.cpp )
@@ -404,7 +409,7 @@ IF( EXAMPLES )
    SET_TARGET_PROPERTIES( shaker PROPERTIES OUTPUT_NAME shaker )
 
    #dependencies
-   IF( LIBRARY_TYPE STREQUAL STATIC )
+   if( LIBRARY_TYPE STREQUAL STATIC )
       ADD_DEPENDENCIES( boxstack pe_static )
       ADD_DEPENDENCIES( chain    pe_static )
       ADD_DEPENDENCIES( cradle   pe_static )
@@ -413,7 +418,7 @@ IF( EXAMPLES )
       ADD_DEPENDENCIES( nano     pe_static )
       ADD_DEPENDENCIES( well     pe_static )
       ADD_DEPENDENCIES( shaker   pe_static )
-   ELSE()
+   else()
       ADD_DEPENDENCIES( boxstack pe_shared )
       ADD_DEPENDENCIES( chain    pe_shared )
       ADD_DEPENDENCIES( cradle   pe_shared )
@@ -422,9 +427,9 @@ IF( EXAMPLES )
       ADD_DEPENDENCIES( nano     pe_shared )
       ADD_DEPENDENCIES( well     pe_shared )
       ADD_DEPENDENCIES( shaker   pe_shared )
-   ENDIF()
+   endif()
 
-   IF( MPI AND MPI_CXX_FOUND )
+   if( MPI AND MPI_CXX_FOUND )
       # MPI-Cube example
       ADD_EXECUTABLE( mpicube examples/mpicube/MPICube.cpp )
       FILE( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpicube )
@@ -474,7 +479,7 @@ IF( EXAMPLES )
       SET_TARGET_PROPERTIES( mpiimpact PROPERTIES OUTPUT_NAME mpiimpact )
 
       # Dependencies
-      IF( LIBRARY_TYPE STREQUAL STATIC )
+      if( LIBRARY_TYPE STREQUAL STATIC )
          ADD_DEPENDENCIES( mpicube      pe_static )
          ADD_DEPENDENCIES( mpigranular  pe_static )
          ADD_DEPENDENCIES( mpihourglass pe_static )
@@ -483,7 +488,7 @@ IF( EXAMPLES )
          ADD_DEPENDENCIES( mpinano      pe_static )
          ADD_DEPENDENCIES( mpistair     pe_static )
          ADD_DEPENDENCIES( mpiimpact    pe_static )
-      ELSE()
+      else()
          ADD_DEPENDENCIES( mpicube      pe_shared )
          ADD_DEPENDENCIES( mpigranular  pe_shared )
          ADD_DEPENDENCIES( mpihourglass pe_shared )
@@ -492,12 +497,12 @@ IF( EXAMPLES )
          ADD_DEPENDENCIES( mpinano      pe_shared )
          ADD_DEPENDENCIES( mpistair     pe_shared )
          ADD_DEPENDENCIES( mpiimpact    pe_shared )
-      ENDIF()
+      endif()
 
-   ENDIF()
+   endif()
 
    ADD_SUBDIRECTORY(examples)
-ENDIF()
+endif()
 
 
 
@@ -507,8 +512,8 @@ ENDIF()
 #
 #==================================================================================================
 
-FIND_PACKAGE( Doxygen )
-IF( DOXYGEN_EXECUTABLE )
+find_package( Doxygen )
+if( DOXYGEN_EXECUTABLE )
    FILE( WRITE ${PROJECT_BINARY_DIR}/doc/Doxyfile.inject "
 PROJECT_NAME     = ${PACKAGE_NAME}
 PROJECT_NUMBER   = ${PACKAGE_VERSION}
@@ -518,5 +523,5 @@ IMAGE_PATH       = ${CMAKE_SOURCE_DIR}/doc/pics/jpg ${CMAKE_SOURCE_DIR}/doc/pics
 EXTRA_PACKAGES   = ${CMAKE_SOURCE_DIR}/doc/pe
 PREDEFINED       = ${DEFINES} PE_PUBLIC= PE_PRIVATE= PE_PROTECTED= PE_NOTHROW=" )
    ADD_CUSTOM_TARGET( doc ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/doc/Doxyfile WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/doc COMMENT "Generating documentation" )
-ENDIF()
+endif()
 

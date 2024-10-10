@@ -157,12 +157,12 @@ void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<Half
  */
 int main( int argc, char** argv )
 {
-   planePoints.push_back(Vec3(2.1019248962402344, -1.9163930416107178, 0.02711978182196617));
+
    planePoints.push_back(Vec3(-1.047705888748169, -2.5512213706970215, 0.24490927159786224 ));
    planePoints.push_back(Vec3(-0.035260219126939774, -2.7580153942108154, 0.1991162747144699));
    planePoints.push_back(Vec3(1.0637520551681519, -2.544778823852539, 0.14949828386306763));
+   planePoints.push_back(Vec3(2.1019248962402344, -1.9163930416107178, 0.02711978182196617));
 
-   planeNormals.push_back(Vec3(-0.7013657689094543, -0.7127944231033325 , -0.0031759117264300585));
    planeNormals.push_back(Vec3(-0.9239068627357483, 0.3802013397216797  , 0.042931802570819855));
    planeNormals.push_back(Vec3(-0.9990096688270569, 0.012757861986756325, 0.04262349754571915));
    planeNormals.push_back(Vec3(-0.9221128225326538, -0.38450124859809875, 0.043206337839365005));
@@ -266,9 +266,9 @@ int main( int argc, char** argv )
    MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
 
    std::vector<HalfSpace> halfSpaces;
-   //loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces);
+   loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces);
 
-   makePlanesAndCreateHalfSpaces(halfSpaces);
+// makePlanesAndCreateHalfSpaces(halfSpaces);
 //   MPI_Barrier(MPI_COMM_WORLD);
 //   MPI_Finalize();
 //   return EXIT_SUCCESS;
@@ -530,11 +530,6 @@ int main( int argc, char** argv )
      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
     }
     world->simulationStep( stepsize );
-//   for (int i=0; i < theCollisionSystem()->getBodyStorage().size(); i++) {
-//      World::SizeType widx = static_cast<World::SizeType>(i);
-//      BodyID body = world->getBody(static_cast<unsigned int>(widx));
-//      std::cout << body->getPosition() << std::endl;
-//   }
    }
    pe_EXCLUSIVE_SECTION( 0 ) {
      std::cout << std::endl;

@@ -1,4 +1,4 @@
-#ifdef HAVE_MPI
+#if HAVE_MPI
 #include <pe/core/MPI.h>
 
 extern "C" void step_simulation_();
