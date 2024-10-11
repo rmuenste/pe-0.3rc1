@@ -12,8 +12,9 @@
 using boost::filesystem::path;
 
 using namespace pe;
-#ifdef HAVE_MPI
+#if HAVE_MPI
 #include <pe/interface/sim_setup.h>
+
 //=================================================================================================
 //
 //    Global Definitions
@@ -289,7 +290,7 @@ void outputDelaunay(int timeStep) {
 
 }
 //=================================================================================================
-#endif HAVE_CGAL
+#endif
 
 real degreesToRadians(real deg) {
   return deg * M_PI / 180.0;

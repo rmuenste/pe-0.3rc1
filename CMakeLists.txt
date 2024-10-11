@@ -311,6 +311,11 @@ set( LIBRARY_OUTPUT_PATH lib )
 
 set( PE_ALL ${PE_SOURCES} ${PE_HEADERS} )
 
+#==================================================================================================
+#
+# CONFIGURATION OF THE pe_static AND pe_shared LIBRARIES
+#
+#=================================================================================================
 if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
    ADD_LIBRARY( pe_static STATIC ${PE_ALL} )
    SET_TARGET_PROPERTIES( pe_static PROPERTIES OUTPUT_NAME pe )
@@ -338,7 +343,6 @@ endif()
 # Build of the examples
 #
 #=================================================================================================
-
 if( EXAMPLES )
    message(STATUS "Building PE examples")
    # General settings for all examples
