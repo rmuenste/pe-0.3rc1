@@ -63,6 +63,7 @@ using namespace pe::povray;
 using namespace pe::irrlicht;
 #endif
 
+real sphereRad = 0.025;  // Radius of each sphere
 
 
 
@@ -241,11 +242,12 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     double curve_length = 0.0;
     std::vector<double> edge_lengths;
     std::vector<Vec3> wayPoints;
+    int num_rings = 2;
 
     // User-defined parameters
-    real sphereRadius = 0.05;  // Radius of each sphere
-    real dt = 0.05;           // Distance from the sphere surface to the circle center
-    int num_steps = 16;      // Number of divisions along the curve
+    real sphereRadius = sphereRad;  // Radius of each sphere
+    real dt = 2. * sphereRad;           // Distance from the sphere surface to the circle center
+    int num_steps = 38;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -307,28 +309,35 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
         Vec3 u = (edge_direction % someVector).getNormalized();
         Vec3 v = (edge_direction % u).getNormalized();
 
-        // Compute circle radius
-        real circle_radius = sphereRadius + dt;
-        real circumference = 2. * M_PI * circle_radius;
+        for (int j(0); j < num_rings; ++j) {
 
-        std::cout << "circumference = " << circumference << std::endl;
-        // Compute maximum number of spheres without overlap
-        int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
+          // Compute circle radius
+          real circle_radius = sphereRadius + dt + j * (2. * sphereRadius + dt);
 
-        if (max_spheres < 1)
-          max_spheres = 1;
+          real circumference = 2. * M_PI * circle_radius;
+          
+          std::cout << "circumference = " << circumference << std::endl;
+          // Compute maximum number of spheres without overlap
+          int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
 
-        std::cout << "max_spheres = " << max_spheres << std::endl;
+          if (max_spheres < 1)
+             max_spheres = 1;
 
-        // Compute exact angle step
-        real theta_step = 2. * M_PI / max_spheres;
+          std::cout << "max_spheres = " << max_spheres << std::endl;
 
-        // Place spheres around the circle
-        for(int i(0); i < max_spheres; ++i) {
-          real theta = i * theta_step;
-          Vec3 sphere_offset = (std::cos(theta) * u + std::sin(theta) * v) * circle_radius;
-          sphere_positions.push_back(Vec3(point_on_edge + sphere_offset));
+          // Compute exact angle step
+          real theta_step = 2. * M_PI / max_spheres;
+
+          // Place spheres around the circle
+          for(int i(0); i < max_spheres; ++i) {
+             real theta = i * theta_step;
+             Vec3 sphere_offset = (std::cos(theta) * u + std::sin(theta) * v) * circle_radius;
+             sphere_positions.push_back(Vec3(point_on_edge + sphere_offset));
+          }
+
         }
+
+
     }
 
     real minDist = std::numeric_limits<real>::max();
@@ -495,14 +504,13 @@ int main( int argc, char* argv[] )
    //======================================================================================== 
    //allPositions = generateRandomPositions(LX, 2.0 * radius2, targetVolumeFraction, epsilon); 
    //numPositions = allPositions.size();
-   real sphereRad = 0.05;  // Radius of each sphere
    for (auto spherePos: spherePositions) {
      createSphere( id++, spherePos, sphereRad, sphere );
    }
 
    Vec3 gpos (0, 0, 0);
  
-   unsigned int particlesTotal = allPositions.size();
+   unsigned int particlesTotal = spherePositions.size();
    real domainVol = LX * LY * LZ;
    real partVol = 4./3. * M_PI * std::pow(radius2, 3);
    real phi = (particlesTotal * partVol)/domainVol * 100.0;
