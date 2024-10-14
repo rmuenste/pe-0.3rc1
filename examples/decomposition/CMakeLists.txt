@@ -1,10 +1,7 @@
 add_executable(decomposition decomposition.cpp)
-target_include_directories(decomposition PUBLIC ${FC_CORE_INCLUDE_DIRS})
-target_link_libraries(decomposition)
-
-# Dependencies
-IF( LIBRARY_TYPE STREQUAL STATIC )
-   ADD_DEPENDENCIES( decomposition      pe_static )
-ELSE()
-   ADD_DEPENDENCIES( decomposition      pe_shared )
-ENDIF()
+target_include_directories(decomposition PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
+target_link_libraries(decomposition PRIVATE 
+  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+)

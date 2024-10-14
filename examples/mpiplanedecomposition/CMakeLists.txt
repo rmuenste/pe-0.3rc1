@@ -1,10 +1,7 @@
 add_executable(mpiplanedecomposition mpiplanedecomposition.cpp)
-target_include_directories(mpiplanedecomposition PUBLIC ${FC_CORE_INCLUDE_DIRS})
-target_link_libraries(mpiplanedecomposition)
-
-# Dependencies
-IF( LIBRARY_TYPE STREQUAL STATIC )
-   ADD_DEPENDENCIES( mpiplanedecomposition      pe_static )
-ELSE()
-   ADD_DEPENDENCIES( mpiplanedecomposition      pe_shared )
-ENDIF()
+target_include_directories(mpiplanedecomposition PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
+target_link_libraries(mpiplanedecomposition PRIVATE 
+  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+)

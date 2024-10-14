@@ -245,7 +245,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     // User-defined parameters
     real sphereRadius = 0.05;  // Radius of each sphere
     real dt = 0.05;           // Distance from the sphere surface to the circle center
-    int num_steps = 16;      // Number of divisions along the curve
+    int num_steps = 21;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -500,9 +500,15 @@ int main( int argc, char* argv[] )
      createSphere( id++, spherePos, sphereRad, sphere );
    }
 
-   Vec3 gpos (0, 0, 0);
  
-   unsigned int particlesTotal = allPositions.size();
+   unsigned int particlesTotal = 0;
+   for (int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++) {
+     World::SizeType widx = static_cast<World::SizeType>(j);
+     BodyID body = world->getBody(static_cast<unsigned int>(widx));
+     if(body->getType() == sphereType) {
+        particlesTotal++;
+     }
+   }
    real domainVol = LX * LY * LZ;
    real partVol = 4./3. * M_PI * std::pow(radius2, 3);
    real phi = (particlesTotal * partVol)/domainVol * 100.0;
