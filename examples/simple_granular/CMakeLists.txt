@@ -1,10 +1,7 @@
 add_executable(simple_granular simple_granular.cpp)
-target_include_directories(simple_granular PUBLIC ${FC_CORE_INCLUDE_DIRS})
-target_link_libraries(simple_granular)
-
-# Dependencies
-IF( LIBRARY_TYPE STREQUAL STATIC )
-   ADD_DEPENDENCIES( simple_granular      pe_static )
-ELSE()
-   ADD_DEPENDENCIES( simple_granular      pe_shared )
-ENDIF()
+target_include_directories(simple_granular PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
+target_link_libraries(simple_granular PRIVATE 
+  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+)
