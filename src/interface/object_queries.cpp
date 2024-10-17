@@ -49,27 +49,27 @@ void synchronizeForces() {
     body->setForce(Vec3(0,0,0));
 #endif
     if (body->getType() == sphereType) {
-      std::cout << "==Force Data==================================================================" << std::endl;
-      std::cout << "Force   : " << std::left << std::setw(10) << body->getSystemID() 
-                << " " << std::setw(12) << body->getForce()[0] 
-                << " " << std::setw(12) << body->getForce()[1] 
-                << " " << std::setw(12) << body->getForce()[2] 
-                << std::endl;
-      std::cout << "Torque  : " << std::left << std::setw(10) << body->getSystemID() 
-                << " " << std::setw(12) << body->getTorque()[0] 
-                << " " << std::setw(12) << body->getTorque()[1] 
-                << " " << std::setw(12) << body->getTorque()[2] 
-                << std::endl;
+//      std::cout << "==Force Data==================================================================" << std::endl;
+//      std::cout << "Force   : " << std::left << std::setw(10) << body->getSystemID() 
+//                << " " << std::setw(12) << body->getForce()[0] 
+//                << " " << std::setw(12) << body->getForce()[1] 
+//                << " " << std::setw(12) << body->getForce()[2] 
+//                << std::endl;
+//      std::cout << "Torque  : " << std::left << std::setw(10) << body->getSystemID() 
+//                << " " << std::setw(12) << body->getTorque()[0] 
+//                << " " << std::setw(12) << body->getTorque()[1] 
+//                << " " << std::setw(12) << body->getTorque()[2] 
+//                << std::endl;
       SphereID s = static_body_cast<Sphere>(body);
       real mu = theWorld()->getViscosity();
       real rad = s->getRadius();
       real vel_f = 0.0;
       real fd = 6. * M_PI * rad * mu * ( vel_f - body->getLinearVel()[0]); 
-      std::cout << "Stokes  : " << std::left << std::setw(10) << body->getSystemID() 
-                << " " << std::setw(12) << fd 
-                << " " << std::setw(12) << fd 
-                << " " << std::setw(12) << fd 
-                << std::endl;
+//      std::cout << "Stokes  : " << std::left << std::setw(10) << body->getSystemID() 
+//                << " " << std::setw(12) << fd 
+//                << " " << std::setw(12) << fd 
+//                << " " << std::setw(12) << fd 
+//                << std::endl;
     }
     else if(body->getType() == triangleMeshType) {
 //      Vec3 tau = body->getTorque();
