@@ -77,32 +77,9 @@ endif()
 
 # Start with empty compiler flags
 set(PE_CXX_FLAGS)
-# Setting compiler flags analogously to the configure script (and clear default compiler flags set
-# by cmake for all compilers supported by the configure script to ensure compatibility)
-# Set the required C++ standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Initialize compiler flag variables
-# Check if the compiler supports C++17
-include(CheckCXXCompilerFlag)
-check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
-check_cxx_compiler_flag("-std=c++14" COMPILER_SUPPORTS_CXX14)
-
-if(COMPILER_SUPPORTS_CXX17)
-  set(CMAKE_CXX_STANDARD 17)
-  message(STATUS "C++17 support enabled.")
-elseif(COMPILER_SUPPORTS_CXX14)
-  set(CMAKE_CXX_STANDARD 14)
-  message(STATUS "C++14 support enabled.")
-else()
-  message(FATAL_ERROR "The compiler does not support C++14 or C++17.")
-endif()
 
 # Detect compiler and set flags
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(LRG_FUNC1-"SHELL:--param large-function-growth=600")
  
   message(STATUS "We found a GNU compiler")
   list(APPEND PE_CXX_FLAGS
@@ -155,6 +132,34 @@ if ( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
    message( WARNING ": Shared library builds are currently experimental." )
 endif()
 
+# Setting compiler flags analogously to the configure script (and clear default compiler flags set
+# by cmake for all compilers supported by the configure script to ensure compatibility)
+# Set the required C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Initialize compiler flag variables
+# Check if the compiler supports C++17
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
+check_cxx_compiler_flag("-std=c++14" COMPILER_SUPPORTS_CXX14)
+
+if(COMPILER_SUPPORTS_CXX17)
+  set(CMAKE_CXX_STANDARD 17)
+  list(APPEND PE_CXX_FLAGS
+  -std=c++17
+  )
+  message(STATUS "C++17 support enabled.")
+elseif(COMPILER_SUPPORTS_CXX14)
+  set(CMAKE_CXX_STANDARD 14)
+  message(STATUS "C++14 support enabled.")
+  list(APPEND PE_CXX_FLAGS
+  -std=c++14
+  )
+else()
+  message(FATAL_ERROR "The compiler does not support C++14 or C++17.")
+endif()
 #==================================================================================================
 #
 # Visual Studio Setup

@@ -148,7 +148,7 @@ std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
 //*************************************************************************************************
 
 
-real sphereRad = 0.025;  // Radius of each sphere
+real sphereRad = 0.0125;  // Radius of each sphere
 //*************************************************************************************************
 std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
@@ -156,12 +156,12 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     double curve_length = 0.0;
     std::vector<double> edge_lengths;
     std::vector<Vec3> wayPoints;
-    int num_rings = 2;
+    int num_rings = 4;
 
     // User-defined parameters
     real sphereRadius = sphereRad;  // Radius of each sphere
     real dt = 2. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 38;      // Number of divisions along the curve
+    int num_steps = 94;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -174,7 +174,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
         curve_length += edge_length;
     }
 
-    std::cout << "Curve length: " << curve_length << std::endl;
+    //std::cout << "Curve length: " << curve_length << std::endl;
 
     // Step 2: Set ds (step size)
     double ds = curve_length / real(num_steps);
@@ -188,7 +188,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     }
 
     // Step 4: Traverse the curve in increments of ds
-    for (double s = ds; s <= curve_length-ds; s += ds) {
+    for (double s = ds + 0.2 * ds; s <= curve_length-ds; s += ds) {
         // Find the edge that contains the current distance s
         size_t edge_index = 0;
         while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {
@@ -230,14 +230,14 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
           real circumference = 2. * M_PI * circle_radius;
           
-          std::cout << "circumference = " << circumference << std::endl;
+          //std::cout << "circumference = " << circumference << std::endl;
           // Compute maximum number of spheres without overlap
           int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
 
           if (max_spheres < 1)
              max_spheres = 1;
 
-          std::cout << "max_spheres = " << max_spheres << std::endl;
+          //std::cout << "max_spheres = " << max_spheres << std::endl;
 
           // Compute exact angle step
           real theta_step = 2. * M_PI / max_spheres;
@@ -258,9 +258,9 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     for (size_t i = 1; i < wayPoints.size(); ++i) {
         real dist = (wayPoints[i-1] - wayPoints[i]).length();
         if (minDist > dist) minDist = dist;
-        std::cout << "Distance between [" << i-1 << ", " << i << "] = " << (wayPoints[i-1] - wayPoints[i]).length() << std::endl;
+        //std::cout << "Distance between [" << i-1 << ", " << i << "] = " << (wayPoints[i-1] - wayPoints[i]).length() << std::endl;
     }
-    std::cout << "Minimal distance: " << minDist  << " => minRadius = " << minDist * 0.5 << std::endl;
+    //std::cout << "Minimal distance: " << minDist  << " => minRadius = " << minDist * 0.5 << std::endl;
 
     return sphere_positions;
 
@@ -302,7 +302,7 @@ void setupArchimedes(MPI_Comm ex0)
    const real dz(LZ / processesZ);
    std::vector<HalfSpace> halfSpaces;
 
-   loadPlanesAndCreateHalfSpaces("planes_div10.txt", halfSpaces);
+   loadPlanesAndCreateHalfSpaces("planes_div15.txt", halfSpaces);
 
    int my_rank;
    MPI_Comm_rank(ex0, &my_rank);
@@ -552,7 +552,7 @@ void setupArchimedes(MPI_Comm ex0)
    // Here is how to create some random positions on a grid up to a certain
    // volume fraction.
    //=================================================================================
-   bool resume = false;
+   bool resume = true;
    real epsilon = 2e-4;
    real targetVolumeFraction = 0.10;
    real radius2 = 0.05;
@@ -583,7 +583,6 @@ void setupArchimedes(MPI_Comm ex0)
        }
      }
 
-
 //      if (world->ownsPoint(pos1))
 //      {
 //         particle = createSphere(idx++, pos1, radius2, elastic);
@@ -603,7 +602,7 @@ void setupArchimedes(MPI_Comm ex0)
    }
    else
    {
-      //checkpointer.read( "../start.2" );
+      checkpointer.read( "../start.4" );
    }
 
    //=================================================================================
@@ -674,7 +673,7 @@ void setupArchimedes(MPI_Comm ex0)
                 << " Lubrication threshold                   = " << lubricationThreshold << "\n"
                 << " Contact threshold                       = " << contactThreshold << "\n"
                 << " Domain cube side length                 = " << L << "\n"
-                << " Domain volume                           = " << L * L * L << "\n"
+                << " Domain volume                           = " << domainVol << "\n"
                 << " Resume                                  = " << resOut << "\n"
                 << " Volume fraction[%]                      = " << (particlesTotal * partVol) / domainVol * 100.0 << "\n"
                 << " Total objects                           = " << primitivesTotal << "\n"
