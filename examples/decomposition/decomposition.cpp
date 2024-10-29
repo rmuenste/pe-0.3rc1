@@ -63,7 +63,7 @@ using namespace pe::povray;
 using namespace pe::irrlicht;
 #endif
 
-real sphereRad = 0.025;  // Radius of each sphere
+real sphereRad = 0.0125;  // Radius of each sphere
 
 
 
@@ -242,12 +242,12 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     double curve_length = 0.0;
     std::vector<double> edge_lengths;
     std::vector<Vec3> wayPoints;
-    int num_rings = 2;
+    int num_rings = 4;
 
     // User-defined parameters
     real sphereRadius = sphereRad;  // Radius of each sphere
     real dt = 2. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 38;      // Number of divisions along the curve
+    int num_steps = 94;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -260,7 +260,8 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
         curve_length += edge_length;
     }
 
-    std::cout << "Curve length: " << curve_length << std::endl;
+    std::cout << "Sphere radius: " << sphereRad << std::endl;
+    //std::cout << "Curve length: " << curve_length << std::endl;
 
     // Step 2: Set ds (step size)
     double ds = curve_length / real(num_steps);
@@ -274,7 +275,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     }
 
     // Step 4: Traverse the curve in increments of ds
-    for (double s = ds; s <= curve_length-ds; s += ds) {
+    for (double s = ds + 0.2*ds; s <= curve_length-ds; s += ds) {
         // Find the edge that contains the current distance s
         size_t edge_index = 0;
         while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {
@@ -316,14 +317,14 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
           real circumference = 2. * M_PI * circle_radius;
           
-          std::cout << "circumference = " << circumference << std::endl;
+          //std::cout << "circumference = " << circumference << std::endl;
           // Compute maximum number of spheres without overlap
           int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
 
           if (max_spheres < 1)
              max_spheres = 1;
 
-          std::cout << "max_spheres = " << max_spheres << std::endl;
+          //std::cout << "max_spheres = " << max_spheres << std::endl;
 
           // Compute exact angle step
           real theta_step = 2. * M_PI / max_spheres;
@@ -344,9 +345,9 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     for (size_t i = 1; i < wayPoints.size(); ++i) {
         real dist = (wayPoints[i-1] - wayPoints[i]).length();
         if (minDist > dist) minDist = dist;
-        std::cout << "Distance between [" << i-1 << ", " << i << "] = " << (wayPoints[i-1] - wayPoints[i]).length() << std::endl;
+        //std::cout << "Distance between [" << i-1 << ", " << i << "] = " << (wayPoints[i-1] - wayPoints[i]).length() << std::endl;
     }
-    std::cout << "Minimal distance: " << minDist  << " => minRadius = " << minDist * 0.5 << std::endl;
+    //std::cout << "Minimal distance: " << minDist  << " => minRadius = " << minDist * 0.5 << std::endl;
 
     return sphere_positions;
 
@@ -510,8 +511,8 @@ int main( int argc, char* argv[] )
 
  
    unsigned int particlesTotal = spherePositions.size();
-   real domainVol = LX * LY * LZ;
-   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
+   real domainVol = 0.604;
+   real partVol = 4./3. * M_PI * std::pow(sphereRad, 3);
    real phi = (particlesTotal * partVol)/domainVol * 100.0;
  
    std::string resOut = (resume) ? " resuming " : " not resuming ";
@@ -529,7 +530,7 @@ int main( int argc, char* argv[] )
        << " Lubrication threshold                   = " << lubricationThreshold << "\n"
        << " Contact threshold                       = " << contactThreshold << "\n"
        << " eps_init                                = " << lubricationThreshold / radius2 << "\n"
-       << " Domain volume                           = " << LX * LY * LZ << "\n"
+       << " Domain volume                           = " << domainVol << "\n"
        << " Resume                                  = " << resOut  << "\n"
        << " Volume fraction[%]                      = " << phi << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
