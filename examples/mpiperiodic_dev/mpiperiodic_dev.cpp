@@ -378,6 +378,7 @@ int main( int argc, char** argv )
       );
    }
 
+   //===================================================================================
    // Connecting the east neighbor
    if (east[0] < processesX)
    {
@@ -426,6 +427,7 @@ int main( int argc, char** argv )
       }
    }
 
+   //===================================================================================
    // Connecting the north neighbor
    if( north[1] < processesZ ) {
       MPI_Cart_rank( cartcomm, north, &rank );
@@ -450,7 +452,6 @@ int main( int argc, char** argv )
    }
 
    //===================================================================================
-
    // Connecting the south-west neighbor
    if( southwest[0] >= 0 && southwest[1] >= 0 ) {
       MPI_Cart_rank( cartcomm, southwest, &rank );
@@ -476,6 +477,7 @@ int main( int argc, char** argv )
 
    }
  
+   //===================================================================================
    // Connecting the south-east neighbor
    if( southeast[0] < processesX && southeast[1] >= 0 ) {
       MPI_Cart_rank( cartcomm, southeast, &rank );
@@ -494,37 +496,37 @@ int main( int argc, char** argv )
       ));
    }
 
+   //===================================================================================
    // Connecting the north-west neighbor
-//   if( northwest[0] >= 0 && northwest[1] < processesZ ) {
-//      MPI_Cart_rank( cartcomm, northwest, &rank );
-//
-//
-//      HalfSpace hs1 = halfSpaces[west[0]];
-//      HalfSpace hs = halfSpaces[west[0] - 1];
-//      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
-//
-//      HalfSpace hs_y = halfSpacesY[west[0]];  
-//      HalfSpace hsy_temp = halfSpacesY[west[0]];
-//      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
-//
-//      if (west[0] > 0)
-//      {
-//         connect( rank, intersect(
-//            hs1,
-//            hs_flip,
-//            hs_y
-//         ));
-//      }
-//      else {
-//         connect( rank, intersect(
-//            hs1,
-//            hs_y
-//         ));
-//      }
-//
-//   }
+   if( northwest[0] >= 0 && northwest[1] < processesZ ) {
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+
+      HalfSpace hs_y = halfSpacesY[west[0]];  
+      HalfSpace hsy_temp = halfSpacesY[west[0]];
+      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+
+      if (west[0] > 0)
+      {
+         HalfSpace hs = halfSpaces[west[0] - 1];
+         HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+         connect( rank, intersect(
+            hs1,
+            hs_flip,
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            hs1,
+            hs_y
+         ));
+      }
+   }
  
-   // Connecting the north-east neighbor
+   //===================================================================================
+   // Connecting the north-west neighbor
    if( northeast[0] < processesX && northeast[1] < processesZ ) {
       MPI_Cart_rank( cartcomm, northeast, &rank );
 
