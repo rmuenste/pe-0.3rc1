@@ -279,8 +279,11 @@ int main( int argc, char** argv )
 
    int southwest[] = { center[0]-1, center[1]-1 };
    int southeast[] = { center[0]+1, center[1]-1 };
+
    int northwest[] = { center[0]-1, center[1]+1 };
    int northeast[] = { center[0]+1, center[1]+1 };
+
+   std::vector<HalfSpace> mySpaces;
 
    if (west[0] < 0)
    {
@@ -290,6 +293,9 @@ int main( int argc, char** argv )
         HalfSpace hsy_temp = halfSpacesY[center[0]];
         hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
       }
+
+      mySpaces.push_back(halfSpaces[center[0]]);
+      mySpaces.push_back(hs_y);
 
       defineLocalDomain(intersect(
                halfSpaces[center[0]],
@@ -308,6 +314,10 @@ int main( int argc, char** argv )
         HalfSpace hsy_temp = halfSpacesY[center[0]];
         hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
       }
+
+      mySpaces.push_back(halfSpaces[center[0]]);
+      mySpaces.push_back(hs_flip);
+      mySpaces.push_back(hs_y);
 
       defineLocalDomain(intersect(
           halfSpaces[center[0]],
@@ -336,7 +346,7 @@ int main( int argc, char** argv )
       HalfSpace hs_y = halfSpacesY[west[0]];  
       if(west[1] != 0)
       {
-        HalfSpace hsy_temp = halfSpacesY[center[0]];
+        HalfSpace hsy_temp = halfSpacesY[west[0]];
         hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
       }
 
@@ -357,7 +367,7 @@ int main( int argc, char** argv )
       HalfSpace hs_y = halfSpacesY[west[0]];  
       if(west[1] != 0)
       {
-        HalfSpace hsy_temp = halfSpacesY[center[0]];
+        HalfSpace hsy_temp = halfSpacesY[west[0]];
         hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
       }
 
@@ -378,54 +388,161 @@ int main( int argc, char** argv )
 
       HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
 
+      HalfSpace hs_y = halfSpacesY[east[0]];  
+      if(east[1] != 0)
+      {
+        HalfSpace hsy_temp = halfSpacesY[east[0]];
+        hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+      }
+
       connect(rank,
               intersect(
               hs1,
-              hs_flip));
+              hs_flip,
+              hs_y
+              ));
    }
 
    //===================================================================================
-//   // Connecting the south neighbor
-//   if( south[1] >= 0 ) {
-//      MPI_Cart_rank( cartcomm, south, &rank );
-//      connect( rank, intersect(
-//         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-//   }
-//
-//   // Connecting the south-west neighbor
-//   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
-//      MPI_Cart_rank( cartcomm, southwest, &rank );
-//      connect( rank, intersect(
-//         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-//   }
-// 
-//   // Connecting the south-east neighbor
-//   if( southeast[0] < px && southeast[1] >= 0 ) {
-//      MPI_Cart_rank( cartcomm, southeast, &rank );
-//      connect( rank, intersect(
-//         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-//   }
-// 
-//   // Connecting the north neighbor
-//   if( north[1] < py ) {
-//      MPI_Cart_rank( cartcomm, north, &rank );
-//      connect( rank, intersect(
-//         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-//   }
-//
-//   // Connecting the north-west neighbor
-//   if( northwest[0] >= 0 && northwest[1] < py ) {
+   // Connecting the south neighbor
+   if( south[1] >= 0 ) {
+
+      MPI_Cart_rank( cartcomm, south, &rank );
+
+      HalfSpace hs_y = halfSpacesY[center[0]];  
+
+      if(mySpaces.size() == 2) {
+         connect( rank, intersect(
+            mySpaces[0],
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            mySpaces[0],
+            mySpaces[1],
+            hs_y
+         ));
+      }
+   }
+
+   // Connecting the north neighbor
+   if( north[1] < processesZ ) {
+      MPI_Cart_rank( cartcomm, north, &rank );
+
+      HalfSpace hs_y = halfSpacesY[center[0]];  
+      HalfSpace hsy_temp = halfSpacesY[center[0]];
+      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+
+      if(mySpaces.size() == 2) {
+         connect( rank, intersect(
+            mySpaces[0],
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            mySpaces[0],
+            mySpaces[1],
+            hs_y
+         ));
+      }
+   }
+
+   //===================================================================================
+
+   // Connecting the south-west neighbor
+   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
+      MPI_Cart_rank( cartcomm, southwest, &rank );
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+      HalfSpace hs_y = halfSpacesY[west[0]];  
+      if (west[0] > 0)
+      {
+         HalfSpace hs = halfSpaces[west[0] - 1];
+         HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+         connect( rank, intersect(
+            hs1,
+            hs_flip,
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            hs1,
+            hs_y
+         ));
+      }
+
+   }
+ 
+   // Connecting the south-east neighbor
+   if( southeast[0] < processesX && southeast[1] >= 0 ) {
+      MPI_Cart_rank( cartcomm, southeast, &rank );
+
+      HalfSpace hs_y = halfSpacesY[east[0]];  
+
+      HalfSpace hs1 = halfSpaces[east[0]];
+      HalfSpace hs = halfSpaces[east[0] - 1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+
+      connect( rank, intersect(
+         hs1,
+         hs_flip,
+         hs_y
+      ));
+   }
+
+   // Connecting the north-west neighbor
+//   if( northwest[0] >= 0 && northwest[1] < processesZ ) {
 //      MPI_Cart_rank( cartcomm, northwest, &rank );
-//      connect( rank, intersect(
-//         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
+//
+//
+//      HalfSpace hs1 = halfSpaces[west[0]];
+//      HalfSpace hs = halfSpaces[west[0] - 1];
+//      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+//
+//      HalfSpace hs_y = halfSpacesY[west[0]];  
+//      HalfSpace hsy_temp = halfSpacesY[west[0]];
+//      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+//
+//      if (west[0] > 0)
+//      {
+//         connect( rank, intersect(
+//            hs1,
+//            hs_flip,
+//            hs_y
+//         ));
+//      }
+//      else {
+//         connect( rank, intersect(
+//            hs1,
+//            hs_y
+//         ));
+//      }
+//
 //   }
-// 
-//   // Connecting the north-east neighbor
-//   if( northeast[0] < px && northeast[1] < py ) {
-//      MPI_Cart_rank( cartcomm, northeast, &rank );
-//      connect( rank, intersect(
-//         HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
-//   }
+ 
+   // Connecting the north-east neighbor
+   if( northeast[0] < processesX && northeast[1] < processesZ ) {
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+
+      HalfSpace hs_y = halfSpacesY[east[0]];  
+      HalfSpace hsy_temp = halfSpacesY[east[0]];
+      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+
+      HalfSpace hs1 = halfSpaces[east[0]];
+      HalfSpace hs = halfSpaces[east[0] - 1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+
+      connect( rank, intersect(
+         hs1,
+         hs_flip,
+         hs_y
+      ) );
+   }
 
    //Checking the process setup
    theMPISystem()->checkProcesses();
