@@ -33,13 +33,13 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 8000 );  // Number of time steps for the flowing granular media
+const size_t timesteps     ( 16000 );  // Number of time steps for the flowing granular media
 const real   stepsize      ( 0.0005 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 15 );    // Number of processes in x-direction
 const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 1 );    // Number of processes in y-direction
+const int    processesZ( 2 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -72,6 +72,7 @@ bool g_povray  ( false );
 bool g_vtk( true );
 // 
 const unsigned int visspacing( 20  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+//const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -410,13 +411,13 @@ void stepSimulation() {
 
   MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
-//  pe_EXCLUSIVE_SECTION(0) {
+  pe_EXCLUSIVE_SECTION(0) {
 //      std::cout << "==Particle Group Data=========================================================" << std::endl;
-//      //std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;
-//      std::cout << "Maximum Vp : " << totalV << std::endl;
+      //std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;
+      std::cout << "Maximum Vp : " << totalV << std::endl;
 //      std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
-//      std::cout << "Maximum Ap : " << totalA << std::endl;
-//  }
+      std::cout << "Maximum Ap : " << totalA << std::endl;
+  }
 #endif 
 
   //=================================================================================================

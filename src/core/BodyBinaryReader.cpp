@@ -581,13 +581,17 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
             for( size_t i = 0; i < size; ++i ) {
                TriangleMesh::Parameters objparam;
                unmarshal( buffer, objparam, false );
-               if( reassignSystemID )
-                  objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
-               TriangleMeshID obj = instantiateTriangleMesh( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.vertices_, objparam.faceIndices_, objparam.material_, objparam.visible_, objparam.fixed_, false );
-               obj->setLinearVel( objparam.v_ );
-               obj->setAngularVel( objparam.w_ );
-               obj->setRemote( false );
-               manager->add( obj );
+//               if( reassignSystemID )
+//                  objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
+//               TriangleMeshID obj = instantiateTriangleMesh( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.vertices_, objparam.faceIndices_, objparam.material_, objparam.visible_, objparam.fixed_, false );
+//               obj->setLinearVel( objparam.v_ );
+//               obj->setAngularVel( objparam.w_ );
+//               obj->setRemote( false );
+//               manager->add( obj );
+               pe_LOG_INFO_SECTION( log ) {
+                  log << "Skipping geometry type " << (int)geomType << ".\n";
+               }
+
             }
             break;
          }

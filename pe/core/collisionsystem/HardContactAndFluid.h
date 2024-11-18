@@ -4366,6 +4366,21 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
    body->clearContacts();
 
    if( body->awake_ ) {
+
+      if(w.length() > 50.0) {
+        w = Vec3(0,0,0);
+      }
+
+      if(v.length() > 10.0) {
+        v *= 0.0;
+      }
+      if(v.length() > 8.0) {
+        v *= 0.25;
+      }
+      if(v.length() > 6.0) {
+        v *= 0.5;
+      }
+
       // Calculating the translational displacement
       body->gpos_ += v * dt;
 
@@ -4383,6 +4398,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
          v *= drag;
          w *= drag;
       }
+
 
       // Storing the velocities back in the body properties
       body->v_ = v;
