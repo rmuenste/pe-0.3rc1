@@ -47,6 +47,156 @@ pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 //*************************************************************************************************
 
 
+//*************************************************************************************************
+std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
+    std::vector<Vec3> vectors;
+    std::ifstream file(fileName);
+    
+    // Check if the file was successfully opened
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open file " << fileName << std::endl;
+        return vectors; // Return an empty vector in case of error
+    }
+    
+    std::string line;
+    
+    // Read the file line by line
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);  // Create a string stream from the line
+        float x, y, z;
+        
+        // Parse the line for three float values
+        if (ss >> x >> y >> z) {
+            // Create a Vec3 object and add it to the vector
+            vectors.emplace_back(x, y, z);
+        }
+    }
+    
+    file.close();  // Close the file
+    return vectors;
+}
+//*************************************************************************************************
+
+
+//real sphereRad = 0.0125;  // Radius of each sphere
+real sphereRad = 0.00625;  // Radius of each sphere 0.00625
+//*************************************************************************************************
+std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
+
+    // Step 1: Measure the total length of the curve
+    double curve_length = 0.0;
+    std::vector<double> edge_lengths;
+    std::vector<Vec3> wayPoints;
+    int num_rings = 10;
+
+    // User-defined parameters
+    real sphereRadius = sphereRad;  // Radius of each sphere
+    real dt = 2. * sphereRad;           // Distance from the sphere surface to the circle center
+    int num_steps = 188;      // Number of divisions along the curve
+    std::vector<Vec3> sphere_positions;
+
+    size_t num_edges = vecOfEdges.size() - 1;
+
+    for (size_t i = 0; i < num_edges; ++i) {
+        Vec3 v1 = vecOfEdges[i];
+        Vec3 v2 = vecOfEdges[i + 1];
+        double edge_length = (v2 - v1).length();
+        edge_lengths.push_back(edge_length);
+        curve_length += edge_length;
+    }
+
+    //std::cout << "Curve length: " << curve_length << std::endl;
+
+    // Step 2: Set ds (step size)
+    double ds = curve_length / real(num_steps);
+
+    // Step 3: Compute cumulative lengths to help find the edge containing each step
+    std::vector<double> cumulative_lengths;
+    cumulative_lengths.push_back(0.0);  // Starting point
+
+    for (size_t i = 0; i < edge_lengths.size(); ++i) {
+        cumulative_lengths.push_back(cumulative_lengths.back() + edge_lengths[i]);
+    }
+
+    // Step 4: Traverse the curve in increments of ds
+    for (double s = ds + 0.2 * ds; s <= curve_length-ds; s += ds) {
+        // Find the edge that contains the current distance s
+        size_t edge_index = 0;
+        while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {
+            ++edge_index;
+        }
+
+        if (edge_index >= num_edges) {
+            break;  // Reached the end of the curve
+        }
+
+        // Compute the parameter t along the current edge
+        double edge_start = cumulative_lengths[edge_index];
+        double edge_end = cumulative_lengths[edge_index + 1];
+        double t = (s - edge_start) / (edge_end - edge_start);
+
+        // Calculate the point along the edge at distance s
+        Vec3 v1 = vecOfEdges[edge_index];
+        Vec3 v2 = vecOfEdges[edge_index + 1];
+        Vec3 point_on_edge = v1 + (v2 - v1) * t;
+
+        // Step 5: Take a user-defined action at the point
+        wayPoints.push_back(point_on_edge);
+
+        //-------------------- User Action Start --------------------
+        // Generate a ring of spheres around the current edge at point_on_edge
+        Vec3 edge_direction = v2 - v1;
+        Vec3 someVector(1.0, 0., 0.);
+        if ( std::abs( trans(edge_direction) * someVector ) > 0.999) 
+          someVector = Vec3(0.0, 1.0, 0.0);
+
+        // Compute orthogonal vectors u and v in the plane perpendicular to edge_direction
+        Vec3 u = (edge_direction % someVector).getNormalized();
+        Vec3 v = (edge_direction % u).getNormalized();
+
+        for (int j(0); j < num_rings; ++j) {
+
+          // Compute circle radius
+          real circle_radius = sphereRadius + dt + j * (2. * sphereRadius + 0.75 * dt);
+
+          real circumference = 2. * M_PI * circle_radius;
+          
+          //std::cout << "circumference = " << circumference << std::endl;
+          // Compute maximum number of spheres without overlap
+          int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
+
+          if (max_spheres < 1)
+             max_spheres = 1;
+
+          //std::cout << "max_spheres = " << max_spheres << std::endl;
+
+          // Compute exact angle step
+          real theta_step = 2. * M_PI / max_spheres;
+
+          // Place spheres around the circle
+          for(int i(0); i < max_spheres; ++i) {
+             real theta = i * theta_step;
+             Vec3 sphere_offset = (std::cos(theta) * u + std::sin(theta) * v) * circle_radius;
+             sphere_positions.push_back(Vec3(point_on_edge + sphere_offset));
+          }
+
+        }
+
+
+    }
+
+    real minDist = std::numeric_limits<real>::max();
+    for (size_t i = 1; i < wayPoints.size(); ++i) {
+        real dist = (wayPoints[i-1] - wayPoints[i]).length();
+        if (minDist > dist) minDist = dist;
+        //std::cout << "Distance between [" << i-1 << ", " << i << "] = " << (wayPoints[i-1] - wayPoints[i]).length() << std::endl;
+    }
+    //std::cout << "Minimal distance: " << minDist  << " => minRadius = " << minDist * 0.5 << std::endl;
+
+    return sphere_positions;
+
+}
+
 // Function to load planes from file and create HalfSpace instances
 void loadPlanesAndCreateHalfSpaces(const std::string &filename, std::vector<HalfSpace> &halfSpaces)
 {
@@ -184,11 +334,11 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 0 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 2 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Process parameters
-   const int processesX( 3 );  // Number of processes in x-direction
+   const int processesX( 34 );  // Number of processes in x-direction
    const int processesZ( 2 );  // Number of processes in z-direction
 
    // Random number generator parameters
@@ -268,8 +418,8 @@ int main( int argc, char** argv )
    std::vector<HalfSpace> halfSpaces;
    std::vector<HalfSpace> halfSpacesY;
 
-   loadPlanesAndCreateHalfSpaces("planes_div15.txt", halfSpaces);
-   loadPlanesYAndCreateHalfSpaces("planesy_div15.txt", halfSpacesY);
+   loadPlanesAndCreateHalfSpaces("planesX68.txt", halfSpaces);
+   loadPlanesYAndCreateHalfSpaces("planesY68.txt", halfSpacesY);
 
    int west[] = {center[0] - 1, center[1]};
    int east[] = {center[0] + 1, center[1]};
@@ -549,9 +699,100 @@ int main( int argc, char** argv )
    //Checking the process setup
    theMPISystem()->checkProcesses();
 
+   // Create a custom material for the benchmark
+   MaterialID elastic = createMaterial("elastic", 1.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+   int idx = 0;
+   std::vector<Vec3> edges = readVectorsFromFile("vertices.txt");
+   std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges);
+   for (auto spherePos: spherePositions) {
+     if (world->ownsPoint(spherePos))
+     {
+       createSphere( idx++, spherePos, sphereRad, elastic );
+     }
+   }
+
+
    // Synchronization of the MPI processes
    world->synchronize();
 
+   // Setup of the VTK visualization
+   if( vtk ) {
+      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+   }
+
+   //=================================================================================
+   // Calculating the total number of particles and primitives
+   unsigned long particlesTotal(0);
+   unsigned long primitivesTotal(0);
+   unsigned long bla = idx;
+
+   int numBodies(0);
+   int numTotal(0);
+   unsigned int j(0);
+   for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
+   {
+      World::SizeType widx = static_cast<World::SizeType>(j);
+      BodyID body = world->getBody(static_cast<unsigned int>(widx));
+      if (body->getType() == sphereType)
+      {
+         numBodies++;
+         numTotal++;
+      }
+      else
+      {
+         numTotal++;
+      }
+   }
+
+   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
+   unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
+   MPI_Reduce(&bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
+   MPI_Reduce(&bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
+
+   real domainVol = 0.604;
+   real partVol = 4. / 3. * M_PI * std::pow(sphereRad, 3);
+
+   pe_EXCLUSIVE_SECTION(0)
+   {
+      std::cout << "\n--" << "SIMULATION SETUP"
+                << "--------------------------------------------------------------\n"
+                << " Total number of MPI processes           = " << 68 << "\n"
+                << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+                << " Total number of particles               = " << particlesTotal << "\n"
+                << " particle volume                         = " << partVol << "\n"
+                << " Total number of objects                 = " << primitivesTotal << "\n"
+                << " Gravity constant                        = " << world->getGravity() << "\n"
+                << " Lubrication threshold                   = " << lubricationThreshold << "\n"
+                << " Contact threshold                       = " << contactThreshold << "\n"
+                << " Domain cube side length                 = " << L << "\n"
+                << " Domain volume                           = " << domainVol << "\n"
+                << " Volume fraction[%]                      = " << (particlesTotal * partVol) / domainVol * 100.0 << "\n"
+                << " Total objects                           = " << primitivesTotal << "\n"
+                << std::endl;
+      std::cout << "--------------------------------------------------------------------------------\n"
+                << std::endl;
+   }
+
+
+
+  pe_EXCLUSIVE_SECTION( 0 ) {
+    std::cout << "\n--" << "SIMULATION SETUP"
+      << "--------------------------------------------------------------\n"
+      << " Total number of MPI processes           = " << processesX * processesZ << "\n"
+      << " Total timesteps                         = " << timesteps << "\n"
+      << " Timestep size                           = " << stepsize << "\n" << std::endl;
+    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+
+  for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
+    pe_EXCLUSIVE_SECTION( 0 ) {
+     std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+    }
+    world->simulationStep( stepsize );
+   }
+   pe_EXCLUSIVE_SECTION( 0 ) {
+     std::cout << std::endl;
+   }
    /////////////////////////////////////////////////////
    // MPI Finalization
    MPI_Finalize();
