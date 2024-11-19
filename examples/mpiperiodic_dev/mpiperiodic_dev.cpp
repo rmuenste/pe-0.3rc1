@@ -119,7 +119,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     }
 
     // Step 4: Traverse the curve in increments of ds
-    for (double s = ds + 0.2 * ds; s <= curve_length-ds; s += ds) {
+    for (double s = ds + 3.0 * ds; s <= curve_length- 4.0 * ds; s += ds) {
         // Find the edge that contains the current distance s
         size_t edge_index = 0;
         while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {
@@ -177,7 +177,12 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
           for(int i(0); i < max_spheres; ++i) {
              real theta = i * theta_step;
              Vec3 sphere_offset = (std::cos(theta) * u + std::sin(theta) * v) * circle_radius;
-             sphere_positions.push_back(Vec3(point_on_edge + sphere_offset));
+             Vec3 particlePos = Vec3(point_on_edge + sphere_offset);
+             real alpha = s / curve_length;
+             //Vec3 corrAmount(0.0, 0.0, -sphereRad)
+             Vec3 correction(0.0, -1.0 * sphereRad - alpha * sphereRad, -0.5 * sphereRad - alpha * sphereRad );
+             //Vec3 correction(0.0, -1.0 * sphereRad, -0.5 * sphereRad );
+             sphere_positions.push_back(particlePos + correction);
           }
 
         }
@@ -699,6 +704,11 @@ int main( int argc, char** argv )
    //Checking the process setup
    theMPISystem()->checkProcesses();
 
+   //=================================================================================
+   //                   We have a using a helix-like domain
+   //=================================================================================
+   std::string fileName = std::string("archimedes.obj");
+
    // Create a custom material for the benchmark
    MaterialID elastic = createMaterial("elastic", 1.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
    int idx = 0;
@@ -710,7 +720,20 @@ int main( int argc, char** argv )
        createSphere( idx++, spherePos, sphereRad, elastic );
      }
    }
+   //=================================================================================
+   // Add the TriangleMesh for the domain boundary
+   Vec3 archimedesPos(0.0274099, -2.56113, 0.116155);
 
+   TriangleMeshID archimedes;
+   pe_GLOBAL_SECTION
+   {
+      MaterialID archi = createMaterial("archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+      archimedes = createTriangleMesh(++idx, Vec3(0, 0, 0.0), fileName, archi, true, true, Vec3(1.0, 1.0, 1.0), false, false);
+      archimedes->setPosition(archimedesPos);
+      archimedes->setFixed(true);
+   }
+
+   //=================================================================================
 
    // Synchronization of the MPI processes
    world->synchronize();
