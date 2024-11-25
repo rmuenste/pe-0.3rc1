@@ -2,6 +2,7 @@
 add_subdirectory(box_domain)
 add_subdirectory(cylinder)
 add_subdirectory(decomposition)
+add_subdirectory(detection)
 add_subdirectory(math_tests)
 add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
