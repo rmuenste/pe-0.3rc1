@@ -78,7 +78,7 @@ using namespace pe::irrlicht;
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps ( 3000 );  // Total number of time steps
+   const unsigned int timesteps ( 1 );  // Total number of time steps
    const unsigned int visspacing(   30 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
@@ -136,7 +136,7 @@ int main( int argc, char* argv[] )
    pe::detection::coarse::HashGrids<TargetConfig3> grid(bs);
 
 
-   int id = 0;
+
    // Create a custom material for the benchmark
    MaterialID simple = createMaterial("simple", 1.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
    Vec3 gpos = Vec3(0, 0, 0);
@@ -156,6 +156,11 @@ int main( int argc, char* argv[] )
        }
    }      
 
+   // loop through the bodies and add each one to the custom grid
+   //pe::detection::coarse::HashGrids<TargetConfig3> grid(bs);
+
+   //void HashGrids<C>::add( BodyID body )
+   //void HashGrids<C>::add( BodyID body )
 
    // Simulation loop
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
