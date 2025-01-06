@@ -8,6 +8,7 @@ add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
 
 # MPI Examples
+add_subdirectory(decomposition_geometry)
 add_subdirectory(mpi3periodic)
 add_subdirectory(mpibench)
 add_subdirectory(mpiboxes)
