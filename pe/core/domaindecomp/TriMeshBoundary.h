@@ -31,6 +31,7 @@
 
 #include <pe/util/Types.h>
 #include <pe/core/rigidbody/TriangleMeshTypes.h>
+#include <pe/core/detection/coarse/BoundingBox.h>
 #include <iosfwd>
 #include <pe/core/domaindecomp/ProcessGeometry.h>
 #include <pe/core/Types.h>
@@ -60,6 +61,9 @@ determine the distance from a point to the center of these objects and check if 
 class TriMeshBoundary : public ProcessGeometry
 {
 public:
+   //**Type definitions****************************************************************************
+   typedef detection::coarse::BoundingBox<real>  AABB;  //!< Type of the axis-aligned bounding box.
+   //**********************************************************************************************
    //**Constructors********************************************************************************
    /*!\name Constructors */
    //@{
@@ -116,31 +120,34 @@ public:
                         TextureCoordinates& texturCoordinates, IndicesLists& texturIndices,
                         bool clockwise, bool lefthanded );
 private:
+   void calcBoundingBox();  // Calculation of the axis-aligned bounding box
    bool intersectRayTriangle(const Vec3 &rayOrigin,
                              const Vec3 &rayDir,
                              const Vec3 &V0,     
                              const Vec3 &V1,     
                              const Vec3 &V2    
-   );                        
+   ) const;                        
 
 private:
-    TriangleMeshID triangleMesh_;
-    Vertices     vertices_;
-    IndicesLists faceIndices_;
-    Normals           faceNormals_;        //!< Holds the normal of each face/triangle
+    Vec3               gpos_;
+    TriangleMeshID     triangleMesh_;
+    Vertices           vertices_;
+    IndicesLists       faceIndices_;
+    Normals            faceNormals_;        //!< Holds the normal of each face/triangle
 
-    Normals           vertexNormals_;      //!< Holds the normal at the edge positions, only used for visualisation purposes
-    IndicesLists      normalIndices_;      //!< List of indices which assign three elements of vertexNormals_ to one triangle
+    Normals            vertexNormals_;      //!< Holds the normal at the edge positions, only used for visualisation purposes
+    IndicesLists       normalIndices_;      //!< List of indices which assign three elements of vertexNormals_ to one triangle
 
     TextureCoordinates textureCoordinates_; //!< Holds the texture coordinates at the edge positions, only used for visualisation purposes
-    IndicesLists      textureIndices_;     //!< List of indices which assign three elements of textureCoordinates_ to one triangle
+    IndicesLists       textureIndices_;     //!< List of indices which assign three elements of textureCoordinates_ to one triangle
 
-    IndexList         vertexEdge_;         //!< Mapping vertexIndex->edgeIndex.
-                                           //!< Each edge the vertex belongs to is feasible.
-                                           //!< The edge indices are taken implicitly taken form the face definition.
-    IndexList         edgeEdge_;           //!< Maps each edge to its pair edge in the opposite direction.
-                                           //!< The edge indices are taken implicitly taken form the face definition.
-    IndexList         vertexVNeighbor_;    //!< Maps a virtual neighbor vertex to each vertex.
+    IndexList          vertexEdge_;         //!< Mapping vertexIndex->edgeIndex.
+                                            //!< Each edge the vertex belongs to is feasible.
+                                            //!< The edge indices are taken implicitly taken form the face definition.
+    IndexList          edgeEdge_;           //!< Maps each edge to its pair edge in the opposite direction.
+                                            //!< The edge indices are taken implicitly taken form the face definition.
+    IndexList          vertexVNeighbor_;    //!< Maps a virtual neighbor vertex to each vertex.
+    AABB aabb_;                             //!< Axis-aligned bounding box for the rigid body.
 
    //**Triangle mesh setup functions***************************************************************
    /*! \cond PE_INTERNAL */

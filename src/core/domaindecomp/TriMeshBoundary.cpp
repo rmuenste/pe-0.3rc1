@@ -1,5 +1,6 @@
 #include <pe/core/domaindecomp/TriMeshBoundary.h>
 #include <pe/core/OBJMeshLoader.h>
+#include <pe/core/Thresholds.h>
 #include <pe/util/Logging.h>
 #include <iostream>
 
@@ -119,23 +120,17 @@ TriMeshBoundary::TriMeshBoundary(TriangleMeshID triangleMesh)
       throw std::invalid_argument("Unsupported triangle mesh format.");
    }
 
-   //Variables to hold mesh information during inizialisierung
-   Vertices         vertices;
-   IndicesLists     faceIndices;
-   Normals          faceNormals;
-   Normals          vertexNormals;
-   IndicesLists     normalIndices;
-   TextureCoordinates texturCoordinates;
-   IndicesLists     texturIndices;
-
    //reading the actual geometry file
    if((file.find(".obj") != std::string::npos) || (file.find(".OBJ") != std::string::npos)) {
       //Reading triangle mesh form OBJ-File
       TriMeshBoundary::initOBJ(file,
-               vertices, faceIndices,
-               faceNormals,
-               vertexNormals, normalIndices,
-               texturCoordinates, texturIndices,
+               vertices_, 
+               faceIndices_,
+               faceNormals_,
+               vertexNormals_, 
+               normalIndices_,
+               textureCoordinates_, 
+               textureIndices_,
                clockwise, lefthanded);
    }
    else {
@@ -148,10 +143,10 @@ TriMeshBoundary::TriMeshBoundary(TriangleMeshID triangleMesh)
    real currentVolume ( 0.0 );
    Vec3 center (0.0, 0.0, 0.0);
 
-   for (size_t i = 0; i < faceIndices.size(); ++i) {
-      const Vec3& a = vertices[faceIndices[i][0]];
-      const Vec3& b = vertices[faceIndices[i][1]];
-      const Vec3& c = vertices[faceIndices[i][2]];
+   for (size_t i = 0; i < faceIndices_.size(); ++i) {
+      const Vec3& a = vertices_[faceIndices_[i][0]];
+      const Vec3& b = vertices_[faceIndices_[i][1]];
+      const Vec3& c = vertices_[faceIndices_[i][2]];
 
       //http://mathworld.wolfram.com/Tetrahedron.html
       currentVolume = (trans(a) * ( b % c ));
@@ -160,21 +155,24 @@ TriMeshBoundary::TriMeshBoundary(TriangleMeshID triangleMesh)
    }
 
    center /= totalVolume*4.0; //anstelle von *0.25
+   gpos_ = center;
    static const real sixth = 1.0 / 6.0;
    totalVolume *= sixth;
+
+   calcBoundingBox();
 
    std::cout << file << std::endl;
    std::cout << "Total Volume = " << totalVolume << std::endl;
    std::cout << "X center = " << center[0] << std::endl; //xCenter/totalVolume
    std::cout << "Y center = " << center[1] << std::endl; //yCenter/totalVolume
    std::cout << "Z center = " << center[2] << std::endl; //zCenter/totalVolume
-   std::cout << "#Verts   = " << vertices.size() << std::endl; //zCenter/totalVolume
-   std::cout << "#Faces   = " << faceIndices.size() << std::endl; //zCenter/totalVolume
+   std::cout << "#Verts   = " << vertices_.size() << std::endl; //zCenter/totalVolume
+   std::cout << "#Faces   = " << faceIndices_.size() << std::endl; //zCenter/totalVolume
 
    // Logging the successful creation of the triangle mesh
    pe_LOG_DETAIL_SECTION( log ) {
       log << "Created TriMeshBoundary " << "\n"
-          << "   Number of triangles = " << faceIndices.size() << "\n";
+          << "   Number of triangles = " << faceIndices_.size() << "\n";
    }
 }
 //*************************************************************************************************
@@ -186,53 +184,52 @@ void TriMeshBoundary::extractHalfSpaces( std::list< std::pair<Vec3, real> >& hal
 } 
 //*************************************************************************************************
 
+
+//*************************************************************************************************
 bool TriMeshBoundary::intersectRayTriangle(const Vec3 &rayOrigin,
                              const Vec3 &rayDir,
                              const Vec3 &V0,     
                              const Vec3 &V1,     
-                             const Vec3 &V2) 
-{
+                             const Vec3 &V2) const {
+
     // Step 1: Build edges E1 and E2
     Vec3 E1 = V1 - V0;
     Vec3 E2 = V2 - V0;
 
     // Step 2: Construct matrix M = [ -rayDir, E1, E2 ]
     // (Assuming we have a Mat3 constructor taking columns or similar)
-//    Mat3 M;
-//    M.setColumn(0, -rayDir);  // column 0 is -D
-//    M.setColumn(1, E1);       // column 1 is E1
-//    M.setColumn(2, E2);       // column 2 is E2
-//
-//    // Step 3: Compute determinant of M
-//    float det = M.getDeterminant();
-//    if (abs(det) < EPSILON) {
-//        // Ray is parallel or degenerate => no intersection
-//        return (false, 0, 0, 0);
-//    }
-//
-//    // Step 4: Right-hand side vector C = (V0 - rayOrigin)
-//    Vec3 C = V0 - rayOrigin;
-//
-//    // Step 5: Solve M * [t u v]^T = C
-//    // Some approaches:
-//    //   1) Use the inverse of M (if your Mat3 supports inverse).
-//    //   2) Use Cramer's rule (determinants).
-//    //   3) Use an adjoint-based method, etc.
-//    // For simplicity, let's assume we have M.inverse() or a function solve(M, C):
-//    Vec3 tuv = solveLinearSystem(M, C); // returns [ t, u, v ]
-//
-//    float t = tuv.x;
-//    float u = tuv.y;
-//    float v = tuv.z;
-//
-//    // Step 6: Check if intersection is valid
-//    if (t >= 0 && u >= 0 && v >= 0 && (u + v) <= 1) {
-//        // We have a valid intersection
-//        return (true, t, u, v);
-//    } else {
-//        return (false, 0, 0, 0);
-//    }    
-return true;
+    Mat3 M(-rayDir, E1, E2);
+
+    // Step 3: Compute determinant of M
+    real det = M.getDeterminant();
+    if (std::abs(det) < parallelThreshold) {
+        // Ray is parallel or degenerate => no intersection
+        return false; // (false, 0, 0, 0);
+    }
+
+    // Step 4: Right-hand side vector C = (V0 - rayOrigin)
+    Vec3 C = V0 - rayOrigin;
+
+    // Step 5: Solve M * [t u v]^T = C
+    // Some approaches:
+    //   1) Use the inverse of M (if your Mat3 supports inverse).
+    //   2) Use Cramer's rule (determinants).
+    //   3) Use an adjoint-based method, etc.
+    // For simplicity, let's assume we have M.inverse() or a function solve(M, C):
+    //    Vec3 tuv = solveLinearSystem(M, C); // returns [ t, u, v ]
+    Vec3 tuv = M.invert() * C;
+
+    real t = tuv[0];
+    real u = tuv[1];
+    real v = tuv[2];
+
+    // Step 6: Check if intersection is valid
+    if (t >= 0 && u >= 0 && v >= 0 && (u + v) <= 1) {
+        // We have a valid intersection
+        return true; // (true, t, u, v);
+    } else {
+        return false; // (false, 0, 0, 0);
+    }    
 }                       
 
 //*************************************************************************************************
@@ -285,9 +282,44 @@ bool TriMeshBoundary::intersectsWith(ConstUnionID u) const {
 
 //*************************************************************************************************
 bool TriMeshBoundary::containsPoint(const Vec3& gpos) const {
-    // Check if the point is inside the surface triangulation
-    std::cout << "Called routine containsPoint with input " << gpos << std::endl;
-    return false;  // Return a dummy value for now
+    // 0) Choose a ray direction. 
+    //    Check  if the AABB contains the point
+    if(!aabb_.contains(gpos))
+      return false;
+
+    // 1) Choose a ray direction. 
+    //    Common to use e.g., +X axis: Vec3(1,0,0).
+    //    In some robust code, you might randomize the direction
+    //    to reduce the chance of special edge/vertex hits.
+    Vec3 rayDir(1.0, 0.0, 0.0);
+
+    // 2) Cast a ray from 'point' along 'rayDir' 
+    //    and count the intersections with each triangle.
+    int intersectionCount = 0;
+
+    // Loop through all faces
+    for(size_t f = 0; f < faceIndices_.size(); ++f) 
+    {
+        const Vec3 &A = vertices_[faceIndices_[f][0]];
+        const Vec3 &B = vertices_[faceIndices_[f][1]];
+        const Vec3 &C = vertices_[faceIndices_[f][2]];
+
+        // Use your existing function to check intersection:
+        bool hit = intersectRayTriangle(gpos, rayDir, A, B, C);
+
+        // If there is an intersection, increment the counter.
+        if(hit)
+        {
+            ++intersectionCount;
+        }
+    }
+
+    // 3) Decide inside/outside by counting intersections:
+    //    - If intersectionCount is odd => inside
+    //    - If intersectionCount is even => outside
+    bool isInside = (intersectionCount % 2 == 1);
+    return isInside;
+
 }
 //*************************************************************************************************
 
@@ -295,8 +327,7 @@ bool TriMeshBoundary::containsPoint(const Vec3& gpos) const {
 //*************************************************************************************************
 bool TriMeshBoundary::containsPointStrictly(const Vec3& gpos) const {
     // Check if the point is strictly inside the surface triangulation, meaning it's not on the boundary
-    std::cout << "Called routine containsPointStrictly with input " << gpos << std::endl;
-    return false;  // Return a dummy value for now
+    return containsPoint(gpos);  // Return a dummy value for now
 }
 //*************************************************************************************************
 
@@ -309,8 +340,34 @@ void TriMeshBoundary::print( std::ostream& os                  ) const {
 
 
 //*************************************************************************************************
-void TriMeshBoundary::print( std::ostream& os, const char* tab ) const {
+void TriMeshBoundary::calcBoundingBox() {
+      aabb_[0] = gpos_[0];
+      aabb_[1] = gpos_[1];
+      aabb_[2] = gpos_[2]; //std::numeric_limits<real>::max();
+      aabb_[3] = gpos_[0];
+      aabb_[4] = gpos_[1];
+      aabb_[5] = gpos_[2]; //std::numeric_limits<real>::min(); //is actually a positive value close to 0
 
+      for(Vertices::const_iterator v=vertices_.begin(); v != vertices_.end(); ++v) {
+         aabb_[0] = (*v)[0] < aabb_[0] ? (*v)[0] : aabb_[0];
+         aabb_[1] = (*v)[1] < aabb_[1] ? (*v)[1] : aabb_[1];
+         aabb_[2] = (*v)[2] < aabb_[2] ? (*v)[2] : aabb_[2];
+         aabb_[3] = (*v)[0] > aabb_[3] ? (*v)[0] : aabb_[3];
+         aabb_[4] = (*v)[1] > aabb_[4] ? (*v)[1] : aabb_[4];
+         aabb_[5] = (*v)[2] > aabb_[5] ? (*v)[2] : aabb_[5];
+      }
+
+      //The bounding box is increased by pe::contactThreshold in all dimensions
+      aabb_[0] -= contactThreshold;
+      aabb_[1] -= contactThreshold;
+      aabb_[2] -= contactThreshold;
+      aabb_[3] += contactThreshold;
+      aabb_[4] += contactThreshold;
+      aabb_[5] += contactThreshold;
+
+}
+//*************************************************************************************************
+void TriMeshBoundary::print( std::ostream& os, const char* tab ) const {
 }
 
 } // namespace pe
