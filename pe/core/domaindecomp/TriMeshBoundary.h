@@ -29,6 +29,8 @@
 // Includes
 //*************************************************************************************************
 
+#include <pe/util/Types.h>
+#include <pe/core/rigidbody/TriangleMeshTypes.h>
 #include <iosfwd>
 #include <pe/core/domaindecomp/ProcessGeometry.h>
 #include <pe/core/Types.h>
@@ -61,10 +63,13 @@ public:
    //**Constructors********************************************************************************
    /*!\name Constructors */
    //@{
-   TriMeshBoundary(const std::vector<Vec3>& vertices, const std::vector<std::array<int, 3>>& triangles);
+   TriMeshBoundary(TriangleMeshID triangleMesh);
    // No explicitly declared copy constructor.
    //@}
    //**********************************************************************************************
+   TriMeshBoundary( id_t uid, const Vec3& gpos, const std::string file,
+                    MaterialID material, bool convex, bool visible,
+                    const Vec3& scale,  bool clockwise, bool lefthanded );
 
    //**Destructor**********************************************************************************
    // No explicitly declared destructor.
@@ -86,6 +91,7 @@ public:
     bool intersectsWith(ConstUnionID u) const override;
     bool containsPoint(const Vec3& gpos) const override;
     bool containsPointStrictly(const Vec3& gpos) const override;
+    void extractHalfSpaces( std::list< std::pair<Vec3, real> >& halfspaces ) const override;
     //@}
     //**********************************************************************************************
 
@@ -97,13 +103,50 @@ public:
     //@}
     //**********************************************************************************************
 
-    // Additional utility functions specific to TriMeshBoundary
-    std::vector<Vec3> getVertices() const;
-    std::vector<std::array<int, 3>> getTriangles() const;
+   //**Initialization functions********************************************************************
+   /*!\name Initialization functions */
+   //@{
+   /*static void initSTL( const char* const file,
+                        Vertices& vertices, IndicesLists& faceIndices,
+                        Normals& faceNormals );*/
+   static void initOBJ( const std::string file,
+                        Vertices& vertices, IndicesLists& faceIndices,
+                        Normals& faceNormals,
+                        Normals& vertexNormals, IndicesLists normalIndices,
+                        TextureCoordinates& texturCoordinates, IndicesLists& texturIndices,
+                        bool clockwise, bool lefthanded );
+private:
+   bool intersectRayTriangle(const Vec3 &rayOrigin,
+                             const Vec3 &rayDir,
+                             const Vec3 &V0,     
+                             const Vec3 &V1,     
+                             const Vec3 &V2    
+   );                        
 
 private:
-    std::vector<Vec3> vertices_;
-    std::vector<std::array<int, 3>> triangles_;
+    TriangleMeshID triangleMesh_;
+    Vertices     vertices_;
+    IndicesLists faceIndices_;
+    Normals           faceNormals_;        //!< Holds the normal of each face/triangle
+
+    Normals           vertexNormals_;      //!< Holds the normal at the edge positions, only used for visualisation purposes
+    IndicesLists      normalIndices_;      //!< List of indices which assign three elements of vertexNormals_ to one triangle
+
+    TextureCoordinates textureCoordinates_; //!< Holds the texture coordinates at the edge positions, only used for visualisation purposes
+    IndicesLists      textureIndices_;     //!< List of indices which assign three elements of textureCoordinates_ to one triangle
+
+    IndexList         vertexEdge_;         //!< Mapping vertexIndex->edgeIndex.
+                                           //!< Each edge the vertex belongs to is feasible.
+                                           //!< The edge indices are taken implicitly taken form the face definition.
+    IndexList         edgeEdge_;           //!< Maps each edge to its pair edge in the opposite direction.
+                                           //!< The edge indices are taken implicitly taken form the face definition.
+    IndexList         vertexVNeighbor_;    //!< Maps a virtual neighbor vertex to each vertex.
+
+   //**Triangle mesh setup functions***************************************************************
+   /*! \cond PE_INTERNAL */
+//   friend TriangleMeshID createTriMeshBoundary( id_t uid, const Vec3& gpos, const std::string file,
+//                                             MaterialID material, bool convex, bool visible,
+//                                             const Vec3& scale,  bool clockwise, bool lefthanded );
 };
 //*************************************************************************************************
 

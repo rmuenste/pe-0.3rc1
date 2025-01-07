@@ -38,8 +38,10 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <pe/vtk.h>
+#include <pe/core/OBJMeshLoader.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -249,6 +251,37 @@ int main( int argc, char** argv )
    // - MPIBrazil
    // - MPIChannel
    // - MPIImpact
+   std::stringstream ss;
+   ss << "node_" << mpisystem->getRank() + 1 << ".obj"; 
+   std::string fileName = ss.str();
+   std::cout << "Hello from rank: " << mpisystem->getRank() << " I will get file: " << ss.str() << std::endl;
+   /////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+   int idx = 0;
+   MaterialID archi = createMaterial("archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+   TriMeshBoundary myBoundary(++idx, Vec3(0, 0, 0.0), fileName, archi, true, true, Vec3(1.0, 1.0, 1.0), false, false);
+
+   defineLocalDomain(myBoundary);
+   Vec3 v(-1.82439, -2.03027, 0.203061);
+   Vec3 w(-1.95348, -2.21779, 0.203061);
+
+   /////////////////////////////////////////////////////////////////////////////////////////////////////////
+   if( world->ownsPoint( v ) ) {
+      BodyID particle;
+      particle = createSphere( ++idx, v, radius, elastic );
+      std::cout << "Created sphere at " << v << " in domain " << mpisystem->getRank() << std::endl;
+   }
+   if( world->ownsPoint( w ) ) {
+      BodyID particle;
+      particle = createSphere( ++idx, w, radius, elastic );
+      std::cout << "Created sphere at " << w << " in domain " << mpisystem->getRank() << std::endl;
+   }
+
+   /////////////////////////////////////////////////////
+   // MPI Finalization
+   MPI_Finalize();
+   return EXIT_SUCCESS;
+
 
    // Specify local domain
    defineLocalDomain( intersect(
@@ -259,6 +292,8 @@ int main( int argc, char** argv )
       HalfSpace( Vec3(0,-1,0), -north[1]*dy ),
       HalfSpace( Vec3(0,0,+1), +center[2]*dz ),
       HalfSpace( Vec3(0,0,-1), -top[2]*dz ) ) );
+
+
 
    // Connecting the west neighbor
    if( west[0] >= 0 ) {
@@ -514,6 +549,7 @@ int main( int argc, char** argv )
    // Checking the process setup
    mpisystem->checkProcesses();
 #endif
+
 
    // Setup of the VTK visualization
    if( vtk ) {

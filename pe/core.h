@@ -47,6 +47,7 @@
 #include <pe/core/domaindecomp/Merging.h>
 #include <pe/core/domaindecomp/Process.h>
 #include <pe/core/domaindecomp/RectilinearGrid.h>
+#include <pe/core/domaindecomp/TriMeshBoundary.h>
 #include <pe/core/Distance.h>
 #include <pe/core/ExclusiveSection.h>
 #include <pe/core/GamesSection.h>
