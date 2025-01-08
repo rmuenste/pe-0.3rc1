@@ -63,7 +63,7 @@ using namespace pe::povray;
 using namespace pe::irrlicht;
 #endif
 
-real sphereRad = 0.0125;  // Radius of each sphere
+real sphereRad = 0.015;  // Radius of each sphere
 
 
 
@@ -238,6 +238,30 @@ void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<Half
 
 std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
+    /*
+
+    Configuration N_p = 750, d_p = 0.3mm
+    ===================================================================
+    real sphereRad = 0.015;  // Radius of each sphere
+    int num_rings = 2;       // Number of rings around the center line
+    int num_steps = 42;      // Number of divisions along the curve
+
+
+    Configuration N_p = 750, d_p = 0.2mm
+    ===================================================================
+    real sphereRad = 0.01;  // Radius of each sphere
+    int num_rings = 2;       // Number of rings around the center line
+    int num_steps = 42;      // Number of divisions along the curve
+
+
+    Configuration N_p = 3900, d_p = 0.3mm
+    ===================================================================
+    real sphereRad = 0.015;  // Radius of each sphere
+    int num_rings = 4;       // Number of rings around the center line
+    int num_steps = 53;      // Number of divisions along the curve
+
+    */
+
     // Step 1: Measure the total length of the curve
     double curve_length = 0.0;
     std::vector<double> edge_lengths;
@@ -246,8 +270,8 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
     // User-defined parameters
     real sphereRadius = sphereRad;  // Radius of each sphere
-    real dt = 2. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 94;      // Number of divisions along the curve
+    real dt = 1. * sphereRad;           // Distance from the sphere surface to the circle center
+    int num_steps = 53;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
