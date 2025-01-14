@@ -255,8 +255,8 @@ private:
    /*!\name Add/remove functions */
    //@{
    inline void            add   ( BodyID body );
-   inline void            remove( BodyID body );
    inline BodyIterator    remove( BodyIterator body );
+   inline void            remove( BodyID body );
    inline void            removeFromCollisionDetector( BodyID body );
    //@}
    //**********************************************************************************************
@@ -4371,15 +4371,16 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
         w = Vec3(0,0,0);
       }
 
-      if(v.length() > 10.0) {
-        v *= 0.0;
+      if(v.length() > 20.0) {
+        v.normalize();
+        v *= 2.0;
       }
-      if(v.length() > 8.0) {
-        v *= 0.25;
-      }
-      if(v.length() > 6.0) {
-        v *= 0.5;
-      }
+//      if(v.length() > 16.0) {
+//        v *= 0.25;
+//      }
+//      if(v.length() > 12.0) {
+//        v *= 0.333;
+//      }
 
       // Calculating the translational displacement
       body->gpos_ += v * dt;
