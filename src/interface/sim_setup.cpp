@@ -71,8 +71,8 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 bool g_povray  ( false );
 bool g_vtk( true );
 // 
-const unsigned int visspacing( 40  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-const unsigned int pointerspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int pointerspacing( 1000  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 //const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction

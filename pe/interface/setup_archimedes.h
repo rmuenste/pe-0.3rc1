@@ -202,10 +202,10 @@ std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
 }
 //*************************************************************************************************
 
-
-//real sphereRad = 0.0182;  d_p = 364 microns // Radius of each sphere
-//real sphereRad = 0.0182;  d_p = 364 microns // Radius of each sphere
-real sphereRad = 0.01;  // Radius of each sphere
+// Radius of each sphere
+real sphereRad = 0.0182;   // d_p = 364 microns 
+//real sphereRad = 0.01;   // Radius of each sphere
+//real sphereRad = 0.015;  // Radius of each sphere
 //*************************************************************************************************
 std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
@@ -218,7 +218,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     // User-defined parameters
     real sphereRadius = sphereRad;  // Radius of each sphere
     real dt = 1. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 3;      // Number of divisions along the curve
+    int num_steps = 33;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -1044,7 +1044,8 @@ void setupArchimedesXY(MPI_Comm ex0)
 //=================================================================================================
 // Setup for the Empty case
 //=================================================================================================
-void setupArchimedesEMPTY(MPI_Comm ex0) {
+void setupArchimedes(MPI_Comm ex0) {
+//void setupArchimedesEMPTY(MPI_Comm ex0) {
 //void setupEmpty(MPI_Comm ex0) {
 
   world = theWorld();
@@ -1273,15 +1274,17 @@ void setupArchimedesEMPTY(MPI_Comm ex0) {
 }
 
 
-
 // Setup for the Archimedes case
 //===================================================================================
-//void setupNormal(MPI_Comm ex0)
-void setupArchimedes(MPI_Comm ex0)
+void setupNormal(MPI_Comm ex0)
+//void setupArchimedes(MPI_Comm ex0)
 {
 
    world = theWorld();
-   world->setGravity(0.0, -980.665, 0.0);
+   Vec3 myGravity(0.0, -980.665, 0.0);
+   //myGravity *= 0.25;
+   myGravity *= 0.15;
+   world->setGravity(myGravity);
 
    // Re 1.5 configuration
    real simViscosity(0.01e0);
@@ -1710,7 +1713,7 @@ void setupArchimedes(MPI_Comm ex0)
    }
    else
    {
-      checkpointer.read( "../start.77" );
+      checkpointer.read( "../start.76" );
    }
 
    for (int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
@@ -1750,8 +1753,30 @@ void setupArchimedes(MPI_Comm ex0)
    unsigned int j(0);
 
    real buoyancy = 0;
+   //=================================================================================
+//   for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
+//   {
+//      World::SizeType widx = static_cast<World::SizeType>(j);
+//      BodyID body = world->getBody(static_cast<unsigned int>(widx));
+//      if (body->getType() == sphereType)
+//      {
+//         SphereID s = static_body_cast<Sphere>(body);
+//         Vec3 pos = body->getPosition();
+//         if(pos[0] < 0.029) {
+//           world->remove(body);
+//           std::cout << "Removing body: " << pos << std::endl;
+//         }
+//      }
+//   }
+//   
+//   // Synchronization of the MPI processes
+//   world->synchronize();
+   //=================================================================================
 
    const real   deltaT( 0.0005 );  // Size of a single time step
+   numBodies = 0;
+   numTotal  = 0;
+   j = 0;
    for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
    {
       World::SizeType widx = static_cast<World::SizeType>(j);

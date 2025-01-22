@@ -4373,7 +4373,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 
       if(v.length() > 20.0) {
         v.normalize();
-        v *= 2.0;
+        v *= 4.0;
       }
 //      if(v.length() > 16.0) {
 //        v *= 0.25;
