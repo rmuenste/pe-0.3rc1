@@ -202,8 +202,10 @@ std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
 }
 //*************************************************************************************************
 
-
-real sphereRad = 0.0125;  // Radius of each sphere
+// Radius of each sphere
+real sphereRad = 0.0182;   // d_p = 364 microns 
+//real sphereRad = 0.01;   // Radius of each sphere
+//real sphereRad = 0.015;  // Radius of each sphere
 //*************************************************************************************************
 std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
@@ -215,8 +217,8 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 
     // User-defined parameters
     real sphereRadius = sphereRad;  // Radius of each sphere
-    real dt = 2. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 94;      // Number of divisions along the curve
+    real dt = 1. * sphereRad;           // Distance from the sphere surface to the circle center
+    int num_steps = 33;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -1042,7 +1044,8 @@ void setupArchimedesXY(MPI_Comm ex0)
 //=================================================================================================
 // Setup for the Empty case
 //=================================================================================================
-void setupArchimedes2(MPI_Comm ex0) {
+void setupArchimedes(MPI_Comm ex0) {
+//void setupArchimedesEMPTY(MPI_Comm ex0) {
 //void setupEmpty(MPI_Comm ex0) {
 
   world = theWorld();
@@ -1271,14 +1274,17 @@ void setupArchimedes2(MPI_Comm ex0) {
 }
 
 
-//===================================================================================
 // Setup for the Archimedes case
 //===================================================================================
-void setupArchimedes(MPI_Comm ex0)
+void setupNormal(MPI_Comm ex0)
+//void setupArchimedes(MPI_Comm ex0)
 {
 
    world = theWorld();
-   world->setGravity(0.0, 0.0, 0.0);
+   Vec3 myGravity(0.0, -980.665, 0.0);
+   //myGravity *= 0.25;
+   myGravity *= 0.15;
+   world->setGravity(myGravity);
 
    // Re 1.5 configuration
    real simViscosity(0.01e0);
@@ -1657,7 +1663,7 @@ void setupArchimedes(MPI_Comm ex0)
    }
 
    // Create a custom material for the benchmark
-   MaterialID elastic = createMaterial("elastic", 1.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+   MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
    //========================================================================================
    // The way we atm include lubrication by increasing contact threshold
    // has problems: the particles get distributed to more domain bc the threshold AABB
@@ -1674,7 +1680,7 @@ void setupArchimedes(MPI_Comm ex0)
    // Here is how to create some random positions on a grid up to a certain
    // volume fraction.
    //=================================================================================
-   bool resume = false;
+   bool resume = true;
    real epsilon = 2e-4;
    real targetVolumeFraction = 0.10;
    real radius2 = 0.05;
@@ -1704,27 +1710,10 @@ void setupArchimedes(MPI_Comm ex0)
          createSphere( idx++, spherePos, sphereRad, elastic );
        }
      }
-
-//      if (world->ownsPoint(pos1))
-//      {
-//         particle = createSphere(idx++, pos1, radius2, elastic);
-//      }
-//      if (world->ownsPoint(pos2))
-//      {
-//         particle = createSphere(idx++, pos2, radius2, elastic);
-//      }
-//      if (world->ownsPoint(pos3))
-//      {
-//         particle = createSphere(idx++, pos3, radius2, elastic);
-//      }
-//      if (world->ownsPoint(pos4))
-//      {
-//         particle = createSphere(idx++, pos4, radius2, elastic);
-//      }
    }
    else
    {
-      checkpointer.read( "../start.5" );
+      checkpointer.read( "../start.76" );
    }
 
    for (int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
@@ -1762,12 +1751,44 @@ void setupArchimedes(MPI_Comm ex0)
    int numBodies(0);
    int numTotal(0);
    unsigned int j(0);
+
+   real buoyancy = 0;
+   //=================================================================================
+//   for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
+//   {
+//      World::SizeType widx = static_cast<World::SizeType>(j);
+//      BodyID body = world->getBody(static_cast<unsigned int>(widx));
+//      if (body->getType() == sphereType)
+//      {
+//         SphereID s = static_body_cast<Sphere>(body);
+//         Vec3 pos = body->getPosition();
+//         if(pos[0] < 0.029) {
+//           world->remove(body);
+//           std::cout << "Removing body: " << pos << std::endl;
+//         }
+//      }
+//   }
+//   
+//   // Synchronization of the MPI processes
+//   world->synchronize();
+   //=================================================================================
+
+   const real   deltaT( 0.0005 );  // Size of a single time step
+   numBodies = 0;
+   numTotal  = 0;
+   j = 0;
    for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
    {
       World::SizeType widx = static_cast<World::SizeType>(j);
       BodyID body = world->getBody(static_cast<unsigned int>(widx));
       if (body->getType() == sphereType)
       {
+         SphereID s = static_body_cast<Sphere>(body);
+         MaterialID mat = s->getMaterial();
+         real rho = Material::getDensity( mat );
+         real rad = s->getRadius();
+         real vol = s->getVolume();
+         buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
          numBodies++;
          numTotal++;
       }
@@ -1777,6 +1798,7 @@ void setupArchimedes(MPI_Comm ex0)
       }
    }
 
+   Vec3 effGrav = buoyancy * Settings::gravity() * deltaT;
    unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
    unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
    MPI_Reduce(&bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
@@ -1800,6 +1822,8 @@ void setupArchimedes(MPI_Comm ex0)
                 << " Fluid Viscosity                         = " << simViscosity << "\n"
                 << " Fluid Density                           = " << simRho << "\n"
                 << " Gravity constant                        = " << world->getGravity() << "\n"
+                << " EFF Gravity                             = " << effGrav << "\n"
+                << " Buoyancy                                = " << buoyancy << "\n"
                 << " Lubrication                             = " << useLub << "\n"
                 << " Lubrication h_c (slip length)           = " << slipLength << "\n"
                 << " Lubrication threshold                   = " << lubricationThreshold << "\n"

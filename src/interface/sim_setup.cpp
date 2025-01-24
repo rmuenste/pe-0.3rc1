@@ -71,7 +71,8 @@ const real   space(real(2.)*radius+spacing );                 // Space initially
 bool g_povray  ( false );
 bool g_vtk( true );
 // 
-const unsigned int visspacing( 20  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int pointerspacing( 1000  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 //const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
@@ -89,7 +90,7 @@ MPISystemID mpisystem;
 //*************************************************************************************************
 // The Checkpointer
 path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
-Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
+Checkpointer checkpointer = Checkpointer(checkpoint_path, pointerspacing, 0, timesteps);
 
 //=================================================================================================
 //
