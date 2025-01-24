@@ -37,7 +37,7 @@ const size_t timesteps     ( 16000 );  // Number of time steps for the flowing g
 const real   stepsize      ( 0.0005 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 15 );    // Number of processes in x-direction
+const int    processesX( 1 );    // Number of processes in x-direction
 const int    processesY( 1 );    // Number of processes in y-direction
 const int    processesZ( 2 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
@@ -386,25 +386,11 @@ void stepSimulation() {
 //#define OUTPUT_LEVEL4
 #ifdef OUTPUT_LEVEL4
       std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << std::left << std::setw(10) << body->getSystemID() 
-                << " " << std::setw(12) << body->getPosition()[0] 
-                << " " << std::setw(12) << body->getPosition()[1] 
-                << " " << std::setw(12) << body->getPosition()[2] 
-                << " " << std::setw(12) << timestep * stepsize << std::endl;
-
-      std::cout << "Velocity: " << std::left << std::setw(10) << body->getSystemID() 
-                << " " << std::setw(12) << body->getLinearVel()[0] 
-                << " " << std::setw(12) << body->getLinearVel()[1] 
-                << " " << std::setw(12) << body->getLinearVel()[2] 
-                << " " << std::setw(12) << timestep * stepsize << std::endl;
-
-      std::cout << "Omega   : " << std::left << std::setw(10) << body->getSystemID() 
-                << " " << std::setw(12) << body->getAngularVel()[0] 
-                << " " << std::setw(12) << body->getAngularVel()[1] 
-                << " " << std::setw(12) << body->getAngularVel()[2] 
-                << " " << std::setw(12) << timestep * stepsize << std::endl;
-
-//      std::cout << "Theta   : " << body->getSystemID() << " " << body->getRotation().getEulerAnglesXYZ().toString() << " " << timestep * stepsize << std::endl;
+//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
+//      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
 #endif
     }
   }

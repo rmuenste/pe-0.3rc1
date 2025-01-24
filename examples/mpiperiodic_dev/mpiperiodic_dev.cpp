@@ -388,6 +388,7 @@ int main( int argc, char** argv )
   //======================================================================================== 
 
   // Here we add some planes
+  // Particles are touching those planes
   pe_GLOBAL_SECTION
   {
      createPlane( 99999, 0.0, 0.0, 1.0, 1.0e-4, granite, false ); // bottom border

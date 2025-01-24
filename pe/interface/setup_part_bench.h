@@ -2,15 +2,20 @@
 void setupParticleBench(MPI_Comm ex0) {
 
   world = theWorld();
-  world->setGravity( 0.0, 0.0, -9.81 );
+  //world->setGravity( 0.0, 0.0, -9.807e-6 ); //9.807×10^-6 m/ms^2 (meters per millisecond squared)
+  world->setGravity( 0.0, 0.0, -9.807 ); //9.807×10^-6 m/ms^2 (meters per millisecond squared)
 
   // Re 1.5 configuration
   //real simViscosity( 373e-3 );
   //real simRho( 970 );
 
   // Re 31.9 configuration
+  //real simViscosity( 58e-3 );
+  //real simRho( 960 );
+
+  // New Benchmark Proposal
   real simViscosity( 58e-3 );
-  real simRho( 960 );
+  real simRho( 1141.0 );
 
   real slipLength( 0.75 );
   world->setLiquidSolid(true);
@@ -29,7 +34,8 @@ void setupParticleBench(MPI_Comm ex0) {
   //const real dz( 0.08 ) 2 subs;
 //  const real dx( -0.05 );
 //  const real dy( -0.05 );
-  const real dz( 0.16 / processesZ );
+  //const real dz( 0.013333333 );
+  const real dz( 0.2 / processesZ );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -434,11 +440,12 @@ void setupParticleBench(MPI_Comm ex0) {
 
   int idx = 0;
 
-  real radBench = 0.0075;
+  real radBench = 0.011;
+  real rhoParticle( 1361.0 );
   // Create a custom material for the benchmark
-  MaterialID myMaterial = createMaterial("Bench", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID myMaterial = createMaterial("Bench", 1361.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   theCollisionSystem()->setSlipLength(slipLength);
-  Vec3 position(-0.0, -0.0, 0.1275);
+  Vec3 position(-0.0, -0.0, 0.1571203);
   //position[2] = radBench + lubricationThreshold;
   //Vec3 position(-0.0, -0.0, 0.008);
 
