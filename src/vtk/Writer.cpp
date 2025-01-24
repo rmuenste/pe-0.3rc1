@@ -229,9 +229,9 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
          for(int proc=0; proc<MPISettings::size(); proc++)
          {
 //            // Write spheres entry
-//            pvd<< "<DataSet timestep=\"" <<t<<
-//                  "\" part=\"" << 2*proc <<
-//                  "\" file=\"" << proc << "/spheres" << timeCount <<".vtu\"/>\n";
+            pvd<< "<DataSet timestep=\"" <<t<<
+                  "\" part=\"" << 2*proc <<
+                  "\" file=\"" << proc << "/spheres" << timeCount <<".vtu\"/>\n";
 //
 //            // Write boxes entry
 //            pvd<< "<DataSet timestep=\"" <<t<<
@@ -244,9 +244,9 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
 //                  "\" file=\"" << proc << "/capsules" << timeCount <<".vtu\"/>\n";
             
             // Write meshes entry
-            pvd<< "<DataSet timestep=\"" <<t<<
-                  "\" part=\"" << 2*proc+1 <<
-                  "\" file=\"" << proc << "/meshes" << timeCount <<".vtu\"/>\n";
+//            pvd<< "<DataSet timestep=\"" <<t<<
+//                  "\" part=\"" << 2*proc+1 <<
+//                  "\" file=\"" << proc << "/meshes" << timeCount <<".vtu\"/>\n";
 
             //TODO: Write other entries
          }
