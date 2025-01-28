@@ -4367,24 +4367,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 
    if( body->awake_ ) {
 
-<<<<<<< HEAD
-=======
-      if(w.length() > 50.0) {
-        w = Vec3(0,0,0);
-      }
-
-      if(v.length() > 20.0) {
-        v.normalize();
-        v *= 4.0;
-      }
-//      if(v.length() > 16.0) {
-//        v *= 0.25;
-//      }
-//      if(v.length() > 12.0) {
-//        v *= 0.333;
-//      }
-
->>>>>>> github/pe-fsi2
       // Calculating the translational displacement
       body->gpos_ += v * dt;
 
@@ -4402,7 +4384,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
          v *= drag;
          w *= drag;
       }
-
 
       // Storing the velocities back in the body properties
       body->v_ = v;
