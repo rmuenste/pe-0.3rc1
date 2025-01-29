@@ -34,12 +34,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 16000 );  // Number of time steps for the flowing granular media
-const real   stepsize      ( 0.001 );  // Size of a single time step
+const real   stepsize      ( 0.00001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 1 );    // Number of processes in x-direction
+const int    processesX( 10 );    // Number of processes in x-direction
 const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 12 );    // Number of processes in y-direction
+const int    processesZ( 2 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -316,8 +316,14 @@ extern "C" void step_simulation_() {
 //=================================================================================================
 void singleOutput_v1(BodyID body, int timestep) {
       std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << timestep * stepsize << " " << body->getPosition()   << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << timestep * stepsize << " " << body->getLinearVel()  << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << timestep * stepsize << " " <<
+                                   body->getPosition()[0] << " " <<
+                                   body->getPosition()[1] << " " <<
+                                   body->getPosition()[2] << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << timestep * stepsize << " " << 
+                                   body->getLinearVel()[0] << " " <<
+                                   body->getLinearVel()[1] << " " <<
+                                   body->getLinearVel()[2] << std::endl;
 }
 //=================================================================================================
 
@@ -352,7 +358,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.125;
+  real h = 0.005;
   real epsilon              = 2e-4;
   real radius2              = 0.01 - epsilon;
 
@@ -417,7 +423,7 @@ void stepSimulation() {
 //      std::cout << "==Particle Group Data=========================================================" << std::endl;
       //std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;
       std::cout << "Maximum Vp : " << totalV << std::endl;
-//      std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
+      std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
       std::cout << "Maximum Ap : " << totalA << std::endl;
   }
 #endif 
@@ -445,6 +451,7 @@ void stepSimulation() {
 #include <pe/interface/setup_kroupa.h>
 #include <pe/interface/setup_creep.h>
 #include <pe/interface/setup_archimedes.h>
+#include <pe/interface/setup_span.h>
 //
 //=================================================================================================
 //

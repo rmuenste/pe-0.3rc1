@@ -1422,8 +1422,8 @@ bool TriangleMesh::containsRelPoint( const Vec3& rpos ) const
  */
 bool TriangleMesh::containsPoint( real px, real py, real pz ) const
 {
-   if (aabb_.contains( Vec3(px, py, pz) ))
-     return true;
+   if (!aabb_.contains( Vec3(px, py, pz) ))
+     return false;
    return containsRelPoint( pointFromWFtoBF( Vec3(px, py, pz) ) );
 }
 //*************************************************************************************************
@@ -1437,8 +1437,8 @@ bool TriangleMesh::containsPoint( real px, real py, real pz ) const
  */
 bool TriangleMesh::containsPoint( const Vec3& gpos ) const
 {
-   if (aabb_.contains(gpos))
-     return true;
+   if (!aabb_.contains(gpos))
+     return false;
    return containsRelPoint( pointFromWFtoBF( gpos ) );
 }
 //*************************************************************************************************
