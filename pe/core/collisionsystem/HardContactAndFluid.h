@@ -1855,12 +1855,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              // TODO: find out what happens here
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
 //             std::cout << "==========================================================" << std::endl;
-             std::cout << "Gravity update: " << v_[j][2] << std::endl;
+//             std::cout << "Velocity update: " << v_[j][2] << std::endl;
 //             std::cout << "vol : " << vol  << std::endl;
 //             std::cout << "rho : " << rho  << std::endl;
-             std::cout << "rho-liquid : " << Settings::liquidDensity()  << std::endl;
-             std::cout << "invMass : " << body->getInvMass() << std::endl;
-             std::cout << "buoyancy : " << buoyancy  << std::endl;
+//             std::cout << "rho-liquid : " << Settings::liquidDensity()  << std::endl;
+//             std::cout << "invMass : " << body->getInvMass() << std::endl;
+//             std::cout << "buoyancy : " << buoyancy  << std::endl;
 //             std::cout << "==========================================================" << std::endl;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }

@@ -10,19 +10,19 @@ void setupParticleBench(MPI_Comm ex0) {
   //real simRho( 970 );
 
   // Re 31.9 configuration
-  //real simViscosity( 58e-3 );
-  //real simRho( 960 );
+  real simViscosity( 58e-3 );
+  real simRho( 960 );
 
   // New Benchmark Proposal
-  real simViscosity( 58e-3 );
-  real simRho( 1141.0 );
+  //real simViscosity( 58e-3 );
+  //real simRho( 1141.0 );
 
   real slipLength( 0.75 );
   world->setLiquidSolid(true);
   world->setLiquidDensity(simRho);
   world->setViscosity( simViscosity );
   world->setDamping( 1.0 );
-  bool useLubrication(true);
+  bool useLubrication(false);
 
   // Configuration of the MPI system
   mpisystem = theMPISystem();
@@ -32,10 +32,9 @@ void setupParticleBench(MPI_Comm ex0) {
   const real dy( 0.05 );
   //const real dz( 0.08 ) 2 subs;
   //const real dz( 0.08 ) 2 subs;
-//  const real dx( -0.05 );
-//  const real dy( -0.05 );
-  //const real dz( 0.013333333 );
-  const real dz( 0.2 / processesZ );
+  //const real dx( -0.05 );
+  //const real dy( -0.05 );
+  const real dz( 0.16 / processesZ );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
@@ -440,14 +439,21 @@ void setupParticleBench(MPI_Comm ex0) {
 
   int idx = 0;
 
-  real radBench = 0.011;
-  real rhoParticle( 1361.0 );
+  //=========================================
+  // New Bench configuration
+  //real radBench = 0.011;
+  //real rhoParticle( 1361.0 );
+  // Vec3 position(-0.0, -0.0, 0.1571203);
+  //MaterialID myMaterial = createMaterial("Bench", 1361.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  //=========================================
+  
+  real radBench = 0.0075;
+  real rhoParticle( 1120.0 );
+  Vec3 position(-0.0, -0.0, 0.1275);
+
   // Create a custom material for the benchmark
-  MaterialID myMaterial = createMaterial("Bench", 1361.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   theCollisionSystem()->setSlipLength(slipLength);
-  Vec3 position(-0.0, -0.0, 0.1571203);
-  //position[2] = radBench + lubricationThreshold;
-  //Vec3 position(-0.0, -0.0, 0.008);
+  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
   //==============================================================================================
   // Bench Configuration
@@ -456,7 +462,6 @@ void setupParticleBench(MPI_Comm ex0) {
   SphereID spear(nullptr);
   if (world->ownsPoint( position )) {
     spear = createSphere(idx, position, radBench, myMaterial, true);
-    //spear->setLinearVel(Vec3(0,0,-0.1));
     ++idx;
   }
 

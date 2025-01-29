@@ -34,12 +34,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 16000 );  // Number of time steps for the flowing granular media
-const real   stepsize      ( 0.0005 );  // Size of a single time step
+const real   stepsize      ( 0.001 );  // Size of a single time step
 
 // Process parameters
 const int    processesX( 1 );    // Number of processes in x-direction
 const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 2 );    // Number of processes in y-direction
+const int    processesZ( 12 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -81,7 +81,6 @@ const int    pz(processesZ);    // Number of processes in z-direction
 PlaneID g_ground(0);
 
 // Configuration of the simulation world
-//WorldID world; = theWorld();
 WorldID world;
 int called = 0;
 
@@ -315,6 +314,26 @@ extern "C" void step_simulation_() {
 
 
 //=================================================================================================
+void singleOutput_v1(BodyID body, int timestep) {
+      std::cout << "==Single Particle Data========================================================" << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << timestep * stepsize << " " << body->getPosition()   << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << timestep * stepsize << " " << body->getLinearVel()  << std::endl;
+}
+//=================================================================================================
+
+
+
+//=================================================================================================
+void singleOutput_v2(BodyID body, int timestep) {
+      std::cout << "==Single Particle Data========================================================" << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+}
+//=================================================================================================
+
+
+//=================================================================================================
 // This functions steps the physics simulation one time step
 //=================================================================================================
 void stepSimulation() {
@@ -371,6 +390,7 @@ void stepSimulation() {
        body->getType() == ellipsoidType || 
        body->getType() == cylinderType || 
        body->getType() == triangleMeshType) {
+
       Vec3 vel = body->getLinearVel();
       Vec3 ang = body->getAngularVel();
       real v = vel.length();
@@ -384,14 +404,9 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-//#define OUTPUT_LEVEL4
-#ifdef OUTPUT_LEVEL4
-      std::cout << "==Single Particle Data========================================================" << std::endl;
-//      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()  << " " << timestep * stepsize << std::endl;
-//      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+#define SINGLE_PARTICLE_OUTPUT
+#ifdef SINGLE_PARTICLE_OUTPUT
+      singleOutput_v1(body, timestep);
 #endif
     }
   }
@@ -412,8 +427,8 @@ void stepSimulation() {
       std::cout << "==DEM Time Data===============================================================" << std::endl;
       std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << " || substepping:  " << subSteps << std::endl;
   }
-  checkpointer.trigger();
-  checkpointer.flush();
+//  checkpointer.trigger();
+//  checkpointer.flush();
   timestep++;
 
   // MPI Finalization
