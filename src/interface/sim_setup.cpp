@@ -74,6 +74,9 @@ bool g_vtk( true );
 const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 const unsigned int pointerspacing( 1000  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 //const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+
+// Switch for checkpointer useage
+const bool useCheckpointer( false );  // Switches the checkpointer output of the simulation on and off
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -340,6 +343,17 @@ void singleOutput_v2(BodyID body, int timestep) {
 
 
 //=================================================================================================
+void groupOutput_v1(real totalV, real dt, real h, real totalA) {
+      td::cout << "==Particle Group Data=========================================================" << std::endl;
+      std::cout << "Maximum Vp : " << totalV << std::endl;
+      std::cout << "Maximum CFL: " << (totalV * dt) / h << std::endl;
+      std::cout << "Maximum Ap : " << totalA << std::endl;
+}
+//=================================================================================================
+
+
+//=================================================================================================
+//=================================================================================================
 // This functions steps the physics simulation one time step
 //=================================================================================================
 void stepSimulation() {
@@ -420,11 +434,7 @@ void stepSimulation() {
   MPI_Reduce( &maxV, &totalV, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   MPI_Reduce( &maxA, &totalA, 1, MPI_DOUBLE, MPI_MAX, 0, cartcomm );
   pe_EXCLUSIVE_SECTION(0) {
-//      std::cout << "==Particle Group Data=========================================================" << std::endl;
-      //std::cout << "Maximum Vp : " << totalV << " " << vv << std::endl;
-      std::cout << "Maximum Vp : " << totalV << std::endl;
-      std::cout << "Maximum CFL: " << (totalV * subStepSize) / h << std::endl;
-      std::cout << "Maximum Ap : " << totalA << std::endl;
+     groupOutput_v1(totalV, subStepSize, h, totalA);
   }
 #endif 
 
@@ -433,8 +443,15 @@ void stepSimulation() {
       std::cout << "==DEM Time Data===============================================================" << std::endl;
       std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << " || substepping:  " << subSteps << std::endl;
   }
-//  checkpointer.trigger();
-//  checkpointer.flush();
+  
+  
+  //=================================================================================================
+  // Trigger a new checkpointer write if activated
+  if (useCheckpointer) {
+    checkpointer.trigger();
+    checkpointer.flush();
+  }
+
   timestep++;
 
   // MPI Finalization
