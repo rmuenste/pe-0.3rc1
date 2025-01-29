@@ -344,7 +344,7 @@ void singleOutput_v2(BodyID body, int timestep) {
 
 //=================================================================================================
 void groupOutput_v1(real totalV, real dt, real h, real totalA) {
-      td::cout << "==Particle Group Data=========================================================" << std::endl;
+      std::cout << "==Particle Group Data=========================================================" << std::endl;
       std::cout << "Maximum Vp : " << totalV << std::endl;
       std::cout << "Maximum CFL: " << (totalV * dt) / h << std::endl;
       std::cout << "Maximum Ap : " << totalA << std::endl;
