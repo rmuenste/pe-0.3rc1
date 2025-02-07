@@ -234,9 +234,9 @@ void setupKroupa(MPI_Comm ex0) {
   // Here is how to create some random positions on a grid up to a certain
   // volume fraction.
   //======================================================================================== 
-  bool resume               = true;
+  bool resume               = false;
   real epsilon              = 2e-4;
-  real targetVolumeFraction = 0.35;
+  real targetVolumeFraction = 0.0;
   real radius2              = 0.005 - epsilon;
 
   int idx = 0;
@@ -339,22 +339,22 @@ void setupKroupa(MPI_Comm ex0) {
 //  }
 
   //=========================================================================================  
-  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
-
-  radius2 = 0.005 - epsilon;
-  if(world->ownsPoint(ellipsoidPos)) {
-
-    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
-    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
-    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
-  }
-  ellipsoidPos = Vec3(0.5 * L + 3.5 * radius2 - ds, 0.5 * L, 0.5 * L); 
-  if(world->ownsPoint(ellipsoidPos)) {
-
-    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
-    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
-    sphere->setLinearVel(Vec3(-0.1, 0.0, 0.0));
-  }
+//  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
+//
+//  radius2 = 0.005 - epsilon;
+//  if(world->ownsPoint(ellipsoidPos)) {
+//
+//    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
+//    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
+//    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
+//  }
+//  ellipsoidPos = Vec3(0.5 * L + 3.5 * radius2 - ds, 0.5 * L, 0.5 * L); 
+//  if(world->ownsPoint(ellipsoidPos)) {
+//
+//    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
+//    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
+//    sphere->setLinearVel(Vec3(-0.1, 0.0, 0.0));
+//  }
   
   //=========================================================================================
   

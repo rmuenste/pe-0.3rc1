@@ -10,7 +10,7 @@ void setupParticleBench(MPI_Comm ex0) {
   //real simRho( 970 );
 
   // Re 31.9 configuration
-  real simViscosity( 58e-3 );
+  real simViscosity( 53e-3 );
   real simRho( 960 );
 
   // New Benchmark Proposal

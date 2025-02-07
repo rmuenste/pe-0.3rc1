@@ -27,93 +27,78 @@ void uint64_test(uint64_t* value) {
  */
 std::map<int, boost::uint64_t> fbmMapRemote; // The key is the local fbmId, the value is the systemId
 
-/*
- *!\brief The function synchronizes (by addition) the forces on a distributed particle 
- * Fortran interface: sync_forces()
- */
+bool outputEnabled = true; // Global switch for enabling/disabling output
+
+void printForceData(BodyID body) {
+    if (!outputEnabled) return;
+    std::cout << "==Force Data==================================================================" << std::endl;
+    std::cout << "Force   : " << std::left << std::setw(10) << body->getSystemID() 
+              << " " << std::setw(12) << body->getForce()[0] 
+              << " " << std::setw(12) << body->getForce()[1] 
+              << " " << std::setw(12) << body->getForce()[2] 
+              << std::endl;
+}
+
+void printTorqueData(BodyID body) {
+    if (!outputEnabled) return;
+    std::cout << "Torque  : " << std::left << std::setw(10) << body->getSystemID() 
+              << " " << std::setw(12) << body->getTorque()[0] 
+              << " " << std::setw(12) << body->getTorque()[1] 
+              << " " << std::setw(12) << body->getTorque()[2] 
+              << std::endl;
+}
+
+void printStokesData(BodyID body, real fd) {
+    if (!outputEnabled) return;
+    std::cout << "Stokes  : " << std::left << std::setw(10) << body->getSystemID() 
+              << " " << std::setw(12) << fd 
+              << " " << std::setw(12) << fd 
+              << " " << std::setw(12) << fd 
+              << std::endl;
+}
+
 void synchronizeForces() {
 
-  // Get the current time step size
-  real stepsize = TimeStep::size();
+    // Get the current time step size
+    real stepsize = TimeStep::size();
+    WorldID world = theWorld();
+    MPI_Comm cartcomm = theMPISystem()->getComm();
+    int rank = theMPISystem()->getRank();
+    MPI_Barrier(cartcomm);
+    theCollisionSystem()->synchronizeForces();
 
-  WorldID world = theWorld();
-  MPI_Comm cartcomm = theMPISystem()->getComm();
-  int rank = theMPISystem()->getRank();
-  MPI_Barrier(cartcomm);
-  theCollisionSystem()->synchronizeForces();
-
-
-  for (pe::World::SizeType i=0; i < world->size(); i++) {
-    BodyID body = world->getBody(i);
-#ifdef ONLY_ROTATION
-    body->setForce(Vec3(0,0,0));
-#endif
-    if (body->getType() == sphereType) {
-//      std::cout << "==Force Data==================================================================" << std::endl;
-//      std::cout << "Force   : " << std::left << std::setw(10) << body->getSystemID() 
-//                << " " << std::setw(12) << body->getForce()[0] 
-//                << " " << std::setw(12) << body->getForce()[1] 
-//                << " " << std::setw(12) << body->getForce()[2] 
-//                << std::endl;
-//      std::cout << "Torque  : " << std::left << std::setw(10) << body->getSystemID() 
-//                << " " << std::setw(12) << body->getTorque()[0] 
-//                << " " << std::setw(12) << body->getTorque()[1] 
-//                << " " << std::setw(12) << body->getTorque()[2] 
-//                << std::endl;
-      SphereID s = static_body_cast<Sphere>(body);
-      real mu = theWorld()->getViscosity();
-      real rad = s->getRadius();
-      real vel_f = 0.0;
-      real fd = 6. * M_PI * rad * mu * ( vel_f - body->getLinearVel()[0]); 
-//      std::cout << "Stokes  : " << std::left << std::setw(10) << body->getSystemID() 
-//                << " " << std::setw(12) << fd 
-//                << " " << std::setw(12) << fd 
-//                << " " << std::setw(12) << fd 
-//                << std::endl;
+    for (pe::World::SizeType i = 0; i < world->size(); i++) {
+        BodyID body = world->getBody(i);
+        if (body->getType() == sphereType) {
+            printForceData(body);
+            SphereID s = static_body_cast<Sphere>(body);
+            real mu = theWorld()->getViscosity();
+            real rad = s->getRadius();
+            real vel_f = 0.0;
+            real fd = 6. * M_PI * rad * mu * (vel_f - body->getLinearVel()[0]);
+            printStokesData(body, fd);
+        } 
+        else if (body->getType() == capsuleType || 
+                 body->getType() == ellipsoidType || 
+                 (body->getType() == cylinderType && !body->isFixed()) || 
+                 (body->getType() == triangleMeshType && !body->isFixed())
+                 ) {
+            Vec3 tau = body->getTorque();
+            body->setTorque(tau);
+            printForceData(body);
+            printTorqueData(body);
+        }
+        body->applyFluidForces(stepsize);
     }
-    else if(body->getType() == triangleMeshType) {
-//      Vec3 tau = body->getTorque();
-//      tau[0] = 0;
-//      tau[2] = 0;
-//      body->setTorque(tau);
-//      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
-//      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
-    }
-    if (body->getType() == capsuleType) {
-      Vec3 tau = body->getTorque();
-      tau[0] = 0;
-      tau[1] = 0;
-      body->setTorque(tau);
-      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
-      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
-    }
-    if (body->getType() == ellipsoidType) {
-      Vec3 tau = body->getTorque();
-      tau[0] = 0;
-      tau[1] = 0;
-      body->setTorque(tau);
-      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
-      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
-    }
-    if (body->getType() == cylinderType && !(body->isFixed())) {
-      Vec3 tau = body->getTorque();
-      tau[0] = 0;
-      tau[1] = 0;
-      body->setTorque(tau);
-      std::cout << "Force: "  << std::setprecision(8)  << body->getForce()[0] << " " << body->getForce()[1] << " " << body->getForce()[2] << std::endl;
-      std::cout << "Torque: "  << std::setprecision(8)  << body->getTorque()[0] << " " << body->getTorque()[1] << " " << body->getTorque()[2] << std::endl;
-    }
-    body->applyFluidForces(stepsize);
-  }
 
-  for (std::size_t i=0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
-    BodyID body = world->getShadowBody(i);
-    body->applyFluidForces(stepsize);
-  }
+    for (std::size_t i = 0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
+        BodyID body = world->getShadowBody(i);
+        body->applyFluidForces(stepsize);
+    }
 
-  world->synchronize();
-
+    world->synchronize();
 }
+
 //=================================================================================================
 
 

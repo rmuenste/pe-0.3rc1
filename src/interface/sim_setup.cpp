@@ -34,12 +34,12 @@ const size_t initsteps     (  20000 );  // Initialization steps with closed outl
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 16000 );  // Number of time steps for the flowing granular media
-const real   stepsize      ( 0.00001 );  // Size of a single time step
+const real   stepsize      ( 0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 10 );    // Number of processes in x-direction
-const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 2 );    // Number of processes in y-direction
+const int    processesX( 3 );    // Number of processes in x-direction
+const int    processesY( 3 );    // Number of processes in y-direction
+const int    processesZ( 3 );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -72,11 +72,11 @@ bool g_povray  ( false );
 bool g_vtk( true );
 // 
 const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-const unsigned int pointerspacing( 1000  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int pointerspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 //const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 
 // Switch for checkpointer useage
-const bool useCheckpointer( false );  // Switches the checkpointer output of the simulation on and off
+const bool useCheckpointer( true );  // Switches the checkpointer output of the simulation on and off
  
 const int    px(processesX);    // Number of processes in x-direction
 const int    py(processesY);    // Number of processes in y-direction
@@ -128,7 +128,6 @@ void outputDelaunay(int timeStep) {
   MPI_Comm cartcomm = theMPISystem()->getComm();
   real epsilon              = 2e-4;
   real radius2              = 0.01 - epsilon;
-
 
   for (unsigned int i(0); i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
