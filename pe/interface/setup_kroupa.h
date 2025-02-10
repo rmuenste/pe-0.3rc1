@@ -339,15 +339,15 @@ void setupKroupa(MPI_Comm ex0) {
 //  }
 
   //=========================================================================================  
-//  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
-//
-//  radius2 = 0.005 - epsilon;
-//  if(world->ownsPoint(ellipsoidPos)) {
-//
-//    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
-//    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
-//    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
-//  }
+  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
+
+  radius2 = 0.005 - epsilon;
+  if(world->ownsPoint(ellipsoidPos)) {
+
+    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
+    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
+    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
+  }
 //  ellipsoidPos = Vec3(0.5 * L + 3.5 * radius2 - ds, 0.5 * L, 0.5 * L); 
 //  if(world->ownsPoint(ellipsoidPos)) {
 //

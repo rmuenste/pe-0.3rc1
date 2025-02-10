@@ -581,9 +581,40 @@ bool isInsideRemObject(int idx, double pos[3]) {
 
   return static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
 }
-
 //=================================================================================================
 
+
+//=================================================================================================
+/*
+ *!\brief The function returns the total number of particles
+ */
+//=================================================================================================
+int getTotalParts() {
+
+  WorldID world = theWorld();
+  unsigned int i(0);
+  int numBodies = 0;
+
+  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+    World::SizeType widx = static_cast<World::SizeType>(i);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    if(body->getType() == sphereType) {
+      numBodies++;
+    }
+  }
+
+  // Calculating the total number of particles and primitives
+  unsigned long particlesTotal ( 0 );
+
+  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
+  MPI_Reduce(&bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, theMPISystem()->getComm());
+
+  return numBodies;
+}
+//=================================================================================================
+
+
+//=================================================================================================
 /*
  *!\brief The function returns the number of particles in the domain
  */

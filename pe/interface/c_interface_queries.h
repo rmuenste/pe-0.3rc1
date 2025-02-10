@@ -10,6 +10,16 @@ bool check_rem_id(int fbmid, int id) {
 
 //=================================================================================================
 /*
+ *!\brief The function returns the total number of particles
+ */
+//=================================================================================================
+extern "C" int getTotalParticles() {
+   return getTotalParts();
+}
+
+
+//=================================================================================================
+/*
  *!\brief The function returns the number of particles in the domain
  */
 extern "C" int getNumParticles() {

@@ -145,6 +145,7 @@ int getNumParts();
  */
 int getNumRemParts();
 
+int getTotalParts();
 /*
  *!\brief Returns a copy of the object main parameters. The function is callable from Fortran
  * \param idx The system id
