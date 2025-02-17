@@ -47,15 +47,19 @@ pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
 //*************************************************************************************************
 
 
-//*************************************************************************************************
+//=================================================================================================
+// GenerateRandomPositions
+//=================================================================================================
 // Function to generate random positions within a cubic domain
-std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFraction) {
+std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFraction, real eps) {
 
     WorldID world = theWorld();
 
     std::vector<Vec3> positions;
 
-    real partVol = 4./3. * M_PI * std::pow(cellSize, 3);
+    real cellSize = diameter + eps;
+
+    real partVol = 4./3. * M_PI * std::pow(0.5 * diameter, 3);
     real domainVol = L * L * L;
 
     std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
@@ -66,6 +70,14 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
     // Calculate the total number of cells in the grid
     int totalCells = gridSize * gridSize * gridSize;
 
+    // Calculate the maximum volume fraction possible for the current configuration
+    real maxPhi = ((totalCells * partVol) / domainVol);
+
+    if (volumeFraction > maxPhi) {
+      std::cout << "User defined volume fraction: " << volumeFraction << " is too high for the current configuration" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+
     // Initialize a vector to keep track of visited cells
     std::vector<bool> cellVisited(totalCells, false);
 
@@ -75,7 +87,7 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
     std::uniform_real_distribution<real> dis(-cellSize / 2.0, cellSize / 2.0);
 
     // Generate random positions until the grid is full or the volume fraction is reached
-    while (positions.size() < totalCells && (static_cast<real>(positions.size()) / totalCells) < volumeFraction) {
+    while (positions.size() < totalCells && (partVol * positions.size() / domainVol) < volumeFraction) {
         // Generate random cell indices
         int x = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
         int y = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
@@ -91,7 +103,8 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
         Vec3 gpos(posX, posY, posZ);
 
         // Check if the cell has not been visited
-        if (!cellVisited[cellIndex] && world->ownsPoint( gpos ) ) {
+        //if (!cellVisited[cellIndex] && world->ownsPoint( gpos ) ) {
+        if (!cellVisited[cellIndex]) {
             // Mark the cell as visited
             cellVisited[cellIndex] = true;
 
@@ -100,16 +113,22 @@ std::vector<Vec3> generateRandomPositions(real L, real cellSize, real volumeFrac
             double posY = (y + 0.5) * cellSize;
             double posZ = (z + 0.5) * cellSize;
 
+            if (posX > L || posY > L || posZ > L)
+              std::cout << Vec3(posX, posY, posZ) << std::endl;
             // Create a Vec3 object for the position and add it to the positions vector
             positions.push_back(Vec3(posX, posY, posZ));
         }
+    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
+//    std::cout << MPISettings::rank() << ")local fraction:  " << (static_cast<real>(positions.size()) / totalCells) << " of " << volumeFraction << std::endl;
+//    std::cout << MPISettings::rank() << ")local:  " << positions.size() << " of " << totalCells << std::endl;
     }
 
     real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
-    //std::cout << "Volume fraction:  " << solidFraction << std::endl;
-    //std::cout << "local:  " << positions.size() << std::endl;
+    std::cout << MPISettings::rank() << ")Volume fraction:  " << solidFraction << std::endl;
+    std::cout << MPISettings::rank() << ")local:  " << positions.size() << std::endl;
     return positions;
 }
+//=================================================================================================
 
 //*************************************************************************************************
 std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
@@ -173,7 +192,7 @@ int main( int argc, char** argv )
 
    // Time parameters
    const size_t initsteps     (  2000 );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 5000 );  // Number of time steps for the flowing granular media
+   const size_t timesteps     ( 21 );  // Number of time steps for the flowing granular media
    const real   stepsize      ( 0.0005 );  // Size of a single time step
 
    // Process parameters
@@ -365,26 +384,79 @@ int main( int argc, char** argv )
   // volume fraction.
   //======================================================================================== 
   // const real   radius  ( 0.005  );
-  bool resume = false;
-  real radius2 = 0.01;
-  std::vector<Vec3> allPositions = generateRandomPositions(0.1, 2.0 * radius2, 0.10); 
+  bool resume               = false;
+  real epsilon              = 2e-4; 
+  real targetVolumeFraction = 0.3;
+  real radius2              = 0.002 - epsilon;
+
+  std::vector<Vec3> allPositions;
+  int numPositions;
+  //======================================================================================== 
+  // The positions are created randomly on the root process and then bcasts 
+  // to the other processes.
+  //======================================================================================== 
+  pe_EXCLUSIVE_SECTION(0) {
+    allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
+    numPositions = allPositions.size();
+  }
+
+  // Bcast the number of positions to other processes
+  MPI_Bcast(&numPositions, 1, MPI_INT, 0, cartcomm);
+
+  // Now all processes have the same value
+  //std::cout << "Rank " << MPISettings::rank() << ": Received value " << numPositions << std::endl;
+
+  //======================================================================================== 
+  // For easier communication we create a double array that holds the positions 
+  // in xyz, x1y1z1, and so on format 
+  //======================================================================================== 
+  std::vector<real> flatPositions(numPositions * 3);
+  pe_EXCLUSIVE_SECTION(0) {
+   for(std::size_t i(0); i < allPositions.size(); i++) {
+      flatPositions[3 * i]     = allPositions[i][0];
+      flatPositions[3 * i + 1] = allPositions[i][1];
+      flatPositions[3 * i + 2] = allPositions[i][2];
+   }
+  }
+  
+  //======================================================================================== 
+  // Bcast the flat array to the other processes 
+  //======================================================================================== 
+  // Broadcast the vector from the root process to all other processes
+  MPI_Bcast(flatPositions.data(), numPositions * 3, MPI_DOUBLE, 0, cartcomm);
+
+  pe_EXCLUSIVE_SECTION(0){
+  
+  }
+  pe_EXCLUSIVE_ELSE {
+
+   for(std::size_t i(0); i < numPositions * 3; i += 3) {
+      Vec3 p(flatPositions[i], flatPositions[i + 1], flatPositions[i + 2]);
+      allPositions.push_back(p);
+   }
+  
+  }
+
+
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
-      SphereID sphere = createSphere(id, position, radius2, elastic, true);
-      sphere->setLinearVel(0.01, 0.0, 0.0);
-      ++id;      
+      if( world->ownsPoint( position ) ) {
+         SphereID sphere = createSphere(id, position, radius2, elastic, true);
+         ++id;      
+      }
     }
-  } else {
-   if( world->ownsPoint( gpos ) ) {
-      particle = createSphere( id++, gpos, radius, elastic );
-      particle->setLinearVel( vel );
-      particle->getID();
-   }
-   if( world->ownsPoint( gpos2 ) ) {
-      particle = createSphere( id++, gpos2, radius, elastic );
-   }
   }
+//   else {
+//   if( world->ownsPoint( gpos ) ) {
+//      particle = createSphere( id++, gpos, radius, elastic );
+//      particle->setLinearVel( vel );
+//      particle->getID();
+//   }
+//   if( world->ownsPoint( gpos2 ) ) {
+//      particle = createSphere( id++, gpos2, radius, elastic );
+//   }
+//  }
   //======================================================================================== 
 
   // Here we add some planes
