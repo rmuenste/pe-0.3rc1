@@ -10,6 +10,7 @@
 #include <CGAL/number_utils.h>
 #include <cstddef>
 
+
 namespace cgal3d {
 
 #ifndef BOOST_NO_INT64_T
