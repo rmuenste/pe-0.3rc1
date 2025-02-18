@@ -33,7 +33,7 @@ const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
-const size_t timesteps     ( 16000 );  // Number of time steps for the flowing granular media
+const size_t timesteps     ( 15000 );  // Number of time steps for the flowing granular media
 const real   stepsize      ( 0.001 );  // Size of a single time step
 
 // Process parameters
@@ -423,7 +423,7 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-#define SINGLE_PARTICLE_OUTPUT
+//#define SINGLE_PARTICLE_OUTPUT
 #ifdef SINGLE_PARTICLE_OUTPUT
       singleOutput_v1(body, timestep);
 #endif

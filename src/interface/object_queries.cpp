@@ -27,7 +27,7 @@ void uint64_test(uint64_t* value) {
  */
 std::map<int, boost::uint64_t> fbmMapRemote; // The key is the local fbmId, the value is the systemId
 
-bool outputEnabled = true; // Global switch for enabling/disabling output
+bool outputEnabled = false; // Global switch for enabling/disabling output
 
 void printForceData(BodyID body) {
     if (!outputEnabled) return;

@@ -155,16 +155,16 @@ public:
    //! Threshold for the contact classification.
    /*! This threshold separates between separating, resting and colliding contacts. */
    //static inline double collisionThreshold() { return 2E-3; }
-   //static inline double collisionThreshold() { return 1E-8; }
-   static inline double collisionThreshold() { return 1.041e-3; }
+   static inline double collisionThreshold() { return 1E-8; }
+   //static inline double collisionThreshold() { return 1.041e-3; }
 
    //static inline double collisionThreshold() { return 1E-5; }
 
    //! Threshold for the distance between two rigid bodies.
    /*! Rigid bodies with a distance smaller than this threshold are in contact. */
    //static inline double contactThreshold() { return 33E-3; }
-   //static inline double contactThreshold() { return 1E-8; }
-   static inline double contactThreshold() { return 1.041e-3; }
+   static inline double contactThreshold() { return 1E-8; }
+   //static inline double contactThreshold() { return 1.041e-3; }
    //static inline double contactThreshold() { return 2E-3; }
    //static inline double contactThreshold() { return 1E-5; }
 
@@ -192,7 +192,8 @@ public:
    /*! Only points with a distance to the all smaller than this threshold are considered
        for lubrication. */
    //static inline double lubricationThreshold() { return 33e-3; }
-   static inline double lubricationThreshold() { return 1.041e-3; }
+   //static inline double lubricationThreshold() { return 1.041e-3; }
+   static inline double lubricationThreshold() { return 1E-8; }
    // The lubricationThreshold is used in: 
    // -HardContactSemiImplicitTimesteppingSolver
    // -MaxContacts: line 592

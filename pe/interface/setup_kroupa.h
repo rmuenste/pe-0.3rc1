@@ -137,7 +137,7 @@ void setupKroupa(MPI_Comm ex0) {
 
   // Computing the Cartesian coordinates of the neighboring processes
   int dims   [] = { processesX, processesY, processesZ };
-  int periods[] = { true, true, true };
+  int periods[] = { true, true, false };
   int reorder   = false;
 
   int rank;           // Rank of the neighboring process
@@ -193,8 +193,8 @@ void setupKroupa(MPI_Comm ex0) {
   const real lx( L );
   const real ly( L );
   const real lz( L );
-
-  decomposePeriodic3D(center, bx, by, bz, 
+  
+  decomposePeriodicXY3D(center, bx, by, bz, 
                               dx, dy, dz, 
                               lx, ly, lz, 
                               px, py, pz);
@@ -236,8 +236,9 @@ void setupKroupa(MPI_Comm ex0) {
   //======================================================================================== 
   bool resume               = false;
   real epsilon              = 2e-4;
-  real targetVolumeFraction = 0.0;
-  real radius2              = 0.005 - epsilon;
+  real targetVolumeFraction = 0.30;
+  //real radius2              = 0.005 - epsilon;
+  real radius2              = 0.0015 - epsilon;
 
   int idx = 0;
   real h  = 0.0075;
@@ -300,15 +301,15 @@ void setupKroupa(MPI_Comm ex0) {
   //std::cout << "Separation dist:  " << gpos[2] - gpos2[2] << std::endl;
 
   //=========================================================================================
-//  if(!resume) {
-//    for (int i = 0; i < allPositions.size(); ++i) {
-//      Vec3 &position = allPositions[i];
-//      if( world->ownsPoint(position)) {
-//         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
-//         ++idx;      
-//      }
-//    } 
-//  }
+  if(!resume) {
+    for (int i = 0; i < allPositions.size(); ++i) {
+      Vec3 &position = allPositions[i];
+      if( world->ownsPoint(position)) {
+         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+         ++idx;      
+      }
+    } 
+  }
 //  else {
 //
 ////    checkpointer.read( "../start.1" );
@@ -339,15 +340,15 @@ void setupKroupa(MPI_Comm ex0) {
 //  }
 
   //=========================================================================================  
-  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
-
-  radius2 = 0.005 - epsilon;
-  if(world->ownsPoint(ellipsoidPos)) {
-
-    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
-    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
-    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
-  }
+//  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
+//
+//  radius2 = 0.002 - epsilon;
+//  if(world->ownsPoint(ellipsoidPos)) {
+//
+//    std::cout << "Creating Spheroid in domain " << MPISettings::rank() << std::endl;
+//    SphereID sphere = createSphere( idx++, ellipsoidPos , radius2, elastic );
+//    sphere->setLinearVel(Vec3(0.1, 0.0, 0.0));
+//  }
 //  ellipsoidPos = Vec3(0.5 * L + 3.5 * radius2 - ds, 0.5 * L, 0.5 * L); 
 //  if(world->ownsPoint(ellipsoidPos)) {
 //

@@ -1064,13 +1064,13 @@ void Writer::writeSphereDataAscii(std::ostream& out) const
      out << "   <PointData Scalars=\"scalars\" Vectors=\"vectors\">\n";
 
      // write IDs
-     out << "    <DataArray type=\"" << "UInt32" <<
+     out << "    <DataArray type=\"" << "UInt64" <<
             "\" Name=\"" << "ID" <<
             "\" NumberOfComponents=\"" << 1 <<
             "\" format=\"ascii\">\n";
      for( Spheres::ConstIterator s=spheres_.begin(); s!=spheres_.end(); ++s )
      {
-        out << "\t" << s->getID() << "\n";
+        out << "\t" << s->getSystemID() << "\n";
      }      //end for all Spheres
      out << "    </DataArray>\n";
 
