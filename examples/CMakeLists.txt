@@ -6,6 +6,7 @@ add_subdirectory(detection)
 add_subdirectory(math_tests)
 add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
+add_subdirectory(usage_demo)
 
 # MPI Examples
 add_subdirectory(decomposition_geometry)

@@ -92,7 +92,6 @@ bool g_vtk( true );
 // 
 const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 const unsigned int pointerspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-//const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 
 // Switch for checkpointer useage
 const bool useCheckpointer( true );  // Switches the checkpointer output of the simulation on and off
