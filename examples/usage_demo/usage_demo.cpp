@@ -100,8 +100,6 @@ int main( int argc, char* argv[] )
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
-   bool povray  ( true );
-   bool irrlicht( false );
    bool vtk( true );
 
    setSeed( 12345 );  // Setup of the random number generation
@@ -113,10 +111,6 @@ int main( int argc, char* argv[] )
    cli.parse( argc, argv );
    cli.evaluateOptions();
    variables_map& vm = cli.getVariablesMap();
-   if( vm.count( "no-povray" ) > 0 )
-      povray = false;
-   if( vm.count( "no-irrlicht" ) > 0 )
-      irrlicht = false;
    if( vm.count( "no-vtk" ) > 0 )
       vtk = false;
 
@@ -131,58 +125,19 @@ int main( int argc, char* argv[] )
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -0.4 );
 
-   HalfSpace hs(1, 0, 0, 0);
    // Setup of the ground plane
    PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
-   // +y
-   createPlane( id++, 0.0, 1.0, 0.0, -0.1, granite );
-   // -y
-   createPlane( id++, 0.0,-1.0, 0.0,  -0.1, granite );
-   TriangleMeshID span = createTriangleMesh(++id, Vec3(0, 0, 0.374807), fileName, iron, true, true, Vec3(1.0,1.0,1.0), false, false);
-   span->setAngularVel(Vec3(0.314, 0, 0));
 
-   //std::cout << "Number of vertices: " << span->getWFVertices().size() << std::endl;
 
    // Setup of the metal sphere
-//   SphereID s = createSphere( ++id, 0.0, 0.05, 1.4, 0.04, granite );
-//   s->setLinearVel( 0.0, 0.0,-1.0 );
+   SphereID s = createSphere( ++id, 0.0, 0.05, 1.4, 0.04, granite );
+   s->setLinearVel( 0.0, 0.0,-1.0 );
 
    // Setup of the VTK visualization
    if( vtk ) {
       vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
    }
-   // Setup of the POV-Ray visualization
-   if( povray ) {
-      WriterID pov = activateWriter();
-      pov->setSpacing( visspacing );
-      pov->include( "colors.inc" );
-      pov->include( "woods.inc" );
-      pov->include( "metals.inc" );
-      pov->setFilename( "./video/box%.pov" );
-      pov->setBackground( 1.0, 1.0, 1.0 );
-      pov->addLightSource( PointLight( Vec3( 0.0, -10.0, 30.0 ), Color( 0.95, 0.95, 0.95 ) ) );
 
-      // Configuring the POV-Ray camera
-      CameraID camera = theCamera();
-      camera->setLocation( 8.0, -25.0, 2.0 );
-      camera->setFocus   ( 0.0,   0.0, 7.5 );
-
-      // Setting the ground plane texture
-      Finish grassFinish(
-         Ambient( 0.2 )
-      );
-      PlainTexture grassTexture(
-         ImagePigment( gif, "grass.gif", planar, true ),
-         grassFinish,
-         Scale( 20.0 ),
-         Rotation( M_PI/2.0, 0.0, 0.0 )
-      );
-      pov->setTexture( plane, grassTexture );
-
-      // Setting the sphere texture
-      //pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
-   }
-   // 1447, 1527, 1499
    // Simulation loop
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
