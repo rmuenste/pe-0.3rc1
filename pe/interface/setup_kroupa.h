@@ -118,10 +118,12 @@ void setupKroupa(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  const real L( 0.1 );
-  const real dx( L/processesX );
-  const real dy( L/processesY );
-  const real dz( L/processesZ );
+  const real LX( 1.5 );
+  const real LY( 0.1 );
+  const real LZ( 0.2 );
+  const real dx( LX/processesX );
+  const real dy( LY/processesY );
+  const real dz( LZ/processesZ );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
