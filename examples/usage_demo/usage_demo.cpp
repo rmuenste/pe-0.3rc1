@@ -42,6 +42,11 @@
 #include <pe/util.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
 
+#include <random>
+#include <algorithm>
+#include <vector>
+#include <pe/core/Types.h>
+
 using namespace pe;
 using namespace pe::povray;
 
@@ -63,6 +68,88 @@ using namespace pe::irrlicht;
 //  UTILITY FUNCTIONS
 //
 //=================================================================================================
+std::vector<Vec3> generateRandomPositionsBox(real LX, real LY, real LZ, 
+                                             real diameter, 
+                                             real volumeFraction, 
+                                             real eps)
+{
+    std::vector<Vec3> positions;
+
+    // Define the effective cell size
+    real cellSize = diameter + eps;
+
+    // Particle volume
+    real partVol = (4.0 / 3.0) * M_PI * std::pow(0.5 * diameter, 3);
+
+    // Box volume
+    real domainVol = LX * LY * LZ;
+
+    std::cout << "Trying to generate volume fraction: " 
+              << volumeFraction * 100.0 << " % " << std::endl;
+
+    // Number of cells in each dimension
+    int Nx = static_cast<int>(LX / cellSize);
+    int Ny = static_cast<int>(LY / cellSize);
+    int Nz = static_cast<int>(LZ / cellSize);
+
+    // Total number of cells
+    int totalCells = Nx * Ny * Nz;
+
+    // Maximum possible volume fraction with this regular grid
+    real maxPhi = (totalCells * partVol) / domainVol;
+
+    if (volumeFraction > maxPhi) {
+        std::cout << "User defined volume fraction: " << volumeFraction 
+                  << " is too high for the current configuration (max: " 
+                  << maxPhi << ")" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Keep track of which cells are used
+    std::vector<bool> cellVisited(totalCells, false);
+
+    // Random number generators
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    // Generate random indices for each dimension
+    std::uniform_int_distribution<int> distX(0, Nx - 1);
+    std::uniform_int_distribution<int> distY(0, Ny - 1);
+    std::uniform_int_distribution<int> distZ(0, Nz - 1);
+
+    // Keep generating until we either fill all cells or reach the desired volume fraction
+    while (positions.size() < static_cast<size_t>(totalCells) &&
+           (partVol * positions.size() / domainVol) < volumeFraction)
+    {
+        // Random cell indices
+        int x = distX(gen);
+        int y = distY(gen);
+        int z = distZ(gen);
+
+        // Compute 1D index for visited-check
+        int cellIndex = x + y * Nx + z * Nx * Ny;
+
+        // Check if this cell hasn't been visited yet
+        if (!cellVisited[cellIndex]) {
+            cellVisited[cellIndex] = true;
+
+            // Center of the chosen cell in each dimension
+            real posX = (x + 0.5) * cellSize;
+            real posY = (y + 0.5) * cellSize;
+            real posZ = (z + 0.5) * cellSize;
+
+            positions.push_back(Vec3(posX, posY, posZ));
+        }
+    }
+
+    // Final volume fraction reached
+    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
+    std::cout << "Final volume fraction: " << solidFraction << " % " << std::endl;
+    std::cout << "Number of particle positions: " << positions.size() << std::endl;
+
+    return positions;
+}
+
 
 //*************************************************************************************************
 /*!\brief Returns a random angle between \f$ [-\frac{\pi}{20}..\frac{\pi}{20}] \f$.
