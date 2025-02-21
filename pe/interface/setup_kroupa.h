@@ -312,34 +312,9 @@ void setupKroupa(MPI_Comm ex0) {
       }
     } 
   }
-//  else {
-//
-////    checkpointer.read( "../start.1" );
-////    //checkpointer.read( "../start.1" );
-//   if( world->ownsPoint( gpos ) ) {
-//      createSphere( idx++, gpos, radius2, elastic );
-//   }
-//   gpos[2] -= 2. * (radius2 + epsilon);
-//   if( world->ownsPoint( gpos  ) ) {
-//      createSphere( idx++, gpos , radius2, elastic );
-//   }
-//   gpos[2] -= 2. * (radius2 + epsilon);
-//   if( world->ownsPoint( gpos  ) ) {
-//      createSphere( idx++, gpos , radius2, elastic );
-//   }
-//   gpos[2] -= 2. * (radius2 + epsilon);
-//   if( world->ownsPoint( gpos  ) ) {
-//      createSphere( idx++, gpos , radius2, elastic );
-//   }
-////   gpos[2] -= 2. * (radius2 + epsilon);
-////   if( world->ownsPoint( gpos  ) ) {
-////      createSphere( idx++, gpos , radius2, elastic );
-////   }
-////   gpos[2] -= 2. * (radius2 + epsilon);
-////   if( world->ownsPoint( gpos  ) ) {
-////      createSphere( idx++, gpos , radius2, elastic );
-////   }
-//  }
+  else {
+    checkpointer.read( "../start.1" );
+  }
 
   //=========================================================================================  
 //  Vec3 ellipsoidPos = Vec3(0.5 * L, 0.5 * L, 0.5 * L); 
