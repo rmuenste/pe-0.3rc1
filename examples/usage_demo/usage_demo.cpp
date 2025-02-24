@@ -211,6 +211,22 @@ int main( int argc, char* argv[] )
    // Simulation world setup
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -0.4 );
+   //======================================================================================== 
+   // Here is how to create some random positions on a grid up to a certain
+   // volume fraction.
+   //======================================================================================== 
+   real epsilon              = 2e-4;
+   real targetVolumeFraction = 0.30;
+   real radius2              = 0.0010925 - epsilon;
+
+   const real LX( 1.0 );
+   const real LY( 0.1 );
+   const real LZ( 0.1 );
+
+   std::vector<Vec3> allPositions = generateRandomPositionsBox(LX, LY, LZ, 
+                                                               2. * radius2, 
+                                                               targetVolumeFraction, 
+                                                               epsilon);
 
    // Setup of the ground plane
    PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
@@ -229,11 +245,11 @@ int main( int argc, char* argv[] )
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
 
-   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
-      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-      world->simulationStep( 0.004 );
-      //std::cout << "[particle position]: " << s->getPosition() << std::endl;
-   }
+//   for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
+//      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+//      world->simulationStep( 0.004 );
+//      //std::cout << "[particle position]: " << s->getPosition() << std::endl;
+//   }
 
    std::cout << "\n--------------------------------------------------------------------------------\n"
              << std::endl;
