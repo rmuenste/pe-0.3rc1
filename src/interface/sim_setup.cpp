@@ -56,9 +56,9 @@ const size_t timesteps     ( 15000 );  // Number of time steps for the flowing g
 const real   stepsize      ( 0.001 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 45 );    // Number of processes in x-direction
+const int    processesX( 3 );    // Number of processes in x-direction
 const int    processesY( 3  );    // Number of processes in y-direction
-const int    processesZ( 6  );    // Number of processes in y-direction
+const int    processesZ( 3  );    // Number of processes in y-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -187,14 +187,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.005;
-  real epsilon              = 2e-4;
-  real radius2              = 0.01 - epsilon;
-
-  real L = 0.1;
-  real domainVol = L * L * L;
-  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
-  real phi = (particlesTotal * partVol)/domainVol * 100.0;
+  real h = 0.00104167;
 
   //=================================================================================================
   int subSteps = 1;
