@@ -4,6 +4,7 @@
 #
 #  Copyright (C) 2009 Klaus Iglberger
 #                2012 Tobias Preclik
+#                2023 Raphael Münster
 #
 #  This file is part of pe.
 #
@@ -44,7 +45,7 @@ set( MPI_PREINCLUDE   OFF     CACHE BOOL     "Include mpi.h ahead of all other h
 set( OPENCL           OFF     CACHE BOOL     "Build support for OpenCL."                                )
 set( IRRLICHT         OFF     CACHE BOOL     "Build support for Irrlicht engine."                       )
 set( EXAMPLES         OFF     CACHE BOOL     "Build examples."                                          )
-set( EIGEN            OFF     CACHE BOOL     "Build with Eigen library support."                        )
+set( EIGEN            ON      CACHE BOOL     "Build with Eigen library support."                        )
 set( PACKAGE_NAME     pe                                                                                )
 set( PACKAGE_VERSION  trunk                                                                             )
 set( BOOST_INCLUDEDIR ""      CACHE PATH     "The boost include directory."                             )
@@ -223,10 +224,11 @@ endif()
 
 # Configuration of the Eigen library
 if( EIGEN )
+  #============================================================================
   # Set up Eigen as an external project
   ExternalProject_Add(
     eigen
-    GIT_REPOSITORY https://github.com/libigl/eigen.git
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG 3.4.0
     PREFIX ${CMAKE_BINARY_DIR}/extern/eigen
     CONFIGURE_COMMAND ""
@@ -248,6 +250,7 @@ if( EIGEN )
   message(STATUS "Eigen support enabled")
 else()
   set( DEFINES "${DEFINES} PE_USE_EIGEN=0" )
+  #============================================================================
 endif()
 
 # Configuration of the Irrlicht library

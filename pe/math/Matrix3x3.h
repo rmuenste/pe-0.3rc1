@@ -197,6 +197,8 @@ public:
                               inline bool            isSymmetric()    const;
                               inline bool            isSingular()     const;
                               inline void            swap( Matrix3x3& m ) /* throw() */;
+                              inline Vector3<Type, false> col(size_t column) const; //! Returns the specified column as a Vector3
+    
    //@}
    //**********************************************************************************************
 
@@ -999,6 +1001,19 @@ inline void Matrix3x3<Type>::reset()
    reset( v_[6] );
    reset( v_[7] );
    reset( v_[8] );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the specified column as a Vector3.
+ *
+ * \return Calculation of the determinant of the matrix.
+ */
+template< typename Type >  // Data type of the matrix
+inline Vector3<Type, false> Matrix3x3<Type>::col(size_t column) const {
+   pe_USER_ASSERT( column < 3 , "Column index out of bounds" );
+   return Vector3<Type, false>(v_[column], v_[column + 3], v_[column + 6]);
 }
 //*************************************************************************************************
 

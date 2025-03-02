@@ -409,7 +409,9 @@ void TriMeshDopBoundary::computePCA()
     
     // Ensure we have a right-handed coordinate system
     if (orientation_.getDeterminant() < 0) {
-        orientation_.col(2) *= -1;
+        orientation_(0,2) *= -1;
+        orientation_(1,2) *= -1;
+        orientation_(2,2) *= -1;
     }
     #else
     // Simple fallback implementation when Eigen is not available
@@ -447,7 +449,7 @@ void TriMeshDopBoundary::computePCA()
     pe_LOG_WARNING_SECTION(log) {
         log << "TriMeshDopBoundary::computePCA: Eigen library not available. "
             << "Using simplified orientation computation. For better results, "
-            << "enable Eigen support by setting EIGEN=ON.";
+            << "enable Eigen support by setting EIGEN=ON.\n";
     }
     
     // Ensure we have a right-handed coordinate system
@@ -513,6 +515,7 @@ void TriMeshDopBoundary::computeKDOP(size_t k)
         dopDirections_.push_back(orientation_.col(0));
         dopDirections_.push_back(orientation_.col(1));
         dopDirections_.push_back(orientation_.col(2));
+
         dopDirections_.push_back(-orientation_.col(0));
         dopDirections_.push_back(-orientation_.col(1));
         dopDirections_.push_back(-orientation_.col(2));
@@ -532,7 +535,7 @@ void TriMeshDopBoundary::computeKDOP(size_t k)
         // In the future, support for more directions can be added here
         pe_LOG_WARNING_SECTION(log) {
             log << "TriMeshDopBoundary::computeKDOP: Only 6-DOP is currently supported. "
-                << "Using 6-DOP instead of requested " << k << "-DOP." << std::endl;
+                << "Using 6-DOP instead of requested " << k << "-DOP.\n";
         }
         computeKDOP(6);
     }
