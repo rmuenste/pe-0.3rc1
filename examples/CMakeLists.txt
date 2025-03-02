@@ -22,4 +22,6 @@ if( MPI )
     add_subdirectory(mpiplanedecomposition)
     add_subdirectory(mpispheres)
     add_subdirectory(mpiunion)
+    add_subdirectory(rectigrid_demo)
+    add_subdirectory(trimeshdop_demo) # TriMeshDopBoundary example using OBJ files for domain decomposition
 endif( MPI )

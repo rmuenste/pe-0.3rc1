@@ -1,0 +1,1 @@
+#declare VideoMode = 1;  // 0=disabled, 1=enabled

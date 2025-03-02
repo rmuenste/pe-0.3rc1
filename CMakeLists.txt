@@ -27,6 +27,9 @@ if( POLICY CMP0015 )
    cmake_policy( SET CMP0015 NEW )
 endif()
 cmake_policy(SET CMP0057 NEW)
+
+# Enable ExternalProject module
+include(ExternalProject)
 #==================================================================================================
 #
 # Definition of global options
@@ -41,6 +44,7 @@ set( MPI_PREINCLUDE   OFF     CACHE BOOL     "Include mpi.h ahead of all other h
 set( OPENCL           OFF     CACHE BOOL     "Build support for OpenCL."                                )
 set( IRRLICHT         OFF     CACHE BOOL     "Build support for Irrlicht engine."                       )
 set( EXAMPLES         OFF     CACHE BOOL     "Build examples."                                          )
+set( EIGEN            OFF     CACHE BOOL     "Build with Eigen library support."                        )
 set( PACKAGE_NAME     pe                                                                                )
 set( PACKAGE_VERSION  trunk                                                                             )
 set( BOOST_INCLUDEDIR ""      CACHE PATH     "The boost include directory."                             )
@@ -215,6 +219,35 @@ if( BLAS )
    set( DEFINES "${DEFINES} HAVE_BLAS=1" )
 else()
    set( DEFINES "${DEFINES} HAVE_BLAS=0" )
+endif()
+
+# Configuration of the Eigen library
+if( EIGEN )
+  # Set up Eigen as an external project
+  ExternalProject_Add(
+    eigen
+    GIT_REPOSITORY https://github.com/libigl/eigen.git
+    GIT_TAG 3.4.0
+    PREFIX ${CMAKE_BINARY_DIR}/extern/eigen
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ""
+    TEST_COMMAND ""
+  )
+  
+  # Set Eigen include directory
+  ExternalProject_Get_Property(eigen SOURCE_DIR)
+  set(EIGEN_INCLUDE_DIR ${SOURCE_DIR})
+  
+  # Add Eigen include directory to the project
+  include_directories(SYSTEM ${EIGEN_INCLUDE_DIR})
+  
+  # Add definition to enable Eigen
+  add_definitions(-DPE_USE_EIGEN)
+  set( DEFINES "${DEFINES} PE_USE_EIGEN=1" )
+  message(STATUS "Eigen support enabled")
+else()
+  set( DEFINES "${DEFINES} PE_USE_EIGEN=0" )
 endif()
 
 # Configuration of the Irrlicht library
