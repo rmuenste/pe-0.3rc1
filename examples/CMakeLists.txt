@@ -1,4 +1,5 @@
 # Serial Examples
+add_subdirectory(body_removal)  # Example showing body removal during simulation
 add_subdirectory(box_domain)
 add_subdirectory(cylinder)
 add_subdirectory(decomposition)
