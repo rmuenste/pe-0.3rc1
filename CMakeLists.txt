@@ -53,7 +53,7 @@ set( BOOST_LIBRARYDIR ""      CACHE PATH     "The boost library directory."     
 set( PREPROCESSOR_FLAGS ""    CACHE STRING   "Additional preprocessor flags."                           )
 set( COMPILER_FLAGS   ""      CACHE STRING   "Additional compiler flags."                               )
 set( LINKER_FLAGS     ""      CACHE STRING   "Additional linker flags when linking the examples."       )
-#OPTION(USE_CGAL       "Build the project using the CGAL library" OFF                                  )
+set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support."                         )
 
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 
@@ -253,6 +253,37 @@ else()
   #============================================================================
 endif()
 
+# Configuration of the CGAL library
+if( CGAL )
+  #============================================================================
+  # Set up CGAL as an external project
+  ExternalProject_Add(
+    cgal
+    GIT_REPOSITORY https://github.com/CGAL/cgal.git
+    GIT_TAG v5.3.2
+    PREFIX ${CMAKE_BINARY_DIR}/extern/cgal
+    CMAKE_ARGS 
+      -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/extern/cgal/install
+      -DWITH_CGAL_ImageIO=OFF
+      -DWITH_CGAL_Qt5=OFF
+    TEST_COMMAND ""
+  )
+  
+  # Set CGAL include directory
+  set(CGAL_INCLUDE_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install/include)
+  
+  # Add CGAL include directory to the project
+  include_directories(SYSTEM ${CGAL_INCLUDE_DIR})
+  
+  # Add definition to enable CGAL
+  add_definitions(-DPE_USE_CGAL)
+  set( DEFINES "${DEFINES} PE_USE_CGAL=1" )
+  message(STATUS "CGAL support enabled")
+else()
+  set( DEFINES "${DEFINES} PE_USE_CGAL=0" )
+  #============================================================================
+endif()
+
 # Configuration of the Irrlicht library
 if( IRRLICHT )
    find_package( Irrlicht REQUIRED )
@@ -272,16 +303,29 @@ else()
    set( DEFINES "${DEFINES} PE_MEDIA_PATH= HAVE_IRRLICHT=0" )
 endif()
 
-# Configuration of the CGAL library
-# Check if USE_CGAL is enabled
-if (USE_CGAL)
+# Update library and linking settings for CGAL
+if( CGAL )
     message(STATUS "CGAL support is enabled.")
-    # Add a compiler define if USE_CGAL is true
+    # Add a compiler define if CGAL is true
     set( DEFINES "${DEFINES} HAVE_CGAL=1" )
-    INCLUDE_DIRECTORIES( SYSTEM ${CGAL_INCLUDE_DIRS} )
+    
+    # Add CGAL-related libraries to the third-party libraries
+    find_package(GMP QUIET)
+    find_package(MPFR QUIET)
+    
+    if(GMP_FOUND)
+        list(APPEND PE_THIRD_PARTY_LIBS ${GMP_LIBRARIES})
+    endif()
+    
+    if(MPFR_FOUND)
+        list(APPEND PE_THIRD_PARTY_LIBS ${MPFR_LIBRARIES})
+    endif()
+    
+    # Add CGAL include directories
+    list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${CGAL_INCLUDE_DIR})
 else()
     message(STATUS "CGAL support is disabled.")
-    # Add a compiler define if USE_CGAL is false (optional)
+    # Add a compiler define if CGAL is false
     set( DEFINES "${DEFINES} HAVE_CGAL=0" )
 endif()
 

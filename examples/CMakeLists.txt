@@ -10,6 +10,11 @@ add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
 add_subdirectory(usage_demo)
 
+# CGAL Examples
+if( CGAL )
+    add_subdirectory(cgal_box)  # Example showing CGAL oriented bounding box functionality
+endif( CGAL )
+
 # MPI Examples
 if( MPI )
     add_subdirectory(decomposition_geometry)
