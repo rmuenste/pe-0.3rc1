@@ -65,7 +65,10 @@ namespace pe {
  * primitives of the \b pe physics engine. The class is derived from the GeomPrimitive base
  * class, which makes the plane both a geometric primitive and a rigid body.\n
  * The plane geometry is an infinite rigid body dividing the global space in two half spaces.
- * One of these half spaces is considered to be inside the plane. Bodies entering this half
+ * One of these half spaces is considered to be inside the plane.
+ * In a rigid body library we aim to prevent one body from penetrating the INSIDE of another.
+ * The normal vector points to the OUTSIDE of a plane, like a normal vector for a sphere would.
+ * Bodies entering this half
  * space are therefore colliding with the plane. The other half space is considered to be
  * outside the plane. The plane is represented by the following equation:
  *
