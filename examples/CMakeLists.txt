@@ -4,6 +4,7 @@ add_subdirectory(box_domain)
 add_subdirectory(cylinder)
 add_subdirectory(decomposition)
 add_subdirectory(detection)
+add_subdirectory(kdop_example)  # Example showing k-DOP extraction from TriMeshDopBoundary
 add_subdirectory(math_tests)
 add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
