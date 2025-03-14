@@ -255,22 +255,34 @@ endif()
 
 # Configuration of the CGAL library
 if( CGAL )
-  #============================================================================
+
   # Set up CGAL as an external project
-  ExternalProject_Add(
-    cgal
-    GIT_REPOSITORY https://github.com/CGAL/cgal.git
-    GIT_TAG v5.3.2
-    PREFIX ${CMAKE_BINARY_DIR}/extern/cgal
-    CMAKE_ARGS 
-      -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/extern/cgal/install
-      -DWITH_CGAL_ImageIO=OFF
-      -DWITH_CGAL_Qt5=OFF
-    TEST_COMMAND ""
-  )
+  set(CGAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install)
+  set(CGAL_STAMP_DIR ${CMAKE_BINARY_DIR}/extern/cgal/src/cgal-stamp)
+  
+  # Check if the install stamp file exists
+  if(EXISTS "${CGAL_STAMP_DIR}/cgal-install")
+    # CGAL is already installed, create a custom target instead
+    add_custom_target(cgal)
+  else()
+    #============================================================================
+    # Set up CGAL as an external project
+    ExternalProject_Add(
+      cgal
+      GIT_REPOSITORY https://github.com/CGAL/cgal.git
+      GIT_TAG v5.3.2
+      PREFIX ${CMAKE_BINARY_DIR}/extern/cgal
+      CMAKE_ARGS 
+        -DCMAKE_INSTALL_PREFIX=${CGAL_INSTALL_DIR}
+        -DWITH_CGAL_ImageIO=OFF
+        -DWITH_CGAL_Qt5=OFF
+      TEST_COMMAND ""
+    )
+  endif()
   
   # Set CGAL include directory
   set(CGAL_INCLUDE_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install/include)
+
   
   # Add CGAL include directory to the project
   include_directories(SYSTEM ${CGAL_INCLUDE_DIR})

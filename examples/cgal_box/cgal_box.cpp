@@ -25,13 +25,15 @@
 #include <CGAL/Polygon_mesh_processing/orientation.h>
 #include <CGAL/optimal_bounding_box.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <CGAL/IO/read_off_points.h>
+#include <CGAL/IO/OFF.h>
 #endif
 
 // Define kernel
 #ifdef PE_USE_CGAL
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef Kernel::Point_3 Point;
-typedef Kernel::Vector_3 Vector;
+typedef Kernel::Vector_3 Vector_3; //typedef for Vector type
 typedef CGAL::Surface_mesh<Point> Surface_mesh;
 #endif
 
@@ -41,6 +43,16 @@ int main(int argc, char* argv[]) {
     std::cout << "CGAL Oriented Bounding Box Example" << std::endl;
     
 #ifdef PE_USE_CGAL
+    std::string meshFile;
+    Surface_mesh fromFile;
+    if (argc >= 2) {
+      meshFile = argv[1];
+      std::ifstream input(meshFile);
+      if (!input || !CGAL::IO::read_OFF(input, fromFile)) {
+        std::cerr << "Error: Cannot read file " << fromFile << "\n";
+        return 1;
+      }
+    }
     // Create a set of points (e.g., a simple shape)
     std::vector<Point> points;
     
@@ -86,15 +98,15 @@ int main(int argc, char* argv[]) {
     
     // Extract OBB dimensions and orientation
     // Calculate the edges of the OBB
-    Vector edge1(obb_points[1].x() - obb_points[0].x(),
+    Vector_3 edge1(obb_points[1].x() - obb_points[0].x(),
                 obb_points[1].y() - obb_points[0].y(),
                 obb_points[1].z() - obb_points[0].z());
                 
-    Vector edge2(obb_points[3].x() - obb_points[0].x(),
+    Vector_3 edge2(obb_points[3].x() - obb_points[0].x(),
                 obb_points[3].y() - obb_points[0].y(),
                 obb_points[3].z() - obb_points[0].z());
                 
-    Vector edge3(obb_points[4].x() - obb_points[0].x(),
+    Vector_3 edge3(obb_points[4].x() - obb_points[0].x(),
                 obb_points[4].y() - obb_points[0].y(),
                 obb_points[4].z() - obb_points[0].z());
     
