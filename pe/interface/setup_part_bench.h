@@ -1,5 +1,6 @@
 
 void setupParticleBench(MPI_Comm ex0) {
+  auto& config = SimulationConfig::getInstance();
 
   world = theWorld();
   //world->setGravity( 0.0, 0.0, -9.807e-6 ); //9.807×10^-6 m/ms^2 (meters per millisecond squared)
@@ -38,14 +39,15 @@ void setupParticleBench(MPI_Comm ex0) {
   //const real dz( 0.08 ) 2 subs;
   //const real dx( -0.05 );
   //const real dy( -0.05 );
-  const real dz( 0.16 / processesZ );
+  const real dz( 0.16 / config.getProcessesZ() );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
 
   // Checking the total number of MPI processes
-  if( processesX*processesY*processesZ != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
+  if( config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" 
+               << config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() << "\n\n" << std::endl;
      return;
   }
 
@@ -58,7 +60,7 @@ void setupParticleBench(MPI_Comm ex0) {
 
 
   // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { processesX, processesY, processesZ };
+  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
   int periods[] = { false, false, false };
   int reorder   = false;
 
@@ -159,7 +161,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the east neighbor
-  if( east[0] < px ) {
+  if( east[0] < config.getPx() ) {
      MPI_Cart_rank( cartcomm, east, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
@@ -181,7 +183,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the north neighbor
-  if( north[1] < py ) {
+  if( north[1] < config.getPy() ) {
      MPI_Cart_rank( cartcomm, north, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
@@ -203,7 +205,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top neighbor
-  if( top[2] < pz ) {
+  if( top[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, top, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(0,0,+1), +top[2]*dz ),
@@ -225,7 +227,7 @@ void setupParticleBench(MPI_Comm ex0) {
 
 
   // Connecting the south-east neighbor
-  if( southeast[0] < px && southeast[1] >= 0 ) {
+  if( southeast[0] < config.getPx() && southeast[1] >= 0 ) {
      MPI_Cart_rank( cartcomm, southeast, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
@@ -235,7 +237,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the north-west neighbor
-  if( northwest[0] >= 0 && northwest[1] < py ) {
+  if( northwest[0] >= 0 && northwest[1] < config.getPy() ) {
      MPI_Cart_rank( cartcomm, northwest, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
@@ -245,7 +247,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the north-east neighbor
-  if( northeast[0] < px && northeast[1] < py ) {
+  if( northeast[0] < config.getPx() && northeast[1] < config.getPy() ) {
      MPI_Cart_rank( cartcomm, northeast, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
@@ -265,7 +267,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the bottom-east neighbor
-  if( bottomeast[0] < px && bottomeast[2] >= 0 ) {
+  if( bottomeast[0] < config.getPx() && bottomeast[2] >= 0 ) {
      MPI_Cart_rank( cartcomm, bottomeast, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(+1,0,0), +east[0]*dx ),
@@ -285,7 +287,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the bottom-north neighbor
-  if( bottomnorth[1] < py && bottomnorth[2] >= 0 ) {
+  if( bottomnorth[1] < config.getPy() && bottomnorth[2] >= 0 ) {
      MPI_Cart_rank( cartcomm, bottomnorth, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(0,+1,0), +north[1]*dy ),
@@ -303,7 +305,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the bottom-south-east neighbor
-  if( bottomsoutheast[0] < px && bottomsoutheast[1] >= 0 && bottomsoutheast[2] >= 0 ) {
+  if( bottomsoutheast[0] < config.getPx() && bottomsoutheast[1] >= 0 && bottomsoutheast[2] >= 0 ) {
      MPI_Cart_rank( cartcomm, bottomsoutheast, &rank );
      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
@@ -311,7 +313,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the bottom-north-west neighbor
-  if( bottomnorthwest[0] >= 0 && bottomnorthwest[1] < py && bottomnorthwest[2] >= 0 ) {
+  if( bottomnorthwest[0] >= 0 && bottomnorthwest[1] < config.getPy() && bottomnorthwest[2] >= 0 ) {
      MPI_Cart_rank( cartcomm, bottomnorthwest, &rank );
      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
@@ -319,7 +321,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the bottom-north-east neighbor
-  if( bottomnortheast[0] < px && bottomnortheast[1] < py && bottomnortheast[2] >= 0 ) {
+  if( bottomnortheast[0] < config.getPx() && bottomnortheast[1] < config.getPy() && bottomnortheast[2] >= 0 ) {
      MPI_Cart_rank( cartcomm, bottomnortheast, &rank );
      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
@@ -327,7 +329,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-west neighbor
-  if( topwest[0] >= 0 && topwest[2] < pz ) {
+  if( topwest[0] >= 0 && topwest[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topwest, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
@@ -337,7 +339,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-east neighbor
-  if( topeast[0] < px && topeast[2] < pz ) {
+  if( topeast[0] < config.getPx() && topeast[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topeast, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(1,0,0), east[0]*dx ),
@@ -347,7 +349,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-south neighbor
-  if( topsouth[1] >= 0 && topsouth[2] < pz ) {
+  if( topsouth[1] >= 0 && topsouth[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topsouth, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
@@ -357,7 +359,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-north neighbor
-  if( topnorth[1] < py && topnorth[2] < pz ) {
+  if( topnorth[1] < config.getPy() && topnorth[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topnorth, &rank );
      connect( rank, intersect(
         HalfSpace( Vec3(0,1,0), north[1]*dy ),
@@ -367,7 +369,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-south-west neighbor
-  if( topsouthwest[0] >= 0 && topsouthwest[1] >= 0 && topsouthwest[2] < pz ) {
+  if( topsouthwest[0] >= 0 && topsouthwest[1] >= 0 && topsouthwest[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topsouthwest, &rank );
      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
@@ -375,7 +377,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-south-east neighbor
-  if( topsoutheast[0] < px && topsoutheast[1] >= 0 && topsoutheast[2] < pz ) {
+  if( topsoutheast[0] < config.getPx() && topsoutheast[1] >= 0 && topsoutheast[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topsoutheast, &rank );
      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
                                HalfSpace( Vec3(0,-1,0), -center[1]*dy ),
@@ -383,7 +385,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-north-west neighbor
-  if( topnorthwest[0] >= 0 && topnorthwest[1] < py && topnorthwest[2] < pz ) {
+  if( topnorthwest[0] >= 0 && topnorthwest[1] < config.getPy() && topnorthwest[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topnorthwest, &rank );
      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -center[0]*dx ),
                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
@@ -391,7 +393,7 @@ void setupParticleBench(MPI_Comm ex0) {
   }
 
   // Connecting the top-north-east neighbor
-  if( topnortheast[0] < px && topnortheast[1] < py && topnortheast[2] < pz ) {
+  if( topnortheast[0] < config.getPx() && topnortheast[1] < config.getPy() && topnortheast[2] < config.getPz() ) {
      MPI_Cart_rank( cartcomm, topnortheast, &rank );
      connect( rank, intersect( HalfSpace( Vec3(1,0,0), east[0]*dx ),
                                HalfSpace( Vec3(0,1,0), north[1]*dy ),
@@ -423,12 +425,12 @@ void setupParticleBench(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
 
-  const real lx = px * dx;
-  const real ly = py * dy;
-  const real lz = pz * dz;
+  const real lx = config.getPx() * dx;
+  const real ly = config.getPy() * dy;
+  const real lz = config.getPz() * dz;
 
   const int nx = 1;//  lx / space;
   const int ny = 1;//  ly / space;
@@ -480,7 +482,7 @@ void setupParticleBench(MPI_Comm ex0) {
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  TimeStep::stepsize( stepsize );
+  TimeStep::stepsize( config.getStepsize() );
 
   real sphereVol(0);
   real sphereMass(0);
@@ -494,14 +496,14 @@ void setupParticleBench(MPI_Comm ex0) {
   MPI_Reduce( &sphereMass, &totalMass, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &sphereVol, &totalVol, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
 
-  TimeStep::stepsize( stepsize );
+  TimeStep::stepsize( config.getStepsize() );
   std::string useLub = (useLubrication) ? "enabled" : "disabled";
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
-      << " Total number of MPI processes           = " << px * py * pz << "\n"
+      << " Total number of MPI processes           = " << config.getPx() * config.getPy() * config.getPz() << "\n"
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"

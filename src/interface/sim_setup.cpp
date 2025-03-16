@@ -39,35 +39,35 @@ extern "C" void output_delaunay_(int *istep) {
 //    Global Definitions
 //
 //=================================================================================================
-/////////////////////////////////////////////////////
-// Simulation parameters
 
-// Time parameters
-const size_t timesteps     ( 15000 );  // Number of time steps for the flowing granular media
-const real   stepsize      ( 0.001 );  // Size of a single time step
+// Implementation of SimulationConfig
+namespace pe {
 
-// Process parameters
-const int    processesX( 3 );    // Number of processes in x-direction
-const int    processesY( 3  );    // Number of processes in y-direction
-const int    processesZ( 3  );    // Number of processes in y-direction
+SimulationConfig::SimulationConfig()
+    : timesteps_(15000)
+    , stepsize_(0.001)
+    , processesX_(3)
+    , processesY_(3)
+    , processesZ_(3)
+    , seed_(12345)
+    , verbose_(false)
+    , vtk_(true)
+    , visspacing_(50)
+    , pointerspacing_(100)
+    , useCheckpointer_(true)
+    , checkpoint_path_("checkpoints/")
+{
+}
 
-// Random number generator parameters
-const size_t seed( 12345 );
+SimulationConfig& SimulationConfig::getInstance() {
+    static SimulationConfig instance;
+    return instance;
+}
 
-// Verbose mode
-const bool verbose( false );  // Switches the output of the simulation on and off
+} // namespace pe
 
-bool g_vtk( true );
-// 
-const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-const unsigned int pointerspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-
-// Switch for checkpointer useage
-const bool useCheckpointer( true );  // Switches the checkpointer output of the simulation on and off
- 
-const int    px(processesX);    // Number of processes in x-direction
-const int    py(processesY);    // Number of processes in y-direction
-const int    pz(processesZ);    // Number of processes in z-direction
+// Global variables
+bool g_vtk = pe::SimulationConfig::getInstance().getVtk();
 PlaneID g_ground(0);
 
 // Configuration of the simulation world
@@ -76,10 +76,13 @@ int called = 0;
 
 // Configuration of the MPI system
 MPISystemID mpisystem;
-//*************************************************************************************************
+
 // The Checkpointer
-path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
-Checkpointer checkpointer = Checkpointer(checkpoint_path, pointerspacing, 0, timesteps);
+Checkpointer checkpointer = Checkpointer(
+    pe::SimulationConfig::getInstance().getCheckpointPath(),
+    pe::SimulationConfig::getInstance().getPointerspacing(),
+    0,
+    pe::SimulationConfig::getInstance().getTimesteps());
 
 real degreesToRadians(real deg) {
   return deg * M_PI / 180.0;
@@ -141,7 +144,8 @@ void groupOutput_v1(real totalV, real dt, real h, real totalA) {
 // This functions steps the physics simulation one time step
 //=================================================================================================
 void stepSimulation() {
-
+  auto& config = SimulationConfig::getInstance();
+  
   static int timestep = 0;
   unsigned long particlesTotalBefore = 0;
   int numBodies =  theCollisionSystem()->getBodyStorage().size();
@@ -160,15 +164,15 @@ void stepSimulation() {
 
   //=================================================================================================
   int subSteps = 1;
-  real subStepSize = stepsize / static_cast<real>(subSteps);
+  real subStepSize = config.getStepsize() / static_cast<real>(subSteps);
   TimeStep::stepsize(subStepSize);
   for (int istep(0); istep < subSteps; ++istep) {
     world->simulationStep( subStepSize );
   }
-  TimeStep::stepsize(stepsize);
+  TimeStep::stepsize(config.getStepsize());
   //=================================================================================================
 
-  //world->simulationStepDebug( stepsize );
+  //world->simulationStepDebug( config.getStepsize() );
 #define OUTPUT_LEVEL3
 #ifdef OUTPUT_LEVEL3
   unsigned int i(0);
@@ -218,13 +222,13 @@ void stepSimulation() {
   //=================================================================================================
   pe_EXCLUSIVE_SECTION(0) {
       std::cout << "==DEM Time Data===============================================================" << std::endl;
-      std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * stepsize << " || substepping:  " << subSteps << std::endl;
+      std::cout << "DEM timestep: " << timestep << "|| sim time: " << timestep * config.getStepsize() << " || substepping:  " << subSteps << std::endl;
   }
   
   
   //=================================================================================================
   // Trigger a new checkpointer write if activated
-  if (useCheckpointer) {
+  if (config.getUseCheckpointer()) {
     checkpointer.trigger();
     checkpointer.flush();
   }
