@@ -38,6 +38,82 @@ typedef CGAL::Surface_mesh<Point> Surface_mesh;
 #endif
 
 using namespace pe;
+// Function to export the original mesh to OBJ file
+void write_mesh_to_obj(const Surface_mesh& mesh, const std::string& filename) {
+    std::ofstream obj_file(filename);
+    if (!obj_file) {
+        std::cerr << "Error: Cannot create file " << filename << std::endl;
+        return;
+    }
+    
+    // Create vertex map
+    std::unordered_map<Surface_mesh::Vertex_index, int> vertex_to_id;
+    int vertex_id = 1; // OBJ indices start at 1
+    
+    // Write vertices
+    for (auto v : mesh.vertices()) {
+        const Point& p = mesh.point(v);
+        obj_file << "v " << p.x() << " " << p.y() << " " << p.z() << std::endl;
+        vertex_to_id[v] = vertex_id++;
+    }
+    
+    // Write faces
+    for (auto f : mesh.faces()) {
+        obj_file << "f";
+        for (auto v : mesh.vertices_around_face(mesh.halfedge(f))) {
+            obj_file << " " << vertex_to_id[v];
+        }
+        obj_file << std::endl;
+    }
+    
+    obj_file.close();
+    std::cout << "Original mesh written to " << filename << std::endl;
+}
+
+// Function to write OBB to OBJ file
+void write_obb_to_obj(const std::array<Point, 8>& obb_points, const std::string& filename) {
+    std::ofstream obj_file(filename);
+    if (!obj_file) {
+        std::cerr << "Error: Cannot create file " << filename << std::endl;
+        return;
+    }
+    
+    // Write vertices - OBJ indices start at 1
+    for (int i = 0; i < 8; ++i) {
+        obj_file << "v " << obb_points[i].x() << " " 
+                         << obb_points[i].y() << " " 
+                         << obb_points[i].z() << std::endl;
+    }
+    
+    // Write faces (triangulating the box)
+    // Bottom face (triangulated as 0-1-2 and 0-2-3)
+    obj_file << "f 1 2 3" << std::endl;
+    obj_file << "f 1 3 4" << std::endl;
+    
+    // Top face (triangulated as 4-5-6 and 4-6-7)
+    obj_file << "f 5 6 7" << std::endl;
+    obj_file << "f 5 7 8" << std::endl;
+    
+    // Side faces
+    // Face 0-1-5-4 (triangulated)
+    obj_file << "f 1 2 6" << std::endl;
+    obj_file << "f 1 6 5" << std::endl;
+    
+    // Face 1-2-6-5 (triangulated)
+    obj_file << "f 2 3 7" << std::endl;
+    obj_file << "f 2 7 6" << std::endl;
+    
+    // Face 2-3-7-6 (triangulated)
+    obj_file << "f 3 4 8" << std::endl;
+    obj_file << "f 3 8 7" << std::endl;
+    
+    // Face 3-0-4-7 (triangulated)
+    obj_file << "f 4 1 5" << std::endl;
+    obj_file << "f 4 5 8" << std::endl;
+    
+    obj_file.close();
+    std::cout << "OBB written to " << filename << std::endl;
+}
 
 int main(int argc, char* argv[]) {
     std::cout << "CGAL Oriented Bounding Box Example" << std::endl;
@@ -47,12 +123,63 @@ int main(int argc, char* argv[]) {
     Surface_mesh fromFile;
     if (argc >= 2) {
       meshFile = argv[1];
+
+      std::string output_prefix = (argc > 2) ? argv[2] : "output";
       std::ifstream input(meshFile);
+
       if (!input || !CGAL::IO::read_OFF(input, fromFile)) {
-        std::cerr << "Error: Cannot read file " << fromFile << "\n";
+        std::cerr << "Error: Cannot read file " << meshFile << "\n";
         return 1;
       }
+
+      std::vector<Point> pointsFromMesh;
+      for(auto v : fromFile.vertices()) {
+        pointsFromMesh.push_back(fromFile.point(v));
+      }
+
+      // Calculate the oriented bounding box
+      std::array<Point, 8> obb_mesh;
+      CGAL::oriented_bounding_box(fromFile, obb_mesh, 
+                               CGAL::parameters::use_convex_hull(true));
+
+      // Output the OBB points
+      std::cout << "Oriented Bounding Box vertices:" << std::endl;
+      for (int i = 0; i < 8; ++i) {
+          std::cout << "  " << i << ": (" 
+                    << obb_mesh[i].x() << ", " 
+                    << obb_mesh[i].y() << ", " 
+                    << obb_mesh[i].z() << ")" << std::endl;                               
+      }
+
+      // Calculate and print the OBB dimensions
+      // We need to find the three edge vectors from point 0
+      Vector_3 v01(obb_mesh[0], obb_mesh[1]);
+      Vector_3 v03(obb_mesh[0], obb_mesh[3]);
+      Vector_3 v04(obb_mesh[0], obb_mesh[4]);
+      
+      double length = std::sqrt(v01.squared_length());
+      double width = std::sqrt(v03.squared_length());
+      double height = std::sqrt(v04.squared_length());
+      
+      std::cout << "OBB Dimensions: " << std::endl;
+      std::cout << "  Length: " << length << std::endl;
+      std::cout << "  Width: " << width << std::endl;
+      std::cout << "  Height: " << height << std::endl;
+      
+      // Calculate volume
+      double volume = length * width * height;
+      std::cout << "  Volume: " << volume << std::endl;
+      
+      // Write the OBB to an OBJ file
+      std::string obb_filename = output_prefix + "_obb.obj";
+      write_obb_to_obj(obb_mesh, obb_filename);
+      
+      // Write the original mesh to an OBJ file for comparison
+      std::string mesh_filename = output_prefix + "_mesh.obj";
+      write_mesh_to_obj(fromFile, mesh_filename);
+
     }
+
     // Create a set of points (e.g., a simple shape)
     std::vector<Point> points;
     
