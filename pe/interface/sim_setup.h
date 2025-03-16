@@ -1,5 +1,6 @@
 #if HAVE_MPI
 #include <pe/core/MPI.h>
+#include <pe/config/Precision.h>
 #include <boost/filesystem.hpp>
 
 namespace pe {

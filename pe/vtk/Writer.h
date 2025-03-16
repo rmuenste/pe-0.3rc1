@@ -38,6 +38,7 @@
 #include <pe/util/policies/NoDelete.h>
 #include <pe/util/PtrVector.h>
 #include <pe/util/singleton/Dependency.h>
+#include <boost/filesystem.hpp>
 
 
 

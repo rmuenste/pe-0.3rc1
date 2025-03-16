@@ -1,12 +1,20 @@
 #include <map>
 #include <iomanip>
 #include <cstdint>
-#include <pe/engine.h>
-#include <pe/support.h>
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 #include <pe/util/Checkpointer.h>
+#include <pe/core/MPISystem.h>
+#include <pe/core/MPISystemID.h>
+#include <pe/core/domaindecomp/DomainDecomposition.h>
+#include <pe/core/domaindecomp/HalfSpace.h>
+#include <pe/core/domaindecomp/Intersection.h>
+#include <pe/core/domaindecomp/Merging.h>
+#include <pe/core/domaindecomp/Process.h>
+#include <pe/core/domaindecomp/RectilinearGrid.h>
+#include <pe/engine.h>
+#include <pe/support.h>
 
 //using namespace fc2::povray;
 using boost::filesystem::path;
@@ -105,6 +113,8 @@ extern "C" void step_simulation_() {
 
 //=================================================================================================
 void singleOutput_v1(BodyID body, int timestep) {
+      auto& config = SimulationConfig::getInstance();
+      real stepsize = config.getStepsize();
       std::cout << "==Single Particle Data========================================================" << std::endl;
       std::cout << "Position: " << body->getSystemID() << " " << timestep * stepsize << " " <<
                                    body->getPosition()[0] << " " <<
@@ -121,6 +131,8 @@ void singleOutput_v1(BodyID body, int timestep) {
 
 //=================================================================================================
 void singleOutput_v2(BodyID body, int timestep) {
+      auto& config = SimulationConfig::getInstance();
+      real stepsize = config.getStepsize();
       std::cout << "==Single Particle Data========================================================" << std::endl;
       std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
       std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;

@@ -3,6 +3,7 @@ using namespace pe::povray;
 
 void setupCyl(MPI_Comm ex0) {
 
+  auto& config = SimulationConfig::getInstance();
   world = theWorld();
   world->setGravity( 0.0, 0.0, -98.1 );
   world->setLiquidSolid(true);
@@ -24,8 +25,8 @@ void setupCyl(MPI_Comm ex0) {
   MPI_Comm_rank(ex0, &my_rank);
 
   // Checking the total number of MPI processes
-  if( processesX*processesY*processesZ != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
+  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
      std::exit(EXIT_FAILURE);
   }
 
@@ -33,7 +34,7 @@ void setupCyl(MPI_Comm ex0) {
   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
   // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { processesX, processesY, processesZ };
+  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
   int periods[] = { false, false, false };
   int reorder   = false;
 
@@ -81,6 +82,9 @@ void setupCyl(MPI_Comm ex0) {
   }
 
 //===========================================================================================================
+  int px = config.getProcessesX();
+  int py = config.getProcessesY();
+  int pz = config.getProcessesZ();
 
   real bx = 0.0;
   real by = 0.0;
@@ -406,7 +410,7 @@ void setupCyl(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
   
 
@@ -472,8 +476,8 @@ void setupCyl(MPI_Comm ex0) {
       << " particles x              = " << nx << "\n" 
       << " particles y              = " << ny << "\n" 
       << " particles z              = " << nz << "\n" 
-      << " Stepsize  dt             = " << stepsize << "\n" 
-      << " visspacing               = " << visspacing << "\n" 
+      << " Stepsize  dt             = " << config.getStepsize() << "\n" 
+      << " visspacing               = " << config.getVisspacing() << "\n" 
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;

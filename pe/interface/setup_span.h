@@ -16,6 +16,7 @@ using namespace pe::povray;
 //=================================================================================================
 void setupSpan(MPI_Comm ex0) {
 
+  auto& config = SimulationConfig::getInstance();
   world = theWorld();
   //world->setGravity( 0.0, 0.0,-980.665 );
   world->setGravity( 0.0, 0.0, 0.0 );
@@ -40,8 +41,8 @@ void setupSpan(MPI_Comm ex0) {
   MPI_Comm_rank(ex0, &my_rank);
 
   // Checking the total number of MPI processes
-  if( processesX*processesY*processesZ != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
+  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
      std::exit(EXIT_FAILURE);
   }
 
@@ -49,7 +50,7 @@ void setupSpan(MPI_Comm ex0) {
   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
   // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { processesX, processesY, processesZ };
+  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
   int periods[] = { false, false, false };
   int reorder   = false;
 
@@ -99,13 +100,17 @@ void setupSpan(MPI_Comm ex0) {
 
 //===================================================================================================
 
+  int px = config.getProcessesX();
+  int py = config.getProcessesY();
+  int pz = config.getProcessesZ();
+
   real bx = 0.0;
   real by = 0.0;
   real bz = 0.0;
 
-  const real dx( 2.0  / processesX );
-  const real dy( 0.02 / processesY );
-  const real dz( 0.2  / processesZ );
+  const real dx( 2.0  / px );
+  const real dy( 0.02 / py );
+  const real dz( 0.2  / pz );
 
   decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
 
@@ -120,7 +125,7 @@ void setupSpan(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
 
   //======================================================================================== 

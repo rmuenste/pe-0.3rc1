@@ -330,6 +330,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
 void setupArchimedesZ(MPI_Comm ex0)
 {
 
+   auto& config = SimulationConfig::getInstance();
    world = theWorld();
    world->setGravity(0.0, 0.0, 0.0);
 
@@ -352,11 +353,14 @@ void setupArchimedesZ(MPI_Comm ex0)
    mpisystem->setComm(ex0);
 
    const real L(45.0);
+   const real LX(45.0);
    const real LY(25.0);
    const real LZ(0.5);
-   const real dx(L / processesX);
-   const real dy(LY / processesY);
-   const real dz(LZ / processesZ);
+
+   const real dx( LX/config.getProcessesX() );
+   const real dy( LY/config.getProcessesY() );
+   const real dz( LZ/config.getProcessesZ() );
+
    std::vector<HalfSpace> halfSpaces;
 
    loadPlanesAndCreateHalfSpaces("planes_div15.txt", halfSpaces);
@@ -364,19 +368,17 @@ void setupArchimedesZ(MPI_Comm ex0)
    int my_rank;
    MPI_Comm_rank(ex0, &my_rank);
 
-   // Checking the total number of MPI processes
-   if (processesX * processesY * processesZ != mpisystem->getSize())
-   {
-      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX * processesY * processesZ << "\n\n"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-   }
+  // Checking the total number of MPI processes
+  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
+     std::exit(EXIT_FAILURE);
+  }
 
    /////////////////////////////////////////////////////
    // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
    // Computing the Cartesian coordinates of the neighboring processes
-   int dims[] = {processesX, processesZ};
+   int dims[] = {config.getProcessesX(), config.getProcessesZ()};
    int periods[] = {false, false};
    int reorder = false;
 
@@ -424,6 +426,9 @@ void setupArchimedesZ(MPI_Comm ex0)
    }
 
    //===================================================================================
+   int px = config.getProcessesX();
+   int py = config.getProcessesY();
+   int pz = config.getProcessesZ();
 
    int west[] = {center[0] - 1, center[1], center[2]};
    int east[] = {center[0] + 1, center[1], center[2]};
@@ -477,7 +482,7 @@ void setupArchimedesZ(MPI_Comm ex0)
    }
 
    // Connecting the east neighbor
-   if (east[0] < processesX)
+   if (east[0] < config.getProcessesX())
    {
       MPI_Cart_rank(cartcomm, east, &rank);
 
@@ -500,7 +505,7 @@ void setupArchimedesZ(MPI_Comm ex0)
    // Setup of the VTK visualization
    if (g_vtk)
    {
-      vtk::WriterID vtk = vtk::activateWriter("./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
    }
 
    // Create a custom material for the benchmark
@@ -671,6 +676,7 @@ void setupArchimedesZ(MPI_Comm ex0)
 void setupArchimedesXY(MPI_Comm ex0)
 {
 
+   auto& config = SimulationConfig::getInstance();
    world = theWorld();
    world->setGravity(0.0, 0.0, 0.0);
 
@@ -695,9 +701,9 @@ void setupArchimedesXY(MPI_Comm ex0)
    const real L(45.0);
    const real LY(25.0);
    const real LZ(0.5);
-   const real dx(L / processesX);
-   const real dy(LY / processesY);
-   const real dz(LZ / processesZ);
+   const real dx(L / config.getProcessesX());
+   const real dy(LY / config.getProcessesY());
+   const real dz(LZ / config.getProcessesZ());
    std::vector<HalfSpace> halfSpaces;
 
    loadPlanesAndCreateHalfSpaces("planes_div15.txt", halfSpaces);
@@ -707,9 +713,9 @@ void setupArchimedesXY(MPI_Comm ex0)
    MPI_Comm_rank(ex0, &my_rank);
 
    // Checking the total number of MPI processes
-   if (processesX * processesY * processesZ != mpisystem->getSize())
+   if (config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() != mpisystem->getSize())
    {
-      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX * processesY * processesZ << "\n\n"
+      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() << "\n\n"
                 << std::endl;
       std::exit(EXIT_FAILURE);
    }
@@ -718,7 +724,7 @@ void setupArchimedesXY(MPI_Comm ex0)
    // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
    // Computing the Cartesian coordinates of the neighboring processes
-   int dims[] = {processesX, processesZ};
+   int dims[] = {config.getProcessesX(), config.getProcessesZ()};
    int periods[] = {false, false};
    int reorder = false;
 
@@ -766,6 +772,9 @@ void setupArchimedesXY(MPI_Comm ex0)
    }
 
    //===================================================================================
+   int px = config.getProcessesX();
+   int py = config.getProcessesY();
+   int pz = config.getProcessesZ();
 
    int west[] = {center[0] - 1, center[1], center[2]};
    int east[] = {center[0] + 1, center[1], center[2]};
@@ -820,7 +829,7 @@ void setupArchimedesXY(MPI_Comm ex0)
    }
 
    // Connecting the east neighbor
-   if (east[0] < processesX)
+   if (east[0] < config.getProcessesX())
    {
       MPI_Cart_rank(cartcomm, east, &rank);
 
@@ -885,7 +894,7 @@ void setupArchimedesXY(MPI_Comm ex0)
    // Setup of the VTK visualization
    if (g_vtk)
    {
-      vtk::WriterID vtk = vtk::activateWriter("./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
    }
 
    // Create a custom material for the benchmark
@@ -1047,6 +1056,7 @@ void setupArchimedesXY(MPI_Comm ex0)
 void setupArchimedes(MPI_Comm ex0) {
 //void setupArchimedesEMPTY(MPI_Comm ex0) {
 //void setupEmpty(MPI_Comm ex0) {
+  auto& config = SimulationConfig::getInstance();
 
   world = theWorld();
   world->setGravity( 0.0, 0.0, 0.0 );
@@ -1072,16 +1082,16 @@ void setupArchimedes(MPI_Comm ex0) {
   const real L( 45.0 );
   const real LY( 25.0 );
   const real LZ( 0.5 );
-  const real dx( L/processesX );
-  const real dy( LY/processesY );
-  const real dz( LZ/processesZ );
+  const real dx( L/config.getProcessesX() );
+  const real dy( LY/config.getProcessesY() );
+  const real dz( LZ/config.getProcessesZ() );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
 
   // Checking the total number of MPI processes
-  if( processesX*processesY*processesZ != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
+  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
      std::exit(EXIT_FAILURE);
   }
 
@@ -1089,7 +1099,7 @@ void setupArchimedes(MPI_Comm ex0) {
   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
   // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { processesX, processesY, processesZ };
+  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
   //int periods[] = { true, true, false };
   int periods[] = { false, false, false };
   int reorder   = false;
@@ -1138,17 +1148,14 @@ void setupArchimedes(MPI_Comm ex0) {
   }
 
 //===========================================================================================================
+  int px = config.getProcessesX();
+  int py = config.getProcessesY();
+  int pz = config.getProcessesZ();
 
-//  real bx = 0.0;
-//  real by = 0.0;
-//  real bz = 0.0;
 
   real bx = -10.0;
   real by = -5.0;
   real bz =  0.0;
-//  const real L( 2.0 );
-//  const real LY( 1.0 );
-//  const real LZ( 0.05 );
 
   // Size of the domain
   const real lx( L );
@@ -1171,7 +1178,7 @@ void setupArchimedes(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
 
 
@@ -1280,6 +1287,7 @@ void setupNormal(MPI_Comm ex0)
 //void setupArchimedes(MPI_Comm ex0)
 {
 
+   auto& config = SimulationConfig::getInstance();
    world = theWorld();
    Vec3 myGravity(0.0, -980.665, 0.0);
    //myGravity *= 0.25;
@@ -1307,9 +1315,9 @@ void setupNormal(MPI_Comm ex0)
    const real L(45.0);
    const real LY(25.0);
    const real LZ(0.5);
-   const real dx(L / processesX);
-   const real dy(LY / processesY);
-   const real dz(LZ / processesZ);
+   const real dx(L / config.getProcessesX());
+   const real dy(LY / config.getProcessesY());
+   const real dz(LZ / config.getProcessesZ());
 
    std::vector<HalfSpace> halfSpaces;
    std::vector<HalfSpace> halfSpacesY;
@@ -1321,9 +1329,9 @@ void setupNormal(MPI_Comm ex0)
    MPI_Comm_rank(ex0, &my_rank);
 
    // Checking the total number of MPI processes
-   if (processesX * processesY * processesZ != mpisystem->getSize())
+   if (config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() != mpisystem->getSize())
    {
-      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX * processesY * processesZ << "\n\n"
+      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() << "\n\n"
                 << std::endl;
       std::exit(EXIT_FAILURE);
    }
@@ -1332,7 +1340,7 @@ void setupNormal(MPI_Comm ex0)
    // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
    // Computing the Cartesian coordinates of the neighboring processes
-   int dims[] = {processesX, processesZ};
+   int dims[] = {config.getProcessesX(), config.getProcessesZ()};
    int periods[] = {false, false};
    int reorder = false;
 
@@ -1374,6 +1382,9 @@ void setupNormal(MPI_Comm ex0)
    MPI_Cart_rank(cartcomm, center, &my_cart_rank);
 
    //===================================================================================
+   int px = config.getProcessesX();
+   int py = config.getProcessesY();
+   int pz = config.getProcessesZ();
 
    int west[] = {center[0] - 1, center[1]};
    int east[] = {center[0] + 1, center[1]};
@@ -1484,7 +1495,7 @@ void setupNormal(MPI_Comm ex0)
 
    //===================================================================================
    // Connecting the east neighbor
-   if (east[0] < processesX)
+   if (east[0] < config.getProcessesX())
    {
       MPI_Cart_rank(cartcomm, east, &rank);
 
@@ -1532,7 +1543,7 @@ void setupNormal(MPI_Comm ex0)
 
    //===================================================================================
    // Connecting the north neighbor
-   if( north[1] < processesZ ) {
+   if( north[1] < config.getProcessesZ() ) {
       MPI_Cart_rank( cartcomm, north, &rank );
 
       HalfSpace hs_y = halfSpacesY[center[0]];  
@@ -1582,7 +1593,7 @@ void setupNormal(MPI_Comm ex0)
  
    //===================================================================================
    // Connecting the south-east neighbor
-   if( southeast[0] < processesX && southeast[1] >= 0 ) {
+   if( southeast[0] < config.getProcessesX() && southeast[1] >= 0 ) {
       MPI_Cart_rank( cartcomm, southeast, &rank );
 
       HalfSpace hs_y = halfSpacesY[east[0]];  
@@ -1601,7 +1612,7 @@ void setupNormal(MPI_Comm ex0)
 
    //===================================================================================
    // Connecting the north-west neighbor
-   if( northwest[0] >= 0 && northwest[1] < processesZ ) {
+   if( northwest[0] >= 0 && northwest[1] < config.getProcessesZ() ) {
       MPI_Cart_rank( cartcomm, northwest, &rank );
 
       HalfSpace hs1 = halfSpaces[west[0]];
@@ -1630,7 +1641,7 @@ void setupNormal(MPI_Comm ex0)
  
    //===================================================================================
    // Connecting the north-west neighbor
-   if( northeast[0] < processesX && northeast[1] < processesZ ) {
+   if( northeast[0] < config.getProcessesX() && northeast[1] < config.getProcessesZ() ) {
       MPI_Cart_rank( cartcomm, northeast, &rank );
 
       HalfSpace hs_y = halfSpacesY[east[0]];  
@@ -1659,7 +1670,7 @@ void setupNormal(MPI_Comm ex0)
    // Setup of the VTK visualization
    if (g_vtk)
    {
-      vtk::WriterID vtk = vtk::activateWriter("./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
    }
 
    // Create a custom material for the benchmark

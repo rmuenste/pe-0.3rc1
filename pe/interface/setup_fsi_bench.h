@@ -1,6 +1,7 @@
 
 void setupFSIBench(MPI_Comm ex0) {
 
+  auto& config = SimulationConfig::getInstance();
   world = theWorld();
   world->setGravity( 0.0, 0.0, -9.807 );
   //world->setGravity( 0.0, 0.0, -9.81 );
@@ -32,20 +33,15 @@ void setupFSIBench(MPI_Comm ex0) {
 
   const real dx( 0.05 );
   const real dy( 0.05 );
-  //const real dz( 0.08 ) 2 subs;
-  //const real dz( 0.08 ) 2 subs;
-//  const real dx( -0.05 );
-//  const real dy( -0.05 );
-  //const real dz( 0.32 / processesZ );
-  const real dz( 0.2 / processesZ );
+  const real dz( 0.2 / config.getProcessesZ() );
 
   int my_rank;
   MPI_Comm_rank(ex0, &my_rank);
 
   // Checking the total number of MPI processes
-  if( processesX*processesY*processesZ != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
-     return;
+  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
+     std::exit(EXIT_FAILURE);
   }
 
   /////////////////////////////////////////////////////
@@ -57,7 +53,7 @@ void setupFSIBench(MPI_Comm ex0) {
 
 
   // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { processesX, processesY, processesZ };
+  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
   int periods[] = { false, false, false };
   int reorder   = false;
 
@@ -103,6 +99,10 @@ void setupFSIBench(MPI_Comm ex0) {
     std::cout << "3D coordinates were created" << std::endl;
     std::cout << "Rank:" << my_rank  << "->" << Vec3(center[0], center[1], center[2]) << std::endl;
   }
+
+  int px = config.getProcessesX();
+  int py = config.getProcessesY();
+  int pz = config.getProcessesZ();
 
   int west     [] = { center[0]-1, center[1]  , center[2] };
   int east     [] = { center[0]+1, center[1]  , center[2] };
@@ -421,7 +421,7 @@ void setupFSIBench(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
 
   const real lx = px * dx;
@@ -462,7 +462,7 @@ void setupFSIBench(MPI_Comm ex0) {
   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
   MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  TimeStep::stepsize( stepsize );
+  TimeStep::stepsize( config.getStepsize() );
 
   real sphereVol(0);
   real sphereMass(0);
@@ -478,7 +478,7 @@ void setupFSIBench(MPI_Comm ex0) {
   MPI_Reduce( &sphereMass, &totalMass, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &sphereVol, &totalVol, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
 
-  TimeStep::stepsize( stepsize );
+  TimeStep::stepsize( config.getStepsize() );
   std::string useLub = (useLubrication) ? "enabled" : "disabled";
 
   pe_EXCLUSIVE_SECTION( 0 ) {

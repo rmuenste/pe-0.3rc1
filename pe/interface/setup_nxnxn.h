@@ -1,5 +1,6 @@
 
 void setup2x2x2(MPI_Comm ex0) {
+  auto& config = SimulationConfig::getInstance();
 
   world = theWorld();
   world->setGravity( 0.0, 0.0, 0.0 );
@@ -20,20 +21,16 @@ void setup2x2x2(MPI_Comm ex0) {
   MPI_Comm_rank(ex0, &my_rank);
 
   // Checking the total number of MPI processes
-  if( processesX*processesY*processesZ != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << processesX*processesY*processesZ << "\n\n" << std::endl;
+  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
+     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
      return;
   }
 
   /////////////////////////////////////////////////////
   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
-  std::stringstream ss;
-
-//  DomainLog dm(ss.str());
-
   // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { processesX, processesY, processesZ };
+  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
   int periods[] = { false, false, false };
   int reorder   = false;
 
@@ -95,16 +92,16 @@ void setup2x2x2(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
 
   real radius ( 0.2 );
   real spacing ( 0.1 * radius );
   real   space( real(2)*radius+spacing );
 
-  const real lx = px * dx - 0.5 - space;
-  const real ly = py * dy - 0.5 - space;
-  const real lz = pz * dz - 0.5 - space;
+  const real lx = config.getProcessesX() * dx - 0.5 - space;
+  const real ly = config.getProcessesY() * dy - 0.5 - space;
+  const real lz = config.getProcessesZ() * dz - 0.5 - space;
 
   const int nx = (lx / space);
   const int ny = (ly / space);
@@ -159,12 +156,12 @@ void setup2x2x2(MPI_Comm ex0) {
      // Creating the ground plane
      g_ground = createPlane( 20000, 0.0, 0.0, 1.0,-0.0, granite, true );
      createPlane( 20001,+1.0, 0.0, 0.0,-0.0, granite, false ); // right border
-     createPlane( 20002,-1.0, 0.0, 0.0,-dx * px, granite, false ); // left border
+     createPlane( 20002,-1.0, 0.0, 0.0,-dx * config.getProcessesX(), granite, false ); // left border
  
      createPlane( 20002, 0.0, 1.0, 0.0,-0.0, granite, false ); // back border
-     createPlane( 20003, 0.0,-1.0, 0.0,-dy * py, granite, false ); // front border
+     createPlane( 20003, 0.0,-1.0, 0.0,-dy * config.getProcessesY(), granite, false ); // front border
 
-     createPlane( 20004, 0.0, 0.0,-1.0,-dz * pz, granite, false ); // top border
+     createPlane( 20004, 0.0, 0.0,-1.0,-dz * config.getProcessesZ(), granite, false ); // top border
   }
 
   // Synchronization of the MPI processes
@@ -182,7 +179,7 @@ void setup2x2x2(MPI_Comm ex0) {
   
   // Particles total = 
   // Volume of the domain
-  real domainVol = dx * processesX * processesY * dy * processesZ * dz;
+  real domainVol = dx * config.getProcessesX() * config.getProcessesY() * dy * config.getProcessesZ() * dz;
   real partTotal = primitivesTotal; 
   real partVol = real(4.0)/real(3.0) * M_PI * radius * radius * radius; 
   real totalPartVol = partTotal * partVol;
@@ -199,11 +196,11 @@ void setup2x2x2(MPI_Comm ex0) {
     }
     std::cout << "\n--" << "SIMULATION SETUP"
       << "--------------------------------------------------------------\n"
-      << " Total number of MPI processes           = " << px * py * pz << "\n"
+      << " Total number of MPI processes           = " << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n"
       << " Checkpoint used          = " << resume << "\n" 
-      << " Domain size x            = " << px * dx << "\n" 
-      << " Domain size y            = " << py * dy << "\n" 
-      << " Domain size z            = " << pz * dz << "\n" 
+      << " Domain size x            = " << config.getProcessesX() * dx << "\n" 
+      << " Domain size y            = " << config.getProcessesY() * dy << "\n" 
+      << " Domain size z            = " << config.getProcessesZ() * dz << "\n" 
       << " particles x              = " << nx << "\n" 
       << " particles y              = " << ny << "\n" 
       << " particles z              = " << nz << "\n" 
@@ -214,7 +211,7 @@ void setup2x2x2(MPI_Comm ex0) {
   }
 
   // Configuring the time step
-  TimeStep::stepsize(stepsize);
+  TimeStep::stepsize(config.getStepsize());
   MPI_Barrier(cartcomm);
    
    
