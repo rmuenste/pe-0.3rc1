@@ -439,7 +439,7 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
     SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
     std::cout << "[Creating particle] at: " << (position) << " in domain: " << my_rank << std::endl;
     std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
+    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
     ++idx;
   }
 
@@ -448,7 +448,7 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
     SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
     std::cout << "[Creating particle] at: " << (position) << " in domain: " << my_rank << std::endl;
     std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radius * radius * radius << std::endl;
+    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
     ++idx;
   }
 

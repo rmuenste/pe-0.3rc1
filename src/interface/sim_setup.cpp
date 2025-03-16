@@ -42,16 +42,7 @@ extern "C" void output_delaunay_(int *istep) {
 /////////////////////////////////////////////////////
 // Simulation parameters
 
-// Particle parameters
-const bool   spheres ( true   );  // Switch between spheres and granular particles
-const real   radius  ( 0.2    );  // The radius of spheres of the granular media
-const real   spacing (real(0.5)*radius + 0.0025 );  // Initial spacing in-between two spheres
-const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
-
 // Time parameters
-const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
-const size_t focussteps    (    100 );  // Number of initial close-up time steps
-const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 15000 );  // Number of time steps for the flowing granular media
 const real   stepsize      ( 0.001 );  // Size of a single time step
 
@@ -59,7 +50,6 @@ const real   stepsize      ( 0.001 );  // Size of a single time step
 const int    processesX( 3 );    // Number of processes in x-direction
 const int    processesY( 3  );    // Number of processes in y-direction
 const int    processesZ( 3  );    // Number of processes in y-direction
-const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
 const size_t seed( 12345 );
@@ -67,27 +57,6 @@ const size_t seed( 12345 );
 // Verbose mode
 const bool verbose( false );  // Switches the output of the simulation on and off
 
-// Fixed simulation parameters
-const size_t N    ( 30 );        // Number of boxes forming the hourglass
-const real   H    ( 9.0 );       // Height of the hourglass
-const real   L    ( 1.5 );       // Size of the center opening
-const real   W    ( 0.5 );       // Thickness of the hourglass walls
-const real   alpha( M_PI/3.9 );  // Slope of the hourglass walls (with respect to the x-axis)
-
-const real   beta ( M_PI*real(0.5)-alpha );                   // Slope of the hourglass walls (with respect to the z-axis)
-const real   g_gamma( real(2)*M_PI / N );                       // Sector angle for each box forming the hourglass
-const real   sina ( std::sin( alpha ) );                      // Sinus of the angle alpha
-const real   tana ( std::tan( alpha ) );                      // Tangens of the angle alpha
-const real   Z    ( H / sina );                               // Z-size of a single hourglass box
-const real   hZ   ( Z * real(0.5) );                          // Half Z-size of a single hourglass box
-const real   hL   ( L * real(0.5) );                          // Half the opening size
-const real   hW   ( W * real(0.5) );                          // Half the thickness of an hourglass wall
-//const real   R    ( H / tana + hL );                          // Radius of the hourglass
-const real   R    ( 1 );                          // Radius of the hourglass
-const real   Y    ( real(2)*R*std::tan( g_gamma*real(0.5) ) );  // Y-Size of a single hourglass box
-const real   space(real(2.)*radius+spacing );                 // Space initially required by a single particle
-
-bool g_povray  ( false );
 bool g_vtk( true );
 // 
 const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)

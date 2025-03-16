@@ -29,8 +29,6 @@ void setup2x2x2(MPI_Comm ex0) {
   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
 
   std::stringstream ss;
-  ss << "Bladomain" << my_rank << ".txt";
-  std::cout << ss.str() << std::endl;
 
 //  DomainLog dm(ss.str());
 
@@ -100,6 +98,10 @@ void setup2x2x2(MPI_Comm ex0) {
      vtk::WriterID vtk = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
   }
 
+  real radius ( 0.2 );
+  real spacing ( 0.1 * radius );
+  real   space( real(2)*radius+spacing );
+
   const real lx = px * dx - 0.5 - space;
   const real ly = py * dy - 0.5 - space;
   const real lz = pz * dz - 0.5 - space;
@@ -119,11 +121,9 @@ void setup2x2x2(MPI_Comm ex0) {
   }
 
   //space = 1.0;
-  //real   space( real(2)*radius+spacing );
   //real pos[] = { radius+spacing, radius+spacing, radius+spacing};
   //real pos[] = { space, 5.0, 0.5 * space};
   real pos[] = { space + 0.25, space + 0.25, space + 0.15 };
-  //real pos[] = { space, 5.0, 5.0};
 
 
   int idx = 0;

@@ -212,7 +212,6 @@ void setupSpan(MPI_Comm ex0) {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
-  real domainVol = L * L * L;
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
 
   std::string resOut = (resume) ? "resuming " : "not resuming ";

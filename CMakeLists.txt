@@ -236,8 +236,8 @@ if( EIGEN )
     INSTALL_COMMAND ""
     TEST_COMMAND ""
   )
-  
-  # Set Eigen include directory
+   
+  # Set Eigen include directory d
   ExternalProject_Get_Property(eigen SOURCE_DIR)
   set(EIGEN_INCLUDE_DIR ${SOURCE_DIR})
   
@@ -247,7 +247,7 @@ if( EIGEN )
   # Add definition to enable Eigen
   add_definitions(-DPE_USE_EIGEN)
   set( DEFINES "${DEFINES} PE_USE_EIGEN=1" )
-  message(STATUS "Eigen support enabled")
+  message(STATUS "Eigen support enabled}")
 else()
   set( DEFINES "${DEFINES} PE_USE_EIGEN=0" )
   #============================================================================

@@ -279,9 +279,9 @@ void setupKroupa(MPI_Comm ex0) {
   real bz = 0.0;
 
   // Size of the domain
-  const real lx( L );
-  const real ly( L );
-  const real lz( L );
+  const real lx( LX );
+  const real ly( LY );
+  const real lz( LZ );
   
   decomposePeriodicXY3D(center, bx, by, bz, 
                               dx, dy, dz, 
@@ -464,7 +464,7 @@ void setupKroupa(MPI_Comm ex0) {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
-  real domainVol = L * L * L;
+  real domainVol = LX * LY * LZ;
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
 
   std::string resOut = (resume) ? "resuming " : "not resuming ";
@@ -485,7 +485,7 @@ void setupKroupa(MPI_Comm ex0) {
       << " Lubrication h_c (slip length)           = " << slipLength << "\n"
       << " Lubrication threshold                   = " << lubricationThreshold << "\n"
       << " Contact threshold                       = " << contactThreshold << "\n"
-      << " Domain volume                           = " << L * L * L << "\n"
+      << " Domain volume                           = " << domainVol << "\n"
       << " Resume                                  = " << resOut  << "\n"
       << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
