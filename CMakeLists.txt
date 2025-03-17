@@ -55,6 +55,9 @@ set( COMPILER_FLAGS   ""      CACHE STRING   "Additional compiler flags."       
 set( LINKER_FLAGS     ""      CACHE STRING   "Additional linker flags when linking the examples."       )
 set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support."                         )
 
+# Option to enable/disable JSON support
+option(USE_JSON "Use nlohmann/json library" ON)
+
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 
 # Guide selection of boost libraries by FindBoost.cmake
@@ -297,6 +300,7 @@ else()
 endif()
 
 # Configuration of the Irrlicht library
+#==============================================================================
 if( IRRLICHT )
    find_package( Irrlicht REQUIRED )
 
@@ -340,6 +344,40 @@ else()
     # Add a compiler define if CGAL is false
     set( DEFINES "${DEFINES} HAVE_CGAL=0" )
 endif()
+
+# Configuration of the Json library
+#==============================================================================
+if(USE_JSON)
+    include(FetchContent)
+    
+    # Set custom download directory
+    set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/external" CACHE PATH "Directory for downloaded dependencies")
+    
+    # Configure nlohmann/json
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.2  # You can specify a specific version/tag
+    )
+    
+    # Make json available for the project
+    FetchContent_MakeAvailable(json)
+    
+    # Get the source directory for the downloaded library
+    FetchContent_GetProperties(json SOURCE_DIR json_SOURCE_DIR)
+    
+    # Add compile definition to indicate JSON is available
+    add_compile_definitions(HAVE_JSON)
+    
+    # Add the JSON include directory explicitly
+    list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${json_SOURCE_DIR}/include)
+    
+    message(STATUS "nlohmann/json will be downloaded to: ${FETCHCONTENT_BASE_DIR}")
+    message(STATUS "nlohmann/json include directory: ${json_SOURCE_DIR}/include")
+else()
+    message(STATUS "nlohmann/json will NOT be used")
+endif()
+
 
 # Configuration of the MPI library
 if( MPI )
