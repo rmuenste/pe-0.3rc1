@@ -5,6 +5,77 @@
 #include <iostream>
 #include <sstream>
 #include <pe/core/Types.h>
+#include <fstream>
+#include <stdexcept>
+
+#if HAVE_JSON
+#include <nlohmann/json.hpp>
+#endif
+#include <boost/filesystem.hpp>
+
+namespace pe {
+
+void loadSimulationConfig(const std::string &fileName) {
+
+#if HAVE_JSON
+    // Open the configuration file
+    std::ifstream file(fileName);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open config file: " + fileName);
+    }
+
+    // Parse the JSON file using nlohmann::json
+    nlohmann::json j;
+    file >> j;
+
+    // Retrieve the singleton instance of SimulationConfig
+    SimulationConfig &config = SimulationConfig::getInstance();
+
+    // Set time parameters
+    if (j.contains("timesteps_"))
+        config.setTimesteps(j["timesteps_"].get<size_t>());
+    if (j.contains("stepsize_"))
+        config.setStepsize(j["stepsize_"].get<real>());
+
+    // Set process parameters
+    if (j.contains("processesX_"))
+        config.setProcessesX(j["processesX_"].get<int>());
+    if (j.contains("processesY_"))
+        config.setProcessesY(j["processesY_"].get<int>());
+    if (j.contains("processesZ_"))
+        config.setProcessesZ(j["processesZ_"].get<int>());
+
+    // Set random number generator parameter
+    if (j.contains("seed_"))
+        config.setSeed(j["seed_"].get<size_t>());
+
+    // Set verbose mode
+    if (j.contains("verbose_"))
+        config.setVerbose(j["verbose_"].get<bool>());
+
+    // Set VTK visualization flag
+    if (j.contains("vtk_"))
+        config.setVtk(j["vtk_"].get<bool>());
+
+    // Set visualization parameters
+    if (j.contains("visspacing_"))
+        config.setVisspacing(j["visspacing_"].get<unsigned int>());
+    if (j.contains("pointerspacing_"))
+        config.setPointerspacing(j["pointerspacing_"].get<unsigned int>());
+
+    // Set checkpointer usage
+    if (j.contains("useCheckpointer_"))
+        config.setUseCheckpointer(j["useCheckpointer_"].get<bool>());
+
+    // Set the checkpoint path (assuming the JSON key is a string)
+    if (j.contains("checkpoint_path_"))
+        config.setCheckpointPath(boost::filesystem::path(j["checkpoint_path_"].get<std::string>()));
+
+#endif
+}
+
+} // namespace pe
+
 
 using namespace pe::povray;
 

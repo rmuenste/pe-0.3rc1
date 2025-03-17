@@ -1,0 +1,14 @@
+{
+    "timesteps_": 20000,
+    "stepsize_": 0.002,
+    "processesX_": 4,
+    "processesY_": 4,
+    "processesZ_": 4,
+    "seed_": 98765,
+    "verbose_": true,
+    "vtk_": false,
+    "visspacing_": 60,
+    "pointerspacing_": 120,
+    "useCheckpointer_": true,
+    "checkpoint_path_": "checkpoints/test/"
+}
