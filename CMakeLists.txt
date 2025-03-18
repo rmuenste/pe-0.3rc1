@@ -31,6 +31,7 @@ cmake_policy(SET CMP0057 NEW)
 
 # Enable ExternalProject module
 include(ExternalProject)
+include(FetchContent)
 #==================================================================================================
 #
 # Definition of global options
@@ -226,8 +227,8 @@ else()
 endif()
 
 # Configuration of the Eigen library
+#============================================================================
 if( EIGEN )
-  #============================================================================
   # Set up Eigen as an external project
   ExternalProject_Add(
     eigen
@@ -239,14 +240,14 @@ if( EIGEN )
     INSTALL_COMMAND ""
     TEST_COMMAND ""
   )
-   
+
   # Set Eigen include directory d
   ExternalProject_Get_Property(eigen SOURCE_DIR)
   set(EIGEN_INCLUDE_DIR ${SOURCE_DIR})
-  
+
   # Add Eigen include directory to the project
-  include_directories(SYSTEM ${EIGEN_INCLUDE_DIR})
-  
+  list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${EIGEN_INCLUDE_DIR})
+
   # Add definition to enable Eigen
   add_definitions(-DPE_USE_EIGEN)
   set( DEFINES "${DEFINES} PE_USE_EIGEN=1" )
@@ -285,7 +286,6 @@ if( CGAL )
   
   # Set CGAL include directory
   set(CGAL_INCLUDE_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install/include)
-
   
   # Add CGAL include directory to the project
   include_directories(SYSTEM ${CGAL_INCLUDE_DIR})
@@ -348,7 +348,6 @@ endif()
 # Configuration of the Json library
 #==============================================================================
 if(USE_JSON)
-    include(FetchContent)
     
     # Set custom download directory
     set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/external" CACHE PATH "Directory for downloaded dependencies")
@@ -503,6 +502,7 @@ if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
    set_target_properties( pe_static PROPERTIES PREFIX "lib" )
    target_link_libraries(pe_static PRIVATE ${PE_THIRD_PARTY_LIBS})
    target_include_directories(pe_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS})
+   add_dependencies(pe_static eigen)
 endif()
 
 if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
@@ -520,6 +520,7 @@ if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
    target_link_libraries(pe_shared PRIVATE ${PE_THIRD_PARTY_LIBS})
    target_include_directories(pe_shared PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS})
    target_compile_definitions(pe_shared PUBLIC PE_SHARED_LIB_SELECT_EXPORTS)
+   add_dependencies(pe_static eigen)
 endif()
 
 
