@@ -1,8 +1,11 @@
 
 void setupParticleBench(MPI_Comm ex0) {
+
   auto& config = SimulationConfig::getInstance();
 
   world = theWorld();
+
+  loadSimulationConfig("example.json");
   //world->setGravity( 0.0, 0.0, -9.807e-6 ); //9.807×10^-6 m/ms^2 (meters per millisecond squared)
   world->setGravity( 0.0, 0.0, -9.807 ); //9.807×10^-6 m/ms^2 (meters per millisecond squared)
 
@@ -11,12 +14,12 @@ void setupParticleBench(MPI_Comm ex0) {
   //real simRho( 970 );
 
   // Re 4.1 configuration
-  real simViscosity( 212e-3 );
-  real simRho( 965 );
+  //real simViscosity( 212e-3 );
+  //real simRho( 965 );
 
   // Re 31.9 configuration
-  //real simViscosity( 53e-3 );
-  //real simRho( 960 );
+  real simViscosity( 53e-3 );
+  real simRho( 960 );
 
   // New Benchmark Proposal
   //real simViscosity( 58e-3 );
@@ -53,11 +56,6 @@ void setupParticleBench(MPI_Comm ex0) {
 
   /////////////////////////////////////////////////////
   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
-
-  //std::stringstream ss;
-  //ss << "domain" << my_rank << ".txt";
-  //std::cout << ss.str() << std::endl;
-
 
   // Computing the Cartesian coordinates of the neighboring processes
   int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
@@ -411,12 +409,6 @@ void setupParticleBench(MPI_Comm ex0) {
   {
      // Creating the ground plane
      g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-//     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
-//     createPlane( 1779,-1.0, 0.0, 0.0,-10.0, granite, false ); // left border
-// 
-//     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
-//     createPlane( 1781, 0.0,-1.0, 0.0,-10, granite, false ); // front border
-
   }
 
   pe_EXCLUSIVE_SECTION(0) {

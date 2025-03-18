@@ -54,6 +54,16 @@ public:
     int getPy() const { return processesY_; }
     int getPz() const { return processesZ_; }
 
+    // Simulation parameters
+    real getVolumeFraction() const { return volumeFraction_; }
+    void setVolumeFraction(real value) { volumeFraction_ = value; }
+
+    real getBenchRadius() const { return benchRadius_; }
+    void setBenchRadius(real value) { benchRadius_ = value; }
+
+    bool getResume() const { return resume_; }
+    void setResume(bool value) { resume_ = value; }
+
     // Checkpoint path
     const boost::filesystem::path& getCheckpointPath() const { return checkpoint_path_; }
     void setCheckpointPath(const boost::filesystem::path& path) { checkpoint_path_ = path; }
@@ -89,6 +99,11 @@ private:
     
     // Checkpoint path
     boost::filesystem::path checkpoint_path_ = "checkpoints/";
+
+    real volumeFraction_ = 0.3;
+    real benchRadius_ = 0.0015;
+    bool resume_ = false;
+
 };
 
 } // namespace pe
