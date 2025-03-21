@@ -257,68 +257,61 @@ else()
   #============================================================================
 endif()
 
-# Configuration of the CGAL library
-if( CGAL )
-
-  # Set up CGAL as an external project
-  set(CGAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install)
-  set(CGAL_STAMP_DIR ${CMAKE_BINARY_DIR}/extern/cgal/src/cgal-stamp)
+#============================================================================
+# NEW APPROACH TO ADD CGAL
+#============================================================================
+# In subproject's CMakeLists.txt
+if(CGAL)
+  # Try to find an existing CGAL installation first
+  find_package(CGAL QUIET HINTS 
+    ${CGAL_DIR}                               # If passed from parent
+    ${CMAKE_BINARY_DIR}/extern/cgal/install/lib/cmake/CGAL  # Default install location from main project
+  )
   
-  # Check if the install stamp file exists
-  if(EXISTS "${CGAL_STAMP_DIR}/cgal-install")
-    # CGAL is already installed, create a custom target instead
-    add_custom_target(cgal)
+  if(CGAL_FOUND)
+    message(STATUS "Found existing CGAL installation")
+    # Use the found CGAL
+    include(${CGAL_USE_FILE})
+    
   else()
-    #============================================================================
-    # Set up CGAL as an external project
-    ExternalProject_Add(
-      cgal
-      GIT_REPOSITORY https://github.com/CGAL/cgal.git
-      GIT_TAG v5.3.2
-      PREFIX ${CMAKE_BINARY_DIR}/extern/cgal
-      CMAKE_ARGS 
-        -DCMAKE_INSTALL_PREFIX=${CGAL_INSTALL_DIR}
-        -DWITH_CGAL_ImageIO=OFF
-        -DWITH_CGAL_Qt5=OFF
-      TEST_COMMAND ""
-    )
+    message(STATUS "Building CGAL from source")
+    # Your existing ExternalProject_Add code for CGAL
+    set(CGAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install)
+    set(CGAL_STAMP_DIR ${CMAKE_BINARY_DIR}/extern/cgal/src/cgal-stamp)
+    
+    # Check if the install stamp file exists
+    if(EXISTS "${CGAL_STAMP_DIR}/cgal-install")
+      add_custom_target(cgal)
+    else()
+      ExternalProject_Add(
+        cgal
+        GIT_REPOSITORY https://github.com/CGAL/cgal.git
+        GIT_TAG v5.3.2
+        PREFIX ${CMAKE_BINARY_DIR}/extern/cgal
+        CMAKE_ARGS 
+          -DCMAKE_INSTALL_PREFIX=${CGAL_INSTALL_DIR}
+          -DWITH_CGAL_ImageIO=OFF
+          -DWITH_CGAL_Qt5=OFF
+        TEST_COMMAND ""
+      )
+    endif()
+    
+    # Set CGAL include directory
+    set(CGAL_INCLUDE_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install/include)
+    include_directories(SYSTEM ${CGAL_INCLUDE_DIR})
   endif()
-  
-  # Set CGAL include directory
-  set(CGAL_INCLUDE_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install/include)
-  
-  # Add CGAL include directory to the project
-  include_directories(SYSTEM ${CGAL_INCLUDE_DIR})
   
   # Add definition to enable CGAL
   add_definitions(-DPE_USE_CGAL)
-  set( DEFINES "${DEFINES} PE_USE_CGAL=1" )
+  set(DEFINES "${DEFINES} PE_USE_CGAL=1")
   message(STATUS "CGAL support enabled")
 else()
-  set( DEFINES "${DEFINES} PE_USE_CGAL=0" )
-  #============================================================================
+  set(DEFINES "${DEFINES} PE_USE_CGAL=0")
 endif()
+#============================================================================
 
-# Configuration of the Irrlicht library
-#==============================================================================
-if( IRRLICHT )
-   find_package( Irrlicht REQUIRED )
 
-   if( NOT IRRLICHT_FOUND )
-      message( ERROR ": Irrlicht engine not found!" )
-   endif()
-
-   INCLUDE_DIRECTORIES( SYSTEM ${IRRLICHT_INCLUDE_DIR} )
-   LINK_DIRECTORIES   ( ${IRRLICHT_LIBRARY_DIR} )
-   LINK_LIBRARIES     ( ${IRRLICHT_LIBRARY}     )
-
-   set( MEDIA_PATH "${PROJECT_SOURCE_DIR}/media/" )
-   set( HAVE_IRRLICHT BOOL ON )
-   set( DEFINES "${DEFINES} PE_MEDIA_PATH=${MEDIA_PATH} HAVE_IRRLICHT=1" )
-else()
-   set( DEFINES "${DEFINES} PE_MEDIA_PATH= HAVE_IRRLICHT=0" )
-endif()
-
+#============================================================================
 # Update library and linking settings for CGAL
 if( CGAL )
     message(STATUS "CGAL support is enabled.")
@@ -343,6 +336,28 @@ else()
     message(STATUS "CGAL support is disabled.")
     # Add a compiler define if CGAL is false
     set( DEFINES "${DEFINES} HAVE_CGAL=0" )
+endif()
+#============================================================================
+
+
+# Configuration of the Irrlicht library
+#==============================================================================
+if( IRRLICHT )
+   find_package( Irrlicht REQUIRED )
+
+   if( NOT IRRLICHT_FOUND )
+      message( ERROR ": Irrlicht engine not found!" )
+   endif()
+
+   INCLUDE_DIRECTORIES( SYSTEM ${IRRLICHT_INCLUDE_DIR} )
+   LINK_DIRECTORIES   ( ${IRRLICHT_LIBRARY_DIR} )
+   LINK_LIBRARIES     ( ${IRRLICHT_LIBRARY}     )
+
+   set( MEDIA_PATH "${PROJECT_SOURCE_DIR}/media/" )
+   set( HAVE_IRRLICHT BOOL ON )
+   set( DEFINES "${DEFINES} PE_MEDIA_PATH=${MEDIA_PATH} HAVE_IRRLICHT=1" )
+else()
+   set( DEFINES "${DEFINES} PE_MEDIA_PATH= HAVE_IRRLICHT=0" )
 endif()
 
 # Configuration of the Json library
