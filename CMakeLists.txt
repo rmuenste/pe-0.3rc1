@@ -269,12 +269,12 @@ if(CGAL)
   )
   
   if(CGAL_FOUND)
-    message(STATUS "Found existing CGAL installation")
+    #message(STATUS "Found existing CGAL installation")
     # Use the found CGAL
     include(${CGAL_USE_FILE})
     
   else()
-    message(STATUS "Building CGAL from source")
+    # message(STATUS "Building CGAL from source")
     # Your existing ExternalProject_Add code for CGAL
     set(CGAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install)
     set(CGAL_STAMP_DIR ${CMAKE_BINARY_DIR}/extern/cgal/src/cgal-stamp)
@@ -304,7 +304,7 @@ if(CGAL)
   # Add definition to enable CGAL
   add_definitions(-DPE_USE_CGAL)
   set(DEFINES "${DEFINES} PE_USE_CGAL=1")
-  message(STATUS "CGAL support enabled")
+  # message(STATUS "CGAL support enabled")
 else()
   set(DEFINES "${DEFINES} PE_USE_CGAL=0")
 endif()
