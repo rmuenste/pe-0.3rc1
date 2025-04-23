@@ -73,34 +73,6 @@ if(NOT CMAKE_BUILD_TYPE IN_LIST VALID_BUILD_TYPES)
   message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
-#==================================================================================================
-# C++ Standard Handling
-#==================================================================================================
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Initialize compiler flag variables
-# Check if the compiler supports C++17
-include(CheckCXXCompilerFlag)
-check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
-check_cxx_compiler_flag("-std=c++14" COMPILER_SUPPORTS_CXX14)
-
-if(COMPILER_SUPPORTS_CXX17)
-  set(CMAKE_CXX_STANDARD 17)
-  list(APPEND PE_CXX_FLAGS
-  -std=c++17
-  )
-  message(STATUS "C++17 support enabled.")
-elseif(COMPILER_SUPPORTS_CXX14)
-  set(CMAKE_CXX_STANDARD 14)
-  message(STATUS "C++14 support enabled.")
-  list(APPEND PE_CXX_FLAGS
-  -std=c++14
-  )
-else()
-  message(FATAL_ERROR "The compiler does not support C++14 or C++17.")
-endif()
 
 #==================================================================================================
 #
@@ -163,6 +135,35 @@ if ( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
    set( PE_SHARED_LIB_BUILD BOOL ON )
    set( DEFINES "${DEFINES} PE_SHARED_LIB_BUILD=1" )
    message( WARNING ": Shared library builds are currently experimental." )
+endif()
+
+#==================================================================================================
+# C++ Standard Handling
+#==================================================================================================
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Initialize compiler flag variables
+# Check if the compiler supports C++17
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
+check_cxx_compiler_flag("-std=c++14" COMPILER_SUPPORTS_CXX14)
+
+if(COMPILER_SUPPORTS_CXX17)
+  set(CMAKE_CXX_STANDARD 17)
+  list(APPEND PE_CXX_FLAGS
+  -std=c++17
+  )
+  message(STATUS "C++17 support enabled.")
+elseif(COMPILER_SUPPORTS_CXX14)
+  set(CMAKE_CXX_STANDARD 14)
+  message(STATUS "C++14 support enabled.")
+  list(APPEND PE_CXX_FLAGS
+  -std=c++14
+  )
+else()
+  message(FATAL_ERROR "The compiler does not support C++14 or C++17.")
 endif()
 
 #==================================================================================================

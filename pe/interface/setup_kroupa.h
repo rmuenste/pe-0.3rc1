@@ -11,6 +11,36 @@
 using namespace pe::povray;
 
 //=================================================================================================
+// Read xyz positions from a file
+//=================================================================================================
+std::vector<Vec3> read_xyz_file(const boost::filesystem::path& fileName) {
+    std::vector<Vec3> vectors;
+    std::ifstream file(fileName.string());
+    
+    // Check if the file was successfully opened
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open file " << fileName << std::endl;
+        return vectors; // Return an empty vector in case of error
+    }
+    
+    std::string line;
+    
+    // Read the file line by line
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);  // Create a string stream from the line
+        float x, y, z;
+        
+        // Parse the line for three float values
+        if (ss >> x >> y >> z) {
+            // Create a Vec3 object and add it to the vector
+            vectors.emplace_back(x, y, z);
+        }
+    }
+    
+    file.close();  // Close the file
+    return vectors;
+}
+//=================================================================================================
 // GenerateRandomPositionsBox
 //=================================================================================================
 std::vector<Vec3> generateRandomPositionsBox(real LX, real LY, real LZ, 
@@ -346,13 +376,24 @@ void setupKroupa(MPI_Comm ex0) {
   std::vector<Vec3> allPositions;
   int numPositions;
 
-  //======================================================================================== 
-  // The positions are created randomly on the root process and then bcasts 
-  // to the other processes.
-  //======================================================================================== 
-  pe_EXCLUSIVE_SECTION(0) {
-    allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
-    numPositions = allPositions.size();
+  if( config.getPackingMethod() == SimulationConfig::PackingMethod::External ) {
+    pe_EXCLUSIVE_SECTION(0) {
+      allPositions = read_xyz_file(config.getXyzFilePath());
+      numPositions = allPositions.size();
+    }
+  }
+  else if( config.getPackingMethod() == SimulationConfig::PackingMethod::Grid ) {
+    //======================================================================================== 
+    // The positions are created randomly on the root process and then bcasts 
+    // to the other processes.
+    //======================================================================================== 
+    pe_EXCLUSIVE_SECTION(0) {
+      allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
+      numPositions = allPositions.size();
+    }
+  }
+  else {
+    throw std::invalid_argument("Unknown packing method: " + config.getPackingMethod());
   }
 
   // Bcast the number of positions to other processes
@@ -393,13 +434,7 @@ void setupKroupa(MPI_Comm ex0) {
   }
   
   //=========================================================================================
-  BodyID particle;
-  Vec3 gpos(0.05 , 0.05, 0.1 - radius2 - epsilon);
-  Vec3 gpos2(0.05 , 0.05, gpos[2]);
-  //Vec3 gpos2(0.05 , 0.05, gpos[2] - (2. * radius2) - 6.0 * epsilon);
-  //std::cout << "Separation dist:  " << gpos[2] - gpos2[2] << std::endl;
 
-  //=========================================================================================
   if(!resume) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
