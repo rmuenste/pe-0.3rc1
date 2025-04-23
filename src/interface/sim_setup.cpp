@@ -71,6 +71,8 @@ SimulationConfig::SimulationConfig()
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
     , resume_(false)
+    , packingMethod_(PackingMethod::Grid)
+    , xyzFilePath_("")
 {
 }
 
@@ -324,6 +326,12 @@ void loadSimulationConfig(const std::string &fileName) {
     
     if (j.contains("benchRadius_"))
         config.setBenchRadius(j["benchRadius_"].get<real>());
+
+    if (j.contains("packingMethod_"))
+        config.setPackingMethod(SimulationConfig::parsePackingMethod(j["packingMethod_"].get<std::string>()));
+    
+    if (j.contains("xyzFilePath_"))
+        config.setXyzFilePath(boost::filesystem::path(j["xyzFilePath_"].get<std::string>()));        
 
 
 #endif

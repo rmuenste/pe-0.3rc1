@@ -10,8 +10,22 @@ namespace pe {
  */
 class SimulationConfig {
 public:
+
+    // enum for packing method 
+    enum PackingMethod {
+        Grid,
+        External
+    };
+
     // Singleton accessor
     static SimulationConfig& getInstance();
+
+
+    static PackingMethod parsePackingMethod(const std::string& method) {
+        if (method == "grid") return PackingMethod::Grid;
+        if (method == "external") return PackingMethod::External;
+        throw std::invalid_argument("Unknown packing method: " + method);
+    }
 
     // Time parameters
     size_t getTimesteps() const { return timesteps_; }
@@ -58,15 +72,25 @@ public:
     real getVolumeFraction() const { return volumeFraction_; }
     void setVolumeFraction(real value) { volumeFraction_ = value; }
 
+    // Bench radius
     real getBenchRadius() const { return benchRadius_; }
     void setBenchRadius(real value) { benchRadius_ = value; }
 
+    // Resume flag
     bool getResume() const { return resume_; }
     void setResume(bool value) { resume_ = value; }
 
     // Checkpoint path
     const boost::filesystem::path& getCheckpointPath() const { return checkpoint_path_; }
     void setCheckpointPath(const boost::filesystem::path& path) { checkpoint_path_ = path; }
+    
+    // Packing method
+    void setPackingMethod(PackingMethod method) { packingMethod_ = method; }
+    PackingMethod getPackingMethod() const { return packingMethod_; }
+    
+    void setXyzFilePath(const boost::filesystem::path& path) { xyzFilePath_ = path; }
+    const boost::filesystem::path& getXyzFilePath() const { return xyzFilePath_; }
+
 
 private:
     // Private constructor for singleton
@@ -100,9 +124,20 @@ private:
     // Checkpoint path
     boost::filesystem::path checkpoint_path_ = "checkpoints/";
 
+    // Volume fraction
     real volumeFraction_ = 0.3;
+
+    // This is the radius of the bench in the simulation
     real benchRadius_ = 0.0015;
+
+    // Resume flag
+    // This flag is used to determine if the simulation should resume from a checkpoint
     bool resume_ = false;
+
+    // Packing method
+    PackingMethod packingMethod_ = PackingMethod::Grid;
+
+    boost::filesystem::path xyzFilePath_ = "";
 
 };
 
