@@ -367,7 +367,10 @@ void setupKroupa(MPI_Comm ex0) {
   bool resume               = config.getResume();
   real epsilon              = 2e-4;
   real targetVolumeFraction = config.getVolumeFraction();
-  real radius2              = config.getBenchRadius() - epsilon;
+  real radius2              = config.getBenchRadius();
+  
+  if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid)
+    radius2              = config.getBenchRadius() - epsilon;
 
   int idx = 0;
   real h  = 0.0075;
@@ -512,6 +515,7 @@ void setupKroupa(MPI_Comm ex0) {
       << " Contact threshold                       = " << contactThreshold << "\n"
       << " Domain volume                           = " << domainVol << "\n"
       << " Resume                                  = " << resOut  << "\n"
+      << " Packing Method                          = " << ((config.getPackingMethod() == 1) ? "External" : "Grid") << "\n"
       << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
       << " Target VF[%]                            = " << config.getVolumeFraction() * 100.0 << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;

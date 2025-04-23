@@ -249,10 +249,10 @@ void stepSimulation() {
   
   //=================================================================================================
   // Trigger a new checkpointer write if activated
-//  if (config.getUseCheckpointer()) {
-//    checkpointer.trigger();
-//    checkpointer.flush();
-//  }
+  if (config.getUseCheckpointer()) {
+    checkpointer.trigger();
+    checkpointer.flush();
+  }
 
   timestep++;
 
