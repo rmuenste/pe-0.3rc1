@@ -315,6 +315,10 @@ void loadSimulationConfig(const std::string &fileName) {
     // Set checkpointer usage
     if (j.contains("useCheckpointer_"))
         config.setUseCheckpointer(j["useCheckpointer_"].get<bool>());
+    
+    // Set resume 
+    if (j.contains("resume_"))
+        config.setResume(j["resume_"].get<bool>());
 
     // Set the checkpoint path (assuming the JSON key is a string)
     if (j.contains("checkpoint_path_"))
