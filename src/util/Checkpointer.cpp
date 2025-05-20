@@ -3,7 +3,7 @@
 namespace pe {
 
 //*************************************************************************************************
-void Checkpointer::read( std::string name ) {
+void Checkpointer::read( const std::string &name ) {
    bbreader_.readFile( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
 }
 //*************************************************************************************************
@@ -43,7 +43,7 @@ void Checkpointer::trigger()
 
 
 //*************************************************************************************************
-void Checkpointer::write( std::string name ) {
+void Checkpointer::write( const std::string &name ) {
    boost::filesystem::create_directories( checkpointsPath_ );
    bbwriter_.writeFileAsync( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
    pe_PROFILING_SECTION {

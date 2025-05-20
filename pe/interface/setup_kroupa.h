@@ -344,6 +344,9 @@ void setupKroupa(MPI_Comm ex0) {
      vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
   }
 
+  // Checkpointer setup
+  checkpointer.setPath(config.getCheckpointPath());
+  checkpointer.tspacing_ = config.getPointerspacing();
 
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
@@ -448,6 +451,7 @@ void setupKroupa(MPI_Comm ex0) {
     } 
   }
   else {
+
     checkpointer.read( "../start.1" );
   }
   
