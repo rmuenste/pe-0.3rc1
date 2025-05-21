@@ -45,6 +45,7 @@ template<typename,typename,typename> class FrictionlessSolver;
 template<typename,typename,typename> class HardContactSemiImplicitTimesteppingSolvers;
 template<typename,typename,typename> class HardContactAndFluid;
 template<typename,typename,typename> class HardContactAndFluidWithLubrication;
+template<typename,typename,typename> class HardContactFluidLubrication;
 template<typename,typename,typename> class OpenCLSolver;
 template<typename,typename,typename> class PolyhedralFrictionSolver;
 

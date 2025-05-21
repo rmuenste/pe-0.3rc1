@@ -309,6 +309,8 @@ void loadSimulationConfig(const std::string &fileName) {
     // Set visualization parameters
     if (j.contains("visspacing_"))
         config.setVisspacing(j["visspacing_"].get<unsigned int>());
+
+    // Set the number of steps between checkpoints
     if (j.contains("pointerspacing_"))
         config.setPointerspacing(j["pointerspacing_"].get<unsigned int>());
 
