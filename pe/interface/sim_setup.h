@@ -91,6 +91,18 @@ public:
     void setXyzFilePath(const boost::filesystem::path& path) { xyzFilePath_ = path; }
     const boost::filesystem::path& getXyzFilePath() const { return xyzFilePath_; }
 
+    // Particle density
+    real getParticleDensity() const { return particleDensity_; }
+    void setParticleDensity(real value) { particleDensity_ = value; }
+
+    // Fluid viscosity
+    real getFluidViscosity() const { return fluidViscosity_; }
+    void setFluidViscosity(real value) { fluidViscosity_ = value; }
+
+    // Fluid density
+    real getFluidDensity() const { return fluidDensity_; }
+    void setFluidDensity(real value) { fluidDensity_ = value; }
+
 
 private:
     // Private constructor for singleton
@@ -138,6 +150,15 @@ private:
     PackingMethod packingMethod_ = PackingMethod::Grid;
 
     boost::filesystem::path xyzFilePath_ = "";
+
+    // Particle density
+    real particleDensity_ = 1.0;
+
+    // Fluid viscosity
+    real fluidViscosity_ = 1.0;
+
+    // Fluid density
+    real fluidDensity_ = 1.0;
 
 };
 

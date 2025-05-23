@@ -73,6 +73,9 @@ SimulationConfig::SimulationConfig()
     , resume_(false)
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
+    , particleDensity_(1.0)
+    , fluidViscosity_(1.0)
+    , fluidDensity_(1.0)
 {
 }
 
@@ -339,6 +342,17 @@ void loadSimulationConfig(const std::string &fileName) {
     if (j.contains("xyzFilePath_"))
         config.setXyzFilePath(boost::filesystem::path(j["xyzFilePath_"].get<std::string>()));        
 
+    // Set particle density
+    if (j.contains("particleDensity_"))
+        config.setParticleDensity(j["particleDensity_"].get<real>());
+
+    // Set fluid viscosity
+    if (j.contains("fluidViscosity_"))
+        config.setFluidViscosity(j["fluidViscosity_"].get<real>());
+
+    // Set fluid density
+    if (j.contains("fluidDensity_"))
+        config.setFluidDensity(j["fluidDensity_"].get<real>());
 
 #endif
 }
