@@ -224,8 +224,9 @@ void setupKroupa(MPI_Comm ex0) {
   world->setGravity( 0.0, 0.0, 0.0 );
 
   // Re 1.5 configuration
-  real simViscosity( 8.37e-5 );
-  real simRho( 1.0 );
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
+  real pRho( config.getParticleDensity() );
   world->setViscosity( simViscosity );
   world->setLiquidDensity( simRho );
 
@@ -350,7 +351,7 @@ void setupKroupa(MPI_Comm ex0) {
 
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  MaterialID elastic = createMaterial( "elastic", 1.0, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+  MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
   //======================================================================================== 
   // The way we atm include lubrication by increasing contact threshold
   // has problems: the particles get distributed to more domain bc the threshold AABB
@@ -445,7 +446,7 @@ void setupKroupa(MPI_Comm ex0) {
     for (int i = 0; i < allPositions.size(); ++i) {
       Vec3 &position = allPositions[i];
       if( world->ownsPoint(position)) {
-         SphereID sphere = createSphere(idx, position, radius2, elastic, true);
+         SphereID sphere = createSphere(idx, position, radius2, particleMaterial, true);
          ++idx;      
       }
     } 
@@ -460,8 +461,8 @@ void setupKroupa(MPI_Comm ex0) {
 
   pe_GLOBAL_SECTION
   {
-     createPlane( 99999, 0.0, 0.0, 1.0, 0.0, elastic, false ); // bottom border
-     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, elastic, false ); // top border
+     createPlane( 99999, 0.0, 0.0, 1.0, 0.0, particleMaterial, false ); // bottom border
+     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, particleMaterial, false ); // top border
   }
 
   pe_EXCLUSIVE_SECTION( 0 ) {
@@ -512,6 +513,7 @@ void setupKroupa(MPI_Comm ex0) {
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"
       << " Fluid Density                           = " << simRho << "\n"
+      << " Particle Density                        = " << simRho << "\n"
       << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Lubrication                             = " << useLub << "\n"
       << " Lubrication h_c (slip length)           = " << slipLength << "\n"
