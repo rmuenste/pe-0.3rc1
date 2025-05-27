@@ -82,5 +82,5 @@
  *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver
  */
-#define pe_CONSTRAINT_SOLVER  pe::response::HardContactFluidLubrication
+#define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
 //*************************************************************************************************
