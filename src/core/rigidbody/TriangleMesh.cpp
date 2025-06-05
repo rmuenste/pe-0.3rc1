@@ -98,8 +98,8 @@ namespace pe {
  * \param faceNormals A list of face normals if given
  * \param vertexNormals The list of vertex normals if given (for rendering only)
  * \param normalIndices The list of indices which assign three elements of vertexNormals to one triangle (for rendering only)
- * \param texturCoordinates The list of textur coordinates if given (for rendering only)
- * \param texturIndices The list of indices which assign three elements of texturCoordinates to one triangle (for rendering only)
+* \param texturCoordinates The list of texture coordinates if given (for rendering only)
+* \param texturIndices The list of indices which assign three elements of textureCoordinates to one triangle (for rendering only)
  * \param material The material of the triangle mesh.
  * \param visible Specifies if the triangle mesh is visible in a visualization.
  * \param convex Flag that can be set if it is sure that the triangle mesh is convex
@@ -157,8 +157,8 @@ TriangleMesh::TriangleMesh( id_t sid, id_t uid, const Vec3& gpos,
  * \param faceNormals A list of face normals if given
  * \param vertexNormals The list of vertex normals if given (for rendering only)
  * \param normalIndices The list of indices which assign three elements of vertexNormals to one triangle (for rendering only)
- * \param textureCoordinates The list of textur coordinates if given (for rendering only)
- * \param textureIndices The list of indices which assign three elements of texturCoordinates to one triangle (for rendering only)
+* \param textureCoordinates The list of texture coordinates if given (for rendering only)
+* \param textureIndices The list of indices which assign three elements of textureCoordinates to one triangle (for rendering only)
  * \param material The material of the triangle mesh.
  * \param visible Specifies if the triangle mesh is visible in a visualization.
  * \param fixed \a true to fix the triangle mesh, \a false to unfix it.
@@ -2353,7 +2353,7 @@ void TriangleMesh::updatePOVcacheString()
 
 #if HAVE_IRRLICHT
 //*************************************************************************************************
-/*!\brief Updtaes the cachedIrrlichtBuffer_ with constant part of the triangle meshes
+/*!\brief Updates the cachedIrrlichtBuffer_ with constant part of the triangle meshes
  *
  * \return void
  *
