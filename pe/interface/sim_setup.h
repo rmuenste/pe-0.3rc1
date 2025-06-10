@@ -14,7 +14,8 @@ public:
     // enum for packing method 
     enum PackingMethod {
         Grid,
-        External
+        External,
+        None
     };
 
     // Singleton accessor
@@ -24,6 +25,7 @@ public:
     static PackingMethod parsePackingMethod(const std::string& method) {
         if (method == "grid") return PackingMethod::Grid;
         if (method == "external") return PackingMethod::External;
+        if (method == "none") return PackingMethod::None;
         throw std::invalid_argument("Unknown packing method: " + method);
     }
 

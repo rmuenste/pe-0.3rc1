@@ -369,6 +369,9 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_kroupa.h>
 #include <pe/interface/setup_creep.h>
 #include <pe/interface/setup_archimedes.h>
+#include <pe/interface/setup_archimedes_z.h>
+#include <pe/interface/setup_archimedes_xy.h>
+#include <pe/interface/setup_archimedes_empty.h>
 #include <pe/interface/setup_span.h>
 //
 //=================================================================================================
