@@ -1,6 +1,7 @@
 #if HAVE_MPI
 #include <pe/core/MPI.h>
 #include <pe/config/Precision.h>
+#include <pe/math/Vector3.h>
 #include <boost/filesystem.hpp>
 
 namespace pe {
@@ -105,6 +106,10 @@ public:
     real getFluidDensity() const { return fluidDensity_; }
     void setFluidDensity(real value) { fluidDensity_ = value; }
 
+    // Gravity vector
+    const Vec3& getGravity() const { return gravity_; }
+    void setGravity(const Vec3& value) { gravity_ = value; }
+
 
 private:
     // Private constructor for singleton
@@ -161,6 +166,9 @@ private:
 
     // Fluid density
     real fluidDensity_ = 1.0;
+
+    // Gravity vector
+    Vec3 gravity_ = Vec3(0.0, 0.0, -9.81);
 
 };
 

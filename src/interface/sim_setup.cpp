@@ -76,6 +76,7 @@ SimulationConfig::SimulationConfig()
     , particleDensity_(1.0)
     , fluidViscosity_(1.0)
     , fluidDensity_(1.0)
+    , gravity_(0.0, 0.0, -9.81)
 {
 }
 
@@ -353,6 +354,16 @@ void loadSimulationConfig(const std::string &fileName) {
     // Set fluid density
     if (j.contains("fluidDensity_"))
         config.setFluidDensity(j["fluidDensity_"].get<real>());
+
+    // Set gravity vector
+    if (j.contains("gravity_")) {
+        if (j["gravity_"].is_array() && j["gravity_"].size() == 3) {
+            Vec3 gravity(j["gravity_"][0].get<real>(), 
+                        j["gravity_"][1].get<real>(), 
+                        j["gravity_"][2].get<real>());
+            config.setGravity(gravity);
+        }
+    }
 
 #endif
 }
