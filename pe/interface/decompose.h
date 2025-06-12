@@ -1752,6 +1752,281 @@ void decomposePeriodicXY3D(int center[],
    }
 }
 
+void decomposeDomain2DArchimedes(int center[], MPI_Comm cartcomm, 
+                                const std::vector<HalfSpace>& halfSpaces,
+                                const std::vector<HalfSpace>& halfSpacesY,
+                                int px, int py, int pz) {
+   
+   int west[] = {center[0] - 1, center[1]};
+   int east[] = {center[0] + 1, center[1]};
+
+   int south[] = {center[0], center[1] - 1};
+   int north[] = {center[0], center[1] + 1};
+
+   int southwest[] = { center[0]-1, center[1]-1 };
+   int southeast[] = { center[0]+1, center[1]-1 };
+
+   int northwest[] = { center[0]-1, center[1]+1 };
+   int northeast[] = { center[0]+1, center[1]+1 };
+
+   std::vector<HalfSpace> mySpaces;
+   int rank;
+
+   if (west[0] < 0)
+   {
+      HalfSpace hs_y = halfSpacesY[center[0]];  
+      if(center[1] != 0)
+      {
+        HalfSpace hsy_temp = halfSpacesY[center[0]];
+        hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+      }
+
+      mySpaces.push_back(halfSpaces[center[0]]);
+      mySpaces.push_back(hs_y);
+
+      defineLocalDomain(intersect(
+               halfSpaces[center[0]],
+               hs_y
+      ));
+   }
+   else
+   {
+      // -x of halfSpaces[mpisystem->getRank()] and +x of halfSpaces[mpisystem->getRank()-1]
+      HalfSpace hs = halfSpaces[center[0] - 1];
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+      
+      HalfSpace hs_y = halfSpacesY[center[0]];  
+      if(center[1] != 0)
+      {
+        HalfSpace hsy_temp = halfSpacesY[center[0]];
+        hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+      }
+
+      mySpaces.push_back(halfSpaces[center[0]]);
+      mySpaces.push_back(hs_flip);
+      mySpaces.push_back(hs_y);
+
+      defineLocalDomain(intersect(
+          halfSpaces[center[0]],
+          hs_flip,
+          hs_y
+         ));
+   }
+
+   //===================================================================================
+   // Connecting the west neighbor
+   if (west[0] > 0)
+   {
+      MPI_Cart_rank(cartcomm, west, &rank);
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+      HalfSpace hs = halfSpaces[west[0] - 1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+
+      HalfSpace hs_y = halfSpacesY[west[0]];  
+      if(west[1] != 0)
+      {
+        HalfSpace hsy_temp = halfSpacesY[west[0]];
+        hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+      }
+
+      connect(rank,
+              intersect(
+              hs1,
+              hs_flip,
+              hs_y
+              ));
+   }
+
+   if (west[0] == 0)
+   {
+      MPI_Cart_rank(cartcomm, west, &rank);
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+
+      HalfSpace hs_y = halfSpacesY[west[0]];  
+      if(west[1] != 0)
+      {
+        HalfSpace hsy_temp = halfSpacesY[west[0]];
+        hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+      }
+
+      connect(rank,intersect(
+              hs1,
+              hs_y
+              )
+      );
+   }
+
+   //===================================================================================
+   // Connecting the east neighbor
+   if (east[0] < px)
+   {
+      MPI_Cart_rank(cartcomm, east, &rank);
+
+      HalfSpace hs1 = halfSpaces[east[0]];
+      HalfSpace hs = halfSpaces[east[0] - 1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+
+      HalfSpace hs_y = halfSpacesY[east[0]];  
+      if(east[1] != 0)
+      {
+        HalfSpace hsy_temp = halfSpacesY[east[0]];
+        hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+      }
+
+      connect(rank,
+              intersect(
+              hs1,
+              hs_flip,
+              hs_y
+              ));
+   }
+
+   //===================================================================================
+   // Connecting the south neighbor
+   if( south[1] >= 0 ) {
+
+      MPI_Cart_rank( cartcomm, south, &rank );
+
+      HalfSpace hs_y = halfSpacesY[center[0]];  
+
+      if(mySpaces.size() == 2) {
+         connect( rank, intersect(
+            mySpaces[0],
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            mySpaces[0],
+            mySpaces[1],
+            hs_y));
+      }
+   }
+
+   //===================================================================================
+   // Connecting the north neighbor
+   if( north[1] < pz ) {
+      MPI_Cart_rank( cartcomm, north, &rank );
+
+      HalfSpace hs_y = halfSpacesY[center[0]];  
+      HalfSpace hsy_temp = halfSpacesY[center[0]];
+      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+
+      if(mySpaces.size() == 2) {
+         connect( rank, intersect(
+            mySpaces[0],
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            mySpaces[0],
+            mySpaces[1],
+            hs_y
+         ));
+      }
+   }
+
+   //===================================================================================
+   // Connecting the south-west neighbor
+   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
+      MPI_Cart_rank( cartcomm, southwest, &rank );
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+      HalfSpace hs_y = halfSpacesY[west[0]];  
+      if (west[0] > 0)
+      {
+         HalfSpace hs = halfSpaces[west[0] - 1];
+         HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+         connect( rank, intersect(
+            hs1,
+            hs_flip,
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            hs1,
+            hs_y
+         ));
+      }
+
+   }
+ 
+   //===================================================================================
+   // Connecting the south-east neighbor
+   if( southeast[0] < px && southeast[1] >= 0 ) {
+      MPI_Cart_rank( cartcomm, southeast, &rank );
+
+      HalfSpace hs_y = halfSpacesY[east[0]];  
+
+      HalfSpace hs1 = halfSpaces[east[0]];
+      HalfSpace hs = halfSpaces[east[0] - 1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+
+      connect( rank, intersect(
+         hs1,
+         hs_flip,
+         hs_y
+      ));
+   }
+
+   //===================================================================================
+   // Connecting the north-west neighbor
+   if( northwest[0] >= 0 && northwest[1] < pz ) {
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+
+      HalfSpace hs1 = halfSpaces[west[0]];
+
+      HalfSpace hs_y = halfSpacesY[west[0]];  
+      HalfSpace hsy_temp = halfSpacesY[west[0]];
+      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+
+      if (west[0] > 0)
+      {
+         HalfSpace hs = halfSpaces[west[0] - 1];
+         HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+         connect( rank, intersect(
+            hs1,
+            hs_flip,
+            hs_y
+         ));
+      }
+      else {
+         connect( rank, intersect(
+            hs1,
+            hs_y
+         ));
+      }
+   }
+ 
+   //===================================================================================
+   // Connecting the north-east neighbor
+   if( northeast[0] < px && northeast[1] < pz ) {
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+
+      HalfSpace hs_y = halfSpacesY[east[0]];  
+      HalfSpace hsy_temp = halfSpacesY[east[0]];
+      hs_y = HalfSpace(-hsy_temp.getNormal(), -hsy_temp.getDisplacement());
+
+      HalfSpace hs1 = halfSpaces[east[0]];
+      HalfSpace hs = halfSpaces[east[0] - 1];
+
+      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), -hs.getDisplacement());
+
+      connect( rank, intersect(
+         hs1,
+         hs_flip,
+         hs_y
+      ) );
+   }
+}
+
 
 }
 
