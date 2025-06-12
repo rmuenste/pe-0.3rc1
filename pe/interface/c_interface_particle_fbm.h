@@ -4,6 +4,8 @@
  * \param idx The index of the object to check against
  * \param pos The coordinates of the point
  */
+// Bound to Fortran function pointInsideObject(idx, pos) in
+// source/src_particles/dem_query.f90 line 204
 extern "C" bool pointInsideObject(int idx, double pos[3]) {
   int i = idx;
   return isInsideObject(i, pos);
@@ -17,6 +19,8 @@ extern "C" bool pointInsideObject(int idx, double pos[3]) {
  * \param idx The index of the remote object to check against
  * \param pos The coordinates of the point
  */
+// Bound to Fortran function pointInsideRemObject(idx, pos) in
+// source/src_particles/dem_query.f90 line 215
 extern "C" bool pointInsideRemObject(int idx, double pos[3]) {
   return isInsideRemObject(idx, pos);
 }
@@ -41,6 +45,8 @@ extern "C" bool checkAllParticles(int vidx, int *inpr, double pos[3], short int 
  *!\brief Synchronize the forces acting on the remote particles
  */
 extern "C"  
+// Bound to Fortran function rem_particles_index_map(idxMap) in
+// source/src_particles/dem_query.f90 line 234
 void rem_particles_index_map(int *idxMap) {
   getRemoteParticlesIndexMap(idxMap);
 }
@@ -74,6 +80,8 @@ void rem_map_particles_() {
  *!\brief Synchronize the forces acting on the remote particles
  */
 extern "C"  
+// Bound to Fortran function particles_index_map(idxMap) in
+// source/src_particles/dem_query.f90 line 241
 void particles_index_map(int *idxMap) {
   getParticlesIndexMap(idxMap);
 }
