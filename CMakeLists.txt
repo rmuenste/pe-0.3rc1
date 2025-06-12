@@ -191,19 +191,30 @@ set(PE_THIRD_PARTY_INCLUDE_DIRS)
 set( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-find_package( Boost COMPONENTS thread system filesystem program_options random REQUIRED)
+find_package(Boost REQUIRED COMPONENTS thread system filesystem program_options random)
 
 if( NOT Boost_FOUND )
    message( ERROR ": Boost library not found! " )
 endif()
 
 list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
-list(APPEND PE_THIRD_PARTY_LIBS ${Boost_LIBRARIES})
+list(APPEND PE_THIRD_PARTY_LIBS
+  Boost::thread
+  Boost::system
+  Boost::filesystem
+  Boost::program_options
+  Boost::random
+)
 
 if(USE_CGAL)
-  LINK_LIBRARIES     ( ${Boost_LIBRARIES} ${GMP_LIBRARIES} ${MPFR_LIBRARIES}   )
+  LINK_LIBRARIES(
+    Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
+    ${GMP_LIBRARIES} ${MPFR_LIBRARIES}
+  )
 else()
-  LINK_LIBRARIES     ( ${Boost_LIBRARIES} )
+  LINK_LIBRARIES(
+    Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
+  )
 endif()
 
 # Disable Boost auto-linking since it conflicts with cmake:
@@ -226,32 +237,19 @@ endif()
 # Configuration of the Eigen library
 #============================================================================
 if( EIGEN )
-  # Set up Eigen as an external project
-  ExternalProject_Add(
+  include(FetchContent)
+  FetchContent_Declare(
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG 3.4.0
-    PREFIX ${CMAKE_BINARY_DIR}/extern/eigen
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND ""
-    INSTALL_COMMAND ""
-    TEST_COMMAND ""
   )
-
-  # Set Eigen include directory d
-  ExternalProject_Get_Property(eigen SOURCE_DIR)
-  set(EIGEN_INCLUDE_DIR ${SOURCE_DIR})
-
-  # Add Eigen include directory to the project
-  list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${EIGEN_INCLUDE_DIR})
-
-  # Add definition to enable Eigen
+  FetchContent_MakeAvailable(eigen)
+  list(APPEND PE_THIRD_PARTY_LIBS Eigen3::Eigen)
   add_definitions(-DPE_USE_EIGEN)
   set( DEFINES "${DEFINES} PE_USE_EIGEN=1" )
   message(STATUS "Eigen support enabled")
 else()
   set( DEFINES "${DEFINES} PE_USE_EIGEN=0" )
-  #============================================================================
 endif()
 
 #============================================================================
