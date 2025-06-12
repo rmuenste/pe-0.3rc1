@@ -112,6 +112,8 @@ void synchronizeForces() {
  *!\brief The function returns a mapping from 0,..,numParticles-1 to the bodystorage corr. indices
  * \param idxMap Integer array that contains the mapping
  */
+// Bound to Fortran function particles_index_map(idxMap) in
+// source/src_particles/dem_query.f90 line 241
 void getParticlesIndexMap(int *idxMap) {
 
   WorldID world = theWorld();
@@ -151,6 +153,8 @@ void getParticlesIndexMap(int *idxMap) {
  *!\brief The function returns a mapping from 0,..,numRemParticles-1 to the shadow copy corr. indices
  * \param idxMap Integer array that contains the mapping
  */
+// Bound to Fortran function rem_particles_index_map(idxMap) in
+// source/src_particles/dem_query.f90 line 234
 void getRemoteParticlesIndexMap(int *idxMap) {
 
   WorldID world = theWorld();
@@ -465,6 +469,8 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
  * \param fbmid The id used in the fbm context
  * \param id An index from 0,..,numRemParticles-1 that we map & compare with fbmid
  */
+// Bound to Fortran function check_rem_id(fbmid, id) in
+// source/src_particles/dem_query.f90 line 226
 bool checkRemoteFBM(int fbmid, int id) {
   if (fbmid == 0)
     return false;
@@ -530,6 +536,8 @@ void check_remote_status_() {
  * \param idx The index of the object to check against
  * \param pos The coordinates of the point
  */
+// Bound to Fortran function pointInsideObject(idx, pos) in
+// source/src_particles/dem_query.f90 line 204
 bool isInsideObject(int idx, double pos[3]) {
   if(isSphereType(idx)) {
 
@@ -558,6 +566,8 @@ bool isInsideObject(int idx, double pos[3]) {
  * \param idx The index of the remote object to check against
  * \param pos The coordinates of the point
  */
+// Bound to Fortran function pointInsideRemObject(idx, pos) in
+// source/src_particles/dem_query.f90 line 215
 bool isInsideRemObject(int idx, double pos[3]) {
 
   WorldID world = theWorld();
@@ -589,6 +599,8 @@ bool isInsideRemObject(int idx, double pos[3]) {
  *!\brief The function returns the total number of particles
  */
 //=================================================================================================
+// Bound to Fortran function getTotalParticles() in
+// source/src_particles/dem_query.f90 line 35
 int getTotalParts() {
 
   WorldID world = theWorld();
@@ -618,6 +630,8 @@ int getTotalParts() {
 /*
  *!\brief The function returns the number of particles in the domain
  */
+// Bound to Fortran function getNumParticles() in
+// source/src_particles/dem_query.f90 line 46
 int getNumParts() {
 
   WorldID world = theWorld();
@@ -651,6 +665,8 @@ int getNumParts() {
 /*
  *!\brief The function returns the number of particles in the domain
  */
+// Bound to Fortran function getNumRemParticles() in
+// source/src_particles/dem_query.f90 line 56
 int getNumRemParts() {
 
   int numBodies =  theCollisionSystem()->getBodyShadowCopyStorage().size();
@@ -693,6 +709,8 @@ bool isPlaneType(int idx) {
  *
  * \param idx The id of the local particle
  */
+// Bound to Fortran function isSphere(idx) via isTypeSphere in
+// source/src_particles/dem_query.f90 line 184
 bool isSphereType(int idx) {
 
   WorldID world = theWorld();
@@ -753,6 +771,8 @@ bool isCapsuleType(int idx) {
  * \param pos The global position of the object
  * \param vel The global velocity of the object
  */
+// Bound to Fortran function getParticle(idx, lidx, uidx, time, pos, vel) in
+// source/src_particles/dem_query.f90 line 65
 void getObjByIdx(int idx,
                  int *lidx,
                  int *uidx,
@@ -799,6 +819,8 @@ void getObjByIdx(int idx,
  * \param pos The global position of the object
  * \param vel The global velocity of the object
  */
+// Bound to Fortran function getRemoteParticle(idx, lidx, uidx, time, pos, vel) in
+// source/src_particles/dem_query.f90 line 103
 void getRemoteObjByIdx(int idx,
                        int *lidx,
                        int *uidx,
@@ -845,6 +867,8 @@ void getRemoteObjByIdx(int idx,
  * \param pos The global position of the object
  * \param vel The global velocity of the object
  */
+// Bound to Fortran function setParticle(idx, lidx, uidx, time, pos, vel) in
+// source/src_particles/dem_query.f90 line 141
 void setObjByIdx(int idx,
                  int *lidx,
                  int *uidx,
@@ -921,6 +945,8 @@ void setRemoteObjByIdx(int idx,
  * \param pos The global position of the object
  * \param vel The global velocity of the object
  */
+// Bound to Fortran function setForces(idx, lidx, uidx, force, torque) in
+// source/src_particles/dem_query.f90 line 156
 void setForcesByIdx(int idx,
                     int *lidx,
                     int *uidx,
@@ -951,6 +977,8 @@ void setForcesByIdx(int idx,
  * \param pos The global position of the object
  * \param vel The global velocity of the object
  */
+// Bound to Fortran function setRemoteForces(idx, lidx, uidx, force, torque) in
+// source/src_particles/dem_query.f90 line 170
 void setRemoteForcesByIdx(int idx,
                           int *lidx,
                           int *uidx,
@@ -976,6 +1004,8 @@ void setRemoteForcesByIdx(int idx,
  *!\brief The function returns the radius the particle idx
  * \param idx The index of the particle
  */
+// Bound to Fortran function getParticleRadius(idx) in
+// source/src_particles/dem_query.f90 line 194
 double getObjRadius(int idx) {
 
   WorldID world = theWorld();
@@ -1015,6 +1045,8 @@ double getObjRadius(int idx) {
  * \param idx The index of the particle
  * \param particle A pointer to the particle structure 
  */
+// Bound to Fortran function getParticle2(idx, particle) in
+// source/src_particles/dem_query.f90 line 80
 void getPartStructByIdx(int idx, particleData_t *particle) {
 
   WorldID world = theWorld();
@@ -1063,7 +1095,9 @@ void getPartStructByIdx(int idx, particleData_t *particle) {
  * \param idx The system id
  * \param particle The particle structure
  */
-void setPartStruct(particleData_t *particle) { 
+// Bound to Fortran function setParticle2(particle) in
+// source/src_particles/dem_query.f90 line 92
+void setPartStruct(particleData_t *particle) {
 
   boost::uint64_t id = ByteArrayToUint64(particle->bytes);
 
@@ -1105,6 +1139,8 @@ void setPartStruct(particleData_t *particle) {
  *!\brief Sets values of the fortran struct to the c++ class. The function is callable from Fortran
  * \param particle A pointer to the particle structure 
  */
+// Bound to Fortran function setRemoteParticle2(particle) in
+// source/src_particles/dem_query.f90 line 130
 void setRemPartStruct(particleData_t *particle) {
 
   boost::uint64_t id = ByteArrayToUint64(particle->bytes);
@@ -1154,6 +1190,8 @@ void setRemPartStruct(particleData_t *particle) {
  * \param idx The index of the particle
  * \param particle A pointer to the particle structure 
  */
+// Bound to Fortran function getRemoteParticle2(idx, particle) in
+// source/src_particles/dem_query.f90 line 118
 void getRemPartStructByIdx(int idx, particleData_t *particle) {
 
   WorldID world = theWorld();
