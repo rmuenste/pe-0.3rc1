@@ -547,7 +547,6 @@ set(PE_EXAMPLES_INCLUDE_DIRS)
 if( EXAMPLES )
    message(STATUS "Building PE examples")
 
-   #set(PE_EXAMPLES_LIBS)
    list(APPEND PE_EXAMPLES_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
    list(APPEND PE_EXAMPLES_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
 
@@ -555,203 +554,54 @@ if( EXAMPLES )
       LINK_LIBRARIES( Irrlicht GLU Xxf86vm Xext X11 )
    endif()
 
-   # Boxstack example
-   add_executable( boxstack examples/boxstack/BoxStack.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/boxstack )
-   set_target_properties( boxstack PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/boxstack/ )
-   set_target_properties( boxstack PROPERTIES OUTPUT_NAME boxstack )
-   target_include_directories(boxstack PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(boxstack PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+   function(pe_add_example target src)
+      add_executable(${target} ${src})
+      set_target_properties(${target} PROPERTIES
+         RUNTIME_OUTPUT_DIRECTORY examples/${target}/
+         OUTPUT_NAME ${target})
+      target_include_directories(${target} PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
+      target_link_libraries(${target} PRIVATE
+         $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
+         $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
+         $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+      )
+   endfunction()
+
+   set(PE_SERIAL_EXAMPLES
+      "boxstack;examples/boxstack/BoxStack.cpp"
+      "chain;examples/chain/Chain.cpp"
+      "cradle;examples/cradle/Cradle.cpp"
+      "domino;examples/domino/Domino.cpp"
+      "granular;examples/granular/Granular.cpp"
+      "nano;examples/nano/Nano.cpp"
+      "well;examples/well/Well.cpp"
+      "shaker;examples/shaker/Shaker.cpp"
    )
 
-   # Chain example
-   add_executable( chain examples/chain/Chain.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/chain )
-   set_target_properties( chain PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/chain/ )
-   set_target_properties( chain PROPERTIES OUTPUT_NAME chain )
-   target_include_directories(chain PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(chain PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-
-   # Newton's cradle example
-   add_executable( cradle examples/cradle/Cradle.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/cradle )
-   set_target_properties( cradle PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/cradle/ )
-   set_target_properties( cradle PROPERTIES OUTPUT_NAME cradle )
-   target_include_directories(cradle PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(cradle PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-
-   # Domino example
-   add_executable( domino examples/domino/Domino.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/domino )
-   set_target_properties( domino PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/domino/ )
-   set_target_properties( domino PROPERTIES OUTPUT_NAME domino )
-   target_include_directories(domino PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(domino PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-
-   # Granular example
-   add_executable( granular examples/granular/Granular.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/granular )
-   set_target_properties( granular PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/granular/ )
-   set_target_properties( granular PROPERTIES OUTPUT_NAME granular )
-   target_include_directories(granular PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(granular PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-
-   # Nano example
-   add_executable( nano examples/nano/Nano.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/nano )
-   set_target_properties( nano PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/nano/ )
-   set_target_properties( nano PROPERTIES OUTPUT_NAME nano )
-   target_include_directories(nano PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(nano PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-
-   # Well example
-   add_executable( well examples/well/Well.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/well )
-   set_target_properties( well PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/well/ )
-   set_target_properties( well PROPERTIES OUTPUT_NAME well )
-   target_include_directories(well PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(well PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-
-   # Shaker example
-   add_executable( shaker examples/shaker/Shaker.cpp )
-   file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/shaker )
-   set_target_properties( shaker PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/shaker/ )
-   set_target_properties( shaker PROPERTIES OUTPUT_NAME shaker )
-   target_include_directories(shaker PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-   target_link_libraries(shaker PRIVATE 
-     $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-     $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-   )
-#   target_compile_options(shaker PRIVATE ) 
-#  list(APPEND PE_CXX_FLAGS
+   foreach(example_pair IN LISTS PE_SERIAL_EXAMPLES)
+      list(GET example_pair 0 exe_name)
+      list(GET example_pair 1 src)
+      pe_add_example(${exe_name} ${src})
+   endforeach()
 
    if( MPI AND MPI_CXX_FOUND )
-      # MPI-Cube example
-      add_executable( mpicube examples/mpicube/MPICube.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpicube )
-      set_target_properties( mpicube PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpicube/ )
-      set_target_properties( mpicube PROPERTIES OUTPUT_NAME mpicube )
-      target_include_directories(mpicube PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpicube PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+      set(PE_MPI_EXAMPLES
+         "mpicube;examples/mpicube/MPICube.cpp"
+         "mpigranular;examples/mpigranular/MPIGranular.cpp"
+         "mpihourglass;examples/mpihourglass/MPIHourglass.cpp"
+         "mpilabyrinth;examples/mpilabyrinth/MPILabyrinth.cpp"
+         "mpilss;examples/mpilss/MPILSS.cpp"
+         "mpinano;examples/mpinano/MPINano.cpp"
+         "mpistair;examples/mpistair/MPIStair.cpp"
+         "mpiimpact;examples/mpiimpact/MPIImpact.cpp"
       )
-
-      # MPI-Granular example
-      add_executable( mpigranular examples/mpigranular/MPIGranular.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpigranular )
-      set_target_properties( mpigranular PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpigranular/ )
-      set_target_properties( mpigranular PROPERTIES OUTPUT_NAME mpigranular )
-      target_include_directories(mpigranular PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpigranular PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-      # MPI-Hourglass example
-      add_executable( mpihourglass examples/mpihourglass/MPIHourglass.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpihourglass )
-      set_target_properties( mpihourglass PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpihourglass/ )
-      set_target_properties( mpihourglass PROPERTIES OUTPUT_NAME mpihourglass )
-      target_include_directories(mpihourglass PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpihourglass PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-      # MPI-Labyrinth example
-      add_executable( mpilabyrinth examples/mpilabyrinth/MPILabyrinth.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpilabyrinth )
-      set_target_properties( mpilabyrinth PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpilabyrinth/ )
-      set_target_properties( mpilabyrinth PROPERTIES OUTPUT_NAME mpilabyrinth )
-      target_include_directories(mpilabyrinth PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpilabyrinth PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-      # MPI-LSS example
-      add_executable( mpilss examples/mpilss/MPILSS.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpilss )
-      set_target_properties( mpilss PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpilss/ )
-      set_target_properties( mpilss PROPERTIES OUTPUT_NAME mpilss )
-      target_include_directories(mpilss PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpilss PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-      # MPI-Nano example
-      add_executable( mpinano examples/mpinano/MPINano.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpinano )
-      set_target_properties( mpinano PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpinano/ )
-      set_target_properties( mpinano PROPERTIES OUTPUT_NAME mpinano )
-      target_include_directories(mpinano PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpinano PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-      # MPI-Stair example
-      add_executable( mpistair examples/mpistair/MPIStair.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpistair )
-      set_target_properties( mpistair PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpistair/ )
-      set_target_properties( mpistair PROPERTIES OUTPUT_NAME mpistair )
-      target_include_directories(mpistair PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpistair PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-      # MPI-Impact example
-      add_executable( mpiimpact examples/mpiimpact/MPIImpact.cpp )
-      file( MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/examples/mpiimpact )
-      set_target_properties( mpiimpact PROPERTIES RUNTIME_OUTPUT_DIRECTORY examples/mpiimpact/ )
-      set_target_properties( mpiimpact PROPERTIES OUTPUT_NAME mpiimpact )
-      target_include_directories(mpiimpact PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
-      target_link_libraries(mpiimpact PRIVATE 
-        $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-        $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
-      )
-
-
+      foreach(example_pair IN LISTS PE_MPI_EXAMPLES)
+         list(GET example_pair 0 exe_name)
+         list(GET example_pair 1 src)
+         pe_add_example(${exe_name} ${src})
+      endforeach()
    endif()
+
 
    add_subdirectory(examples)
 endif()
