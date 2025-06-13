@@ -175,6 +175,7 @@ void makePlanesAndCreateHalfSpaces(std::vector<HalfSpace> &halfSpaces)
 //*************************************************************************************************
 std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
     std::vector<Vec3> vectors;
+    std::cout << "Trying to open vertices files" << std::endl;
     std::ifstream file(fileName);
     
     // Check if the file was successfully opened
@@ -329,16 +330,20 @@ void setupArchimedes(MPI_Comm ex0)
 {
    auto& config = SimulationConfig::getInstance();
    world = theWorld();
+
+   loadSimulationConfig("example.json");
+
    Vec3 myGravity(0.0, -980.665, 0.0);
    //myGravity *= 0.25;
    myGravity *= 0.15;
    world->setGravity(myGravity);
 
    // Re 1.5 configuration
-   real simViscosity(0.01e0);
-   real simRho(1.0);
-   world->setViscosity(simViscosity);
-   world->setLiquidDensity(simRho);
+   real simViscosity( config.getFluidViscosity() );
+   real simRho( config.getFluidDensity() );
+   real pRho( config.getParticleDensity() );
+   world->setViscosity( simViscosity );
+   world->setLiquidDensity( simRho );
 
    // Particle Bench Config
    real slipLength(0.01);
@@ -449,6 +454,7 @@ void setupArchimedes(MPI_Comm ex0)
 
    // Create a custom material for the benchmark
    MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+  MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    //========================================================================================
    // The way we atm include lubrication by increasing contact threshold
    // has problems: the particles get distributed to more domain bc the threshold AABB
@@ -465,40 +471,40 @@ void setupArchimedes(MPI_Comm ex0)
    // Here is how to create some random positions on a grid up to a certain
    // volume fraction.
    //=================================================================================
-   bool resume = true;
-   real epsilon = 2e-4;
-   real targetVolumeFraction = 0.10;
-   real radius2 = 0.05;
+   bool resume               = config.getResume();
+   real epsilon              = 2e-4;
+   real targetVolumeFraction = config.getVolumeFraction();
+   real radius2              = config.getBenchRadius();
+   sphereRad                 = config.getBenchRadius();
 
    int idx = 0;
    real h = 0.0075;
-   // GetNonNewtViscosity
-   // fbm force
-   // fbm update
    //=================================================================================
 
    //=================================================================================
    //                   We have a heavy throwing ball
    //=================================================================================
    std::string fileName = std::string("archimedes.obj");
-
    BodyID particle;
    //=================================================================================
-   if (!resume)
-   {
+  if (config.getPackingMethod() != SimulationConfig::PackingMethod::None) {
 
-     std::vector<Vec3> edges = readVectorsFromFile("vertices.txt");
-     std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges);
-     for (auto spherePos: spherePositions) {
-       if (world->ownsPoint(spherePos))
-       {
-         createSphere( idx++, spherePos, sphereRad, elastic );
+     if (!resume)
+     {
+
+       std::vector<Vec3> edges = readVectorsFromFile("vertices.txt");
+       std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges);
+       for (auto spherePos: spherePositions) {
+         if (world->ownsPoint(spherePos))
+         {
+           createSphere( idx++, spherePos, sphereRad, elastic );
+         }
        }
      }
-   }
-   else
-   {
-      checkpointer.read( "../start.76" );
+     else
+     {
+        checkpointer.read( "../start.76" );
+     }
    }
 
    for (int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
