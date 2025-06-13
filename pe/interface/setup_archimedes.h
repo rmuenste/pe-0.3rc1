@@ -454,7 +454,7 @@ void setupArchimedes(MPI_Comm ex0)
 
    // Create a custom material for the benchmark
    MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
-  MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
    //========================================================================================
    // The way we atm include lubrication by increasing contact threshold
    // has problems: the particles get distributed to more domain bc the threshold AABB
@@ -474,7 +474,6 @@ void setupArchimedes(MPI_Comm ex0)
    bool resume               = config.getResume();
    real epsilon              = 2e-4;
    real targetVolumeFraction = config.getVolumeFraction();
-   real radius2              = config.getBenchRadius();
    sphereRad                 = config.getBenchRadius();
 
    int idx = 0;
@@ -497,7 +496,7 @@ void setupArchimedes(MPI_Comm ex0)
        for (auto spherePos: spherePositions) {
          if (world->ownsPoint(spherePos))
          {
-           createSphere( idx++, spherePos, sphereRad, elastic );
+           createSphere( idx++, spherePos, sphereRad, particleMaterial );
          }
        }
      }
@@ -564,7 +563,7 @@ void setupArchimedes(MPI_Comm ex0)
 //   world->synchronize();
    //=================================================================================
 
-   const real   deltaT( 0.0005 );  // Size of a single time step
+   const real   deltaT( config.getStepsize() );  // Size of a single time step
    numBodies = 0;
    numTotal  = 0;
    j = 0;
