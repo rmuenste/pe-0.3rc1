@@ -566,36 +566,45 @@ if( EXAMPLES )
    endfunction()
 
    set(PE_SERIAL_EXAMPLES
-      "boxstack;examples/boxstack/BoxStack.cpp"
-      "chain;examples/chain/Chain.cpp"
-      "cradle;examples/cradle/Cradle.cpp"
-      "domino;examples/domino/Domino.cpp"
-      "granular;examples/granular/Granular.cpp"
-      "nano;examples/nano/Nano.cpp"
-      "well;examples/well/Well.cpp"
-      "shaker;examples/shaker/Shaker.cpp"
+      boxstack "examples/boxstack/BoxStack.cpp"
+      chain "examples/chain/Chain.cpp"
+      cradle "examples/cradle/Cradle.cpp"
+      domino "examples/domino/Domino.cpp"
+      granular "examples/granular/Granular.cpp"
+      nano "examples/nano/Nano.cpp"
+      well "examples/well/Well.cpp"
+      shaker "examples/shaker/Shaker.cpp"
    )
 
-   foreach(example_pair IN LISTS PE_SERIAL_EXAMPLES)
-      list(GET example_pair 0 exe_name)
-      list(GET example_pair 1 src)
+   list(LENGTH PE_SERIAL_EXAMPLES list_len)
+   math(EXPR pairs_count "${list_len} / 2")
+
+   foreach(i RANGE 0 ${pairs_count} 2)
+      math(EXPR j "${i} + 1")
+      list(GET PE_SERIAL_EXAMPLES ${i} exe_name)
+      list(GET PE_SERIAL_EXAMPLES ${j} src)
       pe_add_example(${exe_name} ${src})
    endforeach()
 
+
    if( MPI AND MPI_CXX_FOUND )
       set(PE_MPI_EXAMPLES
-         "mpicube;examples/mpicube/MPICube.cpp"
-         "mpigranular;examples/mpigranular/MPIGranular.cpp"
-         "mpihourglass;examples/mpihourglass/MPIHourglass.cpp"
-         "mpilabyrinth;examples/mpilabyrinth/MPILabyrinth.cpp"
-         "mpilss;examples/mpilss/MPILSS.cpp"
-         "mpinano;examples/mpinano/MPINano.cpp"
-         "mpistair;examples/mpistair/MPIStair.cpp"
-         "mpiimpact;examples/mpiimpact/MPIImpact.cpp"
+         mpicube "examples/mpicube/MPICube.cpp"
+         mpigranular "examples/mpigranular/MPIGranular.cpp"
+         mpihourglass "examples/mpihourglass/MPIHourglass.cpp"
+         mpilabyrinth "examples/mpilabyrinth/MPILabyrinth.cpp"
+         mpilss "examples/mpilss/MPILSS.cpp"
+         mpinano "examples/mpinano/MPINano.cpp"
+         mpistair "examples/mpistair/MPIStair.cpp"
+         mpiimpact "examples/mpiimpact/MPIImpact.cpp"
       )
-      foreach(example_pair IN LISTS PE_MPI_EXAMPLES)
-         list(GET example_pair 0 exe_name)
-         list(GET example_pair 1 src)
+
+      list(LENGTH PE_MPI_EXAMPLES list_len)
+      math(EXPR pairs_count "${list_len} / 2")
+      foreach(i RANGE 0 ${pairs_count} 2)
+         math(EXPR j "${i} / 2")
+         list(GET PE_MPI_EXAMPLES ${i} exe_name)
+         list(GET PE_MPI_EXAMPLES ${j} src)
          pe_add_example(${exe_name} ${src})
       endforeach()
    endif()
