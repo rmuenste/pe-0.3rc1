@@ -178,83 +178,13 @@ int main( int argc, char* argv[] )
    // Particle Bench Config 
    world->setLiquidSolid(true);
    world->setDamping( 1.0 );
-
+   Vec3 gravity( 0.0,-1.0, 0.0 );
+   RotationMatrix<real> rotation( Vec3( 0.0, 0.0, 1.0 ), -M_PI/real(4.) );
+   Vec3 newGravity = rotation * gravity; 
+   std::cout << "New gravity: " << newGravity << std::endl;
    // Lubrication switch
    bool useLubrication(true);
-
-   test_function1();
-   return 0;
-
-   HalfSpace hs(1, 0, 0, 0);
-   // Setup of the ground plane
-   PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
-   // +y
-   createPlane( id++, 0.0, 1.0, 0.0, -0.1, granite );
-   // -y
-   createPlane( id++, 0.0,-1.0, 0.0,  -0.1, granite );
-
-   real dx = 1, dy = 1, dz = 1;
-   defineLocalDomain( intersect(
-     intersect(
-     HalfSpace( Vec3(+1,0,0), +(0) ),
-     HalfSpace( Vec3(-1,0,0), -( 1 ) ) ),
-     HalfSpace( Vec3(0,+1,0), +(-0.5) ),
-     HalfSpace( Vec3(0,-1,0), -(0.5 ) ),
-     HalfSpace( Vec3(0,0,+1), +(0) ),
-     HalfSpace( Vec3(0,0,-1), -(0.025 ) ) ) );
-   //Lubrication particle 
-   //force: <1.34127e-08,-1.01345e-23,-4.40328e-24> | 
-   //vr: <-0.0205702,-1.00345e-09,-6.32506e-10> | 
-   //normal velocity: 0.0205702 | 
-   //normal <-1,3.35845e-08,2.37152e-08>
-   //Distance: 0.01 | 
-   //eps: 2.08333
-   real e2      = 2e-4;
-   real radius  = 0.005 - e2;
-   Vec3 vr(-0.0205702,-1.00345e-09,-6.32506e-10);
-   Vec3 n(-1,3.35845e-08,2.37152e-08);
-   real dist(0.01);
-   real eps(2.08333);
-   real rad = radius;
-//   Vec3 lubricationForce = theCollisionSystem()->calculateLubricationForce(simViscosity, vr, n, eps, rad);
-//   std::cout << "Lubrication particle force: " << lubricationForce 
-//                                               << " | vr: " 
-//                                               << vr 
-//                                               << " | Distance: " 
-//                                               << dist 
-//                                               << " | eps: " 
-//                                               << eps 
-//                                               << std::endl;
-//   eps = 0.1;
-//   lubricationForce = calculateLub(simViscosity, vr, n, eps, rad);
-//   std::cout << "Lubrication particle force: " << lubricationForce 
-//                                               << " | vr: " 
-//                                               << vr 
-//                                               << " | eps: " 
-//                                               << eps 
-//                                               << std::endl;
-//
-//   real slipLength( 0.001 );
-//   real fc =  calc_f_star(eps, slipLength);
-//   std::cout << "Corrected particle force: "   << lubricationForce  * fc
-//                                               << " | correction fc: " 
-//                                               << fc 
-//                                               << " | eps: " 
-//                                               << eps 
-//                                               << " | hc: " 
-//                                               << slipLength 
-//                                               << std::endl;
-
-   //Vec3 lubricationForce = calculateLubricationForce(visc, vr, normal, eps, rad);
-   //Vec3 pos = Vec3(1, 0.0, 0.0125);
-   //CylinderID cyl = createCylinder(id++, pos, 0.1, 0.01251, granite);
-   //cyl->rotate(0.0, -0.5 * M_PI, 0.0);
-   //SphereID sph = createSphere(id++, pos, 0.1, granite);
-
-   //theCollisionSystem()->getDomain().getGeometry()->intersectsWith(cyl);
-   //theCollisionSystem()->getDomain().getGeometry()->intersectsWith(sph);
-
-
+   
    return 0;
 }
 //*************************************************************************************************

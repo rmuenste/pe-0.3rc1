@@ -39,5 +39,91 @@
                 "USE_JSON": "ON"
             }
         }
+    ],
+    "buildPresets": [
+        {
+            "name": "library-only",
+            "displayName": "Build Main Library Only",
+            "description": "Build only the PE library (static/shared)",
+            "configurePreset": "debug",
+            "jobs": 2,
+            "targets": [
+                "pe_static",
+                "pe_shared"
+            ]
+        },
+        {
+            "name": "all-examples",
+            "displayName": "Build All Serial Examples",
+            "description": "Build all serial example applications",
+            "configurePreset": "debug",
+            "jobs": 2,
+            "targets": [
+                "boxstack",
+                "chain",
+                "cradle",
+                "domino",
+                "granular",
+                "nano",
+                "well",
+                "shaker"
+            ]
+        },
+        {
+            "name": "single-example-boxstack",
+            "displayName": "Build BoxStack Example",
+            "description": "Build only the boxstack example",
+            "configurePreset": "debug",
+            "jobs": 2,
+            "targets": [
+                "boxstack"
+            ]
+        },
+        {
+            "name": "single-example-chain",
+            "displayName": "Build Chain Example",
+            "description": "Build only the chain example",
+            "configurePreset": "debug",
+            "jobs": 2,
+            "targets": [
+                "chain"
+            ]
+        },
+        {
+            "name": "single-example-granular",
+            "displayName": "Build Granular Example",
+            "description": "Build only the granular example",
+            "configurePreset": "debug",
+            "jobs": 2,
+            "targets": [
+                "granular"
+            ]
+        },
+        {
+            "name": "library-and-examples",
+            "displayName": "Build Library + All Examples",
+            "description": "Build the PE library and all serial examples",
+            "configurePreset": "debug",
+            "jobs": 2,
+            "targets": [
+                "pe_static",
+                "pe_shared",
+                "boxstack",
+                "chain",
+                "cradle",
+                "domino",
+                "granular",
+                "nano",
+                "well",
+                "shaker"
+            ]
+        },
+        {
+            "name": "fast-build",
+            "displayName": "Fast Parallel Build",
+            "description": "Build everything with maximum parallelization",
+            "configurePreset": "debug",
+            "jobs": 2
+        }
     ]
 }

@@ -243,13 +243,18 @@ if( EIGEN )
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG 3.4.0
   )
-  FetchContent_MakeAvailable(eigen)
+
+  FetchContent_Populate(eigen)
+  # Create an interface library manually
+  add_library(Eigen3::Eigen INTERFACE IMPORTED)
+  target_include_directories(Eigen3::Eigen INTERFACE ${eigen_SOURCE_DIR})
+  
   list(APPEND PE_THIRD_PARTY_LIBS Eigen3::Eigen)
   add_definitions(-DPE_USE_EIGEN)
-  set( DEFINES "${DEFINES} PE_USE_EIGEN=1" )
+  set(DEFINES "${DEFINES} PE_USE_EIGEN=1")
   message(STATUS "Eigen support enabled")
 else()
-  set( DEFINES "${DEFINES} PE_USE_EIGEN=0" )
+  set(DEFINES "${DEFINES} PE_USE_EIGEN=0")
 endif()
 
 #============================================================================
@@ -512,7 +517,6 @@ if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
    set_target_properties( pe_static PROPERTIES PREFIX "lib" )
    target_link_libraries(pe_static PRIVATE ${PE_THIRD_PARTY_LIBS})
    target_include_directories(pe_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS})
-   add_dependencies(pe_static eigen)
 endif()
 
 if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
