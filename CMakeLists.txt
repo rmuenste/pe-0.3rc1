@@ -191,19 +191,30 @@ set(PE_THIRD_PARTY_INCLUDE_DIRS)
 set( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-find_package( Boost COMPONENTS thread system filesystem program_options random REQUIRED)
+find_package(Boost REQUIRED COMPONENTS thread system filesystem program_options random)
 
 if( NOT Boost_FOUND )
    message( ERROR ": Boost library not found! " )
 endif()
 
 list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
-list(APPEND PE_THIRD_PARTY_LIBS ${Boost_LIBRARIES})
+list(APPEND PE_THIRD_PARTY_LIBS
+  Boost::thread
+  Boost::system
+  Boost::filesystem
+  Boost::program_options
+  Boost::random
+)
 
 if(USE_CGAL)
-  LINK_LIBRARIES     ( ${Boost_LIBRARIES} ${GMP_LIBRARIES} ${MPFR_LIBRARIES}   )
+  LINK_LIBRARIES(
+    Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
+    ${GMP_LIBRARIES} ${MPFR_LIBRARIES}
+  )
 else()
-  LINK_LIBRARIES     ( ${Boost_LIBRARIES} )
+  LINK_LIBRARIES(
+    Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
+  )
 endif()
 
 # Disable Boost auto-linking since it conflicts with cmake:
@@ -226,32 +237,19 @@ endif()
 # Configuration of the Eigen library
 #============================================================================
 if( EIGEN )
-  # Set up Eigen as an external project
-  ExternalProject_Add(
+  include(FetchContent)
+  FetchContent_Declare(
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG 3.4.0
-    PREFIX ${CMAKE_BINARY_DIR}/extern/eigen
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND ""
-    INSTALL_COMMAND ""
-    TEST_COMMAND ""
   )
-
-  # Set Eigen include directory d
-  ExternalProject_Get_Property(eigen SOURCE_DIR)
-  set(EIGEN_INCLUDE_DIR ${SOURCE_DIR})
-
-  # Add Eigen include directory to the project
-  list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${EIGEN_INCLUDE_DIR})
-
-  # Add definition to enable Eigen
+  FetchContent_MakeAvailable(eigen)
+  list(APPEND PE_THIRD_PARTY_LIBS Eigen3::Eigen)
   add_definitions(-DPE_USE_EIGEN)
   set( DEFINES "${DEFINES} PE_USE_EIGEN=1" )
   message(STATUS "Eigen support enabled")
 else()
   set( DEFINES "${DEFINES} PE_USE_EIGEN=0" )
-  #============================================================================
 endif()
 
 #============================================================================
@@ -568,36 +566,45 @@ if( EXAMPLES )
    endfunction()
 
    set(PE_SERIAL_EXAMPLES
-      "boxstack;examples/boxstack/BoxStack.cpp"
-      "chain;examples/chain/Chain.cpp"
-      "cradle;examples/cradle/Cradle.cpp"
-      "domino;examples/domino/Domino.cpp"
-      "granular;examples/granular/Granular.cpp"
-      "nano;examples/nano/Nano.cpp"
-      "well;examples/well/Well.cpp"
-      "shaker;examples/shaker/Shaker.cpp"
+      boxstack "examples/boxstack/BoxStack.cpp"
+      chain "examples/chain/Chain.cpp"
+      cradle "examples/cradle/Cradle.cpp"
+      domino "examples/domino/Domino.cpp"
+      granular "examples/granular/Granular.cpp"
+      nano "examples/nano/Nano.cpp"
+      well "examples/well/Well.cpp"
+      shaker "examples/shaker/Shaker.cpp"
    )
 
-   foreach(example_pair IN LISTS PE_SERIAL_EXAMPLES)
-      list(GET example_pair 0 exe_name)
-      list(GET example_pair 1 src)
+   list(LENGTH PE_SERIAL_EXAMPLES list_len)
+   math(EXPR pairs_count "${list_len} / 2")
+
+   foreach(i RANGE 0 ${pairs_count} 2)
+      math(EXPR j "${i} + 1")
+      list(GET PE_SERIAL_EXAMPLES ${i} exe_name)
+      list(GET PE_SERIAL_EXAMPLES ${j} src)
       pe_add_example(${exe_name} ${src})
    endforeach()
 
+
    if( MPI AND MPI_CXX_FOUND )
       set(PE_MPI_EXAMPLES
-         "mpicube;examples/mpicube/MPICube.cpp"
-         "mpigranular;examples/mpigranular/MPIGranular.cpp"
-         "mpihourglass;examples/mpihourglass/MPIHourglass.cpp"
-         "mpilabyrinth;examples/mpilabyrinth/MPILabyrinth.cpp"
-         "mpilss;examples/mpilss/MPILSS.cpp"
-         "mpinano;examples/mpinano/MPINano.cpp"
-         "mpistair;examples/mpistair/MPIStair.cpp"
-         "mpiimpact;examples/mpiimpact/MPIImpact.cpp"
+         mpicube "examples/mpicube/MPICube.cpp"
+         mpigranular "examples/mpigranular/MPIGranular.cpp"
+         mpihourglass "examples/mpihourglass/MPIHourglass.cpp"
+         mpilabyrinth "examples/mpilabyrinth/MPILabyrinth.cpp"
+         mpilss "examples/mpilss/MPILSS.cpp"
+         mpinano "examples/mpinano/MPINano.cpp"
+         mpistair "examples/mpistair/MPIStair.cpp"
+         mpiimpact "examples/mpiimpact/MPIImpact.cpp"
       )
-      foreach(example_pair IN LISTS PE_MPI_EXAMPLES)
-         list(GET example_pair 0 exe_name)
-         list(GET example_pair 1 src)
+
+      list(LENGTH PE_MPI_EXAMPLES list_len)
+      math(EXPR pairs_count "${list_len} / 2")
+      foreach(i RANGE 0 ${pairs_count} 2)
+         math(EXPR j "${i} / 2")
+         list(GET PE_MPI_EXAMPLES ${i} exe_name)
+         list(GET PE_MPI_EXAMPLES ${j} src)
          pe_add_example(${exe_name} ${src})
       endforeach()
    endif()
