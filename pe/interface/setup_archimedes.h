@@ -175,7 +175,6 @@ void makePlanesAndCreateHalfSpaces(std::vector<HalfSpace> &halfSpaces)
 //*************************************************************************************************
 std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
     std::vector<Vec3> vectors;
-    std::cout << "Trying to open vertices files" << std::endl;
     std::ifstream file(fileName);
     
     // Check if the file was successfully opened
@@ -219,7 +218,7 @@ std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
     // User-defined parameters
     real sphereRadius = sphereRad;  // Radius of each sphere
     real dt = 1. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 33;      // Number of divisions along the curve
+    int num_steps = 20;      // Number of divisions along the curve
     std::vector<Vec3> sphere_positions;
 
     size_t num_edges = vecOfEdges.size() - 1;
@@ -333,10 +332,18 @@ void setupArchimedes(MPI_Comm ex0)
 
    loadSimulationConfig("example.json");
 
-   Vec3 myGravity(0.0, -980.665, 0.0);
-   //myGravity *= 0.25;
-   myGravity *= 0.15;
-   world->setGravity(myGravity);
+   Vec3 userGravity = config.getGravity();
+
+//   Vec3 myGravity(0.0, -980.665, 0.0);
+//   myGravity *= 0.5;
+//
+//   RotationMatrix<real> rotation( Vec3( 0.0, 0.0, 1.0 ), -M_PI/real(4.) );
+//   Vec3 newGravity = rotation * myGravity; 
+//
+//   //myGravity *= 0.25;
+//   //myGravity *= 0.15;
+//   world->setGravity(newGravity);
+   world->setGravity(userGravity);
 
    // Re 1.5 configuration
    real simViscosity( config.getFluidViscosity() );
@@ -451,6 +458,9 @@ void setupArchimedes(MPI_Comm ex0)
    {
      vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
    }
+   
+   // Checkpointer setup
+   checkpointer.tspacing_ = config.getPointerspacing();
 
    // Create a custom material for the benchmark
    MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
@@ -502,7 +512,7 @@ void setupArchimedes(MPI_Comm ex0)
      }
      else
      {
-        checkpointer.read( "../start.76" );
+        checkpointer.read( "../start.1" );
      }
    }
 
@@ -607,6 +617,7 @@ void setupArchimedes(MPI_Comm ex0)
                 << " Total number of MPI processes           = " << px * py * pz << "\n"
                 << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
                 << " Total number of particles               = " << particlesTotal << "\n"
+                << " particle radius                         = " << sphereRad << "\n"
                 << " particle volume                         = " << partVol << "\n"
                 << " Total number of objects                 = " << primitivesTotal << "\n"
                 << " Fluid Viscosity                         = " << simViscosity << "\n"

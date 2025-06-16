@@ -185,7 +185,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.00104167;
+  real h = 0.022;
 
   //=================================================================================================
   int subSteps = 1;
