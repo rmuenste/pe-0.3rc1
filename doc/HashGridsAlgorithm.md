@@ -18,7 +18,9 @@ The HHG algorithm partitions 3D space using several uniform grids of increasing 
 ---
 
 ## **3. Body Insertion and Removal**
-- Adding a body computes its cell hash from the AABB center coordinates using the cell span and bit masks. If inserting the body exceeds the grid's `enlargementThreshold_` (determined by `minimalGridDensity`), the grid is enlarged and all stored bodies are rehashed.
+- Adding a body computes its cell hash from the AABB center coordinates using the cell span and bit masks.
+  * `minimalGridDensity` is a configuration constant defining the minimum ratio of cells to bodies that must be maintained. If adding a body would drop the grid below this density, the grid must grow.
+  * Each grid stores an `enlargementThreshold_` equal to the current total cell count divided by `minimalGridDensity`. Once the number of inserted bodies equals this threshold, `enlarge()` doubles the cell count along every axis (increasing the total cell count eightfold) and recomputes the threshold for the new grid size.
 - Bodies store their hash and index within the cell container so that removal occurs in constant time. When the last body leaves a cell, the cell's container is deleted and the cell is removed from `occupiedCells_`.
 - During updates a body's hash is recomputed; if it changes, the body is removed from its old cell and inserted into the new one.
 
