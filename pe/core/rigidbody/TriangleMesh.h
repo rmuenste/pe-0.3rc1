@@ -201,6 +201,14 @@ public:
    bool hasClosedSurface() const;
    void setColoredTriangleTexture(povray::WriterID pov);
 
+   // CGAL-based operations
+   bool computeConvexHull(Vertices& hull_vertices, IndicesLists& hull_faces) const;
+   real distanceToPoint(const Vec3& point) const;
+   Vec3 closestPoint(const Vec3& point) const;
+   std::pair<Vec3, size_t> closestPointAndPrimitive(const Vec3& point) const;
+   void enableDistanceAcceleration(size_t maxReferencePoints = 100000);
+   void invalidateAABBTree();
+
    virtual inline Vec3 support                ( const Vec3& d ) const;
    virtual inline Vec3 supportContactThreshold( const Vec3& d ) const;
                   Vec3 support                ( const Vec3& d, size_t startIndex, size_t* pointIndex ) const;

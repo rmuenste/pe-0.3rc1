@@ -4,6 +4,7 @@
  *  \brief Header file for the default implementation of the TriangleMeshTrait class template.
  *
  *  Copyright (C) 2013-2014 Tobias Scharpff
+ *  Copyright (C) 2025-*?   Raphael Münster
  *
  *  This file is part of pe.
  *
@@ -33,8 +34,149 @@
 #include <pe/system/Precision.h>
 #include <pe/util/Types.h>
 
+// CGAL includes - only when CGAL is enabled
+#ifdef PE_USE_CGAL
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/convex_hull_3.h>
+#include <CGAL/Polyhedron_3.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/AABB_traits.h>
+#include <CGAL/AABB_triangle_primitive.h>
+#include <vector>
+#include <map>
+#include <memory>
+#endif
+
+
 
 namespace pe {
+
+//=================================================================================================
+//
+//  CGAL TAG SYSTEM FOR OPTIONAL INTEGRATION
+//
+//=================================================================================================
+
+namespace detail {
+
+#ifdef PE_USE_CGAL
+   struct HasCgalTag {};
+#else
+   struct NoCgalTag {};
+#endif
+
+//*************************************************************************************************
+/*!\brief Tag-dispatched CGAL functions for triangle mesh operations.
+ * \ingroup triangleMesh
+ *
+ * This struct provides a clean interface for CGAL-dependent operations through tag dispatch.
+ * When CGAL is not available, the default implementation provides no-op behavior.
+ */
+template<typename Tag>
+struct CgalFunctions
+{
+   // Default (no CGAL) implementation
+   static bool computeConvexHull(const Vertices& input_vertices, 
+                                Vertices& hull_vertices, 
+                                IndicesLists& hull_faces) {
+      // No-op implementation when CGAL is not available
+      hull_vertices.clear();
+      hull_faces.clear();
+      return false;
+   }
+};
+
+#ifdef PE_USE_CGAL
+//*************************************************************************************************
+/*!\brief CGAL-enabled specialization for convex hull computation.
+ * \ingroup triangleMesh
+ */
+template<>
+struct CgalFunctions<HasCgalTag>
+{
+   typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
+   typedef Kernel::Point_3 Point_3;
+   typedef Kernel::Triangle_3 Triangle_3;
+   typedef CGAL::Polyhedron_3<Kernel> Polyhedron;
+   
+   // AABB tree typedefs
+   typedef CGAL::AABB_triangle_primitive<Kernel, std::vector<Triangle_3>::const_iterator> Primitive;
+   typedef CGAL::AABB_traits<Kernel, Primitive> Traits;
+   typedef CGAL::AABB_tree<Traits> AABBTree;
+   
+   static bool computeConvexHull(const Vertices& input_vertices, 
+                                Vertices& hull_vertices, 
+                                IndicesLists& hull_faces) {
+      if (input_vertices.size() < 4) {
+         // Need at least 4 points for a 3D convex hull
+         return false;
+      }
+      
+      try {
+         // Convert PE vertices to CGAL points
+         std::vector<Point_3> cgal_points;
+         cgal_points.reserve(input_vertices.size());
+         
+         for (const auto& vertex : input_vertices) {
+            cgal_points.emplace_back(vertex[0], vertex[1], vertex[2]);
+         }
+         
+         // Compute convex hull using CGAL
+         Polyhedron hull_polyhedron;
+         CGAL::convex_hull_3(cgal_points.begin(), cgal_points.end(), hull_polyhedron);
+         
+         if (hull_polyhedron.empty()) {
+            return false;
+         }
+         
+         // Convert CGAL polyhedron back to PE format
+         hull_vertices.clear();
+         hull_faces.clear();
+         
+         // Create vertex mapping
+         std::map<typename Polyhedron::Vertex_const_handle, size_t> vertex_map;
+         size_t vertex_index = 0;
+         
+         // Extract vertices
+         for (auto v_it = hull_polyhedron.vertices_begin(); 
+              v_it != hull_polyhedron.vertices_end(); ++v_it) {
+            const Point_3& point = v_it->point();
+            hull_vertices.emplace_back(CGAL::to_double(point.x()), 
+                                      CGAL::to_double(point.y()), 
+                                      CGAL::to_double(point.z()));
+            vertex_map[v_it] = vertex_index++;
+         }
+         
+         // Extract faces
+         for (auto f_it = hull_polyhedron.facets_begin(); 
+              f_it != hull_polyhedron.facets_end(); ++f_it) {
+            auto he = f_it->facet_begin();
+            Vector3<size_t> face_indices;
+            
+            // Get the three vertices of the triangle face
+            face_indices[0] = vertex_map[he->vertex()];
+            ++he;
+            face_indices[1] = vertex_map[he->vertex()];
+            ++he;
+            face_indices[2] = vertex_map[he->vertex()];
+            
+            hull_faces.push_back(face_indices);
+         }
+         
+         return true;
+         
+      } catch (const std::exception& e) {
+         // CGAL operation failed
+         hull_vertices.clear();
+         hull_faces.clear();
+         return false;
+      }
+   }
+};
+#endif
+
+} // namespace detail
+
 
 //=================================================================================================
 //
@@ -81,6 +223,40 @@ public:
    virtual void move( real dt );
    //@}
    //**********************************************************************************************
+
+   //**CGAL Integration functions******************************************************************
+   /*!\name CGAL Integration functions */
+   //@{
+   bool computeConvexHull(Vertices& hull_vertices, IndicesLists& hull_faces) const;
+   real distanceToPoint(const Vec3& point) const;
+   Vec3 closestPoint(const Vec3& point) const;
+   std::pair<Vec3, size_t> closestPointAndPrimitive(const Vec3& point) const;
+   void enableDistanceAcceleration(size_t maxReferencePoints = 100000);
+   void invalidateAABBTree();
+   //@}
+   //**********************************************************************************************
+
+private:
+   //**CGAL AABB Tree members***********************************************************************
+   /*!\name CGAL AABB Tree members */
+   //@{
+#ifdef PE_USE_CGAL
+   mutable std::unique_ptr<detail::CgalFunctions<detail::HasCgalTag>::AABBTree> aabbTree_;
+   mutable std::vector<detail::CgalFunctions<detail::HasCgalTag>::Triangle_3> triangles_;
+   mutable bool aabbTreeValid_;
+   mutable bool distanceAccelerationEnabled_;
+   mutable size_t maxReferencePoints_;
+#endif
+   //@}
+   //**********************************************************************************************
+
+   //**CGAL AABB Tree helper methods***************************************************************
+   /*!\name CGAL AABB Tree helper methods */
+   //@{
+   void buildAABBTree() const;
+   void ensureAABBTreeValid() const;
+   //@}
+   //**********************************************************************************************
 };
 //*************************************************************************************************
 
@@ -109,6 +285,11 @@ TriangleMeshTrait<C>::TriangleMeshTrait( id_t sid, id_t uid, const Vec3& gpos,
                                  const Vertices& vertices, const IndicesLists& faceIndices,
                                  MaterialID material, bool visible )
    : Parent( sid, uid, gpos, vertices, faceIndices, material, visible )  // Initialization of the parent class
+#ifdef PE_USE_CGAL
+   , aabbTreeValid_(false)
+   , distanceAccelerationEnabled_(false)
+   , maxReferencePoints_(100000)
+#endif
 {}
 //*************************************************************************************************
 
@@ -154,7 +335,6 @@ void TriangleMeshTrait<C>::move( real dt )
    // Checking the state of the triangle mesh
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid triangle mesh state detected" );
    pe_INTERNAL_ASSERT( !hasSuperBody(), "Invalid superordinate body detected" );
-   std::cout << "foo" << std::endl;//TODO
    // Resetting the contact node and removing all attached contacts
    resetNode();
    contacts_.clear();
@@ -205,6 +385,9 @@ void TriangleMeshTrait<C>::move( real dt )
       // Setting the axis-aligned bounding box
       TriangleMeshBase::calcBoundingBox();
 
+      // Invalidate AABB tree since the mesh has moved
+      invalidateAABBTree();
+
       // Calculating the current motion of the triangle mesh
       calcMotion();
    }
@@ -215,6 +398,254 @@ void TriangleMeshTrait<C>::move( real dt )
 
    // Checking the state of the triangle mesh
    pe_INTERNAL_ASSERT( checkInvariants(), "Invalid triangle mesh state detected" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Computes the convex hull of the triangle mesh vertices using CGAL.
+ *
+ * \param hull_vertices Output parameter for the convex hull vertices.
+ * \param hull_faces Output parameter for the convex hull face indices.
+ * \return True if the convex hull was computed successfully, false otherwise.
+ *
+ * This function computes the convex hull of the current triangle mesh's vertices using CGAL
+ * (if available). When CGAL is not available, the function returns false and clears the output
+ * parameters. The implementation uses tag dispatch to select the appropriate behavior at
+ * compile time based on whether PE_USE_CGAL is defined.
+ */
+template< typename C >  // Type of the configuration
+bool TriangleMeshTrait<C>::computeConvexHull(Vertices& hull_vertices, IndicesLists& hull_faces) const
+{
+#ifdef PE_USE_CGAL
+   using Tag = detail::HasCgalTag;
+#else
+   using Tag = detail::NoCgalTag;
+#endif
+   
+   // Get the vertices from the base class
+   const Vertices& input_vertices = this->getBFVertices();
+   
+   // Use tag dispatch to call the appropriate implementation
+   return detail::CgalFunctions<Tag>::computeConvexHull(input_vertices, hull_vertices, hull_faces);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Builds the CGAL AABB tree from the current triangle mesh.
+ *
+ * This method constructs the AABB tree from the current world-frame vertices of the triangle
+ * mesh. The tree is built only when CGAL is available, otherwise this is a no-op.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::buildAABBTree() const
+{
+#ifdef PE_USE_CGAL
+   // Ensure the vertex cache is up to date
+   const_cast<TriangleMeshTrait<C>*>(this)->updateCache();
+   
+   // Get current world-frame vertices and face indices
+   const Vertices& vertices = this->getBFVertices();
+   const IndicesLists& faces = this->getFaceIndices();
+   
+   // Clear and rebuild triangle list
+   triangles_.clear();
+   triangles_.reserve(faces.size());
+   
+   // Convert PE triangle data to CGAL triangles
+   typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
+   typedef detail::CgalFunctions<detail::HasCgalTag>::Triangle_3 Triangle_3;
+   
+   for (const auto& face : faces) {
+      if (face[0] < vertices.size() && face[1] < vertices.size() && face[2] < vertices.size()) {
+         const Vec3& v0 = vertices[face[0]];
+         const Vec3& v1 = vertices[face[1]];
+         const Vec3& v2 = vertices[face[2]];
+         
+         Point_3 p0(v0[0], v0[1], v0[2]);
+         Point_3 p1(v1[0], v1[1], v1[2]);
+         Point_3 p2(v2[0], v2[1], v2[2]);
+         
+         triangles_.emplace_back(p0, p1, p2);
+      }
+   }
+   
+   // Create and build the AABB tree
+   aabbTree_ = std::make_unique<detail::CgalFunctions<detail::HasCgalTag>::AABBTree>(
+      triangles_.begin(), triangles_.end());
+   
+   // Enable distance acceleration if requested
+   if (distanceAccelerationEnabled_) {
+      aabbTree_->accelerate_distance_queries();
+   }
+   
+   aabbTreeValid_ = true;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Ensures the AABB tree is valid, rebuilding it if necessary.
+ *
+ * This method checks if the AABB tree is valid and rebuilds it if it has been invalidated
+ * due to mesh movement or other changes.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::ensureAABBTreeValid() const
+{
+#ifdef PE_USE_CGAL
+   if (!aabbTreeValid_) {
+      buildAABBTree();
+   }
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Invalidates the AABB tree, forcing it to be rebuilt on next access.
+ *
+ * This method should be called whenever the triangle mesh has moved or been modified
+ * in a way that would affect the spatial structure.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::invalidateAABBTree()
+{
+#ifdef PE_USE_CGAL
+   aabbTreeValid_ = false;
+   aabbTree_.reset();  // Free memory immediately
+   triangles_.clear();
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Computes the squared distance from a point to the triangle mesh surface.
+ *
+ * \param point The query point in world coordinates.
+ * \return The squared distance to the closest point on the mesh surface.
+ *
+ * This method uses CGAL's AABB tree for efficient distance computation. When CGAL is not
+ * available, it returns 0.0.
+ */
+template< typename C >  // Type of the configuration
+real TriangleMeshTrait<C>::distanceToPoint(const Vec3& point) const
+{
+#ifdef PE_USE_CGAL
+   ensureAABBTreeValid();
+   
+   if (!aabbTree_) {
+      return real(0);
+   }
+   
+   typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
+   Point_3 query(point[0], point[1], point[2]);
+   
+   return static_cast<real>(aabbTree_->squared_distance(query));
+#else
+   return real(0);
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Finds the closest point on the triangle mesh surface to a query point.
+ *
+ * \param point The query point in world coordinates.
+ * \return The closest point on the mesh surface in world coordinates.
+ *
+ * This method uses CGAL's AABB tree for efficient closest point computation. When CGAL is not
+ * available, it returns the input point.
+ */
+template< typename C >  // Type of the configuration
+Vec3 TriangleMeshTrait<C>::closestPoint(const Vec3& point) const
+{
+#ifdef PE_USE_CGAL
+   ensureAABBTreeValid();
+   
+   if (!aabbTree_) {
+      return point;
+   }
+   
+   typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
+   Point_3 query(point[0], point[1], point[2]);
+   
+   Point_3 closest = aabbTree_->closest_point(query);
+   return Vec3(CGAL::to_double(closest.x()), 
+               CGAL::to_double(closest.y()), 
+               CGAL::to_double(closest.z()));
+#else
+   return point;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Finds the closest point and primitive ID on the triangle mesh surface.
+ *
+ * \param point The query point in world coordinates.
+ * \return A pair containing the closest point and the face index.
+ *
+ * This method uses CGAL's AABB tree for efficient closest point and primitive computation.
+ * When CGAL is not available, it returns the input point and face index 0.
+ */
+template< typename C >  // Type of the configuration
+std::pair<Vec3, size_t> TriangleMeshTrait<C>::closestPointAndPrimitive(const Vec3& point) const
+{
+#ifdef PE_USE_CGAL
+   ensureAABBTreeValid();
+   
+   if (!aabbTree_) {
+      return std::make_pair(point, 0);
+   }
+   
+   typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
+   Point_3 query(point[0], point[1], point[2]);
+   
+   auto result = aabbTree_->closest_point_and_primitive(query);
+   Point_3 closest = result.first;
+   
+   // The primitive iterator points to our triangle in the triangles_ vector
+   size_t primitive_id = std::distance(triangles_.cbegin(), result.second);
+   
+   return std::make_pair(
+      Vec3(CGAL::to_double(closest.x()), 
+           CGAL::to_double(closest.y()), 
+           CGAL::to_double(closest.z())),
+      primitive_id
+   );
+#else
+   return std::make_pair(point, 0);
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables distance query acceleration for large triangle meshes.
+ *
+ * \param maxReferencePoints Maximum number of reference points for distance acceleration.
+ *
+ * This method enables CGAL's distance query acceleration, which can significantly improve
+ * performance for large meshes at the cost of increased memory usage.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::enableDistanceAcceleration(size_t maxReferencePoints)
+{
+#ifdef PE_USE_CGAL
+   distanceAccelerationEnabled_ = true;
+   maxReferencePoints_ = maxReferencePoints;
+   
+   // If tree already exists, apply acceleration immediately
+   if (aabbTree_) {
+      aabbTree_->accelerate_distance_queries();
+   }
+#endif
 }
 //*************************************************************************************************
 

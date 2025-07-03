@@ -178,7 +178,7 @@ int main( int argc, char* argv[] )
    // Particle Bench Config 
    world->setLiquidSolid(true);
    world->setDamping( 1.0 );
-   Vec3 gravity( 0.0,-1.0, 0.0 );
+   Vec3 gravity( 0.0,-981.0, 0.0 );
    RotationMatrix<real> rotation( Vec3( 0.0, 0.0, 1.0 ), -M_PI/real(4.) );
    Vec3 newGravity = rotation * gravity; 
    std::cout << "New gravity: " << newGravity << std::endl;

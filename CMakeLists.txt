@@ -272,7 +272,7 @@ if(CGAL)
     #message(STATUS "Found existing CGAL installation")
     # Use the found CGAL
     include(${CGAL_USE_FILE})
-    
+    add_custom_target(cgal)
   else()
     # message(STATUS "Building CGAL from source")
     # Your existing ExternalProject_Add code for CGAL
@@ -304,7 +304,6 @@ if(CGAL)
   # Add definition to enable CGAL
   add_definitions(-DPE_USE_CGAL)
   set(DEFINES "${DEFINES} PE_USE_CGAL=1")
-  # message(STATUS "CGAL support enabled")
 else()
   set(DEFINES "${DEFINES} PE_USE_CGAL=0")
 endif()
@@ -314,7 +313,7 @@ endif()
 #============================================================================
 # Update library and linking settings for CGAL
 if( CGAL )
-    message(STATUS "CGAL support is enabled.")
+    message(STATUS "CGAL support is enabled in pe.")
     # Add a compiler define if CGAL is true
     set( DEFINES "${DEFINES} HAVE_CGAL=1" )
     
@@ -333,7 +332,7 @@ if( CGAL )
     # Add CGAL include directories
     list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${CGAL_INCLUDE_DIR})
 else()
-    message(STATUS "CGAL support is disabled.")
+    message(STATUS "CGAL support is disabled in pe.")
     # Add a compiler define if CGAL is false
     set( DEFINES "${DEFINES} HAVE_CGAL=0" )
 endif()

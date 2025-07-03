@@ -2454,7 +2454,14 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
                                      MaterialID material, bool convex,
                                      bool visible, const Vec3& scale,  bool clockwise, bool lefthanded )
 {
-   pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+   // Warning for non-convex meshes - experimental CGAL support available
+   if( !convex ) {
+      pe_LOG_WARNING_SECTION( log ) {
+         log << "Warning: Non-convex triangle meshes are experimental. "
+             << "For robust convex hull computation, enable CGAL support (-DCGAL=ON). "
+             << "Some collision detection optimizations may not work correctly with non-convex meshes.";
+      }
+   }
 
    if(scale[0] <= real(0) || scale[1] <= real(0) || scale[2] <= real(0)){
       throw std::invalid_argument("Invalid scaling factor, only positive scaling allowed.");
@@ -2673,7 +2680,14 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, Vertice
                                      const IndicesLists& faces, MaterialID material,
                                      bool convex, bool visible )
 {
-   pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+   // Warning for non-convex meshes - experimental CGAL support available
+   if( !convex ) {
+      pe_LOG_WARNING_SECTION( log ) {
+         log << "Warning: Non-convex triangle meshes are experimental. "
+             << "For robust convex hull computation, enable CGAL support (-DCGAL=ON). "
+             << "Some collision detection optimizations may not work correctly with non-convex meshes.";
+      }
+   }
 
    const bool global( GlobalSection::isActive() );
 
@@ -3236,6 +3250,103 @@ TriangleMeshID instantiateTriangleMesh( id_t sid, id_t uid, const Vec3& gpos, co
    }
 
    return mesh;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Computes the convex hull of the triangle mesh vertices using CGAL.
+ *
+ * \param hull_vertices Output parameter for the convex hull vertices.
+ * \param hull_faces Output parameter for the convex hull face indices.
+ * \return True if the convex hull was computed successfully, false otherwise.
+ *
+ * This function computes the convex hull of the current triangle mesh's vertices using CGAL
+ * (if available). When CGAL is not available, the function returns false and clears the output
+ * parameters. The function delegates to the TriangleMeshTrait implementation which uses tag
+ * dispatch to select the appropriate behavior at compile time.
+ */
+bool TriangleMesh::computeConvexHull(Vertices& hull_vertices, IndicesLists& hull_faces) const
+{
+   return TriangleMeshTrait<Config>::computeConvexHull(hull_vertices, hull_faces);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Computes the squared distance from a point to the triangle mesh surface.
+ *
+ * \param point The query point in world coordinates.
+ * \return The squared distance to the closest point on the mesh surface.
+ *
+ * This method uses CGAL's AABB tree for efficient distance computation. When CGAL is not
+ * available, it returns 0.0. The function delegates to the TriangleMeshTrait implementation.
+ */
+real TriangleMesh::distanceToPoint(const Vec3& point) const
+{
+   return TriangleMeshTrait<Config>::distanceToPoint(point);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Finds the closest point on the triangle mesh surface to a query point.
+ *
+ * \param point The query point in world coordinates.
+ * \return The closest point on the mesh surface in world coordinates.
+ *
+ * This method uses CGAL's AABB tree for efficient closest point computation. When CGAL is not
+ * available, it returns the input point. The function delegates to the TriangleMeshTrait implementation.
+ */
+Vec3 TriangleMesh::closestPoint(const Vec3& point) const
+{
+   return TriangleMeshTrait<Config>::closestPoint(point);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Finds the closest point and primitive ID on the triangle mesh surface.
+ *
+ * \param point The query point in world coordinates.
+ * \return A pair containing the closest point and the face index.
+ *
+ * This method uses CGAL's AABB tree for efficient closest point and primitive computation.
+ * When CGAL is not available, it returns the input point and face index 0. The function
+ * delegates to the TriangleMeshTrait implementation.
+ */
+std::pair<Vec3, size_t> TriangleMesh::closestPointAndPrimitive(const Vec3& point) const
+{
+   return TriangleMeshTrait<Config>::closestPointAndPrimitive(point);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables distance query acceleration for large triangle meshes.
+ *
+ * \param maxReferencePoints Maximum number of reference points for distance acceleration.
+ *
+ * This method enables CGAL's distance query acceleration, which can significantly improve
+ * performance for large meshes at the cost of increased memory usage. The function delegates
+ * to the TriangleMeshTrait implementation.
+ */
+void TriangleMesh::enableDistanceAcceleration(size_t maxReferencePoints)
+{
+   TriangleMeshTrait<Config>::enableDistanceAcceleration(maxReferencePoints);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Invalidates the AABB tree, forcing it to be rebuilt on next access.
+ *
+ * This method should be called whenever the triangle mesh has been modified in a way that
+ * would affect the spatial structure. The function delegates to the TriangleMeshTrait implementation.
+ */
+void TriangleMesh::invalidateAABBTree()
+{
+   TriangleMeshTrait<Config>::invalidateAABBTree();
 }
 //*************************************************************************************************
 
