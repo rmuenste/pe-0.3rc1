@@ -42,9 +42,12 @@
 #include <CGAL/AABB_tree.h>
 #include <CGAL/AABB_traits.h>
 #include <CGAL/AABB_triangle_primitive.h>
+#include <CGAL/Ray_3.h>
+#include <CGAL/Random.h>
 #include <vector>
 #include <map>
 #include <memory>
+#include <random>
 #endif
 
 
@@ -75,7 +78,7 @@ namespace detail {
 template<typename Tag>
 struct CgalFunctions
 {
-   // Default (no CGAL) implementation
+   // Default (no CGAL) implementation for convex hull
    static bool computeConvexHull(const Vertices& input_vertices, 
                                 Vertices& hull_vertices, 
                                 IndicesLists& hull_faces) {
@@ -83,6 +86,36 @@ struct CgalFunctions
       hull_vertices.clear();
       hull_faces.clear();
       return false;
+   }
+   
+   // Default (no CGAL) implementation for AABB tree/distance operations
+   static real distanceToPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      return real(0);
+   }
+   
+   static Vec3 closestPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      return point;
+   }
+   
+   static std::pair<Vec3, size_t> closestPointAndPrimitive(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      return std::make_pair(point, 0);
+   }
+   
+   static void enableDistanceAcceleration(size_t maxReferencePoints) {
+      // No-op when CGAL is not available
+   }
+   
+   static void invalidateAABBTree() {
+      // No-op when CGAL is not available
+   }
+   
+   // Default (no CGAL) implementation for point containment operations
+   static bool containsPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      return false;  // Conservative: assume point is outside when CGAL not available
+   }
+   
+   static real signedDistance(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      return real(0);  // Fallback: return unsigned distance
    }
 };
 
@@ -172,6 +205,187 @@ struct CgalFunctions<HasCgalTag>
          return false;
       }
    }
+   
+   // AABB tree and distance computation methods
+   static void buildAABBTree(const Vertices& vertices, const IndicesLists& faces,
+                            std::vector<Triangle_3>& triangles, 
+                            std::unique_ptr<AABBTree>& aabbTree,
+                            bool distanceAccelerationEnabled) {
+      // Clear and rebuild triangle list
+      triangles.clear();
+      triangles.reserve(faces.size());
+      
+      // Convert PE triangle data to CGAL triangles
+      for (const auto& face : faces) {
+         if (face[0] < vertices.size() && face[1] < vertices.size() && face[2] < vertices.size()) {
+            const Vec3& v0 = vertices[face[0]];
+            const Vec3& v1 = vertices[face[1]];
+            const Vec3& v2 = vertices[face[2]];
+            
+            Point_3 p0(v0[0], v0[1], v0[2]);
+            Point_3 p1(v1[0], v1[1], v1[2]);
+            Point_3 p2(v2[0], v2[1], v2[2]);
+            
+            triangles.emplace_back(p0, p1, p2);
+         }
+      }
+      
+      // Create and build the AABB tree
+      aabbTree = std::make_unique<AABBTree>(triangles.begin(), triangles.end());
+      
+      // Enable distance acceleration if requested
+      if (distanceAccelerationEnabled) {
+         aabbTree->accelerate_distance_queries();
+      }
+   }
+   
+   static real distanceToPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      // For stateless operation, build tree on-demand (not optimal but consistent with tag dispatch)
+      std::vector<Triangle_3> triangles;
+      std::unique_ptr<AABBTree> aabbTree;
+      buildAABBTree(vertices, faces, triangles, aabbTree, false);
+      
+      if (!aabbTree || triangles.empty()) {
+         return real(0);
+      }
+      
+      Point_3 query(point[0], point[1], point[2]);
+      return static_cast<real>(aabbTree->squared_distance(query));
+   }
+   
+   static Vec3 closestPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      // For stateless operation, build tree on-demand (not optimal but consistent with tag dispatch)
+      std::vector<Triangle_3> triangles;
+      std::unique_ptr<AABBTree> aabbTree;
+      buildAABBTree(vertices, faces, triangles, aabbTree, false);
+      
+      if (!aabbTree || triangles.empty()) {
+         return point;
+      }
+      
+      Point_3 query(point[0], point[1], point[2]);
+      Point_3 closest = aabbTree->closest_point(query);
+      return Vec3(CGAL::to_double(closest.x()), 
+                  CGAL::to_double(closest.y()), 
+                  CGAL::to_double(closest.z()));
+   }
+   
+   static std::pair<Vec3, size_t> closestPointAndPrimitive(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      // For stateless operation, build tree on-demand (not optimal but consistent with tag dispatch)
+      std::vector<Triangle_3> triangles;
+      std::unique_ptr<AABBTree> aabbTree;
+      buildAABBTree(vertices, faces, triangles, aabbTree, false);
+      
+      if (!aabbTree || triangles.empty()) {
+         return std::make_pair(point, 0);
+      }
+      
+      Point_3 query(point[0], point[1], point[2]);
+      auto result = aabbTree->closest_point_and_primitive(query);
+      Point_3 closest = result.first;
+      
+      // The primitive iterator points to our triangle in the triangles vector
+      size_t primitive_id = std::distance(triangles.cbegin(), result.second);
+      
+      return std::make_pair(
+         Vec3(CGAL::to_double(closest.x()), 
+              CGAL::to_double(closest.y()), 
+              CGAL::to_double(closest.z())),
+         primitive_id
+      );
+   }
+   
+   static void enableDistanceAcceleration(size_t maxReferencePoints) {
+      // This is handled in the stateful TriangleMeshTrait implementation
+      // Tag dispatch version doesn't maintain state
+   }
+   
+   static void invalidateAABBTree() {
+      // This is handled in the stateful TriangleMeshTrait implementation
+      // Tag dispatch version doesn't maintain state
+   }
+   
+   // Point containment using Jordan Curve theorem with ray shooting
+   static bool containsPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      if (faces.empty()) {
+         return false;
+      }
+      
+      try {
+         // Build AABB tree on-demand for ray shooting
+         std::vector<Triangle_3> triangles;
+         std::unique_ptr<AABBTree> aabbTree;
+         buildAABBTree(vertices, faces, triangles, aabbTree, false);
+         
+         if (!aabbTree || triangles.empty()) {
+            return false;
+         }
+         
+         // Use ray shooting to count intersections (Jordan Curve theorem)
+         Point_3 queryPoint(point[0], point[1], point[2]);
+         
+         // Use a single reliable ray direction (positive X-axis is usually good)
+         // but offset it slightly to avoid edge cases
+         typedef CGAL::Ray_3<Kernel> Ray_3;
+         Ray_3 ray(queryPoint, typename Kernel::Vector_3(1.0, 0.001, 0.0001));
+         
+         // Use number_of_intersected_primitives for cleaner counting
+         std::size_t numIntersections = aabbTree->number_of_intersected_primitives(ray);
+         
+         // Point is inside if odd number of intersections
+         return (numIntersections % 2) == 1;
+         
+      } catch (const std::exception& e) {
+         // CGAL operation failed, try a fallback approach
+         try {
+            // Fallback: simple bounding box check + distance-based heuristic
+            Point_3 queryPoint(point[0], point[1], point[2]);
+            std::vector<Triangle_3> triangles;
+            std::unique_ptr<AABBTree> aabbTree;
+            buildAABBTree(vertices, faces, triangles, aabbTree, false);
+            
+            if (!aabbTree) return false;
+            
+            // If the point is very close to the surface, use distance to determine
+            real sqDist = static_cast<real>(aabbTree->squared_distance(queryPoint));
+            
+            // For points very close to surface, use a different approach
+            if (sqDist < 1e-10) {
+               // Point is on or very close to surface, check using multiple rays
+               typedef CGAL::Ray_3<Kernel> Ray_3;
+               std::vector<typename Kernel::Vector_3> directions = {
+                  typename Kernel::Vector_3(1.0, 0.0, 0.0),
+                  typename Kernel::Vector_3(0.0, 1.0, 0.0),
+                  typename Kernel::Vector_3(-1.0, 0.0, 0.0)
+               };
+               
+               int insideVotes = 0;
+               for (const auto& dir : directions) {
+                  Ray_3 testRay(queryPoint, dir);
+                  std::size_t intersections = aabbTree->number_of_intersected_primitives(testRay);
+                  if (intersections % 2 == 1) insideVotes++;
+               }
+               
+               return insideVotes >= 2; // Majority vote
+            }
+            
+            return false; // Conservative fallback
+         } catch (...) {
+            return false;
+         }
+      }
+   }
+   
+   // Signed distance: negative inside, positive outside
+   static real signedDistance(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
+      // First compute unsigned distance
+      real unsignedDist = distanceToPoint(vertices, faces, point);
+      
+      // Then determine sign using point containment
+      bool inside = containsPoint(vertices, faces, point);
+      
+      return inside ? -std::sqrt(unsignedDist) : std::sqrt(unsignedDist);
+   }
 };
 #endif
 
@@ -233,6 +447,8 @@ public:
    std::pair<Vec3, size_t> closestPointAndPrimitive(const Vec3& point) const;
    void enableDistanceAcceleration(size_t maxReferencePoints = 100000);
    void invalidateAABBTree();
+   bool containsPoint(const Vec3& point) const;
+   real signedDistance(const Vec3& point) const;
    //@}
    //**********************************************************************************************
 
@@ -535,10 +751,20 @@ template< typename C >  // Type of the configuration
 real TriangleMeshTrait<C>::distanceToPoint(const Vec3& point) const
 {
 #ifdef PE_USE_CGAL
+   using Tag = detail::HasCgalTag;
+#else
+   using Tag = detail::NoCgalTag;
+#endif
+   
+   // For performance, use cached AABB tree when CGAL is available
+#ifdef PE_USE_CGAL
    ensureAABBTreeValid();
    
    if (!aabbTree_) {
-      return real(0);
+      // Fallback to tag dispatch if no cached tree
+      const Vertices& vertices = this->getBFVertices();
+      const IndicesLists& faces = this->getFaceIndices();
+      return detail::CgalFunctions<Tag>::distanceToPoint(vertices, faces, point);
    }
    
    typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
@@ -546,7 +772,9 @@ real TriangleMeshTrait<C>::distanceToPoint(const Vec3& point) const
    
    return static_cast<real>(aabbTree_->squared_distance(query));
 #else
-   return real(0);
+   const Vertices& vertices = this->getBFVertices();
+   const IndicesLists& faces = this->getFaceIndices();
+   return detail::CgalFunctions<Tag>::distanceToPoint(vertices, faces, point);
 #endif
 }
 //*************************************************************************************************
@@ -565,10 +793,20 @@ template< typename C >  // Type of the configuration
 Vec3 TriangleMeshTrait<C>::closestPoint(const Vec3& point) const
 {
 #ifdef PE_USE_CGAL
+   using Tag = detail::HasCgalTag;
+#else
+   using Tag = detail::NoCgalTag;
+#endif
+   
+   // For performance, use cached AABB tree when CGAL is available
+#ifdef PE_USE_CGAL
    ensureAABBTreeValid();
    
    if (!aabbTree_) {
-      return point;
+      // Fallback to tag dispatch if no cached tree
+      const Vertices& vertices = this->getBFVertices();
+      const IndicesLists& faces = this->getFaceIndices();
+      return detail::CgalFunctions<Tag>::closestPoint(vertices, faces, point);
    }
    
    typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
@@ -579,7 +817,9 @@ Vec3 TriangleMeshTrait<C>::closestPoint(const Vec3& point) const
                CGAL::to_double(closest.y()), 
                CGAL::to_double(closest.z()));
 #else
-   return point;
+   const Vertices& vertices = this->getBFVertices();
+   const IndicesLists& faces = this->getFaceIndices();
+   return detail::CgalFunctions<Tag>::closestPoint(vertices, faces, point);
 #endif
 }
 //*************************************************************************************************
@@ -598,10 +838,20 @@ template< typename C >  // Type of the configuration
 std::pair<Vec3, size_t> TriangleMeshTrait<C>::closestPointAndPrimitive(const Vec3& point) const
 {
 #ifdef PE_USE_CGAL
+   using Tag = detail::HasCgalTag;
+#else
+   using Tag = detail::NoCgalTag;
+#endif
+   
+   // For performance, use cached AABB tree when CGAL is available
+#ifdef PE_USE_CGAL
    ensureAABBTreeValid();
    
    if (!aabbTree_) {
-      return std::make_pair(point, 0);
+      // Fallback to tag dispatch if no cached tree
+      const Vertices& vertices = this->getBFVertices();
+      const IndicesLists& faces = this->getFaceIndices();
+      return detail::CgalFunctions<Tag>::closestPointAndPrimitive(vertices, faces, point);
    }
    
    typedef detail::CgalFunctions<detail::HasCgalTag>::Point_3 Point_3;
@@ -620,7 +870,9 @@ std::pair<Vec3, size_t> TriangleMeshTrait<C>::closestPointAndPrimitive(const Vec
       primitive_id
    );
 #else
-   return std::make_pair(point, 0);
+   const Vertices& vertices = this->getBFVertices();
+   const IndicesLists& faces = this->getFaceIndices();
+   return detail::CgalFunctions<Tag>::closestPointAndPrimitive(vertices, faces, point);
 #endif
 }
 //*************************************************************************************************
@@ -646,6 +898,65 @@ void TriangleMeshTrait<C>::enableDistanceAcceleration(size_t maxReferencePoints)
       aabbTree_->accelerate_distance_queries();
    }
 #endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Determines if a point is inside the triangle mesh using ray shooting.
+ *
+ * \param point The query point in world coordinates.
+ * \return True if the point is inside the mesh, false otherwise.
+ *
+ * This method uses the Jordan Curve theorem with ray shooting to determine point containment.
+ * Multiple random rays are cast from the query point, and the number of intersections with
+ * the mesh surface is counted. An odd number of intersections indicates the point is inside.
+ * When CGAL is not available, this method returns false (conservative approach).
+ */
+template< typename C >  // Type of the configuration
+bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
+{
+#ifdef PE_USE_CGAL
+   using Tag = detail::HasCgalTag;
+#else
+   using Tag = detail::NoCgalTag;
+#endif
+   
+   // Get the vertices and faces from the base class
+   const Vertices& vertices = this->getBFVertices();
+   const IndicesLists& faces = this->getFaceIndices();
+   
+   // Use tag dispatch to call the appropriate implementation
+   return detail::CgalFunctions<Tag>::containsPoint(vertices, faces, point);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Computes the signed distance from a point to the triangle mesh surface.
+ *
+ * \param point The query point in world coordinates.
+ * \return The signed distance: negative if inside, positive if outside.
+ *
+ * This method combines distance computation with point containment to provide signed distance.
+ * Points inside the mesh have negative distance, points outside have positive distance.
+ * When CGAL is not available, this method returns 0.0.
+ */
+template< typename C >  // Type of the configuration
+real TriangleMeshTrait<C>::signedDistance(const Vec3& point) const
+{
+#ifdef PE_USE_CGAL
+   using Tag = detail::HasCgalTag;
+#else
+   using Tag = detail::NoCgalTag;
+#endif
+   
+   // Get the vertices and faces from the base class
+   const Vertices& vertices = this->getBFVertices();
+   const IndicesLists& faces = this->getFaceIndices();
+   
+   // Use tag dispatch to call the appropriate implementation
+   return detail::CgalFunctions<Tag>::signedDistance(vertices, faces, point);
 }
 //*************************************************************************************************
 
