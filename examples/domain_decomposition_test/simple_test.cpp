@@ -25,6 +25,7 @@ int main(int argc, char* argv[]) {
     int rank, totalProcs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &totalProcs);
+    MPISystemID mpisystem = theMPISystem();
     
     std::cout << "===============================================" << std::endl;
     std::cout << "  DOMAIN DECOMPOSITION SIMPLE TEST" << std::endl;
@@ -45,11 +46,22 @@ int main(int argc, char* argv[]) {
     // Create Cartesian communicator
     int periods[3] = {0, 0, 0}; // Non-periodic
     MPI_Comm cartComm;
-    MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, 1, &cartComm);
+    MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, false, &cartComm);
+
+    mpisystem->setComm(cartComm);
+    if (cartComm == MPI_COMM_NULL)
+    {
+       std::cout << "Error creating 3D communicator" << std::endl;
+       MPI_Finalize();
+       return 0;
+    }
+    else {
+      std::cout << "Communication ok" << std::endl;
+    }
     
     // Get process coordinates
     int processCoords[3];
-    MPI_Cart_coords(cartComm, rank, 3, processCoords);
+    MPI_Cart_coords(mpisystem->getComm(), rank, 3, processCoords);
     
     // Initialize the world
     WorldID world = theWorld();
