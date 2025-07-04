@@ -19,6 +19,7 @@ endif( CGAL )
 # MPI Examples
 if( MPI )
     add_subdirectory(decomposition_geometry)
+    add_subdirectory(domain_decomposition_test)  # Domain decomposition verification test suite
     add_subdirectory(mpi3periodic)
     add_subdirectory(mpibench)
     add_subdirectory(mpiboxes)

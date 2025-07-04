@@ -600,20 +600,21 @@ if( EXAMPLES )
          mpinano "examples/mpinano/MPINano.cpp"
          mpistair "examples/mpistair/MPIStair.cpp"
          mpiimpact "examples/mpiimpact/MPIImpact.cpp"
+         domain_decomposition_test "examples/domain_decomposition_test/domain_decomposition_test.cpp"
+         simple_domain_test "examples/domain_decomposition_test/simple_test.cpp"
       )
 
       list(LENGTH PE_MPI_EXAMPLES list_len)
-      math(EXPR pairs_count "${list_len} / 2")
-      foreach(i RANGE 0 ${pairs_count} 2)
-         math(EXPR j "${i} / 2")
+      math(EXPR loop_end "${list_len} - 2")
+      foreach(i RANGE 0 ${loop_end} 2)
+         math(EXPR j "${i} + 1")
          list(GET PE_MPI_EXAMPLES ${i} exe_name)
          list(GET PE_MPI_EXAMPLES ${j} src)
+         message(STATUS "Adding MPI example pair: ${exe_name} from ${src} to  ${i}/${list_len}")
          pe_add_example(${exe_name} ${src})
       endforeach()
    endif()
 
-
-   add_subdirectory(examples)
 endif()
 
 
