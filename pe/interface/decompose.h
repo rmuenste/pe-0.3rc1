@@ -1705,7 +1705,50 @@ void decomposePeriodicX3D(int center[],
    }
 
    // Connecting bottom-south/north are covered by non-periodic Y and Z if's
+   // Connecting the bottom-south neighbor
+   if( bottomsouth[1] >= 0 && bottomsouth[2] >= 0 ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, bottomsouth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
+   // Connecting the bottom-north neighbor
+   if( bottomnorth[1] < py && bottomnorth[2] >= 0 ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, bottomnorth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
    // Connecting top-south/north are covered by non-periodic Y and Z if's
+   // Connecting the top-south neighbor
+   if( topsouth[1] >= 0 && topsouth[2] < pz ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, topsouth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
+   // Connecting the top-north neighbor
+   if( topnorth[1] < py && topnorth[2] < pz ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, topnorth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
 
    // Connecting the bottom-south-west neighbor (Mixed: Periodic X, Non-periodic YZ)
    if( bottomsouthwest[1] >= 0 && bottomsouthwest[2] >= 0 ) {
