@@ -114,8 +114,8 @@ void setupParticleBench(MPI_Comm ex0) {
   const real ly = config.getPy() * dy;
   const real lz = config.getPz() * dz;
   
-  decomposePeriodic3D(center, 0.0, 0.0, 0.0, dx, dy, dz, lx, ly, lz, 
-                      config.getPx(), config.getPy(), config.getPz());
+  decomposeDomain(center, 0.0, 0.0, 0.0, dx, dy, dz, 
+                  config.getPx(), config.getPy(), config.getPz());
 
 //#ifndef NDEBUG
    // Checking the process setup
