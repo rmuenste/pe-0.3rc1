@@ -9,6 +9,7 @@ add_subdirectory(math_tests)
 add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
 add_subdirectory(usage_demo)
+add_subdirectory(simple_demo)
 
 # CGAL Examples
 if( CGAL )
