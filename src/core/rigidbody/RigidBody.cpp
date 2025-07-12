@@ -180,6 +180,54 @@ void RigidBody::setFixed( bool fixed )
 
 
 //*************************************************************************************************
+/*!\brief Setting the rigid body translation fixed/free while allowing rotation.
+ *
+ * \param fixed \a true to fix the translation, \a false to allow free translation.
+ * \return void
+ *
+ * This function either fixes or unfixes the translational motion (center of mass) of a finite
+ * rigid body while keeping rotational motion free. The body will have infinite mass (invMass_ = 0)
+ * but finite inertia, allowing it to rotate but preventing translation. If the body is contained 
+ * in a superordinate body, this function will also affect the superordinate body. In case the body
+ * is infinite or contained in an infinite superordinate body (as for instance a plane or an
+ * union containing a plane) the function has no effect.
+ *
+ * In case of a <b>MPI parallel simulation</b>, changing the settings of a (local) rigid body
+ * on one process may invalidate the settings of the rigid body on another process. In order to
+ * synchronize all rigid bodies after local changes, the World::synchronize() function should
+ * be used to update remote rigid bodies accordingly. Note that any changes on remote rigid
+ * bodies are neglected and overwritten by the settings of the rigid body on its local process!
+ */
+void RigidBody::setTranslationFixed( bool fixed )
+{
+   // Early exit in case the body is infinite, globally fixed, or already in desired state
+   if( !finite_ || fixed_ )
+      return;
+
+   // Check if already in the desired state
+   bool currentlyTranslationFixed = (invMass_ == real(0));
+   if( currentlyTranslationFixed == fixed )
+      return;
+
+   // Fixing/unfixing the translational motion of the rigid body
+   if( fixed ) {
+      // Fix translation only
+      invMass_ = real(0);     // Prevent translation
+      v_ = real(0);           // Zero linear velocity
+      // Keep Iinv_ and w_ unchanged for rotation
+   }
+   else {
+      // Restore normal mass for translation
+      invMass_ = real(1) / mass_;
+   }
+
+   // Signaling the fixation change to the superordinate body
+   signalFixation();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\fn void RigidBody::setVisible( bool visible )
  * \brief Setting the rigid body visible/invisible in all active visualizations.
  *

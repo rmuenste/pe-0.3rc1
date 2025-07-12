@@ -6,6 +6,7 @@ add_subdirectory(decomposition)
 add_subdirectory(detection)
 add_subdirectory(kdop_example)  # Example showing k-DOP extraction from TriMeshDopBoundary
 add_subdirectory(math_tests)
+add_subdirectory(rotation_collision)  # Example showing translation-fixed vs fully-fixed rigid bodies
 add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
 add_subdirectory(usage_demo)
@@ -20,7 +21,6 @@ endif( CGAL )
 # MPI Examples
 if( MPI )
     add_subdirectory(decomposition_geometry)
-    add_subdirectory(domain_decomposition_test)  # Domain decomposition verification test suite
     add_subdirectory(mpi3periodic)
     add_subdirectory(mpibench)
     add_subdirectory(mpiboxes)

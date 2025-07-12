@@ -139,6 +139,7 @@ public:
    inline bool           isActive()          const;
    inline bool           isAwake()           const;
    inline bool           isFixed()           const;
+   inline bool           isTranslationFixed() const;
    inline bool           isVisible()         const;
    inline GeomType       getType()           const;
    inline id_t           getSystemID()       const;
@@ -180,6 +181,7 @@ public:
    /*!\name Set functions */
    //@{
            void setFixed      ( bool fixed );
+           void setTranslationFixed( bool fixed );
    virtual void setVisible    ( bool visible ) = 0;
    virtual void setPosition   ( real px, real py, real pz ) = 0;
    virtual void setPosition   ( const Vec3& gpos ) = 0;
@@ -624,6 +626,22 @@ inline bool RigidBody::isAwake() const
 inline bool RigidBody::isFixed() const
 {
    return fixed_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether the rigid body's translation is fixed while allowing rotation.
+ *
+ * \return \a true in case of a translation-fixed rigid body, \a false in case of a free body.
+ *
+ * This function returns whether the rigid body's translational motion is fixed (invMass_ == 0)
+ * while still allowing rotational motion. This is different from isFixed() which prevents
+ * both translation and rotation.
+ */
+inline bool RigidBody::isTranslationFixed() const
+{
+   return !finite_ || (invMass_ == real(0) && !fixed_);
 }
 //*************************************************************************************************
 
