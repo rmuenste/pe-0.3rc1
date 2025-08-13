@@ -11,4 +11,4 @@ target_link_libraries(cgal_box PRIVATE
 )
 
 # Add CGAL dependency
-add_dependencies(cgal_box cgal)
+#add_dependencies(cgal_box cgal)
