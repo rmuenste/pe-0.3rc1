@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
         double h;
         double hx; double hy; double hz;
         double tol;
-        tol = 0; // number of empty cells on bounding box boundary
+        tol = 5; // number of empty cells on bounding box boundary
         int inside_count = 0;
 
         double dx = (bbox.xmax() - bbox.xmin());
@@ -164,6 +164,8 @@ int main(int argc, char* argv[]) {
         std::map<face_descriptor, std::size_t> face_index_map;
         std::size_t id = 0;
         std::vector<int> face_index(nx * ny * nz, 0);
+        
+        std::array<double, 3> origin = {bbox.xmin() - tol*hx, bbox.ymin() - tol*hy, bbox.zmin() - tol*hz};
 
         for (face_descriptor f : faces(fromFile)) {
             face_index_map[f] = id++;
@@ -172,9 +174,9 @@ int main(int argc, char* argv[]) {
         for (int k = 0; k < nz; ++k) {
             for (int j = 0; j < ny; ++j) {
                 for (int i = 0; i < nx; ++i) {
-                    double x = bbox.xmin()-tol*hx + i * hx;
-                    double y = bbox.ymin()-tol*hy + j * hy;
-                    double z = bbox.zmin()-tol*hz + k * hz;
+                    double x = origin[0] + i * hx;
+                    double y = origin[1] + j * hy;
+                    double z = origin[2] + k * hz;
 
                     points.emplace_back(x, y, z);
                     int index = i + nx*j + nx*ny*k;
@@ -227,7 +229,7 @@ int main(int argc, char* argv[]) {
                 contact_points, face_index,
                 nx, ny, nz,
                 hx, hy, hz,
-                bbox.xmin()-tol*hx, bbox.ymin()-tol*hy, bbox.zmin()-tol*hz);
+                origin[0], origin[1], origin[2]);
 
 
         std::ifstream input2(chipFile);
@@ -260,38 +262,39 @@ int main(int argc, char* argv[]) {
             
             const Point& p = secondaryMesh.point(v);
 
-            int i = static_cast<int>(std::floor((p.x()-bbox.xmin()-tol*hx)/hx));
-            int j = static_cast<int>(std::floor((p.y()-bbox.ymin()-tol*hy)/hy));
-            int k = static_cast<int>(std::floor((p.z()-bbox.zmin()-tol*hz)/hz));
+            int i = static_cast<int>(std::floor((p.x()-origin[0])/hx));
+            int j = static_cast<int>(std::floor((p.y()-origin[1])/hy));
+            int k = static_cast<int>(std::floor((p.z()-origin[2])/hz));
             
             // default values in case of point out of bounding box
             if ( (i>=nx || j>=ny || k >=nz) || (i<0 || j<0 || k<0) ){
                 chipAlpha[entry] = -1;
                 chipSDF[entry] = default_sdf;
                 chipNormal[entry] = {0,0,0};
-                chipContactPoint[entry] = {bbox.xmin()-tol*hx, bbox.ymin()-tol*hy, bbox.zmin()-tol*hz};
+                chipContactPoint[entry] = {origin[0], origin[1], origin[2]};
             }
             else{   
+                std::cout<<"HERE"<<std::endl;
                 trilinear_interpolation(i, j, k, nx, ny, nz,
-                                    bbox.xmin()-tol*hx + i * hx, bbox.ymin()-tol*hy + j * hy, bbox.zmin()-tol*hz + k * hz,
+                                    origin[0] + i * hx, origin[1] + j * hy, origin[2] + k * hz,
                                     hx, alpha,
                                     p.x(), p.y(), p.z(),
                                     chipAlpha[entry]);
 
                 trilinear_interpolation(i, j, k, nx, ny, nz,
-                                    bbox.xmin()-tol*hx + i * hx, bbox.ymin()-tol*hy + j * hy, bbox.zmin()-tol*hz + k * hz,
+                                    origin[0] + i * hx, origin[1] + j * hy, origin[2] + k * hz,
                                     hx, sdf,
                                     p.x(), p.y(), p.z(),
                                     chipSDF[entry]);
                 
                 trilinear_interpolation(i, j, k, nx, ny, nz,
-                                    bbox.xmin()-tol*hx + i * hx, bbox.ymin()-tol*hy + j * hy, bbox.zmin()-tol*hz + k * hz,
+                                    origin[0] + i * hx, origin[1] + j * hy, origin[2] + k * hz,
                                     hx, normals,
                                     p.x(), p.y(), p.z(),
                                     chipNormal[entry]);
 
                 trilinear_interpolation(i, j, k, nx, ny, nz,
-                                    bbox.xmin()-tol*hx + i * hx, bbox.ymin()-tol*hy + j * hy, bbox.zmin()-tol*hz + k * hz,
+                                    origin[0] + i * hx, origin[1] + j * hy, origin[2] + k * hz,
                                     hx, contact_points,
                                     p.x(), p.y(), p.z(),
                                     chipContactPoint[entry]);
