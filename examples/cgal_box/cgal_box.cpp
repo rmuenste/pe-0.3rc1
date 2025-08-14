@@ -274,7 +274,6 @@ int main(int argc, char* argv[]) {
                 chipContactPoint[entry] = {origin[0], origin[1], origin[2]};
             }
             else{   
-                std::cout<<"HERE"<<std::endl;
                 trilinear_interpolation(i, j, k, nx, ny, nz,
                                     origin[0] + i * hx, origin[1] + j * hy, origin[2] + k * hz,
                                     hx, alpha,
