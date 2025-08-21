@@ -160,6 +160,8 @@ int main(int argc, char* argv[]) {
         chipContactPoint.push_back(contact_point);
         
         if (sdf < 0) {
+            std::cout << "Vertex: " << Vec3(x, y, z) << std::endl;
+            std::cout << "Contact point: " << contact_point << std::endl;
             collision_count++;
         }
     }

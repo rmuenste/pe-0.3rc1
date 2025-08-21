@@ -24,59 +24,55 @@ void write_vti(const std::string& filename,
     out << std::fixed << std::setprecision(6);
 
     out << R"(<?xml version="1.0"?>)" << "\n";
-    out << R"(<VTKFile type=\"ImageData\" version=\"0.1\" byte_order=\"LittleEndian\">)" << "\n";
+    out << R"(<VTKFile type="ImageData" version="0.1" byte_order="LittleEndian">)" << "\n";
     out << "  <ImageData Origin=\"" << x0 << " " << y0 << " " << z0 << "\" "
         << "Spacing=\"" << dx << " " << dy << " " << dz << "\" "
-        << "WholeExtent=\"0 " << nx - 1 << " 0 " << ny - 1 << " 0 " << nz - 1 << "\">
-";
+        << "WholeExtent=\"0 " << nx - 1 << " 0 " << ny - 1 << " 0 " << nz - 1 << "\">\n";
 
-    out << "    <Piece Extent=\"0 " << nx - 1 << " 0 " << ny - 1 << " 0 " << nz - 1 << "\">
-";
+    out << "    <Piece Extent=\"0 " << nx - 1 << " 0 " << ny - 1 << " 0 " << nz - 1 << "\">\n";
 
-    out << "      <PointDataScalars=\"sdf\">
-";
+    out << "      <PointData Scalars=\"sdf\">\n";
 
-    out << "        <DataArray type=\"Float32\" Name=\"sdf\" format=\"ascii\">
-";
+    out << "        <DataArray type=\"Float32\" Name=\"sdf\" format=\"ascii\">\n";
     for (pe::real v : sdf) out << v << " ";
-    out << "\n        </DataArray>
-";
+    out << "\n        </DataArray>\n";
 
-    out << "        <DataArray type=\"Int32\" Name=\"alpha\" format=\"ascii\">
-";
+    out << "        <DataArray type=\"Int32\" Name=\"alpha\" format=\"ascii\">\n";
     for (int a : alpha) out << a << " ";
-    out << "\n        </DataArray>
-";
+    out << "\n        </DataArray>\n";
 
-    out << "        <DataArray type=\"Float32\" Name=\"normal\" NumberOfComponents=\"3\" format=\"ascii\">
-";
-    for (const auto& n : normals) {
-        out << n[0] << " " << n[1] << " " << n[2] << " \n";
+    out << "        <DataArray type=\"Float32\" Name=\"normal\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+    for (int z = 0; z < nz; ++z){
+        for (int y = 0; y < ny; ++y){
+            for (int x = 0; x < nx; ++x) {
+                int idx = x + y * nx + z * nx * ny;
+                const auto& n = normals[idx];
+                out << n[0] << " " << n[1] << " " << n[2] << " \n";
+            }
+        }   
     }
-    out << "\n        </DataArray>
-";
+    out << "\n        </DataArray>\n";
 
-    out << "        <DataArray type=\"Float32\" Name=\"contact_point\" NumberOfComponents=\"3\" format=\"ascii\">
-";
-    for (const auto& c : contact_points) {
-        out << c[0] << " " << c[1] << " " << c[2] << " \n";
+    out << "        <DataArray type=\"Float32\" Name=\"contact_point\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+    for (int z = 0; z < nz; ++z){
+        for (int y = 0; y < ny; ++y){
+            for (int x = 0; x < nx; ++x) {
+                int idx = x + y * nx + z * nx * ny;
+                const auto& c = contact_points[idx];
+                out << c[0] << " " << c[1] << " " << c[2] << " \n";
+            }
+        }
     }
-    out << "\n        </DataArray>
-";
+    out << "\n        </DataArray>\n";
 
-    out << "        <DataArray type=\"Int32\" Name=\"face\" format=\"ascii\">
-";
+    out << "        <DataArray type=\"Int32\" Name=\"face\" format=\"ascii\">\n";
     for (int f : face_index) out << f << " ";
-    out << "\n        </DataArray>
-";
+    out << "\n        </DataArray>\n";
 
-    out << "      </PointData>
-";
+    out << "      </PointData>\n";
     out << "      <CellData/>\n";
-    out << "    </Piece>
-";
-    out << "  </ImageData>
-";
+    out << "    </Piece>\n";
+    out << "  </ImageData>\n";
     out << "</VTKFile>\n";
 }
 
