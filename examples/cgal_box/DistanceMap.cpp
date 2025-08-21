@@ -4,6 +4,12 @@
 #include <cmath>
 #include <map>
 
+// PE includes for TriangleMesh integration
+#ifdef PE_USE_CGAL
+#include <pe/core.h>
+#include <pe/core/rigidbody/TriangleMesh.h>
+#endif
+
 DistanceMap::DistanceMap(int nx, int ny, int nz, double spacing, const std::array<double, 3>& origin)
     : nx_(nx), ny_(ny), nz_(nz), spacing_(spacing), origin_(origin)
 {
@@ -128,6 +134,58 @@ std::unique_ptr<DistanceMap> DistanceMap::create(const Surface_mesh& mesh,
     
     return distance_map;
 }
+
+std::unique_ptr<DistanceMap> DistanceMap::create(const pe::TriangleMesh& pe_mesh,
+                                               double spacing,
+                                               int resolution,
+                                               int tolerance)
+{
+    std::cout << "Creating DistanceMap from PE TriangleMesh (vertices already COM-centered)..." << std::endl;
+    
+    // Get vertices and face indices from PE TriangleMesh
+    const auto& pe_vertices = pe_mesh.getBFVertices();      // Body frame vertices (COM-centered)
+    const auto& pe_face_indices = pe_mesh.getFaceIndices();
+    
+    std::cout << "PE mesh: " << pe_vertices.size() << " vertices, " << pe_face_indices.size() << " faces" << std::endl;
+    
+    // Convert PE mesh to CGAL Surface_mesh
+    Surface_mesh cgal_mesh;
+    
+    // Add vertices to CGAL mesh
+    std::vector<Surface_mesh::Vertex_index> vertex_map(pe_vertices.size());
+    for (size_t i = 0; i < pe_vertices.size(); ++i) {
+        const auto& v = pe_vertices[i];
+        Point p(v[0], v[1], v[2]);  // Convert Vec3 to CGAL Point_3
+        vertex_map[i] = cgal_mesh.add_vertex(p);
+    }
+    
+    // Add faces to CGAL mesh
+    for (size_t i = 0; i < pe_face_indices.size(); ++i) {
+        const auto& face = pe_face_indices[i];
+        if (face.size() == 3) {  // Ensure it's a triangle
+            cgal_mesh.add_face(vertex_map[face[0]], 
+                              vertex_map[face[1]], 
+                              vertex_map[face[2]]);
+        } else {
+            std::cerr << "Warning: Non-triangular face detected at index " << i 
+                      << " with " << face.size() << " vertices. Skipping." << std::endl;
+        }
+    }
+    
+    std::cout << "Converted to CGAL mesh: " << cgal_mesh.number_of_vertices() 
+              << " vertices, " << cgal_mesh.number_of_faces() << " faces" << std::endl;
+    
+    // Verify mesh is valid
+    if (!cgal_mesh.is_valid()) {
+        std::cerr << "Error: Converted CGAL mesh is not valid!" << std::endl;
+        return nullptr;
+    }
+    
+    // Use existing CGAL-based create function
+    return create(cgal_mesh, spacing, resolution, tolerance);
+}
+
+
 #endif
 
 double DistanceMap::interpolateDistance(double x, double y, double z) const {

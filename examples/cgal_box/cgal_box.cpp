@@ -10,6 +10,8 @@
 #include <string>
 #include <fstream>
 #include <cassert>
+#include <algorithm>
+#include <cctype>
 
 // Local headers
 #include "DistanceMap.h"
@@ -53,22 +55,59 @@ int main(int argc, char* argv[]) {
     std::string output_prefix = argv[2];
     std::string chipFile = argv[3];
 
-    // Load primary mesh for SDF generation
-    Surface_mesh primaryMesh;
-    std::ifstream input1(meshFile);
-    if (!input1 || !CGAL::IO::read_OFF(input1, primaryMesh)) {
-        std::cerr << "Error: Cannot read file " << meshFile << std::endl;
+    // Create DistanceMap from primary mesh using appropriate loading method
+    const double grid_spacing = 0.1;  // Adjust as needed
+    const int resolution = 50;        // Grid resolution
+    std::unique_ptr<DistanceMap> distance_map;
+    
+    // Detect file format and choose loading path
+    std::string meshExt = meshFile.substr(meshFile.find_last_of('.'));
+    std::transform(meshExt.begin(), meshExt.end(), meshExt.begin(), ::tolower);
+    
+    if (meshExt == ".obj") {
+        std::cout << "OBJ file detected - using PE TriangleMesh loader (with COM centering)" << std::endl;
+        
+        // Use PE path: robust OBJ loading with automatic COM centering
+        try {
+            // Create dummy material (not used for SDF computation)
+           MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+            auto material = pe::createMaterial("mesh_material", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+            
+            // Load mesh using PE - automatically centers vertices around COM
+            auto pe_mesh = pe::createTriangleMesh(1, pe::Vec3(0,0,0), meshFile, material, false, true);
+            
+            std::cout << "PE mesh loaded successfully" << std::endl;
+            
+            // Convert to DistanceMap
+            distance_map = DistanceMap::create(*pe_mesh, grid_spacing, resolution);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error loading OBJ file with PE: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+    else if (meshExt == ".off") {
+        std::cout << "OFF file detected - using direct CGAL loader" << std::endl;
+        
+        // Use direct CGAL path for OFF files
+        Surface_mesh primaryMesh;
+        std::ifstream input1(meshFile);
+        if (!input1 || !CGAL::IO::read_OFF(input1, primaryMesh)) {
+            std::cerr << "Error: Cannot read OFF file " << meshFile << std::endl;
+            return 1;
+        }
+        
+        std::cout << "Loaded primary mesh with " << num_vertices(primaryMesh)
+                  << " vertices and " << num_faces(primaryMesh) << " faces." << std::endl;
+        
+        // Create DistanceMap from CGAL mesh
+        distance_map = DistanceMap::create(primaryMesh, grid_spacing, resolution);
+    }
+    else {
+        std::cerr << "Error: Unsupported file format '" << meshExt << "'. Supported: .obj, .off" << std::endl;
         return 1;
     }
     
-    std::cout << "Loaded primary mesh with " << num_vertices(primaryMesh)
-              << " vertices and " << num_faces(primaryMesh) << " faces." << std::endl;
-
-    // Create DistanceMap from primary mesh  
-    const double grid_spacing = 0.1;  // Adjust as needed
-    const int resolution = 50;        // Grid resolution
-    
-    auto distance_map = DistanceMap::create(primaryMesh, grid_spacing, resolution);
     if (!distance_map) {
         std::cerr << "Error: Failed to create DistanceMap" << std::endl;
         return 1;
@@ -102,11 +141,59 @@ int main(int argc, char* argv[]) {
               distance_map->getSpacing(), distance_map->getSpacing(), distance_map->getSpacing(),
               origin[0], origin[1], origin[2]);
 
-    // Load secondary mesh for testing
+    // Load secondary mesh for testing using appropriate loading method  
     Surface_mesh secondaryMesh;
-    std::ifstream input2(chipFile);
-    if (!input2 || !CGAL::IO::read_OFF(input2, secondaryMesh)) {
-        std::cerr << "Error: Cannot read file " << chipFile << std::endl;
+    std::string chipExt = chipFile.substr(chipFile.find_last_of('.'));
+    std::transform(chipExt.begin(), chipExt.end(), chipExt.begin(), ::tolower);
+    
+    if (chipExt == ".obj") {
+        std::cout << "Loading secondary OBJ mesh with PE..." << std::endl;
+        
+        try {
+            // Create dummy material for secondary mesh
+            auto material2 = pe::createMaterial("chip_material", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+            
+            // Load secondary mesh using PE
+            auto pe_chip_mesh = pe::createTriangleMesh(2, pe::Vec3(0,0,0), chipFile, material2, false, true);
+            
+            // Convert PE mesh to CGAL mesh for vertex iteration
+            const auto& pe_vertices = pe_chip_mesh->getBFVertices();
+            const auto& pe_faces = pe_chip_mesh->getFaceIndices();
+            
+            // Add vertices to CGAL mesh
+            std::vector<Surface_mesh::Vertex_index> vertex_map(pe_vertices.size());
+            for (size_t i = 0; i < pe_vertices.size(); ++i) {
+                const auto& v = pe_vertices[i];
+                Point p(v[0], v[1], v[2]);
+                vertex_map[i] = secondaryMesh.add_vertex(p);
+            }
+            
+            // Add faces to CGAL mesh
+            for (size_t i = 0; i < pe_faces.size(); ++i) {
+                const auto& face = pe_faces[i];
+                if (face.size() == 3) {
+                    secondaryMesh.add_face(vertex_map[face[0]], 
+                                         vertex_map[face[1]], 
+                                         vertex_map[face[2]]);
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error loading secondary OBJ file: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+    else if (chipExt == ".off") {
+        std::cout << "Loading secondary OFF mesh with CGAL..." << std::endl;
+        
+        std::ifstream input2(chipFile);
+        if (!input2 || !CGAL::IO::read_OFF(input2, secondaryMesh)) {
+            std::cerr << "Error: Cannot read OFF file " << chipFile << std::endl;
+            return 1;
+        }
+    }
+    else {
+        std::cerr << "Error: Unsupported secondary file format '" << chipExt << "'. Supported: .obj, .off" << std::endl;
         return 1;
     }
     

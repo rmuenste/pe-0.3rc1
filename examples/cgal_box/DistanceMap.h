@@ -13,6 +13,11 @@
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
 #include <CGAL/Side_of_triangle_mesh.h>
 
+// Forward declaration for PE TriangleMesh
+namespace pe {
+    class TriangleMesh;
+}
+
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef Kernel::Point_3 Point;
 typedef CGAL::Surface_mesh<Point> Surface_mesh;
@@ -33,8 +38,8 @@ typedef boost::graph_traits<Surface_mesh>::face_descriptor face_descriptor;
 class DistanceMap {
 public:
     /**
-     * @brief Create a distance map from a triangle mesh
-     * @param mesh The input triangle mesh
+     * @brief Create a distance map from a CGAL triangle mesh
+     * @param mesh The input CGAL Surface_mesh
      * @param spacing Grid spacing (uniform in all directions)
      * @param resolution Number of grid cells along the largest dimension (default: 50)
      * @param tolerance Number of empty boundary cells around the mesh (default: 5)
@@ -42,6 +47,19 @@ public:
      */
 #ifdef PE_USE_CGAL
     static std::unique_ptr<DistanceMap> create(const Surface_mesh& mesh, 
+                                             double spacing,
+                                             int resolution = 50,
+                                             int tolerance = 5);
+
+    /**
+     * @brief Create a distance map from a PE TriangleMesh (supports OBJ files with COM centering)
+     * @param pe_mesh The input PE TriangleMesh with vertices already centered around COM
+     * @param spacing Grid spacing (uniform in all directions)
+     * @param resolution Number of grid cells along the largest dimension (default: 50)
+     * @param tolerance Number of empty boundary cells around the mesh (default: 5)
+     * @return Unique pointer to the created DistanceMap, or nullptr if CGAL not available
+     */
+    static std::unique_ptr<DistanceMap> create(const pe::TriangleMesh& pe_mesh,
                                              double spacing,
                                              int resolution = 50,
                                              int tolerance = 5);
