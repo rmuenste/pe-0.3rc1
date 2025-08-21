@@ -28,6 +28,7 @@
 #include <CGAL/IO/OFF.h>
 #endif
 
+// Using pe namespace
 using namespace pe;
 
 // CGAL types for this example
@@ -36,8 +37,6 @@ typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
 typedef Kernel::Point_3 Point;
 typedef CGAL::Surface_mesh<Point> Surface_mesh;
 #endif
-
-    
 
 int main(int argc, char* argv[]) {
     std::cout << "CGAL SDF Collision Detection Example using DistanceMap!" << std::endl;
@@ -55,58 +54,12 @@ int main(int argc, char* argv[]) {
     std::string output_prefix = argv[2];
     std::string chipFile = argv[3];
 
-    // Create DistanceMap from primary mesh using appropriate loading method
-    const double grid_spacing = 0.1;  // Adjust as needed
+    // Create DistanceMap from primary mesh using the new factory function
+    const pe::real grid_spacing = 0.1;  // Adjust as needed
     const int resolution = 50;        // Grid resolution
-    std::unique_ptr<DistanceMap> distance_map;
     
-    // Detect file format and choose loading path
-    std::string meshExt = meshFile.substr(meshFile.find_last_of('.'));
-    std::transform(meshExt.begin(), meshExt.end(), meshExt.begin(), ::tolower);
-    
-    if (meshExt == ".obj") {
-        std::cout << "OBJ file detected - using PE TriangleMesh loader (with COM centering)" << std::endl;
-        
-        // Use PE path: robust OBJ loading with automatic COM centering
-        try {
-            // Create dummy material (not used for SDF computation)
-           MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-            auto material = pe::createMaterial("mesh_material", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-            
-            // Load mesh using PE - automatically centers vertices around COM
-            auto pe_mesh = pe::createTriangleMesh(1, pe::Vec3(0,0,0), meshFile, material, false, true);
-            
-            std::cout << "PE mesh loaded successfully" << std::endl;
-            
-            // Convert to DistanceMap
-            distance_map = DistanceMap::create(*pe_mesh, grid_spacing, resolution);
-        }
-        catch (const std::exception& e) {
-            std::cerr << "Error loading OBJ file with PE: " << e.what() << std::endl;
-            return 1;
-        }
-    }
-    else if (meshExt == ".off") {
-        std::cout << "OFF file detected - using direct CGAL loader" << std::endl;
-        
-        // Use direct CGAL path for OFF files
-        Surface_mesh primaryMesh;
-        std::ifstream input1(meshFile);
-        if (!input1 || !CGAL::IO::read_OFF(input1, primaryMesh)) {
-            std::cerr << "Error: Cannot read OFF file " << meshFile << std::endl;
-            return 1;
-        }
-        
-        std::cout << "Loaded primary mesh with " << num_vertices(primaryMesh)
-                  << " vertices and " << num_faces(primaryMesh) << " faces." << std::endl;
-        
-        // Create DistanceMap from CGAL mesh
-        distance_map = DistanceMap::create(primaryMesh, grid_spacing, resolution);
-    }
-    else {
-        std::cerr << "Error: Unsupported file format '" << meshExt << "'. Supported: .obj, .off" << std::endl;
-        return 1;
-    }
+    std::cout << "Creating DistanceMap from file: " << meshFile << std::endl;
+    auto distance_map = DistanceMap::createFromFile(meshFile, grid_spacing, resolution);
     
     if (!distance_map) {
         std::cerr << "Error: Failed to create DistanceMap" << std::endl;
@@ -116,17 +69,6 @@ int main(int argc, char* argv[]) {
     // Export SDF grid to VTI file for visualization
     std::cout << "Exporting SDF grid to VTI..." << std::endl;
     
-    // Convert contact points from double to float for VTI export
-    const auto& contact_points_double = distance_map->getContactPointData();
-    std::vector<std::array<float, 3>> contact_points_float(contact_points_double.size());
-    for (size_t i = 0; i < contact_points_double.size(); ++i) {
-        contact_points_float[i] = {
-            static_cast<float>(contact_points_double[i][0]),
-            static_cast<float>(contact_points_double[i][1]),
-            static_cast<float>(contact_points_double[i][2])
-        };
-    }
-    
     // Create dummy face index for VTI export (not used in DistanceMap)
     std::vector<int> face_index(distance_map->getSdfData().size(), 0);
     
@@ -135,7 +77,7 @@ int main(int argc, char* argv[]) {
               distance_map->getSdfData(),
               distance_map->getAlphaData(), 
               distance_map->getNormalData(),
-              contact_points_float,
+              distance_map->getContactPointData(),
               face_index,
               distance_map->getNx(), distance_map->getNy(), distance_map->getNz(),
               distance_map->getSpacing(), distance_map->getSpacing(), distance_map->getSpacing(),
@@ -148,19 +90,13 @@ int main(int argc, char* argv[]) {
     
     if (chipExt == ".obj") {
         std::cout << "Loading secondary OBJ mesh with PE..." << std::endl;
-        
         try {
-            // Create dummy material for secondary mesh
             auto material2 = pe::createMaterial("chip_material", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-            
-            // Load secondary mesh using PE
             auto pe_chip_mesh = pe::createTriangleMesh(2, pe::Vec3(0,0,0), chipFile, material2, false, true);
             
-            // Convert PE mesh to CGAL mesh for vertex iteration
             const auto& pe_vertices = pe_chip_mesh->getBFVertices();
             const auto& pe_faces = pe_chip_mesh->getFaceIndices();
             
-            // Add vertices to CGAL mesh
             std::vector<Surface_mesh::Vertex_index> vertex_map(pe_vertices.size());
             for (size_t i = 0; i < pe_vertices.size(); ++i) {
                 const auto& v = pe_vertices[i];
@@ -168,13 +104,9 @@ int main(int argc, char* argv[]) {
                 vertex_map[i] = secondaryMesh.add_vertex(p);
             }
             
-            // Add faces to CGAL mesh
-            for (size_t i = 0; i < pe_faces.size(); ++i) {
-                const auto& face = pe_faces[i];
+            for (const auto& face : pe_faces) {
                 if (face.size() == 3) {
-                    secondaryMesh.add_face(vertex_map[face[0]], 
-                                         vertex_map[face[1]], 
-                                         vertex_map[face[2]]);
+                    secondaryMesh.add_face(vertex_map[face[0]], vertex_map[face[1]], vertex_map[face[2]]);
                 }
             }
         }
@@ -182,17 +114,14 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error loading secondary OBJ file: " << e.what() << std::endl;
             return 1;
         }
-    }
-    else if (chipExt == ".off") {
+    } else if (chipExt == ".off") {
         std::cout << "Loading secondary OFF mesh with CGAL..." << std::endl;
-        
         std::ifstream input2(chipFile);
         if (!input2 || !CGAL::IO::read_OFF(input2, secondaryMesh)) {
             std::cerr << "Error: Cannot read OFF file " << chipFile << std::endl;
             return 1;
         }
-    }
-    else {
+    } else {
         std::cerr << "Error: Unsupported secondary file format '" << chipExt << "'. Supported: .obj, .off" << std::endl;
         return 1;
     }
@@ -203,10 +132,10 @@ int main(int argc, char* argv[]) {
     // Test secondary mesh vertices against SDF
     std::cout << "Testing secondary mesh against SDF..." << std::endl;
     
-    std::vector<double> chipAlpha;
-    std::vector<double> chipSDF;
-    std::vector<std::array<double, 3>> chipNormal;
-    std::vector<std::array<double, 3>> chipContactPoint;
+    std::vector<pe::real> chipAlpha;
+    std::vector<pe::real> chipSDF;
+    std::vector<pe::Vec3> chipNormal;
+    std::vector<pe::Vec3> chipContactPoint;
     
     chipAlpha.reserve(num_vertices(secondaryMesh));
     chipSDF.reserve(num_vertices(secondaryMesh));
@@ -216,13 +145,12 @@ int main(int argc, char* argv[]) {
     int collision_count = 0;
     for (auto v : secondaryMesh.vertices()) {
         const Point& p = secondaryMesh.point(v);
-        double x = CGAL::to_double(p.x());
-        double y = CGAL::to_double(p.y());
-        double z = CGAL::to_double(p.z());
+        pe::real x = CGAL::to_double(p.x());
+        pe::real y = CGAL::to_double(p.y());
+        pe::real z = CGAL::to_double(p.z());
         
-        // Use DistanceMap interpolation methods
-        double alpha = distance_map->interpolateAlpha(x, y, z);
-        double sdf = distance_map->interpolateDistance(x, y, z);
+        pe::real alpha = distance_map->interpolateAlpha(x, y, z);
+        pe::real sdf = distance_map->interpolateDistance(x, y, z);
         auto normal = distance_map->interpolateNormal(x, y, z);
         auto contact_point = distance_map->interpolateContactPoint(x, y, z);
         
@@ -231,7 +159,6 @@ int main(int argc, char* argv[]) {
         chipNormal.push_back(normal);
         chipContactPoint.push_back(contact_point);
         
-        // Count potential collisions (negative SDF means inside primary mesh)
         if (sdf < 0) {
             collision_count++;
         }
@@ -256,9 +183,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-
-
-
-
-
