@@ -77,24 +77,24 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, -9.81 );  // Standard gravity
+   world->setGravity( 0.0, 0.0, 0.00 );  // Standard gravity
 
    // Create materials
    MaterialID steel = createMaterial( "steel", 7800.0, 0.3, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
    // Setup of the ground plane
-   PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -1.0, granite );
+   //PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -1.0, granite );
 
    // Create the rotating rod (fully fixed in position, but we'll give it angular velocity)
    // Position: (0, 0, 2), Size: 5.0 x 1.0 x 1.0 (long rod along x-axis)
-   BoxID rotatingRod = createBox( id++, 0.0, 0.0, 2.0, 5.0, 1.0, 1.0, steel );
+   BoxID rotatingRod = createBox( id++, 0.0, 0.0, 2.0, 5.0, 0.1, 0.1, steel );
    rotatingRod->setFixed( true );  // Completely fixed (can't translate or rotate naturally)
-   rotatingRod->setAngularVel( 0.0, 0.0, 1.0 );  // Rotate around z-axis
+   rotatingRod->setAngularVel( 0.0, 0.0,-1.0 );  // Rotate around z-axis
 
    // Create the translation-fixed rod (can rotate but cannot translate)
    // Position: (3.5, 0, 2), Size: 5.0 x 1.0 x 1.0 (long rod along x-axis)
    // Position it so the rotating rod will hit it
-   BoxID translationFixedRod = createBox( id++, 3.5, 0.0, 2.0, 5.0, 1.0, 1.0, steel );
+   BoxID translationFixedRod = createBox( id++, 4.9,-0.6, 2.0, 5.0, 0.1, 0.1, steel );
    translationFixedRod->setTranslationFixed( true );  // Can rotate but cannot translate
    
 
@@ -126,7 +126,7 @@ int main( int argc, char* argv[] )
       
       std::cout << std::flush;
       
-      world->simulationStep( 0.01 );  // 10ms time steps
+      world->simulationStep( 0.001 );  // 10ms time steps
    }
 
    std::cout << "\n--------------------------------------------------------------------------------" << std::endl;

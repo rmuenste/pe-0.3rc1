@@ -4367,15 +4367,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 
    if( body->awake_ ) {
 
-      if(w.length() > 50.0) {
-        w = Vec3(0,0,0);
-      }
-
-      if(v.length() > 20.0) {
-        v.normalize();
-        v *= 4.0;
-      }
-
       // Calculating the translational displacement
       body->gpos_ += v * dt;
 

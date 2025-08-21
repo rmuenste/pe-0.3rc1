@@ -1,4 +1,4 @@
-add_executable(cgal_box cgal_box.cpp)
+add_executable(cgal_box cgal_box.cpp DistanceMap.cpp VtkOutput.cpp)
 
 find_package(GMP REQUIRED)
 target_link_libraries(cgal_box  PRIVATE ${GMP_LIBRARIES})
