@@ -54,12 +54,57 @@ int main(int argc, char* argv[]) {
     std::string output_prefix = argv[2];
     std::string chipFile = argv[3];
 
-    // Create DistanceMap from primary mesh using the new factory function
+    // Create DistanceMap from primary mesh using appropriate loading method
     const pe::real grid_spacing = 0.1;  // Adjust as needed
     const int resolution = 50;        // Grid resolution
+    std::unique_ptr<DistanceMap> distance_map;
     
-    std::cout << "Creating DistanceMap from file: " << meshFile << std::endl;
-    auto distance_map = DistanceMap::createFromFile(meshFile, grid_spacing, resolution);
+    // Detect file format and choose loading path
+    std::string meshExt = meshFile.substr(meshFile.find_last_of('.'));
+    std::transform(meshExt.begin(), meshExt.end(), meshExt.begin(), ::tolower);
+    
+    if (meshExt == ".obj") {
+        std::cout << "OBJ file detected - using PE TriangleMesh loader (with COM centering)" << std::endl;
+        
+        // Use PE path: robust OBJ loading with automatic COM centering
+        try {
+            // Create dummy material (not used for SDF computation)
+            auto material = pe::createMaterial("mesh_material", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+            
+            // Load mesh using PE - automatically centers vertices around COM
+            TriangleMeshID pe_mesh = pe::createTriangleMesh(1, pe::Vec3(0,0,0), meshFile, material, false, true);
+            
+            std::cout << "PE mesh loaded successfully" << std::endl;
+            
+            // Convert to DistanceMap
+            distance_map = DistanceMap::create(pe_mesh, grid_spacing, resolution);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error loading OBJ file with PE: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+    else if (meshExt == ".off") {
+        std::cout << "OFF file detected - using direct CGAL loader" << std::endl;
+        
+        // Use direct CGAL path for OFF files
+        Surface_mesh primaryMesh;
+        std::ifstream input1(meshFile);
+        if (!input1 || !CGAL::IO::read_OFF(input1, primaryMesh)) {
+            std::cerr << "Error: Cannot read OFF file " << meshFile << std::endl;
+            return 1;
+        }
+        
+        std::cout << "Loaded primary mesh with " << num_vertices(primaryMesh)
+                  << " vertices and " << num_faces(primaryMesh) << " faces." << std::endl;
+        
+        // Create DistanceMap from CGAL mesh
+        distance_map = DistanceMap::create(primaryMesh, grid_spacing, resolution);
+    }
+    else {
+        std::cerr << "Error: Unsupported file format '" << meshExt << "'. Supported: .obj, .off" << std::endl;
+        return 1;
+    }
     
     if (!distance_map) {
         std::cerr << "Error: Failed to create DistanceMap" << std::endl;

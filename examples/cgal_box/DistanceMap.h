@@ -8,6 +8,11 @@
 // PE type includes
 #include <pe/config/Precision.h>
 #include <pe/math/Vector3.h>
+#include <pe/core/rigidbody/TriangleMesh.h>
+
+namespace CGAL {
+    template<typename K> class Surface_mesh;
+}
 
 namespace pe {
 
@@ -42,6 +47,44 @@ public:
         int resolution = 50,
         int tolerance = 5
     );
+
+    /**
+     * @brief Create a distance map from a PE TriangleMesh
+     * @param mesh Reference to the PE TriangleMesh
+     * @param spacing Grid spacing (uniform in all directions).
+     * @param resolution Number of grid cells along the largest dimension (default: 50).
+     * @param tolerance Number of empty boundary cells around the mesh (default: 5).
+     * @return Unique pointer to the created DistanceMap, or nullptr on failure.
+     */
+    static std::unique_ptr<DistanceMap> create(
+        const pe::TriangleMeshID& mesh,
+        pe::real spacing,
+        int resolution = 50,
+        int tolerance = 5
+    );
+
+#ifdef PE_USE_CGAL
+
+    template<typename K>
+    using SurfaceMesh = CGAL::Surface_mesh<K>;
+    using CGALKernel = CGAL::Exact_predicates_inexact_constructions_kernel;
+
+    /**
+     * @brief Create a distance map from a CGAL Surface_mesh
+     * @param mesh Reference to the CGAL Surface_mesh
+     * @param spacing Grid spacing (uniform in all directions).
+     * @param resolution Number of grid cells along the largest dimension (default: 50).
+     * @param tolerance Number of empty boundary cells around the mesh (default: 5).
+     * @return Unique pointer to the created DistanceMap, or nullptr on failure.
+     */
+    template<typename Point>
+    static std::unique_ptr<DistanceMap> create(
+        const SurfaceMesh<Point>& mesh,
+        pe::real spacing,
+        int resolution = 50,
+        int tolerance = 5
+    );
+#endif
 
     /**
      * @brief Get the signed distance at a point using trilinear interpolation

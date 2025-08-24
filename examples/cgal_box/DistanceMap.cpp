@@ -34,6 +34,7 @@ public:
 #ifdef PE_USE_CGAL
     // CGAL-specific types
     using Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
+    using CGALKernel = CGAL::Exact_predicates_inexact_constructions_kernel;
     using Point = Kernel::Point_3;
     using Surface_mesh = CGAL::Surface_mesh<Point>;
     using Primitive = CGAL::AABB_face_graph_triangle_primitive<Surface_mesh>;
@@ -338,6 +339,83 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromFile(
     return nullptr;
 #endif
 }
+
+// Create method for PE TriangleMesh
+std::unique_ptr<DistanceMap> DistanceMap::create(
+    const pe::TriangleMeshID& mesh,
+    pe::real spacing,
+    int resolution,
+    int tolerance)
+{
+#ifdef PE_USE_CGAL
+    try {
+        // Convert PE TriangleMesh to CGAL Surface_mesh
+        Impl::Surface_mesh cgal_mesh;
+        
+        const auto& pe_vertices = mesh->getBFVertices();
+        const auto& pe_face_indices = mesh->getFaceIndices();
+
+        std::vector<Impl::Surface_mesh::Vertex_index> vertex_map(pe_vertices.size());
+        for (size_t i = 0; i < pe_vertices.size(); ++i) {
+            const auto& v = pe_vertices[i];
+            vertex_map[i] = cgal_mesh.add_vertex(Impl::Point(v[0], v[1], v[2]));
+        }
+
+        for (const auto& face : pe_face_indices) {
+            if (face.size() == 3) {
+                cgal_mesh.add_face(vertex_map[face[0]], vertex_map[face[1]], vertex_map[face[2]]);
+            }
+        }
+        
+        auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
+        map->_pimpl = std::make_unique<Impl>(cgal_mesh, spacing, resolution, tolerance);
+        
+        if (!map->_pimpl->isValid()) {
+            return nullptr;
+        }
+        return map;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error creating DistanceMap from PE TriangleMesh: " << e.what() << std::endl;
+        return nullptr;
+    }
+#else
+    std::cerr << "Warning: DistanceMap::create requires CGAL support. Please rebuild with PE_USE_CGAL=ON" << std::endl;
+    return nullptr;
+#endif
+}
+
+// Template implementation for CGAL Surface_mesh
+#ifdef PE_USE_CGAL
+template<typename Point>
+std::unique_ptr<DistanceMap> DistanceMap::create(
+    const SurfaceMesh<Point>& mesh,
+    pe::real spacing,
+    int resolution,
+    int tolerance)
+{
+    try {
+        auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
+        map->_pimpl = std::make_unique<Impl>(mesh, spacing, resolution, tolerance);
+        
+        if (!map->_pimpl->isValid()) {
+            return nullptr;
+        }
+        return map;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error creating DistanceMap from CGAL Surface_mesh: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+//DistanceMap::Impl::
+// Explicit template instantiation for the kernel type we use
+template std::unique_ptr<DistanceMap> DistanceMap::create<DistanceMap::Impl::CGALKernel::Point_3>(
+    const SurfaceMesh<DistanceMap::Impl::CGALKernel::Point_3>& mesh,
+    pe::real spacing,
+    int resolution,
+    int tolerance);
+#endif
 
 // Forwarding methods
 pe::real DistanceMap::interpolateDistance(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateDistance(x, y, z); }
