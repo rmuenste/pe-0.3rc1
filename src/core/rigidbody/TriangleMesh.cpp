@@ -71,6 +71,12 @@
 #include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/rigidbody/TriangleMeshTypes.h>
 
+// DistanceMap integration - conditional include
+#ifdef PE_USE_CGAL
+// Note: This include path will need to be updated when DistanceMap is moved to pe/core
+#include "../../examples/cgal_box/DistanceMap.h"
+#endif
+
 #include <pe/povray.h>
 #include <pe/povray/Texture.h>
 #if HAVE_IRRLICHT
@@ -3330,6 +3336,85 @@ std::pair<Vec3, size_t> TriangleMesh::closestPointAndPrimitive(const Vec3& point
 void TriangleMesh::enableDistanceAcceleration(size_t maxReferencePoints)
 {
    TriangleMeshTrait<Config>::enableDistanceAcceleration(maxReferencePoints);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables DistanceMap acceleration for fast collision detection.
+ *
+ * \param spacing Grid spacing (uniform in all directions).
+ * \param resolution Number of grid cells along the largest dimension.
+ * \param tolerance Number of empty boundary cells around the mesh.
+ *
+ * This method creates and stores a DistanceMap for this triangle mesh, which can significantly
+ * improve collision detection performance for mesh-mesh interactions at the cost of memory usage.
+ * This implementation overrides the base trait method to provide actual DistanceMap creation.
+ */
+void TriangleMesh::enableDistanceMapAcceleration(pe::real spacing, int resolution, int tolerance)
+{
+#ifdef PE_USE_CGAL
+   try {
+      // Access protected members from trait base class
+      distanceMap_ = DistanceMap::create(this, spacing, resolution, tolerance);
+      distanceMapEnabled_ = (distanceMap_ != nullptr);
+      
+      if (!distanceMapEnabled_) {
+         std::cerr << "Warning: Failed to create DistanceMap for TriangleMesh " << getID() << std::endl;
+      }
+   } catch (const std::exception& e) {
+      std::cerr << "Error creating DistanceMap for TriangleMesh " << getID() << ": " << e.what() << std::endl;
+      distanceMapEnabled_ = false;
+   }
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Disables DistanceMap acceleration.
+ *
+ * This method removes the stored DistanceMap to free memory, falling back to
+ * standard collision detection methods.
+ */
+void TriangleMesh::disableDistanceMapAcceleration()
+{
+#ifdef PE_USE_CGAL
+   distanceMap_.reset();
+   distanceMapEnabled_ = false;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Checks if DistanceMap acceleration is available.
+ *
+ * \return True if a DistanceMap is available for this mesh, false otherwise.
+ */
+bool TriangleMesh::hasDistanceMap() const
+{
+#ifdef PE_USE_CGAL
+   return distanceMapEnabled_ && distanceMap_;
+#else
+   return false;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Gets the DistanceMap instance.
+ *
+ * \return Pointer to the DistanceMap, or nullptr if not available.
+ */
+const DistanceMap* TriangleMesh::getDistanceMap() const
+{
+#ifdef PE_USE_CGAL
+   return distanceMap_.get();
+#else
+   return nullptr;
+#endif
 }
 //*************************************************************************************************
 

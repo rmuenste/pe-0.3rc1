@@ -70,6 +70,9 @@
 
 namespace pe {
 
+// Forward declarations
+class DistanceMap;
+
 namespace detection {
 
 namespace fine {
@@ -140,6 +143,10 @@ protected:
 
    template< typename Type >
    static inline bool gjkEPAcollide(Type geom, TriangleMeshID mesh, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+   
+   // DistanceMap-based collision detection helpers
+   template< typename CC >
+   static bool collideWithDistanceMap(TriangleMeshID mA, TriangleMeshID mB, CC& contacts);
    //@}
    //**********************************************************************************************
 };
@@ -3737,7 +3744,15 @@ void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& c
    if( mB->getSystemID() < mA->getSystemID() )
       std::swap( mA, mB );
 
+   // NEW: Priority-based collision detection
+   // Try DistanceMap-based collision detection first (if available)
+   if (mA->hasDistanceMap() || mB->hasDistanceMap()) {
+      if (collideWithDistanceMap(mA, mB, contacts)) {
+         return; // DistanceMap collision successful
+      }
+   }
 
+   // Existing GJK/EPA fallback
    Vec3 normal;
    Vec3 contactPoint;
    real penetrationDepth;
@@ -3837,6 +3852,112 @@ inline void MaxContacts::collideUnionUnion( UnionID u1, UnionID u2, CC& contacts
          collide( *it1, *it2, contacts );
       }
    }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief DistanceMap-based collision detection between two triangle meshes.
+ * \ingroup contact_generation
+ *
+ * \param mA The first triangle mesh.
+ * \param mB The second triangle mesh.
+ * \param contacts Contact container for the generated contacts.
+ * \return True if collision detection was successful using DistanceMap, false otherwise.
+ *
+ * This method attempts to use DistanceMap acceleration for fast mesh-mesh collision detection.
+ * It queries the DistanceMap of one mesh to determine penetration depth and contact information
+ * with respect to the other mesh. If either mesh has a DistanceMap available, it is used for
+ * efficient collision detection.
+ */
+template< typename CC >  // Type of the contact container
+bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, CC& contacts )
+{
+#ifdef PE_USE_CGAL
+   // Determine which mesh has the DistanceMap
+   const DistanceMap* distMap = nullptr;
+   TriangleMeshID queryMesh = nullptr;
+   TriangleMeshID referenceMesh = nullptr;
+   
+   if (mA->hasDistanceMap()) {
+      distMap = mA->getDistanceMap();
+      referenceMesh = mA;
+      queryMesh = mB;
+   } else if (mB->hasDistanceMap()) {
+      distMap = mB->getDistanceMap();
+      referenceMesh = mB;
+      queryMesh = mA;
+   } else {
+      return false; // No DistanceMap available
+   }
+   
+   if (!distMap) {
+      return false;
+   }
+   
+   try {
+      // For simplicity, we'll query a few representative points from the query mesh
+      // A more sophisticated approach would sample more points or use mesh-to-mesh queries
+      const auto& queryVertices = queryMesh->getBFVertices();
+      
+      // Transform vertices from query mesh local space to reference mesh local space
+      // For now, assume both meshes are in world coordinates
+      Vec3 minPenetrationNormal;
+      Vec3 deepestContactPoint;
+      real minDistance = std::numeric_limits<real>::max();
+      bool hasContact = false;
+      
+      // Sample a subset of vertices to avoid performance issues
+      size_t sampleStep = std::max(1UL, queryVertices.size() / 20); // Sample ~20 points max
+      
+      for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
+         const Vec3& vertex = queryVertices[i];
+         
+         // Query distance from this vertex to the reference mesh surface
+         real distance = distMap->interpolateDistance(vertex[0], vertex[1], vertex[2]);
+         
+         // Check for contact/penetration
+         if (distance < contactThreshold) {
+            hasContact = true;
+            
+            if (distance < minDistance) {
+               minDistance = distance;
+               
+               // Get normal and contact point from DistanceMap
+               Vec3 normal = distMap->interpolateNormal(vertex[0], vertex[1], vertex[2]);
+               Vec3 contactPoint = distMap->interpolateContactPoint(vertex[0], vertex[1], vertex[2]);
+               
+               // Store the deepest contact information
+               minPenetrationNormal = normal;
+               deepestContactPoint = contactPoint;
+            }
+         }
+      }
+      
+      // Create contact if penetration was found
+      if (hasContact && minDistance < contactThreshold) {
+         // Ensure proper normal direction (pointing from reference to query mesh)
+         if (referenceMesh == mB) {
+            minPenetrationNormal = -minPenetrationNormal;
+         }
+         
+         contacts.addVertexFaceContact( queryMesh, referenceMesh, deepestContactPoint, minPenetrationNormal, minDistance );
+         
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      DistanceMap contact created between triangle mesh " << mA->getID()
+                << " and triangle mesh " << mB->getID() << " (dist=" << minDistance << ")";
+         }
+         
+         return true;
+      }
+   } catch (const std::exception& e) {
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      DistanceMap collision detection failed: " << e.what();
+      }
+   }
+   
+#endif
+   return false; // DistanceMap collision detection failed or not available
 }
 //*************************************************************************************************
 

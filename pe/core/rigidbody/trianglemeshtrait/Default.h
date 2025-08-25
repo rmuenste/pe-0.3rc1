@@ -34,6 +34,11 @@
 #include <pe/system/Precision.h>
 #include <pe/util/Types.h>
 
+// Forward declaration for DistanceMap (avoid circular dependency)
+namespace pe {
+   class DistanceMap;
+}
+
 // CGAL includes - only when CGAL is enabled
 #ifdef PE_USE_CGAL
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
@@ -48,6 +53,10 @@
 #include <map>
 #include <memory>
 #include <random>
+
+// Forward declaration in header, actual include would go in implementation files
+// But since this is a template class, we need the include here
+// #include "DistanceMap.h" // This will be included by implementation files that use these methods
 #endif
 
 
@@ -449,6 +458,12 @@ public:
    void invalidateAABBTree();
    bool containsPoint(const Vec3& point) const;
    real signedDistance(const Vec3& point) const;
+   
+   // DistanceMap acceleration methods
+   void enableDistanceMapAcceleration(pe::real spacing, int resolution = 50, int tolerance = 5);
+   void disableDistanceMapAcceleration();
+   bool hasDistanceMap() const;
+   const DistanceMap* getDistanceMap() const;
    //@}
    //**********************************************************************************************
 
@@ -462,6 +477,16 @@ private:
    mutable bool aabbTreeValid_;
    mutable bool distanceAccelerationEnabled_;
    mutable size_t maxReferencePoints_;
+#endif
+   //@}
+   //**********************************************************************************************
+
+   //**DistanceMap members**************************************************************************
+   /*!\name DistanceMap members */
+   //@{
+#ifdef PE_USE_CGAL
+   mutable std::unique_ptr<DistanceMap> distanceMap_;
+   mutable bool distanceMapEnabled_;
 #endif
    //@}
    //**********************************************************************************************
@@ -505,6 +530,7 @@ TriangleMeshTrait<C>::TriangleMeshTrait( id_t sid, id_t uid, const Vec3& gpos,
    , aabbTreeValid_(false)
    , distanceAccelerationEnabled_(false)
    , maxReferencePoints_(100000)
+   , distanceMapEnabled_(false)
 #endif
 {}
 //*************************************************************************************************
@@ -957,6 +983,83 @@ real TriangleMeshTrait<C>::signedDistance(const Vec3& point) const
    
    // Use tag dispatch to call the appropriate implementation
    return detail::CgalFunctions<Tag>::signedDistance(vertices, faces, point);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables DistanceMap acceleration for fast collision detection.
+ *
+ * \param spacing Grid spacing (uniform in all directions).
+ * \param resolution Number of grid cells along the largest dimension.
+ * \param tolerance Number of empty boundary cells around the mesh.
+ *
+ * This method creates and stores a DistanceMap for this triangle mesh, which can significantly
+ * improve collision detection performance for mesh-mesh interactions at the cost of memory usage.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::enableDistanceMapAcceleration(pe::real spacing, int resolution, int tolerance)
+{
+#ifdef PE_USE_CGAL
+   // Store the parameters for later use by derived class
+   // The actual DistanceMap creation will happen in TriangleMesh::enableDistanceMapAcceleration()
+   // which has access to both headers
+   distanceMapEnabled_ = false;
+   
+   // Note: This is a base implementation. TriangleMesh will override this method
+   // to provide the actual DistanceMap creation functionality.
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Disables DistanceMap acceleration.
+ *
+ * This method removes the stored DistanceMap to free memory, falling back to
+ * standard collision detection methods.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::disableDistanceMapAcceleration()
+{
+#ifdef PE_USE_CGAL
+   distanceMap_.reset();
+   distanceMapEnabled_ = false;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Checks if DistanceMap acceleration is available.
+ *
+ * \return True if a DistanceMap is available for this mesh, false otherwise.
+ */
+template< typename C >  // Type of the configuration
+bool TriangleMeshTrait<C>::hasDistanceMap() const
+{
+#ifdef PE_USE_CGAL
+   return distanceMapEnabled_ && distanceMap_;
+#else
+   return false;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Gets the DistanceMap instance.
+ *
+ * \return Pointer to the DistanceMap, or nullptr if not available.
+ */
+template< typename C >  // Type of the configuration
+const DistanceMap* TriangleMeshTrait<C>::getDistanceMap() const
+{
+#ifdef PE_USE_CGAL
+   return distanceMap_.get();
+#else
+   return nullptr;
+#endif
 }
 //*************************************************************************************************
 

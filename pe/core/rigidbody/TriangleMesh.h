@@ -49,6 +49,9 @@
 
 namespace pe {
 
+// Forward declarations
+class DistanceMap;
+
 //=================================================================================================
 //
 //  CLASS DEFINITION
@@ -208,6 +211,12 @@ public:
    std::pair<Vec3, size_t> closestPointAndPrimitive(const Vec3& point) const;
    void enableDistanceAcceleration(size_t maxReferencePoints = 100000);
    void invalidateAABBTree();
+   
+   // DistanceMap acceleration (overrides base trait methods)
+   void enableDistanceMapAcceleration(pe::real spacing, int resolution = 50, int tolerance = 5);
+   void disableDistanceMapAcceleration();
+   bool hasDistanceMap() const;
+   const DistanceMap* getDistanceMap() const;
 
    virtual inline Vec3 support                ( const Vec3& d ) const;
    virtual inline Vec3 supportContactThreshold( const Vec3& d ) const;

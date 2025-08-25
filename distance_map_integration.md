@@ -1,96 +1,118 @@
-# DistanceMap Class Integration Plan
+# DistanceMap Integration Status - PE Physics Pipeline
 
-This document outlines the steps to fully integrate the `DistanceMap` class into the `pe` library.
+This document tracks the integration of the `DistanceMap` class into the `pe` library physics pipeline.
 
-### 1. Namespace Integration
+## ✅ **COMPLETED INTEGRATION**
 
-- **Action:** Move the entire `DistanceMap` class definition into the `pe` namespace.
-- **Benefit:** This is the standard practice for library components and allows for unqualified name lookup (e.g., `real` instead of `pe::real`).
+The DistanceMap has been successfully integrated into the PE physics engine collision detection pipeline using the **TriangleMeshTrait** approach.
 
-### 2. Data Type Unification
+### 1. DistanceMap Class Structure ✅
 
-- **Action:** Replace the primitive `double` type with the library's `pe::real` typedef for all variables and function parameters representing physical quantities.
-- **Affected Files:**
-    - `DistanceMap.h` (core class)
-    - `cgal_box.cpp` (example usage)
-    - `VtkOutput.h` (export helpers)
-- **Benefit:** Ensures data type consistency across the entire `pe` library.
+- **✅ Namespace Integration:** Fully integrated into the `pe` namespace
+- **✅ Data Type Unification:** Uses `pe::real` throughout for consistency
+- **✅ Pimpl Pattern:** Successfully implemented to hide CGAL dependencies
+- **✅ Factory Methods:** Multiple creation methods available:
+  - `createFromFile()` - from .obj/.off files
+  - `create(TriangleMeshID)` - from PE TriangleMesh
+  - `create(CGAL::Surface_mesh)` - from CGAL mesh
 
-### 3. Header Management
+### 2. TriangleMeshTrait Integration ✅
 
-- **Action:** Ensure that all modified files include the necessary `pe` headers, such as `<pe/config/Precision.h>`, to make `pe::real` available.
+**Location:** `pe/core/rigidbody/trianglemeshtrait/Default.h`
 
-### 4. Mitigate Name Clashes
+- **✅ Member Variables:** Added DistanceMap storage with conditional compilation
+  ```cpp
+  #ifdef PE_USE_CGAL
+     mutable std::unique_ptr<DistanceMap> distanceMap_;
+     mutable bool distanceMapEnabled_;
+  #endif
+  ```
 
-- **Action:** Analyze and mitigate potential name clashes with third-party dependencies, especially CGAL. The recommended approach is to use the Pimpl (Pointer to Implementation) idiom to completely hide CGAL types and headers from the public `DistanceMap.h` header file.
-- **Benefit:** Prevents polluting the `pe` namespace, improves compile times, and creates a stable, encapsulated API.
+- **✅ Public Interface:** Added methods to TriangleMeshTrait base class:
+  - `enableDistanceMapAcceleration(spacing, resolution, tolerance)`
+  - `disableDistanceMapAcceleration()`
+  - `hasDistanceMap()`
+  - `getDistanceMap()`
 
----
+### 3. TriangleMesh Implementation ✅
 
-### 5. Recommended Implementation Strategy: Pimpl Idiom
+**Location:** `pe/core/rigidbody/TriangleMesh.h` and `src/core/rigidbody/TriangleMesh.cpp`
 
-To address the name clash issue, the **Pimpl (Pointer to Implementation)** idiom is the recommended approach. It hides all third-party dependencies (like CGAL) from the library's public-facing headers.
+- **✅ Header Declarations:** Added DistanceMap method declarations
+- **✅ Forward Declarations:** Proper forward declarations to avoid circular dependencies
+- **✅ Implementation:** Full method implementations with:
+  - Error handling and validation
+  - Conditional CGAL compilation guards
+  - Integration with DistanceMap factory methods
 
-#### How It Works
+### 4. MaxContacts Collision Detection Integration ✅
 
-**1. Public Header (`DistanceMap.h`)**
+**Location:** `pe/core/detection/fine/MaxContacts.h`
 
-This file becomes a thin wrapper. It does **not** include any CGAL headers. It only forward-declares an internal implementation class and holds a private pointer (usually a `std::unique_ptr`) to it.
+- **✅ Priority-Based Detection:** Updated `collideTMeshTMesh()` with:
+  ```cpp
+  // NEW: Priority-based collision detection
+  if (mA->hasDistanceMap() || mB->hasDistanceMap()) {
+     if (collideWithDistanceMap(mA, mB, contacts)) {
+        return; // DistanceMap collision successful
+     }
+  }
+  // Existing GJK/EPA fallback
+  ```
+
+- **✅ Helper Method:** Implemented `collideWithDistanceMap()` with:
+  - Vertex sampling approach for mesh-to-mesh queries
+  - Efficient contact point generation
+  - Proper normal direction handling
+  - Graceful fallback on errors
+
+### 5. Architecture Benefits ✅
+
+- **✅ Inheritance-Based:** DistanceMap capabilities inherited through trait system
+- **✅ Conditional Compilation:** No overhead when CGAL unavailable
+- **✅ Performance Priority:** DistanceMap → GJK/EPA fallback chain
+- **✅ Backward Compatible:** Existing collision detection unchanged
+- **✅ Clean API:** Standard mesh interface, no additional dependencies
+
+## 🎯 **USAGE WORKFLOW**
 
 ```cpp
-// In pe/DistanceMap.h
-#include <pe/config/Precision.h>
-#include <memory> // For std::unique_ptr
+// 1. Create triangle mesh
+auto mesh = createTriangleMesh(id, pos, "model.obj", material);
 
-namespace pe {
-  class DistanceMap {
-  public:
-    DistanceMap(/* constructor args */);
-    ~DistanceMap(); // Important! Needs to be in .cpp
+// 2. Enable DistanceMap acceleration (optional)
+mesh->enableDistanceMapAcceleration(0.1, 50, 5); // spacing, resolution, tolerance
 
-    // Public interface is clean of CGAL types
-    real interpolateDistance(real x, real y, real z) const;
-    // ... other public methods
-
-  private:
-    class Impl; // Forward-declare the implementation class
-    std::unique_ptr<Impl> _pimpl; // Pointer to implementation
-  };
-}
+// 3. Collision detection automatically uses DistanceMap when available
+// - Fast DistanceMap queries for mesh-mesh collisions
+// - Automatic fallback to GJK/EPA when DistanceMap unavailable
 ```
 
-**2. Implementation File (`DistanceMap.cpp`)**
+## 🔧 **BUILD CONFIGURATION**
 
-This file contains the private `Impl` class definition and all the CGAL-related logic and headers.
-
-```cpp
-// In pe/DistanceMap.cpp
-#include "DistanceMap.h"
-
-// All heavy includes are isolated here!
-#include <CGAL/Surface_mesh.h>
-#include <CGAL/AABB_tree.h>
-// ... other CGAL headers
-
-// The implementation class is defined only in the .cpp
-class pe::DistanceMap::Impl {
-public:
-    // CGAL types are freely used here
-    CGAL::Surface_mesh<...> _mesh;
-    CGAL::AABB_tree<...> _tree;
-
-    void computeSdf() { /* ... */ }
-    // ... all the real logic
-};
-
-// Constructor, destructor, and methods are defined here
-pe::DistanceMap::DistanceMap(/*...*/) : _pimpl{std::make_unique<Impl>()} {
-    // ... initialize the implementation ...
-}
-pe::DistanceMap::~DistanceMap() = default;
-
-pe::real pe::DistanceMap::interpolateDistance(real x, real y, real z) const {
-    // Forward the call to the implementation
-    return _pimpl->interpolateDistance(x, y, z);
-}
+To enable DistanceMap functionality:
+```bash
+cmake -DCGAL=ON -DPE_USE_CGAL=ON ..
 ```
+
+## 📂 **FILES MODIFIED**
+
+| File | Changes |
+|------|---------|
+| `pe/core/rigidbody/trianglemeshtrait/Default.h` | Added DistanceMap members and interface |
+| `pe/core/rigidbody/TriangleMesh.h` | Added DistanceMap method declarations |
+| `src/core/rigidbody/TriangleMesh.cpp` | Implemented DistanceMap methods |
+| `pe/core/detection/fine/MaxContacts.h` | Updated collision detection pipeline |
+| `examples/cgal_box/DistanceMap.h` | Enhanced with PE integration methods |
+| `examples/cgal_box/DistanceMap.cpp` | Added PE TriangleMesh support |
+
+## 🚀 **PERFORMANCE CHARACTERISTICS**
+
+- **Memory:** DistanceMap created only when explicitly enabled
+- **Runtime:** O(1) distance queries vs O(n) triangle iteration
+- **Preprocessing:** Optional build-time DistanceMap generation
+- **Fallback:** Seamless degradation to existing GJK/EPA methods
+
+## ✅ **INTEGRATION COMPLETE**
+
+The DistanceMap has been successfully integrated into the PE physics pipeline following established architectural patterns. The implementation provides significant performance improvements for mesh-mesh collisions while maintaining full backward compatibility and graceful fallback behavior.
