@@ -1,4 +1,4 @@
-#include "DistanceMap.h"
+#include <pe/core/detection/fine/DistanceMap.h>
 
 #include <algorithm>
 #include <cmath>

@@ -68,7 +68,7 @@
 #include <pe/util/Types.h>
 
 #ifdef PE_USE_CGAL
-#include "../../../../examples/cgal_box/DistanceMap.h"
+#include <pe/core/detection/fine/DistanceMap.h>
 #endif
 
 namespace pe {
@@ -3904,7 +3904,9 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       const auto& queryVertices = queryMesh->getWFVertices();
       
       // Transform vertices from query mesh local space to reference mesh local space
-      // For now, assume both meshes are in world coordinates
+      // TODO: Apply world-to-model transformation for reference mesh coordinate system
+      // Currently assumes reference mesh is at origin (0,0,0) with identity rotation
+      // For general case: Vec3 localVertex = referenceMesh->worldToModelTransform(vertex);
       Vec3 minPenetrationNormal;
       Vec3 deepestContactPoint;
       real minDistance = std::numeric_limits<real>::max();
@@ -3915,6 +3917,10 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       
       for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
          const Vec3& vertex = queryVertices[i];
+         
+         // TODO: Transform vertex to reference mesh local coordinates
+         // Vec3 localVertex = referenceMesh->pointFromWFtoBF(vertex);
+         // For now, using world coordinates directly (works when reference mesh at origin)
          
          // Query distance from this vertex to the reference mesh surface
          real distance = distMap->interpolateDistance(vertex[0], vertex[1], vertex[2]);

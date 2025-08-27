@@ -14,7 +14,7 @@
 #include <cctype>
 
 // Local headers
-#include "DistanceMap.h"
+#include <pe/core/detection/fine/DistanceMap.h>
 #include "VtkOutput.h"
 
 // PE headers
