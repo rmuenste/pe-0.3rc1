@@ -67,6 +67,9 @@
 #include <pe/util/Timing.h>
 #include <pe/util/Types.h>
 
+#ifdef PE_USE_CGAL
+#include "../../../../examples/cgal_box/DistanceMap.h"
+#endif
 
 namespace pe {
 
@@ -3898,7 +3901,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
    try {
       // For simplicity, we'll query a few representative points from the query mesh
       // A more sophisticated approach would sample more points or use mesh-to-mesh queries
-      const auto& queryVertices = queryMesh->getBFVertices();
+      const auto& queryVertices = queryMesh->getWFVertices();
       
       // Transform vertices from query mesh local space to reference mesh local space
       // For now, assume both meshes are in world coordinates
