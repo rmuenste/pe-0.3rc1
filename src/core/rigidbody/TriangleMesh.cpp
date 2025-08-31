@@ -73,8 +73,7 @@
 
 // DistanceMap integration - conditional include
 #ifdef PE_USE_CGAL
-// Note: This include path will need to be updated when DistanceMap is moved to pe/core
-#include "../../../examples/cgal_box/DistanceMap.h"
+#include <pe/core/detection/fine/DistanceMap.h>
 #endif
 
 #include <pe/povray.h>

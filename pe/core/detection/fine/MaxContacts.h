@@ -3903,27 +3903,24 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       // A more sophisticated approach would sample more points or use mesh-to-mesh queries
       const auto& queryVertices = queryMesh->getWFVertices();
       
-      // Transform vertices from query mesh local space to reference mesh local space
-      // TODO: Apply world-to-model transformation for reference mesh coordinate system
-      // Currently assumes reference mesh is at origin (0,0,0) with identity rotation
-      // For general case: Vec3 localVertex = referenceMesh->worldToModelTransform(vertex);
+      // Transform vertices from query mesh world coordinates to reference mesh local coordinates
+      // Uses PE's coordinate transformation methods for proper mesh-to-mesh collision detection
       Vec3 minPenetrationNormal;
       Vec3 deepestContactPoint;
       real minDistance = std::numeric_limits<real>::max();
       bool hasContact = false;
       
-      // Sample a subset of vertices to avoid performance issues
-      size_t sampleStep = std::max(1UL, queryVertices.size() / 20); // Sample ~20 points max
+      // Use all vertices for comprehensive testing (sampling disabled)
+      size_t sampleStep = 1; // Process every vertex (no sampling)
       
       for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
          const Vec3& vertex = queryVertices[i];
          
-         // TODO: Transform vertex to reference mesh local coordinates
-         // Vec3 localVertex = referenceMesh->pointFromWFtoBF(vertex);
-         // For now, using world coordinates directly (works when reference mesh at origin)
+         // Transform vertex from world coordinates to reference mesh local coordinates
+         Vec3 localVertex = referenceMesh->pointFromWFtoBF(vertex);
          
-         // Query distance from this vertex to the reference mesh surface
-         real distance = distMap->interpolateDistance(vertex[0], vertex[1], vertex[2]);
+         // Query distance from this vertex to the reference mesh surface (in local coordinates)
+         real distance = distMap->interpolateDistance(localVertex[0], localVertex[1], localVertex[2]);
          
          // Check for contact/penetration
          if (distance < contactThreshold) {
@@ -3932,13 +3929,17 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             if (distance < minDistance) {
                minDistance = distance;
                
-               // Get normal and contact point from DistanceMap
-               Vec3 normal = distMap->interpolateNormal(vertex[0], vertex[1], vertex[2]);
-               Vec3 contactPoint = distMap->interpolateContactPoint(vertex[0], vertex[1], vertex[2]);
+               // Get normal and contact point from DistanceMap (in local coordinates)
+               Vec3 localNormal = distMap->interpolateNormal(localVertex[0], localVertex[1], localVertex[2]);
+               Vec3 localContactPoint = distMap->interpolateContactPoint(localVertex[0], localVertex[1], localVertex[2]);
                
-               // Store the deepest contact information
-               minPenetrationNormal = normal;
-               deepestContactPoint = contactPoint;
+               // Transform results back to world coordinates for collision response
+               Vec3 worldNormal = referenceMesh->vectorFromBFtoWF(localNormal);
+               Vec3 worldContactPoint = referenceMesh->pointFromBFtoWF(localContactPoint);
+               
+               // Store the deepest contact information (in world coordinates)
+               minPenetrationNormal = worldNormal;
+               deepestContactPoint = worldContactPoint;
             }
          }
       }
