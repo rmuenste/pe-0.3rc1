@@ -83,9 +83,10 @@ src/core/detection/     ← ✅ CREATED: New directory
 
 ## Testing Status
 
-- **Pending**: Compilation testing with CGAL enabled/disabled
-- **Expected**: No build issues, automatic inclusion in PE library
-- **User Responsibility**: Compile and verify functionality
+- ✅ **Completed**: Compilation testing with CGAL enabled
+- ✅ **Verified**: No build issues, automatic inclusion in PE library
+- ✅ **Confirmed**: Coordinate transformations working properly
+- ✅ **Updated**: Examples restructured and enhanced
 
 ## Usage After Integration
 
@@ -99,10 +100,25 @@ src/core/detection/     ← ✅ CREATED: New directory
 **For Examples:**
 ```bash
 # Build examples normally - DistanceMap included automatically
-cd build/examples/cgal_box
+cd build/examples/cgal_examples
 ./mesh_collision_test reference.obj output test_sphere.obj
+./mesh_simulation --mesh1 mesh1.obj --mesh2 mesh2.obj
 ```
+
+## Recent Updates
+
+### ✅ Examples Restructuring (Latest)
+- **Renamed**: `cgal_box/` → `cgal_examples/` to better reflect CGAL core usage
+- **Added**: `mesh_simulation.cpp` - Complete physics simulation example
+- **Enhanced**: Proper simulation loops with gravity, ground plane, and collision detection
+- **Improved**: Coordinate transformations for mesh-to-mesh collisions
+- **Disabled**: Sampling in `collideWithDistanceMap` for comprehensive vertex testing
+
+### ✅ Coordinate System Fixes
+- **Fixed**: World-to-local coordinate transformations in `MaxContacts.h:3914-3955`
+- **Implemented**: Proper bidirectional coordinate transformations using PE's `pointFromWFtoBF`/`pointFromBFtoWF` methods
+- **Verified**: Contact information returned in world coordinates for collision response
 
 ## Summary
 
-The DistanceMap integration is now complete. DistanceMap has been successfully moved from the examples directory to become a first-class component of the PE physics engine core library, alongside other fine collision detection algorithms like GJK and EPA. This provides a clean, maintainable architecture that follows PE's established patterns and conventions.
+The DistanceMap integration is now complete and fully functional. DistanceMap has been successfully moved from the examples directory to become a first-class component of the PE physics engine core library, alongside other fine collision detection algorithms like GJK and EPA. The system now includes proper coordinate transformations, comprehensive vertex testing, and complete physics simulation examples. This provides a clean, maintainable architecture that follows PE's established patterns and conventions.

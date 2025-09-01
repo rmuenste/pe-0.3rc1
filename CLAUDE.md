@@ -43,6 +43,10 @@ After building with `-DEXAMPLES=ON`, the example binaries are located in `build/
 
 # Run an MPI example with multiple processes
 mpirun -np 4 ./build/examples/mpicube/mpicube
+
+# Run CGAL-enabled examples (requires -DCGAL=ON)
+./build/examples/cgal_examples/mesh_simulation --mesh1 mesh1.obj --mesh2 mesh2.obj
+./build/examples/cgal_examples/mesh_collision_test reference.obj output test_sphere.obj
 ```
 
 ## Dependencies
@@ -64,7 +68,7 @@ PE is a physics engine for rigid body dynamics simulation with the following mai
 ### Core Components
 - `pe/core`: Main simulation engine components
   - RigidBody management and collisions
-  - Contact detection and resolution
+  - Contact detection and resolution (including DistanceMap acceleration)
   - Domain decomposition for MPI parallelization
 - `pe/math`: Mathematical primitives and algorithms
   - Vectors and matrices
@@ -160,3 +164,48 @@ PE uses a template-based design to specialize the collision system for different
    class RigidBodyTrait< C<CD,FD,BG,response::HardContactFluidLubrication> > : public MPIRigidBodyTrait
    { /*...implementation details...*/ };
    ```
+
+## DistanceMap Integration
+
+DistanceMap acceleration has been integrated into the PE core library as a fine collision detection algorithm alongside GJK and EPA. This provides 3D signed distance field-based collision detection for triangle meshes.
+
+### Usage
+
+```cpp
+#include <pe/core/detection/fine/DistanceMap.h>
+
+// Create triangle mesh with DistanceMap acceleration
+TriangleMeshID mesh = createTriangleMesh(id, position, "mesh.obj", material, false, true);
+mesh->enableDistanceMapAcceleration(spacing, resolution, tolerance);
+
+// DistanceMap will be automatically used in collision detection
+```
+
+### File Structure
+
+- **Header**: `pe/core/detection/fine/DistanceMap.h` - Co-located with GJK/EPA algorithms
+- **Implementation**: `src/core/detection/fine/DistanceMap.cpp` - Included in PE library
+- **Integration**: `pe/core/detection/fine/MaxContacts.h` - Collision detection pipeline
+
+### CGAL Examples
+
+The `examples/cgal_examples/` directory contains examples demonstrating CGAL and DistanceMap functionality:
+
+- **`mesh_simulation.cpp`**: Complete physics simulation with two meshes, ground plane, and DistanceMap acceleration
+- **`mesh_collision_test.cpp`**: Collision detection testing with DistanceMap validation
+- **`cgal_box.cpp`**: Basic CGAL integration example
+
+### Coordinate Transformations
+
+DistanceMap collision detection properly handles coordinate transformations:
+- Query vertices transformed from world coordinates to reference mesh local coordinates
+- Distance queries performed in local coordinate system where DistanceMap is defined
+- Results (normals, contact points) transformed back to world coordinates for collision response
+
+### Current State
+
+- ✅ DistanceMap fully integrated into PE core library
+- ✅ Coordinate transformations implemented for proper mesh-to-mesh collision
+- ✅ Sampling disabled for comprehensive vertex testing
+- ✅ Examples updated with proper simulation loops and physics integration
+- ✅ Build system configured for CGAL examples
