@@ -3911,6 +3911,9 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       bool hasContact = false;
       
       // Use all vertices for comprehensive testing (sampling disabled)
+      // Reenable sampling for performance if needed:
+      // size sampleSize = 100UL; // Sample up to 100 points
+      // size_t sampleStep = std::max(size_t(1), queryVertices.size() / sampleSize);
       size_t sampleStep = 1; // Process every vertex (no sampling)
       
       for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
@@ -3951,6 +3954,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             minPenetrationNormal = -minPenetrationNormal;
          }
          
+         minPenetrationNormal = -minPenetrationNormal;
          contacts.addVertexFaceContact( queryMesh, referenceMesh, deepestContactPoint, minPenetrationNormal, minDistance );
          
          pe_LOG_DEBUG_SECTION( log ) {

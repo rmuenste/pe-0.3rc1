@@ -77,9 +77,9 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps ( 200 );    // Total number of time steps
-   const unsigned int visspacing(   10 );   // Spacing between two visualizations
-   const real timestep_size( 0.004 );       // Size of each simulation time step
+   const unsigned int timesteps ( 8000 );    // Total number of time steps
+   const unsigned int visspacing(   40 );   // Spacing between two visualizations
+   const real timestep_size( 0.0005 );       // Size of each simulation time step
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
@@ -119,16 +119,18 @@ int main( int argc, char* argv[] )
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -9.81 );  // Standard gravity in -z direction
 
+   //theCollisionSystem()->setErrorReductionParameter(0.0125);
+   theCollisionSystem()->setErrorReductionParameter(0.0);
    std::cout << "\nWorld initialized with gravity: " << world->getGravity() << std::endl;
 
    // Create materials
-   MaterialID groundMaterial = createMaterial("ground", 2.5, 0.0, 0.3, 0.05, 0.8, 80, 100, 10, 11);
-   MaterialID mesh1Material = createMaterial("mesh1_mat", 1.2, 0.0, 0.2, 0.1, 0.4, 80, 100, 10, 11);
-   MaterialID mesh2Material = createMaterial("mesh2_mat", 0.8, 0.0, 0.25, 0.08, 0.3, 80, 100, 10, 11);
+   MaterialID groundMaterial = createMaterial("ground", 2.5, 0.0, 0.3, 0.05, 0.2, 80, 100, 10, 11);
+   MaterialID mesh1Material = createMaterial("mesh1_mat", 1.2, 0.0, 0.2, 0.1, 0.2, 80, 100, 10, 11);
+   MaterialID mesh2Material = createMaterial("mesh2_mat", 0.8, 0.0, 0.25, 0.08, 0.2, 80, 100, 10, 11);
 
    // Setup of the ground plane with normal (0,0,1) at location (0,0,0)
-   PlaneID groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, groundMaterial );
-   std::cout << "Ground plane created with normal (0,0,1) at z=0" << std::endl;
+//   PlaneID groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, groundMaterial );
+//   std::cout << "Ground plane created with normal (0,0,1) at z=0" << std::endl;
 
    // Load mesh objects
    TriangleMeshID mesh1 = nullptr;
@@ -137,7 +139,8 @@ int main( int argc, char* argv[] )
    try {
       // Load first mesh at elevated position
       std::cout << "\nLoading mesh 1 from: " << mesh1File << std::endl;
-      mesh1 = createTriangleMesh(++id, Vec3(0.0, 0.0, 5.0), mesh1File, mesh1Material, false, true);
+      mesh1 = createTriangleMesh(++id, Vec3(0.0, 0.0, 0.0), mesh1File, mesh1Material, false, true);
+      mesh1->setFixed( true );
       std::cout << "Mesh 1 created with " << mesh1->getBFVertices().size() << " vertices at position: " << mesh1->getPosition() << std::endl;
       
       // Enable DistanceMap acceleration on mesh 1
@@ -145,15 +148,20 @@ int main( int argc, char* argv[] )
       std::cout << "DistanceMap acceleration enabled on mesh 1: " << (mesh1->hasDistanceMap() ? "SUCCESS" : "FAILED") << std::endl;
       
       // Set initial linear velocity (slight downward and forward motion)
-      mesh1->setLinearVel( 0.5, 0.0, -0.2 );
+      //mesh1->setLinearVel( 0.5, 0.0, -0.2 );
       
       // Load second mesh at different elevated position
       std::cout << "\nLoading mesh 2 from: " << mesh2File << std::endl;
-      mesh2 = createTriangleMesh(++id, Vec3(2.0, 1.0, 4.5), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 3.1, 4.7), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, -1.72496, 8.36196), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 3.03749, 5.82685), mesh2File, mesh2Material, false, true);
+      mesh2 = createTriangleMesh(++id, Vec3(-1.55176,2.2521, 5.82685), mesh2File, mesh2Material, false, true);
       std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices at position: " << mesh2->getPosition() << std::endl;
-      
+      // (0, -1.72496 m , 8.36196 m)
+      //3.03749 m, 5.82685 m
+      // Vec3(-1.55176,2.2521, 5.82685);
       // Set initial linear velocity (slight sideways and downward motion)
-      mesh2->setLinearVel( -0.3, 0.2, -0.1 );
+      //mesh2->setLinearVel( -0.3, 0.2, -0.1 );
       
    }
    catch (const std::exception& e) {
