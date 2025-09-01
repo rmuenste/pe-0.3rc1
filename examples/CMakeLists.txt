@@ -14,7 +14,7 @@ add_subdirectory(simple_demo)
 
 # CGAL Examples
 if( CGAL )
-    add_subdirectory(cgal_box)  # Example showing CGAL oriented bounding box functionality
+    add_subdirectory(cgal_examples)  # Example showing CGAL oriented bounding box functionality
     add_subdirectory(convex_hull)  # Example showing CGAL convex hull computation for triangle meshes
 endif( CGAL )
 
