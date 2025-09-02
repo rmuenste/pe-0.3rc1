@@ -1,3 +1,6 @@
+#ifndef USE_CGAL
+   #define USE_CGAL
+#endif
 //=================================================================================================
 /*!
  *  \file src/core/rigidbody/TriangleMesh.cpp
@@ -77,7 +80,9 @@
 #  include <pe/irrlicht.h>
 #  include <irrlicht/irrlicht.h>
 #endif
-
+#ifdef USE_CGAL
+#  include <pe/interface/compute_inside.h>
+#endif
 
 namespace pe {
 
@@ -142,7 +147,6 @@ TriangleMesh::TriangleMesh( id_t sid, id_t uid, const Vec3& gpos,
    Visualization::add( this );
 }
 //*************************************************************************************************
-
 
 //*************************************************************************************************
 /*!\brief Constructor for the TriangleMesh class
@@ -215,8 +219,6 @@ TriangleMesh::TriangleMesh( id_t sid, id_t uid, const Vec3& gpos,
    Visualization::add( this );
 }
 //*************************************************************************************************
-
-
 
 
 //=================================================================================================
@@ -1443,6 +1445,158 @@ bool TriangleMesh::containsPoint( const Vec3& gpos ) const
 }
 //*************************************************************************************************
 
+#ifdef USE_CGAL
+bool TriangleMesh::containsPoint( const cgalPoint gpos ) const
+{
+  
+  Vec3 p = pointFromWFtoBF( Vec3(gpos.x(),gpos.y(),gpos.z()) );
+  cgalPoint relPoint(p[0], p[1], p[2]);  
+  
+  // Generate a direction vector for the ray
+  Vec vec = random_vector();
+
+  cgalRay ray(relPoint, vec);
+  int nb_intersections = (int)tree_.number_of_intersected_primitives(ray);
+  // Check for odd or even number of intersections
+  if (nb_intersections % 2 != 0)
+    return 1;
+  else
+    return 0;
+}
+
+
+void TriangleMesh::initGeometry(std::string objPath){
+
+  
+  // only one output file
+  unsigned nOut = 0;
+  
+  std::cout << "Name of mesh file: " << objPath << std::endl;
+
+  // Load a mesh from file in the CGAL off format
+  std::string::size_type dpos = objPath.rfind(".");
+  std::string offPath = objPath; 
+  offPath.replace(dpos+1,3,"off");
+  std::ifstream in(offPath);
+
+
+  if (!in)
+  {
+    std::cerr << "unable to open file: " << offPath << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  
+
+  CGAL::read_off(in, this->polyhedron_);
+  in.close();
+
+  // polyhedra.push_back(polyhedron);
+
+  std::cout << "OFF file loaded successfully" << std::endl;
+
+
+} 
+void TriangleMesh::initGeometry(const Vertices& vertices, const IndicesLists& faces){
+
+   typedef Polyhedron::HalfedgeDS Halfedge;
+ 
+   Polyhedron polyhedron;
+   CGAL::Polyhedron_incremental_builder_3<Halfedge> builder(polyhedron.hds(), true);
+
+   builder.begin_surface(vertices.size(), faces.size());
+
+   for(const auto& v : vertices){
+      cgalPoint point(v[0],v[1],v[2]);
+      builder.add_vertex( point );
+   }
+
+
+   // loop over all faces
+   for(const auto& face : faces){
+      builder.begin_facet();
+      // loop over all vertices of that face
+      builder.add_vertex_to_facet(face[0]);
+      builder.add_vertex_to_facet(face[1]);
+      builder.add_vertex_to_facet(face[2]);
+      builder.end_facet();
+   }
+   builder.end_surface();
+
+   this->polyhedron_=polyhedron;
+
+} 
+
+
+void TriangleMesh::buildTreeStructures()
+{
+  std::cout << "Construct AABB tree..."<<std::endl;
+
+  this->tree_.insert(faces(this->polyhedron_).first, faces(this->polyhedron_).second, this->polyhedron_);
+  this->tree_.build();
+  this->tree_.accelerate_distance_queries();
+
+  std::cout << "done." << std::endl;
+}
+
+
+void TriangleMesh::moveVerticesToCOM(Vec3& center, Vec3 scale){
+   //loop over all vertices of polyhedron
+    for (Vertex_iterator v = this->polyhedron_.vertices_begin(); v != this->polyhedron_.vertices_end(); ++v) {
+        cgalPoint p = v->point();
+      //   v->point() = cgalPoint( (p.x()-center[0]-gpos[0])*scale[0],\
+      //     (p.y()-center[1]-gpos[1])*scale[1],\
+      //     (p.z()-center[2]-gpos[2])*scale[2]);
+        v->point() = cgalPoint( (p.x()-center[0])*scale[0],\
+          (p.y()-center[1])*scale[1],\
+          (p.z()-center[2])*scale[2]);
+   }
+}
+
+
+void TriangleMesh::moveVerticesToCOM(Vec3 &center, Vec3 pos, Vec3 scale){
+   //loop over all vertices of polyhedron
+    for (Vertex_iterator v = this->polyhedron_.vertices_begin(); v != this->polyhedron_.vertices_end(); ++v) {
+        cgalPoint p = v->point();
+        v->point() = cgalPoint( (p.x()-center[0]-pos[0])*scale[0],\
+          (p.y()-center[1]-pos[1])*scale[1],\
+          (p.z()-center[2]-pos[2])*scale[2]);
+      //   v->point() = cgalPoint( (p.x()-center[0])*scale[0],\
+      //     (p.y()-center[1])*scale[1],\
+      //     (p.z()-center[2])*scale[2]);
+   }
+}
+
+
+#endif
+
+//*************************************************************************************************
+/*!\brief Checks, whether a point in global coordinates lies inside the triangle mesh for the non convex case
+ *
+ * \param px The x-component of the global coordinate.
+ * \param py The y-component of the global coordinate.
+ * \param pz The z-component of the global coordinate.
+ * \return \a true if the point lies inside the triangle mesh, \a false if not.
+ */
+// bool TriangleMesh::NEWcontainsPoint( real px, real py, real pz ) const
+// {
+//    return false;
+// }
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Checks, whether a point in global coordinates lies inside the triangle mesh for the non convex case
+ *
+ * \param gpos The global coordinate.
+ * \return \a true if the point lies inside the triangle mesh, \a false if not.
+ */
+// bool TriangleMesh::NEWcontainsPoint( const Vec3& gpos ) const
+// {
+//    return false;
+// }
+//*************************************************************************************************
+
+
 
 //*************************************************************************************************
 /*!\brief Checks, whether a point in body relative coordinates lies on the surface of the triangle mesh.
@@ -2454,7 +2608,9 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
                                      MaterialID material, bool convex,
                                      bool visible, const Vec3& scale,  bool clockwise, bool lefthanded )
 {
-   pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+   #ifndef USE_CGAL
+      pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+   #endif
 
    if(scale[0] <= real(0) || scale[1] <= real(0) || scale[2] <= real(0)){
       throw std::invalid_argument("Invalid scaling factor, only positive scaling allowed.");
@@ -2469,6 +2625,10 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    }
 
    // Checking the global position of the triangle mesh
+   std::cout<<"ID "<<uid<<", is global "<< global <<std::endl;
+   std::cout<<"ID "<<uid<<", is Active "<< CreateUnion::isActive() <<std::endl;
+   std::cout<<"ID "<<uid<<", ownsPoint "<< theCollisionSystem()->getDomain().ownsPoint( gpos ) <<std::endl;
+   std::cout<<"ID "<<uid<<", check condition "<< ( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) )<<std::endl;
    if( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) )
       throw std::invalid_argument( "Invalid global triangle mesh position." );
 
@@ -2540,14 +2700,22 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    //Determining  the SID
    const id_t sid( global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create() );
    //Creating the new triangle mesh
+   
    TriangleMeshID mesh = new TriangleMesh( sid, uid, gpos,
             vertices, faceIndices,
             faceNormals,
             vertexNormals, normalIndices,
             texturCoordinates, texturIndices,
             material, visible, convex );
-
-
+   #ifdef USE_CGAL
+   
+   if(!convex){
+      // mesh->initGeometry(file);
+      mesh->initGeometry(vertices, faceIndices);
+      mesh->buildTreeStructures();
+      mesh->setMeshwidth();
+   }
+   #endif
    // Checking if the triangle mesh is created inside a global section
    if( global )
       mesh->setGlobal();
@@ -2565,7 +2733,7 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
       delete mesh;
       throw;
    }
-
+   
    // Logging the successful creation of the triangle mesh
    pe_LOG_DETAIL_SECTION( log ) {
       log << "Created triangle mesh " << sid << "\n"
@@ -2578,6 +2746,152 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    return mesh;
 }
 //*************************************************************************************************
+
+PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const std::string file,
+                                     MaterialID material, bool convex, bool fixed,
+                                     bool visible, const Vec3& scale,  bool clockwise, bool lefthanded)
+{
+   #ifndef USE_CGAL
+      pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+   #endif
+
+   if(scale[0] <= real(0) || scale[1] <= real(0) || scale[2] <= real(0)){
+      throw std::invalid_argument("Invalid scaling factor, only positive scaling allowed.");
+   }
+
+   const bool global( GlobalSection::isActive() );
+
+   // Checking for the input file formte
+   if(file.find(".obj") == std::string::npos && file.find(".OBJ") == std::string::npos
+            /*&& file.find(".stl") == std::string::npos && file.find(".STL") == std::string::npos*/) {
+      throw std::invalid_argument("Unsupported triangle mesh format.");
+   }
+
+   // Checking the global position of the triangle mesh
+   std::cout<<"ID "<<uid<<", is global "<< global <<std::endl;
+   std::cout<<"ID "<<uid<<", is Active "<< CreateUnion::isActive() <<std::endl;
+   std::cout<<"ID "<<uid<<", ownsPoint "<< theCollisionSystem()->getDomain().ownsPoint( gpos ) <<std::endl;
+   std::cout<<"ID "<<uid<<", check condition "<< ( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) )<<std::endl;
+   if( !global && !CreateUnion::isActive() && !theCollisionSystem()->getDomain().ownsPoint( gpos ) )
+      throw std::invalid_argument( "Invalid global triangle mesh position." );
+
+   //Variables to hold mesh information during inizialisierung
+   Vertices         vertices;
+   IndicesLists     faceIndices;
+   Normals          faceNormals;
+   Normals          vertexNormals;
+   IndicesLists     normalIndices;
+   TextureCoordinates texturCoordinates;
+   IndicesLists     texturIndices;
+
+   //reading the actual geometry file
+   if((file.find(".obj") != std::string::npos) || (file.find(".OBJ") != std::string::npos)) {
+      //Reading triangle mesh form OBJ-File
+      TriangleMesh::initOBJ(file,
+               vertices, faceIndices,
+               faceNormals,
+               vertexNormals, normalIndices,
+               texturCoordinates, texturIndices,
+               clockwise, lefthanded);
+   }
+   /*NOT supported any longer as there is no halfe endge informiateon
+   else if ((file.find(".stl") != std::string::npos) || (file.find(".STL") != std::string::npos)) {
+      //Reading triangle mesh form STL-File
+      TriangleMesh::initSTL(file.c_str(), vertices, faceIndices, faceNormals);
+   }
+   */
+   else {
+      throw std::invalid_argument( "Invalid input file type for triangle mesh" );
+   }
+
+   //Calculate centre of mass and volume
+   //http://stackoverflow.com/questions/2083771/a-method-to-calculate-the-centre-of-mass-from-a-stl-stereo-lithography-file
+   real totalVolume ( 0.0 );
+   real currentVolume ( 0.0 );
+   Vec3 center (0.0, 0.0, 0.0);
+
+   for (size_t i = 0; i < faceIndices.size(); ++i) {
+      const Vec3& a = vertices[faceIndices[i][0]];
+      const Vec3& b = vertices[faceIndices[i][1]];
+      const Vec3& c = vertices[faceIndices[i][2]];
+
+      //http://mathworld.wolfram.com/Tetrahedron.html
+      currentVolume = (trans(a) * ( b % c ));
+      totalVolume += currentVolume;
+      center += (a + b +c) * currentVolume; //* 0.25
+   }
+
+   center /= totalVolume*4.0; //anstelle von *0.25
+   static const real sixth = 1.0 / 6.0;
+   totalVolume *= sixth;
+
+   std::cout << file << std::endl;
+   std::cout << "Total Volume = " << totalVolume << std::endl;
+   std::cout << "X center = " << center[0] << std::endl; //xCenter/totalVolume
+   std::cout << "Y center = " << center[1] << std::endl; //yCenter/totalVolume
+   std::cout << "Z center = " << center[2] << std::endl; //zCenter/totalVolume
+   std::cout << "#Verts   = " << vertices.size() << std::endl; //zCenter/totalVolume
+   std::cout << "#Faces   = " << faceIndices.size() << std::endl; //zCenter/totalVolume
+
+   //move the triangle mesh so that the COM is the coordinate origin
+   //and scale it
+   for(Vertices::iterator v=vertices.begin(); v != vertices.end(); ++v) {
+      (*v) = ((*v) - center) * scale;
+   }
+
+
+   //Determining  the SID
+   const id_t sid( global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create() );
+   //Creating the new triangle mesh
+   
+   TriangleMeshID mesh = new TriangleMesh( sid, uid, gpos,
+            vertices, faceIndices,
+            faceNormals,
+            vertexNormals, normalIndices,
+            texturCoordinates, texturIndices,
+            material, visible, convex );
+   #ifdef USE_CGAL
+   
+   if(!convex){
+      // mesh->initGeometry(file);
+      mesh->initGeometry(vertices, faceIndices);
+      mesh->buildTreeStructures();
+      mesh->setMeshwidth();
+   }
+   #endif
+   // Checking if the triangle mesh is created inside a global section
+   if( global )
+      mesh->setGlobal();
+
+   // Checking if the triangle mesh has to be permanently fixed
+   else if( mesh->isAlwaysFixed() )
+      mesh->setFixed( true );
+   
+   if (fixed) {mesh->setFixed( true ); }
+
+
+   try {
+      // Registering the new triangle mesh with the default body manager
+      theDefaultManager()->add( mesh );
+   }
+   catch( ... ) {
+      delete mesh;
+      throw;
+   }
+   
+   // Logging the successful creation of the triangle mesh
+   pe_LOG_DETAIL_SECTION( log ) {
+      log << "Created triangle mesh " << sid << "\n"
+          << "   User-ID             = " << uid << "\n"
+          << "   Global position     = " << gpos << "\n"
+          << "   Number of triangles = " << mesh->size() << "\n"
+          << "   Material            = " << Material::getName( material );
+   }
+
+   return mesh;
+}
+//*************************************************************************************************
+
 
 
 //*************************************************************************************************
@@ -2673,7 +2987,9 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, Vertice
                                      const IndicesLists& faces, MaterialID material,
                                      bool convex, bool visible )
 {
+
    pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+
 
    const bool global( GlobalSection::isActive() );
 
@@ -3239,6 +3555,73 @@ TriangleMeshID instantiateTriangleMesh( id_t sid, id_t uid, const Vec3& gpos, co
 }
 //*************************************************************************************************
 
+
+
+
+//*************************************************************************************************
+/*!\brief Local instantiation of a triangle mesh given vertex and face lists.
+ * \ingroup trianglemesh
+ *
+ * \param sid The unique system-specific ID of the triangle mesh.
+ * \param uid The user-specific ID of the triangle mesh.
+ * \param gpos The global position of the center of the triangle mesh.
+ * \param rpos The relative position within the body frame of a superordinate body.
+ * \param q The orientation of the triangle mesh's body frame in the global world frame.
+ * \param vertices The vector of all vertices in the mesh.
+ * \param faces The vector of all faces defined by indices into the vertices vector.
+ * \param material The material of the triangle mesh.
+ * \param visible Specifies if the triangle mesh is visible in a visualization.
+ * \param fixed \a true to fix the triangle mesh, \a false to unfix it.
+ * \param reg \a true to register the object in the default body manager.
+ * \return Handle for the new triangle mesh.
+ * \exception std::invalid_argument Invalid global position.
+ * \exception std::invalid_argument Invalid input.
+ *
+ * This function instantiates a copy of a triangle mesh with a certain system-specific ID. For
+ * instance, it is used to locally instantiate a copy of a triangle mesh residing on a remote
+ * MPI process. This function must NOT be called explicitly, but is reserved for internal
+ * use only!
+ */
+TriangleMeshID instantiateTriangleMesh( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+   const Quat& q, const Vertices& vertices,
+   const IndicesLists& faces, MaterialID material, bool visible,
+   bool fixed, bool reg, bool convex )
+{
+// Checking the mesh
+if( vertices.size() == 0 || faces.size() <= 4 )
+throw std::invalid_argument( "Invalid input" );
+
+// Creating the new triangle mesh
+TriangleMeshID mesh = new TriangleMesh( sid, uid, gpos, rpos, q, vertices, faces, Normals(), Normals(),
+      IndicesLists(), TextureCoordinates(), IndicesLists(), material,
+      visible, fixed, convex );
+
+mesh->initGeometry(vertices, faces);
+mesh->buildTreeStructures();
+
+// Registering the triangle mesh with the default body manager
+if( reg ) {
+try {
+theDefaultManager()->add( mesh );
+}
+catch( std::exception& ) {
+delete mesh;
+throw;
+}
+}
+
+// Logging the successful instantiation of the triangle mesh
+pe_LOG_DETAIL_SECTION( log ) {
+log << "Instantiated triangle mesh " << sid << "\n"
+<< "   User-ID             = " << uid << "\n"
+<< "   Global position     = " << gpos << "\n"
+<< "   Number of triangles = " << mesh->size() << "\n"
+<< "   Material            = " << Material::getName( material );
+}
+
+return mesh;
+}
+//*************************************************************************************************
 
 
 

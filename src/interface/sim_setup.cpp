@@ -27,19 +27,19 @@ using namespace pe;
 const bool   spheres ( true   );  // Switch between spheres and granular particles
 const real   radius  ( 0.2    );  // The radius of spheres of the granular media
 const real   spacing (real(0.5)*radius + 0.0025 );  // Initial spacing in-between two spheres
-const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
+const real   velocity( 0.0 );  // Initial maximum velocity of the spheres
 
 // Time parameters
 const size_t initsteps     (  20000 );  // Initialization steps with closed outlet door
 const size_t focussteps    (    100 );  // Number of initial close-up time steps
 const size_t animationsteps(    200 );  // Number of time steps for the camera animation
 const size_t timesteps     ( 16000 );  // Number of time steps for the flowing granular media
-const real   stepsize      ( 0.00001 );  // Size of a single time step
+const real   stepsize      ( 1E-5 );  // Size of a single time step
 
 // Process parameters
-const int    processesX( 10 );    // Number of processes in x-direction
-const int    processesY( 1 );    // Number of processes in y-direction
-const int    processesZ( 2 );    // Number of processes in y-direction
+const int    processesX( 16 );    // Number of processes in x-direction
+const int    processesY( 2 );    // Number of processes in y-direction
+const int    processesZ( 2 );    // Number of processes in z-direction
 const real   adaption  ( 1.5 );  // Dynamic adaption factor for the sizes of the subdomains
 
 // Random number generator parameters
@@ -72,7 +72,7 @@ bool g_povray  ( false );
 bool g_vtk( true );
 // 
 const unsigned int visspacing( 50  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
-const unsigned int pointerspacing( 1000  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+const unsigned int pointerspacing( 1000  );  // Spacing between checkpointer outputs
 //const unsigned int visspacing( 100  );  // Spacing between two visualizations (POV-Ray & Irrlicht)
  
 const int    px(processesX);    // Number of processes in x-direction
@@ -149,7 +149,7 @@ void outputDelaunay(int timeStep) {
   //=================================================================
   // Simulation parameters
   //=================================================================
-  real h = 0.001;
+  real h = 0.125;
   real L = 0.1;
   real domainVol = L * L * L;
   real partVol = 4./3. * M_PI * std::pow(radius2, 3);
@@ -324,6 +324,16 @@ void singleOutput_v1(BodyID body, int timestep) {
                                    body->getLinearVel()[0] << " " <<
                                    body->getLinearVel()[1] << " " <<
                                    body->getLinearVel()[2] << std::endl;
+
+      TriangleMesh* tb = static_cast<TriangleMesh*>(body);
+      // std::cout<<tb->mesh<<std::endl;
+      double dz = 1000000000.0;
+
+      for(auto v=tb->getWFVertices().begin(); v != tb->getWFVertices().end(); ++v) {
+        dz = std::min(dz, (*v)[2]);
+      }
+      std::cout << "Min Z Pos: " << body->getSystemID() << " " << timestep * stepsize << " " << 
+                                   dz  << std::endl;
 }
 //=================================================================================================
 

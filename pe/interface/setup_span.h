@@ -133,7 +133,7 @@ void setupSpan(MPI_Comm ex0) {
   real radius2              = 0.01 - epsilon;
 
   int idx = 0;
-  real h = 0.00125;
+  real h = 0.005;
 
   std::string fileName = std::string("span_cm.obj");
 
@@ -157,12 +157,15 @@ void setupSpan(MPI_Comm ex0) {
 
   //Vec3 spanPos = Vec3(0.23, 0.01, 0.0374807);
   // Vec3 spanPos = Vec3(0.22, 0.01, 0.0374807);
-  Vec3 spanPos = Vec3(0.22, 0.01, 0.0874807);
+  // Vec3 spanPos = Vec3(0.22, 0.01, 0.0874807); // CC as was before, bottom at 0.05
+  Vec3 spanPos = Vec3(0.3, 0.01, 0.1); // CC with center of mass at 0.1
   //Vec3 spanPos = Vec3(0.800079 0.00976448,0.0399377);
   TriangleMeshID span;
 
   if(!resume) {
     if(world->ownsPoint(spanPos)) {
+      bool fixed = true;
+      // span = createTriangleMesh(++id, spanPos, fileName, spanMat, true, true, false, Vec3(1.0,1.0,1.0), false, false);
       span = createTriangleMesh(++id, spanPos, fileName, spanMat, true, true, Vec3(1.0,1.0,1.0), false, false);
       //AABB &aabb = span->getAABB();
       std::cout << "Span x:[" << span->getAABB()[3] << "," << span->getAABB()[0] << "]" << std::endl;
@@ -176,11 +179,11 @@ void setupSpan(MPI_Comm ex0) {
   pe_GLOBAL_SECTION
   {
      // Setup of the ground plane
-     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
+    PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
      // +y
-     createPlane( id++, 0.0, 1.0, 0.0,  0.0, granite );
+    createPlane( id++, 0.0, 1.0, 0.0,  0.0, granite );
      // -y
-     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, granite );
+    createPlane( id++, 0.0,-1.0, 0.0,  -0.02, granite );
   }
   //=========================================================================================  
 
@@ -199,7 +202,7 @@ void setupSpan(MPI_Comm ex0) {
   for (; j < theCollisionSystem()->getBodyStorage().size(); j++) {
     World::SizeType widx = static_cast<World::SizeType>(j);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == triangleMeshType) {
+    if(body->getType() == sphereType) {
       numBodies++;
       numTotal++;
     } else {

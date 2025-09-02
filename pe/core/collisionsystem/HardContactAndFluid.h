@@ -3141,6 +3141,7 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
 {
+#define HAVE_MPI 1
 #if HAVE_MPI
    // Note: MPI buffers can already be partly filled by removal notifications!
 
@@ -3508,7 +3509,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                   case cylinderType: {
                      Cylinder::Parameters subobjparam;
                      unmarshal( buffer, subobjparam, false );
-                     obj = instantiateCylinder( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+                     obj = instantiateCylinder( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, true );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
                      obj->setOwner( process->getRank(), *process );
@@ -3520,7 +3521,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
 
                      pe_INTERNAL_ASSERT( subobjparam.fixed_ == true, "Cannot instantiate unfixed planes." );
 
-                     obj = instantiatePlane( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.material_, subobjparam.visible_, false );
+                     obj = instantiatePlane( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.material_, subobjparam.visible_, true );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
                      obj->setOwner( process->getRank(), *process );
@@ -3529,7 +3530,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                   case triangleMeshType: {
                      TriangleMesh::Parameters subobjparam;
                      unmarshal( buffer, subobjparam, false );
+                     #ifndef USE_CGAL
                      obj = instantiateTriangleMesh( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.vertices_, subobjparam.faceIndices_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+                     #else
+                     obj = instantiateTriangleMesh( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.vertices_, subobjparam.faceIndices_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false, false );
+                     #endif
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
                      obj->setOwner( process->getRank(), *process );

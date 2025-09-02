@@ -67,7 +67,6 @@
 #include <pe/util/Timing.h>
 #include <pe/util/Types.h>
 
-
 namespace pe {
 
 namespace detection {
@@ -120,7 +119,11 @@ public:
    template< typename CC > static        void collideCylinderPlane        ( CylinderID c , PlaneID p    , CC& contacts );
    template< typename CC > static        void collideCylinderTMesh        ( CylinderID c , TriangleMeshID m     , CC& contacts );
    template< typename CC > static inline void collideCylinderUnion        ( CylinderID c , UnionID u    , CC& contacts );
-   template< typename CC > static inline void collidePlaneTMesh           ( PlaneID p    , TriangleMeshID  u    , CC& contacts );
+   template< typename CC > static        void collidePlaneTMesh           ( PlaneID p , TriangleMeshID m     , CC& contacts );
+   #ifdef USE_CGAL
+   template< typename CC > static        void collideCGALPlaneTMesh       ( PlaneID p , TriangleMeshID m     , CC& contacts );
+   template< typename CC > static inline void collideCGALTMeshTMesh       ( TriangleMeshID  m1   , TriangleMeshID m2    , CC& contacts );
+   #endif
    template< typename CC > static inline void collidePlaneUnion           ( PlaneID p    , UnionID u    , CC& contacts );
    template< typename CC > static inline void collideTMeshTMesh           ( TriangleMeshID  m1   , TriangleMeshID m2    , CC& contacts );
    template< typename CC > static inline void collideTMeshUnion           ( TriangleMeshID  m    , UnionID u    , CC& contacts );
@@ -430,9 +433,17 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                return;
                break;
             case triangleMeshType:
+               #ifdef USE_CGAL
+               if (!(static_body_cast<TriangleMesh>( b2 )->convex())){
+                  collideCGALPlaneTMesh( static_body_cast<Plane>( b1 ),
+                                  static_body_cast<TriangleMesh>( b2 ), contacts );
+                  break;
+               }
+               #endif
                collidePlaneTMesh( static_body_cast<Plane>( b1 ),
                                   static_body_cast<TriangleMesh>( b2 ), contacts );
                break;
+
             case unionType:
                collidePlaneUnion( static_body_cast<Plane>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
@@ -442,6 +453,7 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                oss << "Unknown body type (" << b2->getType() << ")!";
                throw std::runtime_error( oss.str() );
                break;
+               
          }
          break;
 
@@ -465,10 +477,25 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                                      static_body_cast<TriangleMesh>( b1 ), contacts );
                break;
             case planeType:
+               #ifdef USE_CGAL
+               if (!(static_body_cast<TriangleMesh>( b1 )->convex())){
+                  collideCGALPlaneTMesh( static_body_cast<Plane>( b2 ),
+                                  static_body_cast<TriangleMesh>( b1 ), contacts );
+                  break;
+               }
+               #endif
                collidePlaneTMesh( static_body_cast<Plane>( b2 ),
                                   static_body_cast<TriangleMesh>( b1 ), contacts );
                break;
             case triangleMeshType:
+               #ifdef USE_CGAL
+               if (!(static_body_cast<TriangleMesh>( b1 )->convex()) &&\
+                !(static_body_cast<TriangleMesh>( b2 )->convex())){
+               collideCGALTMeshTMesh( static_body_cast<TriangleMesh>( b1 ),
+                                  static_body_cast<TriangleMesh>( b2 ), contacts );
+               break;
+               }
+               #endif 
                collideTMeshTMesh( static_body_cast<TriangleMesh>( b1 ),
                                   static_body_cast<TriangleMesh>( b2 ), contacts );
                break;
@@ -3196,6 +3223,73 @@ inline void MaxContacts::collideCylinderUnion( CylinderID c, UnionID u, CC& cont
 //*************************************************************************************************
 
 
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideCGALPlaneTMesh( PlaneID p, TriangleMeshID m, CC& contacts )
+{
+
+   // // try taking only the worst index
+   // Polyhedron poly = m->polyhedron_;
+   // real maxPenDepth = -1E10;
+   // Vec3 maxSupport(0,0,0);
+   // const Vec3 normal = p->getNormal();
+   // Vec3T normalT = -trans(m->vectorFromWFtoBF(normal));
+   // const real d = p->getDisplacement();
+   
+
+   // for (auto v = poly.vertices_begin(); v!=poly.vertices_end(); ++v){
+   //    cgalPoint point = v->point();
+
+   //    Vec3 support = Vec3(point.x(),point.y(),point.z());
+
+   //    double num = d+normalT*support;
+   //    double den = std::sqrt(normal[0]*normal[0]+normal[1]*normal[1]+normal[2]*normal[2]);
+   //    real penetrationDepth = num/den;
+
+   //    penetrationDepth = normalT*support;
+
+   //    if (penetrationDepth>maxPenDepth){
+   //       maxPenDepth = penetrationDepth;
+   //       maxSupport = support;
+   //    }   
+   // }
+
+   // maxSupport = m->pointFromBFtoWF(maxSupport) -normal*contactThreshold;
+   // maxPenDepth =p->getDepth(maxSupport) - contactThreshold;
+
+   // if(maxPenDepth <= -contactThreshold) {
+   //    return;
+   // }
+
+   // Vec3 pointOnPlane = maxSupport + maxPenDepth * normal;
+   // Vec3 contactPoint = 0.5*(maxSupport + pointOnPlane);
+
+   // contacts.addVertexFaceContact( m, p, contactPoint, p->getNormal(), -maxPenDepth );
+
+
+   // try taking only the worst index
+   Polyhedron poly = m->polyhedron_;
+   const Vec3 normal = p->getNormal();
+   
+   for (auto v = poly.vertices_begin(); v!=poly.vertices_end(); ++v){
+      cgalPoint point = v->point();
+
+      Vec3 support = Vec3(point.x(),point.y(),point.z());
+
+      support = m->pointFromBFtoWF(support) -normal*contactThreshold;
+      real penetrationDepth =p->getDepth(support) - contactThreshold;
+
+      if(penetrationDepth > -contactThreshold) {
+         Vec3 pointOnPlane = support + penetrationDepth * normal;
+         Vec3 contactPoint = 0.5*(support + pointOnPlane);
+         
+         contacts.addVertexFaceContact( m, p, contactPoint, normal, -penetrationDepth );
+      }  
+   }
+
+   return;
+}
+
+
 //*************************************************************************************************
 /*!\brief Contact generation between a Plane and a Triangle Mesh.
  * \ingroup contact_generation
@@ -3229,12 +3323,14 @@ void MaxContacts::collidePlaneTMesh( PlaneID p, TriangleMeshID m, CC& contacts )
 
 
 
+   const Vec3 normal = p->getNormal();
 
    size_t supportIdx = 0;
    Vec3 support = m->supportContactThreshold(-p->getNormal(),0, &supportIdx);
 
    real penetraionDepth = p->getDepth(support) - contactThreshold; //the support point is contactThreshold further than it actually is
-/*
+   
+   /*
    std::cerr <<std::endl << "////////////////\npenetraionDepth=" <<  penetraionDepth <<std::endl;
    std::cerr << "support=" << support  <<std::endl;
 */
@@ -3252,7 +3348,7 @@ void MaxContacts::collidePlaneTMesh( PlaneID p, TriangleMeshID m, CC& contacts )
       Vec3 pointOnPlane = support - penetraionDepth * p->getNormal();
 
       Vec3 contactPoint = 0.5*(support + pointOnPlane);
-
+      
       //normal points form object2 (plain) to object1 (mesh)
       //penetration penetraionDepth was positive
       contacts.addVertexFaceContact( m, p, contactPoint, p->getNormal(), -penetraionDepth );
@@ -3717,6 +3813,301 @@ inline void MaxContacts::collidePlaneUnion( PlaneID p, UnionID u, CC& contacts )
 }
 //*************************************************************************************************
 
+void extensive_search(TriangleMeshID mA, TriangleMeshID mB, const Polyhedron pA, const Polyhedron pB, const Tree& treeB, auto v_it, int Index, Vec3& support, Vec& penetration_vector, double& depth, double direction, int extN){
+
+
+   CGAL::Side_of_triangle_mesh<Polyhedron, Kernel> inside(pB);
+
+   // auto v_it = pA.vertices_begin();
+   std::advance(v_it, Index);
+
+   Vertex_handle v = v_it;
+   Halfedge_circulator h = v->vertex_begin();
+   Halfedge_circulator done =h;
+
+   int N = 10;
+   N = extN;
+   double lam = (1.0/static_cast<double>(N));
+
+   if (h!=nullptr) {
+      do{
+         Halfedge_handle he = h;
+         cgalPoint point;
+            cgalPoint p1 = he->vertex()->point();
+            Vec3 v1 = Vec3(p1.x(),p1.y(),p1.z());
+            he = he->next();
+
+            cgalPoint p2 = he->vertex()->point();
+            Vec3 v2 = Vec3(p2.x(),p2.y(),p2.z());
+            he = he->next();
+
+            cgalPoint p3 = he->vertex()->point();
+            Vec3 v3 = Vec3(p3.x(),p3.y(),p3.z());
+
+            for (int i = 1; i<=N+1;i++){
+               for (int j = 1; j<=i;j++){
+                  
+                  double sign = 1.0;
+
+                  double lam2 = (i-j)*lam;
+                  double lam3 = (j-1.0)*lam;
+                  double lam1 = (1.0-lam2-lam3);
+
+                  Vec3 p = lam1*v1+lam2*v2+lam3*v3;
+                  Vec3 WFpoint = mA-> pointFromBFtoWF(p);
+                  Vec3 BFpoint = mB-> pointFromWFtoBF(WFpoint);
+
+                  point = cgalPoint(BFpoint[0], BFpoint[1], BFpoint[2]);
+                  cgalPoint closest = treeB.closest_point(point);
+                  double penetrationDepth = std::sqrt(CGAL::squared_distance(point, closest));
+                  // if (inside(point)==CGAL::ON_BOUNDED_SIDE){
+                  //    penetrationDepth = -penetrationDepth;
+                  //    sign = -1.0;
+                  // }      
+                  if (penetrationDepth <= depth) {
+                     depth = penetrationDepth;
+                     penetration_vector = direction*sign*Vec(point-closest); // Direction of penetration
+                     support = mB->pointFromBFtoWF(Vec3(closest.x(),closest.y(),closest.z()));
+                  }
+               }   
+            }
+      } while (++h !=done);
+   }
+   return;
+}
+
+
+// std::vector<cgalPoint> get_bbox_vertices(const cgalPoint& min_point, const cgalPoint& max_point) {
+//    std::vector<cgalPoint> vertices;
+//    vertices.push_back(cgalPoint(min_point.x(), min_point.y(), min_point.z()));
+//    vertices.push_back(cgalPoint(min_point.x(), min_point.y(), max_point.z()));
+
+//    vertices.push_back(cgalPoint(min_point.x(), max_point.y(), min_point.z()));
+//    vertices.push_back(cgalPoint(min_point.x(), max_point.y(), max_point.z()));
+
+//    vertices.push_back(cgalPoint(max_point.x(), min_point.y(), min_point.z()));
+//    vertices.push_back(cgalPoint(max_point.x(), min_point.y(), max_point.z()));
+
+//    vertices.push_back(cgalPoint(max_point.x(), max_point.y(), min_point.z()));
+//    vertices.push_back(cgalPoint(max_point.x(), max_point.y(), max_point.z()));
+
+//    return vertices;
+// }
+
+// std::vector<double> getAABB_box(TriangleMeshID mA, TriangleMeshID mB, Tree treeA, Tree treeB){
+//    double distance = std::numeric_limits<double>::max(); //max value
+//    std::vector<double> bbox_bounds(6);
+
+//    for (auto it = treeA.leaf_nodes_begin(); it != treeA.leaf_nodes_begin(); ++it) {
+//       // Retrieve the AABB box associated with the current leaf
+//       const auto& aabb = it->bounding_box();
+//       const cgalPoint& min_point = aabb.min();
+//       const cgalPoint& max_point = aabb.max();
+      
+//       std::vector<cgalPoint> bbox_vertices = get_bbox_vertices(min_point, max_point);
+//    }
+//    for (const auto& primitive : primitives) {
+//       CGAL::Bbox_3 bbox = primitive->bbox();
+//       std::vector<cgalPoint> bbox_vertices = get_bbox_vertices(bbox);
+//       // double temp_dist = 0;
+//       // for (auto &point : bbox_vertices){
+//       //    //calculate distance of leaves
+//       //    // cgalPoint point = v.point();
+//       //    Vec3 WFpoint = mA-> pointFromBFtoWF(Vec3(point.x(),point.y(),point.z()));
+//       //    Vec3 BFpoint = mB-> pointFromWFtoBF(WFpoint);
+//       //    point = cgalPoint(BFpoint[0], BFpoint[1], BFpoint[2]);
+
+//       //    cgalPoint closest = treeB.closest_point(point); 
+//       //    temp_dist += std::sqrt(CGAL::squared_distance(point, closest));
+//       // }
+//       // if (temp_dist<distance){
+//       //    distance = temp_dist;
+//       //    bbox_bounds = {bbox.xmin(), bbox.xmax(), bbox.ymin(), bbox.ymax(), bbox.zmin(), bbox.zmax()};
+//       // }
+   
+//   }
+//   return bbox_bounds;
+// }
+
+
+
+
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideCGALTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& contacts )
+{
+
+   // Force a defined order of collision detection across processes
+   if( mB->getSystemID() < mA->getSystemID() )
+      std::swap( mA, mB );
+
+   double threshold;
+
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+   cgalPoint closest;
+
+   Vec3 support;
+   int index = 0;
+   int bestindex = 0;
+   bool contact = false;
+   
+   double meshwidth = std::max(mA->getMeshwidth(),mB->getMeshwidth());
+   threshold = std::sqrt( 0.25*pow(meshwidth,2) + pow(contactThreshold,2));
+
+   int extN = int(threshold/contactThreshold) + 1;
+   std::cout<<"contactThreshold "<<contactThreshold<<" meshwidth "<<meshwidth<<" extN "<<extN<<std::endl;
+
+   CGAL::Side_of_triangle_mesh<Polyhedron, Kernel> inside(mB->polyhedron_);
+
+   real max_penetration = std::numeric_limits<real>::max();
+   Vec penetration_vector;
+
+   // // calculate AABB box with shortest distance leaf
+   // box = getAABB_box(mA, mB, mA->tree_, mB->tree_);
+
+   // calculate penetration depth 
+   for (auto v = mA->polyhedron_.vertices_begin(); v!=mA->polyhedron_.vertices_end(); ++v){
+      cgalPoint point = v->point();
+      Vec3 WFpoint = mA-> pointFromBFtoWF(Vec3(point.x(),point.y(),point.z()));
+      Vec3 BFpoint = mB-> pointFromWFtoBF(WFpoint);
+      point = cgalPoint(BFpoint[0], BFpoint[1], BFpoint[2]);
+
+      closest = mB->tree_.closest_point(point); 
+      penetrationDepth = std::sqrt(CGAL::squared_distance(point, closest));
+
+      // if (inside(point)==CGAL::ON_BOUNDED_SIDE){
+      //    penetrationDepth = -penetrationDepth;
+      // }
+      if (penetrationDepth<max_penetration) bestindex = index;
+      max_penetration = std::min(max_penetration, penetrationDepth); 
+
+      if (penetrationDepth<threshold){
+         extensive_search(mA, mB, mA->polyhedron_, mB->polyhedron_, mB->tree_, mA->polyhedron_.vertices_begin(), index, support, penetration_vector, max_penetration,1.0, extN);
+         
+         if(max_penetration<contactThreshold) {
+            normal = Vec3(penetration_vector[0],penetration_vector[1],penetration_vector[2]);
+            normal = normal.normalize();
+
+            Vec3 pointOnPlane = support + max_penetration * normal;
+            Vec3 contactPoint = 0.5*(support + pointOnPlane);
+
+            contacts.addVertexFaceContact( mA, mB, contactPoint, normal, max_penetration );
+         }
+      }
+      index++;
+   }
+   // }
+   // if (penetrationDepth<threshold){
+   //    extensive_search(mA, mB, mA->polyhedron_, mB->polyhedron_, mB->tree_, mA->polyhedron_.vertices_begin(), bestindex, support, penetration_vector, max_penetration,1.0, extN);
+   // }
+
+   // if (max_penetration<threshold){   
+
+   //    index = 0;
+   //    bestindex = 0;
+   //    // calculate penetration depth 
+   //    for (auto v = mB->polyhedron_.vertices_begin(); v!=mB->polyhedron_.vertices_end(); ++v){
+   //       cgalPoint point = v->point();
+   //       Vec3 WFpoint = mB-> pointFromBFtoWF(Vec3(point.x(),point.y(),point.z()));
+   //       Vec3 BFpoint = mA-> pointFromWFtoBF(WFpoint);
+   //       point = cgalPoint(BFpoint[0], BFpoint[1], BFpoint[2]);
+
+   //       closest = mA->tree_.closest_point(point); 
+   //       penetrationDepth = std::sqrt(CGAL::squared_distance(point, closest));
+
+   //       // if (inside(point)==CGAL::ON_BOUNDED_SIDE){
+   //       //    penetrationDepth = -penetrationDepth;
+   //       // }
+   //       if (penetrationDepth<max_penetration) bestindex = index;
+   //       max_penetration = std::min(max_penetration, penetrationDepth); 
+
+   //       // if (penetrationDepth<threshold){
+   //       //    extensive_search(mB, mA, mB->polyhedron_, mA->polyhedron_, mA->tree_, mB->polyhedron_.vertices_begin(), index, support, penetration_vector, max_penetration,-1.0,extN);
+   //       // }
+   //       index++;
+   //    }
+   //    if (max_penetration<threshold){
+   //       extensive_search(mA, mB, mA->polyhedron_, mB->polyhedron_, mB->tree_, mA->polyhedron_.vertices_begin(), bestindex, support, penetration_vector, max_penetration,-1.0,extN);
+   //    }
+   // }
+
+
+   // if (max_penetration<contactThreshold) contact = true;
+
+
+   // if(contact) {
+   //    //normal points form object2 (mB) to object1 (mA)
+   //    //as the wittnes points are placed within the other body the normal must be inverted
+   //    //negative penetraionDepth means penetration
+   //    normal = Vec3(penetration_vector[0],penetration_vector[1],penetration_vector[2]);
+   //    normal = normal.normalize();
+
+   //    Vec3 pointOnPlane = support + max_penetration * normal;
+   //    Vec3 contactPoint = 0.5*(support + pointOnPlane);
+
+   //    contacts.addVertexFaceContact( mA, mB, contactPoint, normal, max_penetration );
+   //    pe_LOG_DEBUG_SECTION( log ) {
+   //       log << "      Contact created between triangle mesh " << mA->getID()
+   //          << " and triangle mesh " << mB->getID() << " (dist=" << max_penetration << ")";
+   //    }
+   // }
+
+   return;
+
+   /*
+   for debugging
+   */
+
+   // contact = false;
+
+   // GJK gjk;
+   // penetrationDepth = gjk.doGJK< TriangleMeshID, TriangleMeshID >(mA, mB, normal, contactPoint);
+
+   // // std::cout<<"penetration Depth "<<penetrationDepth<<" contactThreshold "<<contactThreshold<<std::endl;
+   // if(penetrationDepth > contactThreshold) {
+   //    // not close enough create no contact
+   //    contact = false;
+   // }
+   // else if(penetrationDepth < 0.01*contactThreshold) {
+   //    // std::cout<<"DOING EPA"<<std::endl;
+   //    // objects are quite close use GJKcontactTrashold + EPAcontactTrashold to calc distance
+   //    if(gjk.doGJKcontactThreshold<TriangleMeshID, TriangleMeshID>(mA, mB)) {
+   //       //possible penetration
+   //       EPA epa;
+   //       contact = epa.doEPAcontactThreshold<TriangleMeshID, TriangleMeshID>(mA, mB, gjk, normal, contactPoint, penetrationDepth);
+   //    }
+   // }
+   // else {
+   //    // objects are close but separated use data calculated by GJK
+   //    contact = true;
+   // }
+
+
+   // if(contact) {
+   //    //normal points form object2 (mB) to object1 (mA)
+   //    //as the wittnes points are placed within the other body the normal must be inverted
+   //    //negative penetraionDepth means penetration
+
+   //    if (penetrationDepth<0.01*contactThreshold){
+   //       std::cout<<"small_depth "<<1<<std::endl;
+   //    }
+   //    else{
+   //       std::cout<<"small_depth "<<0<<std::endl;
+   //    }
+   //    std::cout<<"normal_contactPoint       "<<contactPoint[0]<<" "<<contactPoint[1]<<" "<<contactPoint[2]<<std::endl;
+   //    std::cout<<"normal_normal             "<<normal[0]<<" "<<normal[1]<<" "<<normal[2]<<std::endl;
+   //    std::cout<<"normal_contactThreshold   "<<contactThreshold<<std::endl;
+   //    std::cout<<"normal_max_penetration    "<<penetrationDepth<<std::endl;
+
+   //    contacts.addVertexFaceContact( mA, mB, contactPoint, normal, penetrationDepth );
+   //    pe_LOG_DEBUG_SECTION( log ) {
+   //       log << "      Contact created between triangle mesh " << mA->getID()
+   //          << " and triangle mesh " << mB->getID() << " (dist=" << penetrationDepth << ")";
+   //    }
+   // }
+   // return;
+}
 
 
 //*************************************************************************************************

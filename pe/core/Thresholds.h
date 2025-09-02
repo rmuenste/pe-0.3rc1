@@ -154,7 +154,7 @@ struct Thresholds<double>
 public:
    //! Threshold for the contact classification.
    /*! This threshold separates between separating, resting and colliding contacts. */
-   //static inline double collisionThreshold() { return 2E-3; }
+//    static inline double collisionThreshold() { return 2E-3; }
    //static inline double collisionThreshold() { return 1E-8; }
    static inline double collisionThreshold() { return 1.041e-3; }
 
@@ -165,7 +165,7 @@ public:
    //static inline double contactThreshold() { return 33E-3; }
    //static inline double contactThreshold() { return 1E-8; }
    static inline double contactThreshold() { return 1.041e-3; }
-   //static inline double contactThreshold() { return 2E-3; }
+//    static inline double contactThreshold() { return 2E-3; }
    //static inline double contactThreshold() { return 1E-5; }
 
    //! Threshold for the restriction of the coefficient of restitution.

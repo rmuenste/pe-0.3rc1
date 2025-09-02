@@ -1,3 +1,7 @@
+#ifndef USE_CGAL
+#define USE_CGAL
+#endif
+
 //=================================================================================================
 /*!
  *  \file pe/core/rigidbody/TriangleMesh.h
@@ -46,8 +50,68 @@
 #if HAVE_IRRLICHT
 #include <irrlicht/irrlicht.h>
 #endif
+#ifdef USE_CGAL
+   #include <CGAL/Simple_cartesian.h>
+   #include <CGAL/AABB_tree.h>
+   #include <CGAL/AABB_traits.h>
+   #include <CGAL/config.h>
+   #include <CGAL/Polyhedron_3.h>
+   #include <CGAL/IO/OBJ_reader.h>
+   #include <CGAL/Side_of_triangle_mesh.h>
+
+   #include <CGAL/boost/graph/graph_traits_Polyhedron_3.h>
+   #include <CGAL/AABB_halfedge_graph_segment_primitive.h>
+   #include <CGAL/AABB_face_graph_triangle_primitive.h>
+   #include <CGAL/Polyhedron_incremental_builder_3.h>
+   #include <CGAL/Polygon_mesh_processing/intersection.h>
+
+   #include <CGAL/Surface_mesh.h>
+   #include <CGAL/boost/graph/copy_face_graph.h>
+
+#endif
 
 namespace pe {
+
+   #ifdef USE_CGAL
+
+      // Choose a geometry kernel
+      typedef CGAL::Simple_cartesian<double> Kernel;
+
+      // Make a short-hand for the geometry Kernel type
+      typedef Kernel::FT FT;
+
+      // Define short-hands for the other CGAL types that we
+      // are going to use in the application
+      typedef Kernel::Point_2 Point_2;
+      typedef Kernel::Segment_2 Segment_2;
+
+      typedef Kernel::Point_3 cgalPoint;
+      typedef Kernel::Triangle_3 Triangle;
+      typedef Kernel::Vector_3 Vec;
+
+      typedef CGAL::Polyhedron_3<Kernel> Polyhedron;
+
+      typedef Kernel::Ray_3 cgalRay;
+
+      typedef CGAL::AABB_face_graph_triangle_primitive<Polyhedron>        Facet_Primitive;
+      typedef CGAL::AABB_traits<Kernel, Facet_Primitive>                  Facet_Traits;
+      typedef CGAL::AABB_tree<Facet_Traits>                               Facet_tree;
+
+      typedef CGAL::AABB_face_graph_triangle_primitive<Polyhedron> Primitive;
+      typedef CGAL::AABB_traits<Kernel, Primitive> Traits;
+      typedef CGAL::AABB_tree<Traits> Tree;
+      typedef Tree::Point_and_primitive_id Point_and_primitive_id;
+
+      typedef Polyhedron::Vertex_iterator Vertex_iterator;
+      typedef CGAL::Surface_mesh<Kernel::Point_3> Surface_mesh;
+
+      typedef Polyhedron::Halfedge_handle Halfedge_handle;
+      typedef Polyhedron::Vertex_handle Vertex_handle;
+      typedef Polyhedron::Halfedge_around_vertex_circulator Halfedge_circulator;
+      
+      // std::vector<Tree*> trees;
+      // std::vector<Polyhedron*> polyhedra;
+   #endif
 
 //=================================================================================================
 //
@@ -108,6 +172,12 @@ protected:
                           const Normals& vertexNormals, const IndicesLists normalIndices,
                           const TextureCoordinates& texturCoordinates, const IndicesLists& texturIndices,
                           MaterialID material, bool visible, bool fixed, bool convex );
+   // explicit TriangleMesh( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
+   //                        const Vertices& vertices, const IndicesLists& faceIndices,
+   //                        const Normals& faceNormals,
+   //                        const Normals& vertexNormals, const IndicesLists normalIndices,
+   //                        const TextureCoordinates& texturCoordinates, const IndicesLists& texturIndices,
+   //                        MaterialID material, bool visible, bool fixed, bool convex, Polyhedron, Tree tree);
    //@}
    //**********************************************************************************************
 
@@ -123,6 +193,7 @@ public:
    struct Parameters : public GeomPrimitive::Parameters {
       Vertices     vertices_;
       IndicesLists faceIndices_;
+      bool isConvex_;
    };
    //**********************************************************************************************
 
@@ -131,6 +202,12 @@ public:
    //@{
    inline size_t size()  const;
    inline size_t getSmallMeshLimit() const;
+   bool convex() const;
+   #ifdef USE_CGAL
+      inline Polyhedron getPolyhedron() const;
+      inline void setMeshwidth();
+      inline double getMeshwidth() const;
+   #endif
    //@}
    //**********************************************************************************************
 
@@ -143,7 +220,7 @@ public:
    virtual void setOrientation   ( real r, real i, real j, real k );
    virtual void setOrientation   ( const Quat& q );
            void setRenderSmooth  ( bool smooth );
-   inline  void setSmallMeshLimit( size_t newLimit );
+   inline void setSmallMeshLimit( size_t newLimit );
    //@}
    //**********************************************************************************************
 
@@ -185,7 +262,14 @@ public:
    virtual bool isSurfaceRelPoint( const Vec3& rpos )          const;
    virtual bool isSurfacePoint   ( real px, real py, real pz ) const;
    virtual bool isSurfacePoint   ( const Vec3& gpos )          const;
-
+   #ifdef USE_CGAL
+   virtual bool containsPoint    ( cgalPoint ) const;
+   virtual void initGeometry(std::string);
+   virtual void initGeometry(const Vertices& vertices, const IndicesLists& faces);
+   virtual void buildTreeStructures();
+   virtual void moveVerticesToCOM(Vec3& center, Vec3 scale);
+   virtual void moveVerticesToCOM(Vec3& center, Vec3 pos, Vec3 scale);
+   #endif
           real getRelDepth   ( real px, real py, real pz ) const;
           real getRelDepth   ( const Vec3& rpos )          const;
    inline real getDepth      ( real px, real py, real pz ) const;
@@ -275,6 +359,14 @@ private:
    size_t      smallMeshLimit_;           //!< For small triangle meshes brute force approaches are often times faster than cleaver solution. If the number of triangles in the mesh is smaller or equal this value the brute force algorithms are used.
    bool        renderSmooth_;             //!< Set \a true if the mesh should be rendered with vertex normals if given, only used for visualisation purposes
    std::string cachedPOVString_;          //!< Caching most parts of the PovRay output string.
+   // Vertices&        vertices_;
+
+   #ifdef USE_CGAL
+      Tree tree_;
+      Polyhedron polyhedron_;
+      double meshwidth_;
+   #endif
+
 #if HAVE_IRRLICHT
    ::irr::scene::SMeshBuffer* cachedIrrlichtBuffer_; //!< Caching most parts of the irrlicht data structure
 #endif
@@ -288,6 +380,9 @@ private:
    friend TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const std::string file,
                                              MaterialID material, bool convex, bool visible,
                                              const Vec3& scale,  bool clockwise, bool lefthanded );
+   friend TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const std::string file,
+                                             MaterialID material, bool convex, bool fixed, bool visible,
+                                             const Vec3& scale,  bool clockwise, bool lefthanded );
    friend TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const TriangleMeshID source,
                                              MaterialID material, bool visible );
    friend TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, Vertices vertices,
@@ -297,6 +392,10 @@ private:
                                                   const Quat& q, const Vertices& vertices,
                                                   const IndicesLists& faces, MaterialID material,
                                                   bool visible, bool fixed, bool reg );
+   friend TriangleMeshID instantiateTriangleMesh( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+                                                   const Quat& q, const Vertices& vertices,
+                                                   const IndicesLists& faces, MaterialID material,
+                                                   bool visible, bool fixed, bool reg, bool convex );
    friend TriangleMeshID createRegularTetrahedron( id_t uid, const Vec3& gpos, real radius,
                                                    MaterialID material,  bool visible );
    friend TriangleMeshID createTriangulatedBox( id_t uid, const Vec3& gpos, const Vec3& lengths,
@@ -347,6 +446,66 @@ inline size_t TriangleMesh::getSmallMeshLimit() const
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns if the Triangular Mesh is convex.
+ *
+ * \return void
+ *
+ * return boolean of convexity, true if Triangular mesh is declared as convex, else false
+ * for inside check with CGAL
+ */
+inline bool TriangleMesh::convex() const
+{
+   return convex_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns if the Triangular Mesh is convex.
+ *
+ * \return void
+ *
+ * return boolean of conxity, true if Triangular mesh is declared as convex, else false
+ * for inside check with CGAL
+ */
+#ifdef USE_CGAL
+Polyhedron TriangleMesh::getPolyhedron() const
+{
+   return polyhedron_;
+}
+
+
+
+void TriangleMesh::setMeshwidth(){
+   
+   double max_length = std::numeric_limits<double>::min();
+
+   for (auto eit = polyhedron_.edges_begin(); eit != polyhedron_.edges_end(); ++eit) {
+       cgalPoint p1 = eit->vertex()->point();
+       cgalPoint p2 = eit->opposite()->vertex()->point();
+       double length = std::sqrt(CGAL::squared_distance(p1, p2));
+
+       if (length > max_length) {
+           max_length = length;
+       }
+   }
+
+   this->meshwidth_ = max_length;
+
+}
+
+
+double TriangleMesh::getMeshwidth() const
+{
+   return meshwidth_;
+}
+
+
+
+#endif
+//*************************************************************************************************
 
 
 //=================================================================================================
@@ -551,6 +710,59 @@ inline Vec3 TriangleMesh::supportContactThreshold( const Vec3& d, size_t startIn
 
 
 
+// #ifdef USE_CGAL
+// inline void TriangleMesh::initGeometry(std::string objPath) {
+
+  
+//   // only one output file
+//   unsigned nOut = 0;
+  
+//   std::cout << "Name of mesh file: " << objPath << std::endl;
+
+//   // Load a mesh from file in the CGAL off format
+//   std::string::size_type dpos = objPath.rfind(".");
+//   std::string offPath = objPath; 
+//   offPath.replace(dpos+1,3,"off");
+//   std::ifstream in(offPath);
+
+
+//   if (!in)
+//   {
+//     std::cerr << "unable to open file: " << offPath << std::endl;
+//     std::exit(EXIT_FAILURE);
+//   }
+
+//   Polyhedron *polyhedron_ = new Polyhedron();
+//   CGAL::read_off(in, *polyhedron_);
+
+//   in.close();
+
+//   // polyhedra.push_back(polyhedron);
+
+//   std::cout << "OFF file loaded successfully" << std::endl;
+
+
+// } 
+
+
+// inline void TriangleMesh::buildTreeStructures()
+// {
+//   std::cout << "Construct AABB tree..."<<std::endl;
+
+//   Polyhedron polyhedron = TriangleMesh::getPolyhedron();
+
+//    std::cout<<"is polyhedron empty "<<polyhedron.empty()<<std::endl;
+// //   Tree *tree_ = new Tree(faces(TriangleMesh::getPolyhedron()*).first, faces(TriangleMesh::getPolyhedron()*).second, TriangleMesh::getPolyhedron()*);
+
+//    Tree *tree_ = new Tree(faces(polyhedron).first, faces(polyhedron).second, polyhedron);
+
+//   // Use the acceleration method for distances
+//   tree_->accelerate_distance_queries();
+
+//   std::cout << "done." << std::endl;
+//   std::cout<<"is Tree empty "<< tree_->empty()<<std::endl;
+// }
+// #endif
 
 //=================================================================================================
 //
@@ -585,6 +797,12 @@ TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const std::string
                                    MaterialID material, bool convex,
                                    bool visible=true, const Vec3& scale=Vec3(1.0, 1.0, 1.0),  bool clockwise=false, bool lefthanded=false );
 
+
+TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const std::string file,
+                                   MaterialID material, bool convex, bool fixed,
+                                   bool visible=true, const Vec3& scale=Vec3(1.0, 1.0, 1.0),  bool clockwise=false, bool lefthanded=false );
+
+
 TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const TriangleMeshID source,
                                    MaterialID material, bool visible=true);
 
@@ -596,6 +814,12 @@ TriangleMeshID instantiateTriangleMesh( id_t sid, id_t uid, const Vec3& gpos, co
                                         const Quat& q, const Vertices& vertices,
                                         const IndicesLists& faces, MaterialID material,
                                         bool visible, bool fixed, bool reg=true );
+
+TriangleMeshID instantiateTriangleMesh( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
+                                       const Quat& q, const Vertices& vertices,
+                                       const IndicesLists& faces, MaterialID material,
+                                       bool visible, bool fixed, bool reg=true, bool convex=false );
+   
 
 TriangleMeshID createRegularTetrahedron( id_t uid, const Vec3& gpos, real radius,
                                          MaterialID material, bool visible=true );
@@ -1056,6 +1280,7 @@ inline const GeomPrimitive *const * polymorphicFind<const TriangleMesh>( const G
 }
 /*! \endcond */
 //*************************************************************************************************
+
 
 } // namespace pe
 
