@@ -63,6 +63,7 @@
 #include <pe/system/Precision.h>
 #include <pe/util/logging/DebugSection.h>
 #include <pe/util/logging/DetailSection.h>
+#include <pe/util/logging/InfoSection.h>
 #include <pe/util/NonCreatable.h>
 #include <pe/util/Timing.h>
 #include <pe/util/Types.h>
@@ -3982,7 +3983,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          if (face.size() >= 3) { // Process triangular faces
             // Calculate triangle barycenter (centroid)
             Vec3 barycenter(0.0, 0.0, 0.0);
-            for (size_t idx : face) {
+            for (size_t idx = 0; idx < face.size(); ++idx) {
                barycenter += queryVertices[idx];
             }
             barycenter /= static_cast<real>(face.size());
@@ -4032,7 +4033,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             if (distance > clusteringRadius) continue;
             
             // Check normal similarity
-            real normalDot = candidates[i].worldNormal * candidates[j].worldNormal;
+            real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
             if (normalDot < normalSimilarityThreshold) continue;
             
             // Add to cluster
@@ -4045,6 +4046,20 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          // Normalize average normal
          cluster.averageNormal = cluster.averageNormal.getNormalized();
          clusters.push_back(cluster);
+      }
+      
+      // Debug logging for cluster analysis
+      pe_LOG_INFO_SECTION(log) {
+         log << "DistanceMap collision clustering results:\n";
+         log << "  Total clusters: " << clusters.size() << "\n";
+         for (size_t i = 0; i < clusters.size(); ++i) {
+            const auto& cluster = clusters[i];
+            log << "  Cluster " << i << ":\n";
+            log << "    Contact points: " << cluster.candidateIndices.size() << "\n";
+            log << "    Average normal: (" << cluster.averageNormal[0] << ", " 
+                << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
+            log << "    Deepest penetration: " << cluster.maxPenetration << "\n";
+         }
       }
       
       // Generate final contacts from cluster representatives
@@ -4087,8 +4102,8 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             Vec3 clusterCenter = candidates[deepestIdx].worldPos;
             for (size_t idx : cluster.candidateIndices) {
                Vec3 rel = candidates[idx].worldPos - clusterCenter;
-               real proj1 = rel * tangent1;
-               real proj2 = rel * tangent2;
+               real proj1 = trans(rel) * tangent1;
+               real proj2 = trans(rel) * tangent2;
                
                if (proj1 < minT1) { minT1 = proj1; minT1Idx = idx; }
                if (proj1 > maxT1) { maxT1 = proj1; maxT1Idx = idx; }
