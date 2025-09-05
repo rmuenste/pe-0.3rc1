@@ -4061,6 +4061,18 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             log << "    Deepest penetration: " << cluster.maxPenetration << "\n";
          }
       }
+      std::ostringstream oss;
+         oss << "DistanceMap collision clustering results:\n";
+         oss << "  Total clusters: " << clusters.size() << "\n";
+         for (size_t i = 0; i < clusters.size(); ++i) {
+            const auto& cluster = clusters[i];
+            oss << "  Cluster " << i << ":\n";
+            oss << "    Contact points: " << cluster.candidateIndices.size() << "\n";
+            oss << "    Average normal: (" << cluster.averageNormal[0] << ", " 
+                << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
+            oss << "    Deepest penetration: " << cluster.maxPenetration << "\n";
+         }
+      //std::cout << oss.str(); // Also output to standard console
       
       // Generate final contacts from cluster representatives
       size_t contactsGenerated = 0;
@@ -4129,18 +4141,14 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             if (contactsGenerated >= maxContactsPerPair) break;
             
             const ContactCandidate& candidate = candidates[repIdx];
-            Vec3 contactNormal = candidate.worldNormal;
             
-            // Ensure proper normal direction (pointing from reference to query mesh)
-            if (referenceMesh == mB) {
-               contactNormal = -contactNormal;
-            }
-            
-            // Apply consistent normal flipping as in original code
-            contactNormal = -contactNormal;
+            // DistanceMap normals now consistently point outward from mesh surface
+            // PE convention: normal points from body2 to body1 (referenceMesh to queryMesh)
+            // Since DistanceMap normals point outward from referenceMesh, they already point toward queryMesh
+            // No additional flipping needed - normals are now consistent
             
             contacts.addVertexFaceContact( queryMesh, referenceMesh, 
-                                          candidate.contactPoint, contactNormal, -candidate.penetration );
+                                          candidate.contactPoint, candidate.worldNormal , -candidate.penetration );
             
             ++contactsGenerated;
          }

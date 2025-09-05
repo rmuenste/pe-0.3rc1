@@ -45,6 +45,7 @@
 #include <pe/vtk.h>
 #include <pe/util.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
+#include "VtkOutput.h"
 
 using namespace pe;
 using namespace pe::povray;
@@ -77,9 +78,9 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps ( 8000 );    // Total number of time steps
-   const unsigned int visspacing(   40 );   // Spacing between two visualizations
-   const real timestep_size( 0.0005 );       // Size of each simulation time step
+   const unsigned int timesteps ( 500 );    // Total number of time steps
+   const unsigned int visspacing(   10 );   // Spacing between two visualizations
+   const real timestep_size( 0.005 );       // Size of each simulation time step
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
@@ -120,7 +121,7 @@ int main( int argc, char* argv[] )
    world->setGravity( 0.0, 0.0, -9.81 );  // Standard gravity in -z direction
 
    //theCollisionSystem()->setErrorReductionParameter(0.0125);
-   theCollisionSystem()->setErrorReductionParameter(0.0);
+   theCollisionSystem()->setErrorReductionParameter(0.00);
    std::cout << "\nWorld initialized with gravity: " << world->getGravity() << std::endl;
 
    // Create materials
@@ -146,6 +147,19 @@ int main( int argc, char* argv[] )
       // Enable DistanceMap acceleration on mesh 1
       mesh1->enableDistanceMapAcceleration(0.1, 30, 3);  // spacing=0.1, resolution=30, tolerance=3
       std::cout << "DistanceMap acceleration enabled on mesh 1: " << (mesh1->hasDistanceMap() ? "SUCCESS" : "FAILED") << std::endl;
+
+      auto origin = mesh1->getDistanceMap()->getOrigin();
+      // Create dummy face index for VTI export (not used in DistanceMap)
+      std::vector<int> face_index(mesh1->getDistanceMap()->getSdfData().size(), 0);
+      write_vti("sdf.vti",
+                mesh1->getDistanceMap()->getSdfData(),
+                mesh1->getDistanceMap()->getAlphaData(), 
+                mesh1->getDistanceMap()->getNormalData(),
+                mesh1->getDistanceMap()->getContactPointData(),
+                face_index,
+                mesh1->getDistanceMap()->getNx(), mesh1->getDistanceMap()->getNy(), mesh1->getDistanceMap()->getNz(),
+                mesh1->getDistanceMap()->getSpacing(), mesh1->getDistanceMap()->getSpacing(), mesh1->getDistanceMap()->getSpacing(),
+                origin[0], origin[1], origin[2]);
       
       // Set initial linear velocity (slight downward and forward motion)
       //mesh1->setLinearVel( 0.5, 0.0, -0.2 );
@@ -155,11 +169,20 @@ int main( int argc, char* argv[] )
       //mesh2 = createTriangleMesh(++id, Vec3(0.0, 3.1, 4.7), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(0.0, -1.72496, 8.36196), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(0.0, 3.03749, 5.82685), mesh2File, mesh2Material, false, true);
-      mesh2 = createTriangleMesh(++id, Vec3(-1.55176,2.2521, 5.82685), mesh2File, mesh2Material, false, true);
+      //  TriangleMeshID testSphere = createTriangleMesh(2, Vec3(-1.02965, 1.80596, 5.78679), testSphereFile, material2, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(-1.55176,2.2521, 5.82685), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(-0.95, 1.80596, 5.78679), mesh2File, mesh2Material, false, true);
+      mesh2 = createTriangleMesh(++id, Vec3(1.13668,-2.79345, 6.24138), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(2.0, 0.0, 6.2), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 6.02), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 6.41), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3(-0.0, 0.0, 2.01), mesh2File, mesh2Material, false, true);
+      //mesh2 = createTriangleMesh(++id, Vec3( 0.0, 0.1, 2.1), mesh2File, mesh2Material, false, true);
       std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices at position: " << mesh2->getPosition() << std::endl;
       // (0, -1.72496 m , 8.36196 m)
       //3.03749 m, 5.82685 m
       // Vec3(-1.55176,2.2521, 5.82685);
+      //  
       // Set initial linear velocity (slight sideways and downward motion)
       //mesh2->setLinearVel( -0.3, 0.2, -0.1 );
       

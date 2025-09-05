@@ -114,13 +114,21 @@ public:
                         sdf_[index] = distance;
                     }
                     
+                    // Calculate vector from closest surface point to query point
                     pe::real lx = CGAL::to_double(query[0] - closest[0]);
                     pe::real ly = CGAL::to_double(query[1] - closest[1]);
                     pe::real lz = CGAL::to_double(query[2] - closest[2]);
                     
                     pe::real ln = std::sqrt(lx*lx + ly*ly + lz*lz);
                     if (ln > 1e-8) {
-                        normals_[index].set(lx / ln, ly / ln, lz / ln);
+                        // Ensure consistent outward-pointing normals from mesh surface
+                        if (is_inside(query) == CGAL::ON_BOUNDED_SIDE) {
+                            // Inside: query-closest points inward, so flip to outward
+                            normals_[index].set(-lx / ln, -ly / ln, -lz / ln);
+                        } else {
+                            // Outside: query-closest points outward (correct)
+                            normals_[index].set( lx / ln, ly / ln, lz / ln);
+                        }
                     } else {
                         normals_[index].set(0, 0, 0);
                     }

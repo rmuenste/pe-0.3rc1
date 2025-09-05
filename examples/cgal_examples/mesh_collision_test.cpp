@@ -73,7 +73,9 @@ int main(int argc, char* argv[]) {
         
         // Mesh 2: Test sphere at specific position - inside bounding box, no collision expected
         std::cout << "Loading test sphere from: " << testSphereFile << std::endl;
-        TriangleMeshID testSphere = createTriangleMesh(2, Vec3(0.0, 3.1, 4.7), testSphereFile, material2, false, true);
+        // Vec(-1.02965, 1.80596, 5.78679)   
+        //TriangleMeshID testSphere = createTriangleMesh(2, Vec3(0.0, 3.1, 4.7), testSphereFile, material2, false, true);
+        TriangleMeshID testSphere = createTriangleMesh(2, Vec3(-1.02965, 1.80596, 5.78679), testSphereFile, material2, false, true);
         std::cout << "Test sphere created with " << testSphere->getBFVertices().size() << " vertices" << std::endl;
         std::cout << "Test sphere positioned at: " << testSphere->getPosition() << std::endl;
 
