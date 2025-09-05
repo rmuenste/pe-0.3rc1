@@ -309,7 +309,12 @@ else()
 endif()
 #============================================================================
 
-
+if(USE_CGAL)
+  message(STATUS "CGAL will be installed to: ${CGAL_INSTALL_DIR}")
+  SET(CGAL ON CACHE BOOL "Use CGAL library" FORCE)
+  # Add definition to enable CGAL
+  add_definitions(-DPE_USE_CGAL)
+endif()
 #============================================================================
 # Update library and linking settings for CGAL
 if( CGAL )
