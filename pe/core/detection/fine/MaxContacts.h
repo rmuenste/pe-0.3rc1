@@ -3899,71 +3899,245 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
    }
    
    try {
-      // For simplicity, we'll query a few representative points from the query mesh
-      // A more sophisticated approach would sample more points or use mesh-to-mesh queries
+      // Multi-contact manifold approach: collect all penetrating points and build contact manifold
+      // This replaces the single deepest contact with multiple distributed contacts for better stability
+      
+      // Contact candidate structure for manifold building
+      struct ContactCandidate {
+         Vec3 worldPos;        // Query point in world coordinates
+         Vec3 worldNormal;     // Contact normal in world coordinates
+         real penetration;     // Penetration depth (positive = penetrating)
+         Vec3 contactPoint;    // Surface contact point in world coordinates
+         
+         ContactCandidate(const Vec3& pos, const Vec3& normal, real pen, const Vec3& contact)
+            : worldPos(pos), worldNormal(normal), penetration(pen), contactPoint(contact) {}
+      };
+      
+      std::vector<ContactCandidate> candidates;
+      candidates.reserve(32); // Reserve space for typical contact manifold
+      
       const auto& queryVertices = queryMesh->getWFVertices();
+      const auto& queryFaceIndices = queryMesh->getFaceIndices();
       
-      // Transform vertices from query mesh world coordinates to reference mesh local coordinates
-      // Uses PE's coordinate transformation methods for proper mesh-to-mesh collision detection
-      Vec3 minPenetrationNormal;
-      Vec3 deepestContactPoint;
-      real minDistance = std::numeric_limits<real>::max();
-      bool hasContact = false;
-      
-      // Use all vertices for comprehensive testing (sampling disabled)
-      // Reenable sampling for performance if needed:
-      // size sampleSize = 100UL; // Sample up to 100 points
-      // size_t sampleStep = std::max(size_t(1), queryVertices.size() / sampleSize);
-      size_t sampleStep = 1; // Process every vertex (no sampling)
-      
-      for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
-         const Vec3& vertex = queryVertices[i];
+      // Helper function to process a query point for contact detection
+      auto processQueryPoint = [&](const Vec3& queryPoint) {
+         // Transform point from world coordinates to reference mesh local coordinates
+         Vec3 localPoint = referenceMesh->pointFromWFtoBF(queryPoint);
          
-         // Transform vertex from world coordinates to reference mesh local coordinates
-         Vec3 localVertex = referenceMesh->pointFromWFtoBF(vertex);
+         // Query distance from this point to the reference mesh surface (in local coordinates)
+         real distance = distMap->interpolateDistance(localPoint[0], localPoint[1], localPoint[2]);
          
-         // Query distance from this vertex to the reference mesh surface (in local coordinates)
-         real distance = distMap->interpolateDistance(localVertex[0], localVertex[1], localVertex[2]);
-         
-         // Check for contact/penetration
+         // Collect all penetrating candidates (negative distance = penetration)
          if (distance < contactThreshold) {
-            hasContact = true;
+            // Get normal and contact point from DistanceMap (in local coordinates)
+            Vec3 localNormal = distMap->interpolateNormal(localPoint[0], localPoint[1], localPoint[2]);
+            Vec3 localContactPoint = distMap->interpolateContactPoint(localPoint[0], localPoint[1], localPoint[2]);
             
-            if (distance < minDistance) {
-               minDistance = distance;
+            // Transform results back to world coordinates for collision response
+            Vec3 worldNormal = referenceMesh->vectorFromBFtoWF(localNormal);
+            Vec3 worldContactPoint = referenceMesh->pointFromBFtoWF(localContactPoint);
+            
+            // Calculate penetration depth (positive for penetration)
+            real penetration = std::max(0.0, -distance);
+            
+            // Add to contact candidates
+            candidates.emplace_back(queryPoint, worldNormal, penetration, worldContactPoint);
+         }
+      };
+      
+      // Phase 1: Collect penetrating contact candidates from vertices
+      // Process all vertices for comprehensive collision detection
+      for (size_t i = 0; i < queryVertices.size(); ++i) {
+         processQueryPoint(queryVertices[i]);
+      }
+      
+      // Phase 2: Sample edge midpoints to catch edge-face penetrations
+      // This addresses the issue where face-face contacts may have no vertex penetrations
+      std::set<std::pair<size_t, size_t>> processedEdges; // Track processed edges to avoid duplicates
+      
+      for (const auto& face : queryFaceIndices) {
+         if (face.size() >= 3) { // Process triangular faces
+            for (size_t i = 0; i < face.size(); ++i) {
+               size_t v1 = face[i];
+               size_t v2 = face[(i + 1) % face.size()];
                
-               // Get normal and contact point from DistanceMap (in local coordinates)
-               Vec3 localNormal = distMap->interpolateNormal(localVertex[0], localVertex[1], localVertex[2]);
-               Vec3 localContactPoint = distMap->interpolateContactPoint(localVertex[0], localVertex[1], localVertex[2]);
+               // Ensure consistent edge ordering to avoid duplicates
+               if (v1 > v2) std::swap(v1, v2);
                
-               // Transform results back to world coordinates for collision response
-               Vec3 worldNormal = referenceMesh->vectorFromBFtoWF(localNormal);
-               Vec3 worldContactPoint = referenceMesh->pointFromBFtoWF(localContactPoint);
-               
-               // Store the deepest contact information (in world coordinates)
-               minPenetrationNormal = worldNormal;
-               deepestContactPoint = worldContactPoint;
+               // Process each edge only once
+               if (processedEdges.find({v1, v2}) == processedEdges.end()) {
+                  processedEdges.insert({v1, v2});
+                  
+                  // Sample edge midpoint
+                  Vec3 edgeMidpoint = (queryVertices[v1] + queryVertices[v2]) * 0.5;
+                  processQueryPoint(edgeMidpoint);
+               }
             }
          }
       }
       
-      // Create contact if penetration was found
-      if (hasContact && minDistance < contactThreshold) {
-         // Ensure proper normal direction (pointing from reference to query mesh)
-         if (referenceMesh == mB) {
-            minPenetrationNormal = -minPenetrationNormal;
+      // Phase 3: Sample triangle barycenters to catch face-face penetrations
+      // This is crucial for detecting contact when two flat surfaces meet
+      for (const auto& face : queryFaceIndices) {
+         if (face.size() >= 3) { // Process triangular faces
+            // Calculate triangle barycenter (centroid)
+            Vec3 barycenter(0.0, 0.0, 0.0);
+            for (size_t idx : face) {
+               barycenter += queryVertices[idx];
+            }
+            barycenter /= static_cast<real>(face.size());
+            
+            processQueryPoint(barycenter);
          }
-         
-         minPenetrationNormal = -minPenetrationNormal;
-         contacts.addVertexFaceContact( queryMesh, referenceMesh, deepestContactPoint, minPenetrationNormal, minDistance );
-         
-         pe_LOG_DEBUG_SECTION( log ) {
-            log << "      DistanceMap contact created between triangle mesh " << mA->getID()
-                << " and triangle mesh " << mB->getID() << " (dist=" << minDistance << ")";
-         }
-         
-         return true;
       }
+      
+      // Phase 4: Contact manifold generation from candidates
+      if (candidates.empty()) {
+         return false; // No penetrating contacts found
+      }
+      
+      // Contact clustering parameters
+      const real clusteringRadius = 2.0 * distMap->getSpacing(); // Proximity clustering
+      const real normalSimilarityThreshold = 0.9; // Dot product threshold for normal similarity
+      const size_t maxContactsPerPair = 6; // Limit total contacts for performance
+      
+      // Contact clustering structure
+      struct ContactCluster {
+         std::vector<size_t> candidateIndices; // Indices into candidates array
+         Vec3 averageNormal;
+         real maxPenetration;
+         
+         ContactCluster() : averageNormal(0.0, 0.0, 0.0), maxPenetration(0.0) {}
+      };
+      
+      std::vector<ContactCluster> clusters;
+      std::vector<bool> assigned(candidates.size(), false);
+      
+      // Cluster candidates by proximity and normal similarity
+      for (size_t i = 0; i < candidates.size(); ++i) {
+         if (assigned[i]) continue;
+         
+         ContactCluster cluster;
+         cluster.candidateIndices.push_back(i);
+         cluster.averageNormal = candidates[i].worldNormal;
+         cluster.maxPenetration = candidates[i].penetration;
+         assigned[i] = true;
+         
+         // Find nearby candidates with similar normals
+         for (size_t j = i + 1; j < candidates.size(); ++j) {
+            if (assigned[j]) continue;
+            
+            // Check proximity
+            real distance = (candidates[i].worldPos - candidates[j].worldPos).length();
+            if (distance > clusteringRadius) continue;
+            
+            // Check normal similarity
+            real normalDot = candidates[i].worldNormal * candidates[j].worldNormal;
+            if (normalDot < normalSimilarityThreshold) continue;
+            
+            // Add to cluster
+            cluster.candidateIndices.push_back(j);
+            cluster.averageNormal += candidates[j].worldNormal;
+            cluster.maxPenetration = std::max(cluster.maxPenetration, candidates[j].penetration);
+            assigned[j] = true;
+         }
+         
+         // Normalize average normal
+         cluster.averageNormal = cluster.averageNormal.getNormalized();
+         clusters.push_back(cluster);
+      }
+      
+      // Generate final contacts from cluster representatives
+      size_t contactsGenerated = 0;
+      for (const auto& cluster : clusters) {
+         if (contactsGenerated >= maxContactsPerPair) break;
+         
+         // Select up to 4 representatives per cluster: deepest + extremals in tangent directions
+         std::vector<size_t> representatives;
+         
+         // Find deepest penetration contact
+         size_t deepestIdx = cluster.candidateIndices[0];
+         real maxPen = candidates[deepestIdx].penetration;
+         for (size_t idx : cluster.candidateIndices) {
+            if (candidates[idx].penetration > maxPen) {
+               maxPen = candidates[idx].penetration;
+               deepestIdx = idx;
+            }
+         }
+         representatives.push_back(deepestIdx);
+         
+         // For larger clusters, add extremal contacts in tangent directions
+         if (cluster.candidateIndices.size() > 1 && representatives.size() < 4) {
+            // Create two tangent vectors orthogonal to average normal
+            Vec3 tangent1, tangent2;
+            if (std::abs(cluster.averageNormal[0]) < 0.9) {
+               tangent1 = cluster.averageNormal % Vec3(1.0, 0.0, 0.0);
+            } else {
+               tangent1 = cluster.averageNormal % Vec3(0.0, 1.0, 0.0);
+            }
+            tangent1 = tangent1.getNormalized();
+            tangent2 = cluster.averageNormal % tangent1;
+            
+            // Find extremals in tangent directions
+            real minT1 = std::numeric_limits<real>::max(), maxT1 = -std::numeric_limits<real>::max();
+            real minT2 = std::numeric_limits<real>::max(), maxT2 = -std::numeric_limits<real>::max();
+            size_t minT1Idx = deepestIdx, maxT1Idx = deepestIdx;
+            size_t minT2Idx = deepestIdx, maxT2Idx = deepestIdx;
+            
+            Vec3 clusterCenter = candidates[deepestIdx].worldPos;
+            for (size_t idx : cluster.candidateIndices) {
+               Vec3 rel = candidates[idx].worldPos - clusterCenter;
+               real proj1 = rel * tangent1;
+               real proj2 = rel * tangent2;
+               
+               if (proj1 < minT1) { minT1 = proj1; minT1Idx = idx; }
+               if (proj1 > maxT1) { maxT1 = proj1; maxT1Idx = idx; }
+               if (proj2 < minT2) { minT2 = proj2; minT2Idx = idx; }
+               if (proj2 > maxT2) { maxT2 = proj2; maxT2Idx = idx; }
+            }
+            
+            // Add unique extremal contacts (avoid duplicates)
+            auto addIfUnique = [&](size_t idx) {
+               if (std::find(representatives.begin(), representatives.end(), idx) == representatives.end()) {
+                  representatives.push_back(idx);
+               }
+            };
+            
+            if (representatives.size() < 4) addIfUnique(minT1Idx);
+            if (representatives.size() < 4) addIfUnique(maxT1Idx);
+            if (representatives.size() < 4) addIfUnique(minT2Idx);
+            if (representatives.size() < 4) addIfUnique(maxT2Idx);
+         }
+         
+         // Generate contacts for selected representatives
+         for (size_t repIdx : representatives) {
+            if (contactsGenerated >= maxContactsPerPair) break;
+            
+            const ContactCandidate& candidate = candidates[repIdx];
+            Vec3 contactNormal = candidate.worldNormal;
+            
+            // Ensure proper normal direction (pointing from reference to query mesh)
+            if (referenceMesh == mB) {
+               contactNormal = -contactNormal;
+            }
+            
+            // Apply consistent normal flipping as in original code
+            contactNormal = -contactNormal;
+            
+            contacts.addVertexFaceContact( queryMesh, referenceMesh, 
+                                          candidate.contactPoint, contactNormal, -candidate.penetration );
+            
+            ++contactsGenerated;
+         }
+      }
+      
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      DistanceMap contact manifold created between triangle mesh " << mA->getID()
+             << " and triangle mesh " << mB->getID() << " (" << contactsGenerated 
+             << " contacts from " << candidates.size() << " candidates in " << clusters.size() << " clusters)";
+      }
+      
+      return contactsGenerated > 0;
    } catch (const std::exception& e) {
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      DistanceMap collision detection failed: " << e.what();
