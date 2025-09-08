@@ -18,10 +18,11 @@ void setupSpan(MPI_Comm ex0) {
 
   auto& config = SimulationConfig::getInstance();
   world = theWorld();
-  //world->setGravity( 0.0, 0.0,-980.665 );
-  world->setGravity( 0.0, 0.0, 0.0 );
 
-  real simRho( 0.85 );
+  loadSimulationConfig("example.json");
+  world->setGravity( config.getGravity() );
+
+  real simRho( config.getFluidDensity() );
   world->setLiquidDensity( simRho );
 
   // Particle Bench Config 
@@ -108,9 +109,9 @@ void setupSpan(MPI_Comm ex0) {
   real by = 0.0;
   real bz = 0.0;
 
-  const real dx( 2.0  / px );
-  const real dy( 0.02 / py );
-  const real dz( 0.2  / pz );
+  const real dx( config.getDomainSizeX() / px );
+  const real dy( config.getDomainSizeY() / py );
+  const real dz( config.getDomainSizeZ() / pz );
 
   decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
 
@@ -121,7 +122,7 @@ void setupSpan(MPI_Comm ex0) {
    theMPISystem()->checkProcesses();
 //#endif
 
-  MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID gr = createMaterial("ground", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
   // Setup of the VTK visualization
   if( g_vtk ) {
@@ -157,13 +158,10 @@ void setupSpan(MPI_Comm ex0) {
   //  - dampingN                       : 10
   //  - dampingT                       : 11
   //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-  real spanDensity = 8.19;
+  real spanDensity = 8.19;  // Keep hardcoded - no config function available
   MaterialID spanMat = createMaterial("span"    , spanDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  //Vec3 spanPos = Vec3(0.23, 0.01, 0.0374807);
-  // Vec3 spanPos = Vec3(0.22, 0.01, 0.0374807);
-  Vec3 spanPos = Vec3(0.22, 0.01, 0.0874807);
-  //Vec3 spanPos = Vec3(0.800079 0.00976448,0.0399377);
+  Vec3 spanPos = Vec3(0.22, 0.01, 0.0874807);  // Keep hardcoded - no config function available
   TriangleMeshID span;
 
   if(!resume) {
@@ -181,11 +179,11 @@ void setupSpan(MPI_Comm ex0) {
   pe_GLOBAL_SECTION
   {
      // Setup of the ground plane
-     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, granite );
+     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, gr );
      // +y
-     createPlane( id++, 0.0, 1.0, 0.0,  0.0, granite );
+     createPlane( id++, 0.0, 1.0, 0.0,  0.0, gr );
      // -y
-     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, granite );
+     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, gr );
   }
   //=========================================================================================  
 
@@ -233,7 +231,7 @@ void setupSpan(MPI_Comm ex0) {
       << " Span  Density                           = " << spanDensity << " [g/cm**3]"  << "\n"
       << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Contact threshold                       = " << contactThreshold << "\n"
-      << " Domain volume                           = " << 2. * 0.2 * 0.02 << " [cm**3]" << "\n"
+      << " Domain volume                           = " << 0.1 * 0.1 * 0.1 << " [cm**3]" << "\n"
       << " Span volume                             = " << 0.000103797 << " [cm**3]" << "\n"
       << " Resume                                  = " << resOut  << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
