@@ -931,19 +931,39 @@ void TriangleMeshTrait<C>::enableDistanceAcceleration(size_t maxReferencePoints)
 
 
 //*************************************************************************************************
-/*!\brief Determines if a point is inside the triangle mesh using ray shooting.
+/*!\brief Determines if a point is inside the triangle mesh using optimal available method.
  *
  * \param point The query point in world coordinates.
  * \return True if the point is inside the mesh, false otherwise.
  *
- * This method uses the Jordan Curve theorem with ray shooting to determine point containment.
- * Multiple random rays are cast from the query point, and the number of intersections with
- * the mesh surface is counted. An odd number of intersections indicates the point is inside.
- * When CGAL is not available, this method returns false (conservative approach).
+ * This method uses a hierarchical approach to determine point containment with optimal performance:
+ * 1. DistanceMap acceleration (O(1)): When available, uses precomputed signed distance field
+ *    with bounding box pre-filtering and coordinate transformation for maximum efficiency.
+ * 2. CGAL ray shooting (O(k*log n)): Fallback using Jordan Curve theorem with AABB tree
+ *    acceleration when DistanceMap is unavailable but CGAL is present.
+ * 3. Conservative fallback: Returns false when neither method is available.
  */
 template< typename C >  // Type of the configuration
 bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
 {
+   // ROUTE 1: DistanceMap acceleration (O(1) - highest priority)
+   if (hasDistanceMap()) {
+      // Fast bounding box check in world coordinates first
+      if (!getAABB().contains(point)) {
+         return false;  // Early exit - point is outside bounding box
+      }
+      
+      // Transform query point from world to local coordinate system
+      Vec3 localPoint = pointFromWFtoBF(point);
+      
+      // O(1) trilinear interpolation query on the DistanceMap
+      pe::real distance = distanceMap_->interpolateDistance(
+         localPoint[0], localPoint[1], localPoint[2]);
+      
+      return distance < pe::real(0);  // negative distance = inside mesh
+   }
+   
+   // ROUTE 2: CGAL ray shooting fallback (O(k*log n) - medium priority)
 #ifdef PE_USE_CGAL
    using Tag = detail::HasCgalTag;
 #else
