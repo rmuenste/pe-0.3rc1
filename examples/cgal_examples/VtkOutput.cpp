@@ -76,6 +76,57 @@ void write_vti(const std::string& filename,
     out << "</VTKFile>\n";
 }
 
+void write_vtk_points(const std::string& filename,
+                      const std::vector<pe::Vec3>& points,
+                      const std::vector<bool>& distanceMapResults,
+                      const std::vector<bool>& cgalResults,
+                      bool hasCgalResults)
+{
+    std::ofstream out(filename);
+    if (!out) {
+        throw std::runtime_error("Cannot open output file for point cloud");
+    }
+
+    out << std::fixed << std::setprecision(6);
+    
+    out << "# vtk DataFile Version 3.0\n";
+    out << "Point containment test results\n";
+    out << "ASCII\n";
+    out << "DATASET POLYDATA\n";
+
+    // Write points
+    out << "POINTS " << points.size() << " double\n";
+    for (const auto& point : points) {
+        out << point[0] << " " << point[1] << " " << point[2] << "\n";
+    }
+
+    // Write point data
+    out << "POINT_DATA " << points.size() << "\n";
+    
+    // DistanceMap results
+    out << "SCALARS DistanceMapResult int 1\n";
+    out << "LOOKUP_TABLE default\n";
+    for (bool result : distanceMapResults) {
+        out << (result ? 1 : 0) << "\n";
+    }
+
+    // CGAL results (if available)
+    if (hasCgalResults) {
+        out << "SCALARS CGALResult int 1\n";
+        out << "LOOKUP_TABLE default\n";
+        for (bool result : cgalResults) {
+            out << (result ? 1 : 0) << "\n";
+        }
+
+        // Disagreement field
+        out << "SCALARS Disagreement int 1\n";
+        out << "LOOKUP_TABLE default\n";
+        for (size_t i = 0; i < points.size(); ++i) {
+            out << (distanceMapResults[i] != cgalResults[i] ? 1 : 0) << "\n";
+        }
+    }
+}
+
 #ifdef PE_USE_CGAL
 void write_vtk(const Surface_mesh& mesh,
                const std::vector<pe::real>& alpha,

@@ -31,6 +31,15 @@ void write_vti(const std::string& filename,
                pe::real dx, pe::real dy, pe::real dz,
                pe::real x0, pe::real y0, pe::real z0);
 
+/**
+ * @brief Write a VTK point cloud file with containment test results
+ */
+void write_vtk_points(const std::string& filename,
+                      const std::vector<pe::Vec3>& points,
+                      const std::vector<bool>& distanceMapResults,
+                      const std::vector<bool>& cgalResults,
+                      bool hasCgalResults = true);
+
 #ifdef PE_USE_CGAL
 /**
  * @brief Write a VTK polygonal data file for mesh with scalar data

@@ -17,6 +17,7 @@
 
 // Local headers
 #include <pe/core/detection/fine/DistanceMap.h>
+#include "VtkOutput.h"
 
 // PE headers
 #include <pe/core.h>
@@ -34,6 +35,11 @@ struct TestConfig {
     int tolerance = 3;
     int numTestPoints = 1000;
     bool verbose = false;
+    bool exportVtk = false;
+    std::string vtkFilename = "distance_map";
+    bool compareCgal = true;
+    bool exportPoints = false;
+    std::string pointsFilename = "test_points";
 };
 
 // Test result statistics
@@ -61,7 +67,7 @@ std::vector<Vec3> generateTestPoints(const TriangleMeshID& mesh, int numPoints) 
     pe::real minZ = bbox[5], maxZ = bbox[2];
     
     // Expand bounding box for more comprehensive testing
-    pe::real margin = 0.5 * std::max({maxX - minX, maxY - minY, maxZ - minZ});
+    pe::real margin = 0.1 * std::max({maxX - minX, maxY - minY, maxZ - minZ});
     std::uniform_real_distribution<pe::real> distX(minX - margin, maxX + margin);
     std::uniform_real_distribution<pe::real> distY(minY - margin, maxY + margin);
     std::uniform_real_distribution<pe::real> distZ(minZ - margin, maxZ + margin);
@@ -136,21 +142,32 @@ void runContainmentTests(TriangleMeshID& mesh, const TestConfig& config) {
     TestStats stats;
     stats.totalPoints = testPoints.size();
     
-    // Test each point with both methods
+    // Storage for VTK export
+    std::vector<bool> distanceMapResults;
+    std::vector<bool> cgalResults;
+    distanceMapResults.reserve(testPoints.size());
+    cgalResults.reserve(testPoints.size());
+    
+    // Test each point
     for (const auto& point : testPoints) {
         // Test with DistanceMap
         bool distanceMapResult = testDistanceMapContainment(mesh, point, stats);
+        distanceMapResults.push_back(distanceMapResult);
         
-        // Test with CGAL ray shooting
-        bool cgalResult = testCGALContainment(mesh, point, stats);
-        
-        // Check for disagreements
-        if (distanceMapResult != cgalResult) {
-            stats.disagreements++;
-            if (config.verbose) {
-                std::cout << "DISAGREEMENT at point (" << point[0] << ", " << point[1] << ", " << point[2] << "): "
-                         << "DistanceMap=" << (distanceMapResult ? "inside" : "outside") << ", "
-                         << "CGAL=" << (cgalResult ? "inside" : "outside") << std::endl;
+        bool cgalResult = false;
+        if (config.compareCgal) {
+            // Test with CGAL ray shooting
+            cgalResult = testCGALContainment(mesh, point, stats);
+            cgalResults.push_back(cgalResult);
+            
+            // Check for disagreements
+            if (distanceMapResult != cgalResult) {
+                stats.disagreements++;
+                if (config.verbose) {
+                    std::cout << "DISAGREEMENT at point (" << point[0] << ", " << point[1] << ", " << point[2] << "): "
+                             << "DistanceMap=" << (distanceMapResult ? "inside" : "outside") << ", "
+                             << "CGAL=" << (cgalResult ? "inside" : "outside") << std::endl;
+                }
             }
         }
     }
@@ -160,28 +177,53 @@ void runContainmentTests(TriangleMeshID& mesh, const TestConfig& config) {
     std::cout << "Total test points: " << stats.totalPoints << std::endl;
     std::cout << "DistanceMap results: " << stats.distanceMapInside << " inside, " 
               << stats.distanceMapOutside << " outside" << std::endl;
-    std::cout << "CGAL results: " << stats.cgalInside << " inside, " 
-              << stats.cgalOutside << " outside" << std::endl;
-    std::cout << "Disagreements: " << stats.disagreements << " (" 
-              << (100.0 * stats.disagreements / stats.totalPoints) << "%)" << std::endl;
+    
+    if (config.compareCgal) {
+        std::cout << "CGAL results: " << stats.cgalInside << " inside, " 
+                  << stats.cgalOutside << " outside" << std::endl;
+        std::cout << "Disagreements: " << stats.disagreements << " (" 
+                  << (100.0 * stats.disagreements / stats.totalPoints) << "%)" << std::endl;
+    }
     
     std::cout << "\n=== Performance Results ===" << std::endl;
     std::cout << "DistanceMap total time: " << stats.distanceMapTime << " ms" << std::endl;
     std::cout << "DistanceMap avg time per query: " << (stats.distanceMapTime / stats.totalPoints) << " ms" << std::endl;
-    std::cout << "CGAL total time: " << stats.cgalTime << " ms" << std::endl;
-    std::cout << "CGAL avg time per query: " << (stats.cgalTime / stats.totalPoints) << " ms" << std::endl;
     
-    if (stats.cgalTime > 0) {
-        std::cout << "Speed improvement: " << (stats.cgalTime / stats.distanceMapTime) << "x faster" << std::endl;
+    if (config.compareCgal) {
+        std::cout << "CGAL total time: " << stats.cgalTime << " ms" << std::endl;
+        std::cout << "CGAL avg time per query: " << (stats.cgalTime / stats.totalPoints) << " ms" << std::endl;
+        
+        if (stats.cgalTime > 0) {
+            std::cout << "Speed improvement: " << (stats.cgalTime / stats.distanceMapTime) << "x faster" << std::endl;
+        }
     }
     
     // Validation
-    if (stats.disagreements == 0) {
-        std::cout << "✓ PASS: All containment queries agree between methods!" << std::endl;
-    } else if (stats.disagreements < 0.05 * stats.totalPoints) {  // Allow up to 5% disagreement due to numerical precision
-        std::cout << "⚠ WARN: Minor disagreements detected (within acceptable tolerance)" << std::endl;
+    if (config.compareCgal) {
+        if (stats.disagreements == 0) {
+            std::cout << "✓ PASS: All containment queries agree between methods!" << std::endl;
+        } else if (stats.disagreements < 0.05 * stats.totalPoints) {  // Allow up to 5% disagreement due to numerical precision
+            std::cout << "⚠ WARN: Minor disagreements detected (within acceptable tolerance)" << std::endl;
+        } else {
+            std::cout << "✗ FAIL: Significant disagreements detected!" << std::endl;
+        }
     } else {
-        std::cout << "✗ FAIL: Significant disagreements detected!" << std::endl;
+        std::cout << "✓ INFO: DistanceMap-only testing completed (no CGAL comparison)" << std::endl;
+    }
+    
+    // Export test points to VTK if requested
+    if (config.exportPoints) {
+        std::string pointsFile = config.pointsFilename + ".vtk";
+        std::cout << "\nExporting test points to " << pointsFile << "..." << std::endl;
+        
+        write_vtk_points(pointsFile, testPoints, distanceMapResults, cgalResults, config.compareCgal);
+        
+        std::cout << "Point cloud export completed successfully!" << std::endl;
+        if (config.compareCgal) {
+            std::cout << "Visualization fields: DistanceMapResult (0/1), CGALResult (0/1), Disagreement (0/1)" << std::endl;
+        } else {
+            std::cout << "Visualization fields: DistanceMapResult (0/1)" << std::endl;
+        }
     }
 }
 
@@ -200,6 +242,9 @@ int main(int argc, char* argv[]) {
         std::cout << "  --tolerance <value>: DistanceMap tolerance (default: 3)" << std::endl;
         std::cout << "  --points <count>: Number of test points (default: 1000)" << std::endl;
         std::cout << "  --verbose: Enable verbose output" << std::endl;
+        std::cout << "  --export-vtk [filename]: Export DistanceMap to VTK format (default: distance_map.vti)" << std::endl;
+        std::cout << "  --export-points [filename]: Export test points with results to VTK format (default: test_points.vtk)" << std::endl;
+        std::cout << "  --no-cgal-compare: Disable CGAL comparison (DistanceMap-only testing)" << std::endl;
         return 1;
     }
     
@@ -218,6 +263,18 @@ int main(int argc, char* argv[]) {
             config.numTestPoints = std::stoi(argv[++i]);
         } else if (arg == "--verbose") {
             config.verbose = true;
+        } else if (arg == "--export-vtk") {
+            config.exportVtk = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                config.vtkFilename = argv[++i];
+            }
+        } else if (arg == "--export-points") {
+            config.exportPoints = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                config.pointsFilename = argv[++i];
+            }
+        } else if (arg == "--no-cgal-compare") {
+            config.compareCgal = false;
         }
     }
     
@@ -227,6 +284,15 @@ int main(int argc, char* argv[]) {
     std::cout << "  DistanceMap resolution: " << config.resolution << std::endl;
     std::cout << "  DistanceMap tolerance: " << config.tolerance << std::endl;
     std::cout << "  Test points: " << config.numTestPoints << std::endl;
+    std::cout << "  Export VTK: " << (config.exportVtk ? "Yes" : "No") << std::endl;
+    if (config.exportVtk) {
+        std::cout << "  VTK filename: " << config.vtkFilename << ".vti" << std::endl;
+    }
+    std::cout << "  Export points: " << (config.exportPoints ? "Yes" : "No") << std::endl;
+    if (config.exportPoints) {
+        std::cout << "  Points filename: " << config.pointsFilename << ".vtk" << std::endl;
+    }
+    std::cout << "  CGAL comparison: " << (config.compareCgal ? "Enabled" : "Disabled") << std::endl;
 
     try {
         // Initialize PE world
@@ -271,6 +337,24 @@ int main(int argc, char* argv[]) {
         if (const DistanceMap* dm = mesh->getDistanceMap()) {
             std::cout << "DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
             std::cout << "DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
+            
+            // Export to VTK if requested
+            if (config.exportVtk) {
+                std::string vtkFile = config.vtkFilename + ".vti";
+                std::cout << "Exporting DistanceMap to " << vtkFile << "..." << std::endl;
+                
+                write_vti(vtkFile,
+                         dm->getSdfData(),
+                         dm->getAlphaData(),
+                         dm->getNormalData(),
+                         dm->getContactPointData(),
+                         std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
+                         dm->getNx(), dm->getNy(), dm->getNz(),
+                         dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
+                         dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
+                
+                std::cout << "VTK export completed successfully!" << std::endl;
+            }
         }
         
         // Run containment tests
