@@ -15,7 +15,7 @@
 
 // Local headers
 #include <pe/core/detection/fine/DistanceMap.h>
-#include "VtkOutput.h"
+#include <pe/vtk/UtilityWriters.h>
 
 // PE headers
 #include <pe/core.h>
@@ -118,15 +118,7 @@ int main(int argc, char* argv[]) {
     std::vector<int> face_index(distance_map->getSdfData().size(), 0);
     
     auto origin = distance_map->getOrigin();
-    write_vti("sdf.vti",
-              distance_map->getSdfData(),
-              distance_map->getAlphaData(), 
-              distance_map->getNormalData(),
-              distance_map->getContactPointData(),
-              face_index,
-              distance_map->getNx(), distance_map->getNy(), distance_map->getNz(),
-              distance_map->getSpacing(), distance_map->getSpacing(), distance_map->getSpacing(),
-              origin[0], origin[1], origin[2]);
+    pe::vtk::DistanceMapWriter::writeVTI("sdf.vti", *distance_map);
 
     // Load secondary mesh for testing using appropriate loading method  
     Surface_mesh secondaryMesh;
@@ -218,7 +210,17 @@ int main(int argc, char* argv[]) {
 
     // Export results to VTK
     std::cout << "Exporting results to VTK..." << std::endl;
-    write_vtk(secondaryMesh, chipAlpha, chipSDF, chipNormal, chipContactPoint, "collision_test.vtk");
+    
+    // Prepare data for mesh export
+    std::map<std::string, std::vector<pe::real>> scalarFields;
+    scalarFields["alpha"] = chipAlpha;
+    scalarFields["SDF"] = chipSDF;
+    
+    std::map<std::string, std::vector<pe::Vec3>> vectorFields;
+    vectorFields["normals"] = chipNormal;
+    vectorFields["contact_point"] = chipContactPoint;
+    
+    pe::vtk::MeshDataWriter::writeCGALMesh("collision_test.vtk", secondaryMesh, scalarFields, vectorFields);
 
     std::cout << "Done! Files generated:" << std::endl;
     std::cout << "  sdf.vti - SDF grid visualization" << std::endl;

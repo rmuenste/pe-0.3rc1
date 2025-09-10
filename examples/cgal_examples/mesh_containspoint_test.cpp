@@ -17,7 +17,7 @@
 
 // Local headers
 #include <pe/core/detection/fine/DistanceMap.h>
-#include "VtkOutput.h"
+#include <pe/vtk/UtilityWriters.h>
 
 // PE headers
 #include <pe/core.h>
@@ -216,7 +216,7 @@ void runContainmentTests(TriangleMeshID& mesh, const TestConfig& config) {
         std::string pointsFile = config.pointsFilename + ".vtk";
         std::cout << "\nExporting test points to " << pointsFile << "..." << std::endl;
         
-        write_vtk_points(pointsFile, testPoints, distanceMapResults, cgalResults, config.compareCgal);
+        pe::vtk::PointCloudWriter::writeContainmentTest(pointsFile, testPoints, distanceMapResults, cgalResults, config.compareCgal);
         
         std::cout << "Point cloud export completed successfully!" << std::endl;
         if (config.compareCgal) {
@@ -343,15 +343,7 @@ int main(int argc, char* argv[]) {
                 std::string vtkFile = config.vtkFilename + ".vti";
                 std::cout << "Exporting DistanceMap to " << vtkFile << "..." << std::endl;
                 
-                write_vti(vtkFile,
-                         dm->getSdfData(),
-                         dm->getAlphaData(),
-                         dm->getNormalData(),
-                         dm->getContactPointData(),
-                         std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
-                         dm->getNx(), dm->getNy(), dm->getNz(),
-                         dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
-                         dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
+                pe::vtk::DistanceMapWriter::writeVTI(vtkFile, *dm);
                 
                 std::cout << "VTK export completed successfully!" << std::endl;
             }

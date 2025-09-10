@@ -45,7 +45,7 @@
 #include <pe/vtk.h>
 #include <pe/util.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
-#include "VtkOutput.h"
+#include <pe/vtk/UtilityWriters.h>
 
 using namespace pe;
 using namespace pe::povray;
@@ -151,15 +151,7 @@ int main( int argc, char* argv[] )
       auto origin = mesh1->getDistanceMap()->getOrigin();
       // Create dummy face index for VTI export (not used in DistanceMap)
       std::vector<int> face_index(mesh1->getDistanceMap()->getSdfData().size(), 0);
-      write_vti("sdf.vti",
-                mesh1->getDistanceMap()->getSdfData(),
-                mesh1->getDistanceMap()->getAlphaData(), 
-                mesh1->getDistanceMap()->getNormalData(),
-                mesh1->getDistanceMap()->getContactPointData(),
-                face_index,
-                mesh1->getDistanceMap()->getNx(), mesh1->getDistanceMap()->getNy(), mesh1->getDistanceMap()->getNz(),
-                mesh1->getDistanceMap()->getSpacing(), mesh1->getDistanceMap()->getSpacing(), mesh1->getDistanceMap()->getSpacing(),
-                origin[0], origin[1], origin[2]);
+      pe::vtk::DistanceMapWriter::writeVTI("sdf.vti", *mesh1->getDistanceMap());
       
       // Set initial linear velocity (slight downward and forward motion)
       //mesh1->setLinearVel( 0.5, 0.0, -0.2 );

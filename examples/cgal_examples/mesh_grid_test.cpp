@@ -18,7 +18,7 @@
 
 // Local headers
 #include <pe/core/detection/fine/DistanceMap.h>
-#include "VtkOutput.h"
+#include <pe/vtk/UtilityWriters.h>
 
 // PE headers
 #include <pe/core.h>
@@ -293,15 +293,33 @@ void performGridCalculations(const TriangleMeshID& mesh, const GridConfig& confi
     }
     
     // Write VTI file
-    write_vti(vtiFile,
-             config.calcDistance ? distanceData : containmentData,  // Use distance if available, otherwise containment
-             std::vector<int>(containmentData.begin(), containmentData.end()),  // Convert containment to int
-             normalData,
-             contactData,
-             std::vector<int>(gridPoints.size(), 0),  // Face index placeholder
-             config.gridSize[0], config.gridSize[1], config.gridSize[2],
-             config.gridSpacing[0], config.gridSpacing[1], config.gridSpacing[2],
-             gridConfig.gridOrigin[0], gridConfig.gridOrigin[1], gridConfig.gridOrigin[2]);
+    pe::Vec3 origin(gridConfig.gridOrigin[0], gridConfig.gridOrigin[1], gridConfig.gridOrigin[2]);
+    pe::Vec3 spacing(config.gridSpacing[0], config.gridSpacing[1], config.gridSpacing[2]);
+    
+    // Prepare scalar fields
+    pe::vtk::DistanceMapWriter::ScalarFieldMap scalarFields;
+    if (config.calcDistance) {
+        scalarFields["distance"] = distanceData;
+    } else {
+        scalarFields["containment"] = containmentData;
+    }
+    
+    // Convert containment to alpha field
+    std::vector<pe::real> alphaData(containmentData.begin(), containmentData.end());
+    scalarFields["alpha"] = alphaData;
+    
+    // Prepare vector fields  
+    pe::vtk::DistanceMapWriter::VectorFieldMap vectorFields;
+    if (config.calcNormal) {
+        vectorFields["normal"] = normalData;
+    }
+    if (config.calcContact) {
+        vectorFields["contact_point"] = contactData;
+    }
+    
+    pe::vtk::DistanceMapWriter::writeCustomGrid(vtiFile, origin, spacing,
+                                               config.gridSize[0], config.gridSize[1], config.gridSize[2],
+                                               scalarFields, vectorFields);
     
     std::cout << "VTK export completed successfully!" << std::endl;
     
@@ -461,15 +479,7 @@ int main(int argc, char* argv[]) {
                 std::string dmVtiFile = config.distanceMapFile + ".vti";
                 std::cout << "Exporting DistanceMap to " << dmVtiFile << "..." << std::endl;
                 
-                write_vti(dmVtiFile,
-                         dm->getSdfData(),
-                         dm->getAlphaData(),
-                         dm->getNormalData(),
-                         dm->getContactPointData(),
-                         std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
-                         dm->getNx(), dm->getNy(), dm->getNz(),
-                         dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
-                         dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
+                pe::vtk::DistanceMapWriter::writeVTI(dmVtiFile, *dm);
                 
                 std::cout << "DistanceMap export completed successfully!" << std::endl;
                 std::cout << "Note: DistanceMap is in LOCAL mesh coordinates" << std::endl;
