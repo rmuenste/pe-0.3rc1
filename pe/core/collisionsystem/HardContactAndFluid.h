@@ -3533,6 +3533,34 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
                      obj->setOwner( process->getRank(), *process );
+                     
+#ifdef PE_USE_CGAL
+                     // Reconstruct DistanceMap for shadow copy if data was provided
+                     if( subobjparam.hasDistanceMapData_ ) {
+                        auto* triangleMesh = static_cast<TriangleMesh*>(obj);
+                        if( triangleMesh ) {
+                           // Create DistanceMap from received data
+                           auto distanceMap = DistanceMap::createFromData(
+                              subobjparam.sdfData_,
+                              subobjparam.alphaData_,
+                              subobjparam.normalData_,
+                              subobjparam.contactPointData_,
+                              subobjparam.nx_, subobjparam.ny_, subobjparam.nz_,
+                              subobjparam.spacing_,
+                              subobjparam.origin_
+                           );
+                           
+                           if( distanceMap ) {
+                              // Set the DistanceMap on the shadow copy
+                              triangleMesh->setDistanceMap( std::move(distanceMap) );
+                              
+                              pe_LOG_DEBUG_SECTION( log ) {
+                                 log << "Reconstructed DistanceMap for TriangleMesh shadow copy " << obj->getSystemID() << "\n";
+                              }
+                           }
+                        }
+                     }
+#endif
                      break;
                   }
                   case unionType: {

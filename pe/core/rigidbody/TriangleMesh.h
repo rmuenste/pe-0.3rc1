@@ -126,6 +126,20 @@ public:
    struct Parameters : public GeomPrimitive::Parameters {
       Vertices     vertices_;
       IndicesLists faceIndices_;
+#ifdef PE_USE_CGAL
+      // DistanceMap reconstruction data for shadow copies
+      bool hasDistanceMapData_;
+      std::vector<pe::real> sdfData_;
+      std::vector<int> alphaData_;
+      std::vector<pe::Vec3> normalData_;
+      std::vector<pe::Vec3> contactPointData_;
+      int nx_, ny_, nz_;
+      pe::real spacing_;
+      pe::Vec3 origin_;
+      
+      // Constructor to initialize DistanceMap fields
+      Parameters() : hasDistanceMapData_(false), nx_(0), ny_(0), nz_(0), spacing_(0.0) {}
+#endif
    };
    //**********************************************************************************************
 
@@ -217,6 +231,7 @@ public:
    void disableDistanceMapAcceleration();
    bool hasDistanceMap() const;
    const DistanceMap* getDistanceMap() const;
+   void setDistanceMap(std::unique_ptr<DistanceMap> distanceMap);
 
    virtual inline Vec3 support                ( const Vec3& d ) const;
    virtual inline Vec3 supportContactThreshold( const Vec3& d ) const;

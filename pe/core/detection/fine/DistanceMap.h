@@ -84,6 +84,29 @@ public:
         int resolution = 50,
         int tolerance = 5
     );
+    
+    /**
+     * @brief Create a distance map from serialized data (for shadow copies)
+     * @param sdfData Signed distance field data
+     * @param alphaData Alpha (containment) data
+     * @param normalData Surface normal data
+     * @param contactPointData Contact point data
+     * @param nx Number of grid cells in X direction
+     * @param ny Number of grid cells in Y direction
+     * @param nz Number of grid cells in Z direction
+     * @param spacing Grid spacing (uniform in all directions)
+     * @param origin Grid origin coordinates
+     * @return Unique pointer to the created DistanceMap, or nullptr on failure
+     */
+    static std::unique_ptr<DistanceMap> createFromData(
+        const std::vector<pe::real>& sdfData,
+        const std::vector<int>& alphaData,
+        const std::vector<pe::Vec3>& normalData,
+        const std::vector<pe::Vec3>& contactPointData,
+        int nx, int ny, int nz,
+        pe::real spacing,
+        const pe::Vec3& origin
+    );
 #endif
 
     /**

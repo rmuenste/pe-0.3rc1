@@ -467,6 +467,7 @@ public:
    void disableDistanceMapAcceleration();
    bool hasDistanceMap() const;
    const DistanceMap* getDistanceMap() const;
+   void setDistanceMap(std::unique_ptr<DistanceMap> distanceMap);
    //@}
    //**********************************************************************************************
 
@@ -1094,6 +1095,25 @@ const DistanceMap* TriangleMeshTrait<C>::getDistanceMap() const
    return distanceMap_.get();
 #else
    return nullptr;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the DistanceMap instance for shadow copies.
+ *
+ * \param distanceMap Unique pointer to the DistanceMap to set.
+ *
+ * This method is used internally to set a reconstructed DistanceMap on shadow copies
+ * during parallel synchronization.
+ */
+template< typename C >  // Type of the configuration
+void TriangleMeshTrait<C>::setDistanceMap(std::unique_ptr<DistanceMap> distanceMap)
+{
+#ifdef PE_USE_CGAL
+   distanceMap_ = std::move(distanceMap);
+   distanceMapEnabled_ = (distanceMap_ != nullptr);
 #endif
 }
 //*************************************************************************************************

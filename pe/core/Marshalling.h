@@ -492,6 +492,45 @@ inline void marshal( Buffer& buffer, const TriangleMesh& obj ) {
    buffer << obj.getFaceIndices().size();
    for( size_t i = 0; i < obj.getFaceIndices().size(); ++i )
       marshal( buffer, obj.getFaceIndices()[i] );
+
+#ifdef PE_USE_CGAL
+   // Marshal DistanceMap data if available
+   bool hasDistanceMap = obj.hasDistanceMap();
+   buffer << hasDistanceMap;
+   
+   if (hasDistanceMap) {
+      const DistanceMap* dm = obj.getDistanceMap();
+      if (dm) {
+         buffer << dm->getNx() << dm->getNy() << dm->getNz();
+         buffer << dm->getSpacing();
+         marshal( buffer, dm->getOrigin() );
+         
+         // Serialize SDF data
+         const std::vector<pe::real>& sdfData = dm->getSdfData();
+         buffer << sdfData.size();
+         for( size_t i = 0; i < sdfData.size(); ++i )
+            buffer << sdfData[i];
+         
+         // Serialize alpha data
+         const std::vector<int>& alphaData = dm->getAlphaData();
+         buffer << alphaData.size();
+         for( size_t i = 0; i < alphaData.size(); ++i )
+            buffer << alphaData[i];
+         
+         // Serialize normal data
+         const std::vector<pe::Vec3>& normalData = dm->getNormalData();
+         buffer << normalData.size();
+         for( size_t i = 0; i < normalData.size(); ++i )
+            marshal( buffer, normalData[i] );
+         
+         // Serialize contact point data
+         const std::vector<pe::Vec3>& contactData = dm->getContactPointData();
+         buffer << contactData.size();
+         for( size_t i = 0; i < contactData.size(); ++i )
+            marshal( buffer, contactData[i] );
+      }
+   }
+#endif
 }
 //*************************************************************************************************
 
@@ -521,6 +560,45 @@ inline void unmarshal( Buffer& buffer, TriangleMesh::Parameters& objparam, bool 
 
    for( size_t i = 0; i < objparam.faceIndices_.size(); ++i )
       unmarshal( buffer, objparam.faceIndices_[i] );
+
+#ifdef PE_USE_CGAL
+   // Unmarshal DistanceMap data if available
+   buffer >> objparam.hasDistanceMapData_;
+   
+   if (objparam.hasDistanceMapData_) {
+      buffer >> objparam.nx_ >> objparam.ny_ >> objparam.nz_;
+      buffer >> objparam.spacing_;
+      unmarshal( buffer, objparam.origin_ );
+      
+      // Deserialize SDF data
+      size_t sdfSize;
+      buffer >> sdfSize;
+      objparam.sdfData_.resize( sdfSize );
+      for( size_t i = 0; i < sdfSize; ++i )
+         buffer >> objparam.sdfData_[i];
+      
+      // Deserialize alpha data
+      size_t alphaSize;
+      buffer >> alphaSize;
+      objparam.alphaData_.resize( alphaSize );
+      for( size_t i = 0; i < alphaSize; ++i )
+         buffer >> objparam.alphaData_[i];
+      
+      // Deserialize normal data
+      size_t normalSize;
+      buffer >> normalSize;
+      objparam.normalData_.resize( normalSize );
+      for( size_t i = 0; i < normalSize; ++i )
+         unmarshal( buffer, objparam.normalData_[i] );
+      
+      // Deserialize contact point data
+      size_t contactSize;
+      buffer >> contactSize;
+      objparam.contactPointData_.resize( contactSize );
+      for( size_t i = 0; i < contactSize; ++i )
+         unmarshal( buffer, objparam.contactPointData_[i] );
+   }
+#endif
 }
 //*************************************************************************************************
 

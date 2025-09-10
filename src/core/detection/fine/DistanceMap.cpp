@@ -225,6 +225,26 @@ public:
         return result;
     }
 
+    // Constructor: Creates DistanceMap from serialized data (for shadow copies)
+    Impl(const std::vector<pe::real>& sdfData,
+         const std::vector<int>& alphaData,
+         const std::vector<pe::Vec3>& normalData,
+         const std::vector<pe::Vec3>& contactPointData,
+         int nx, int ny, int nz,
+         pe::real spacing,
+         const pe::Vec3& origin)
+        : nx_(nx), ny_(ny), nz_(nz), spacing_(spacing), origin_(origin),
+          sdf_(sdfData), alpha_(alphaData), normals_(normalData), contact_points_(contactPointData)
+    {
+        // Basic validation
+        size_t expectedSize = static_cast<size_t>(nx) * ny * nz;
+        if (sdf_.size() != expectedSize || alpha_.size() != expectedSize ||
+            normals_.size() != expectedSize || contact_points_.size() != expectedSize) {
+            std::cerr << "Warning: DistanceMap data size mismatch during reconstruction" << std::endl;
+            sdf_.clear(); // Mark as invalid
+        }
+    }
+
     // Public interface of the Impl
     pe::real interpolateDistance(pe::real x, pe::real y, pe::real z) const { return trilinearInterpolateScalar(sdf_, x, y, z); }
     pe::Vec3 interpolateNormal(pe::real x, pe::real y, pe::real z) const { return trilinearInterpolateVector(normals_, x, y, z); }
@@ -389,6 +409,37 @@ std::unique_ptr<DistanceMap> DistanceMap::create(
     }
 #else
     std::cerr << "Warning: DistanceMap::create requires CGAL support. Please rebuild with PE_USE_CGAL=ON" << std::endl;
+    return nullptr;
+#endif
+}
+
+// Create from serialized data method (for shadow copies)
+std::unique_ptr<DistanceMap> DistanceMap::createFromData(
+    const std::vector<pe::real>& sdfData,
+    const std::vector<int>& alphaData,
+    const std::vector<pe::Vec3>& normalData,
+    const std::vector<pe::Vec3>& contactPointData,
+    int nx, int ny, int nz,
+    pe::real spacing,
+    const pe::Vec3& origin)
+{
+#ifdef PE_USE_CGAL
+    try {
+        auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
+        map->_pimpl = std::make_unique<Impl>(sdfData, alphaData, normalData, contactPointData, 
+                                           nx, ny, nz, spacing, origin);
+        
+        if (!map->_pimpl->isValid()) {
+            return nullptr;
+        }
+        return map;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error creating DistanceMap from serialized data: " << e.what() << std::endl;
+        return nullptr;
+    }
+#else
+    std::cerr << "Warning: DistanceMap::createFromData requires CGAL support. Please rebuild with PE_USE_CGAL=ON" << std::endl;
     return nullptr;
 #endif
 }
