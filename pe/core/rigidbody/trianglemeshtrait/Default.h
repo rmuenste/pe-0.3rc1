@@ -33,6 +33,9 @@
 #include <pe/core/rigidbody/TriangleMeshTypes.h>
 #include <pe/system/Precision.h>
 #include <pe/util/Types.h>
+#include <pe/util/Logging.h>
+#include <pe/util/logging/Logger.h>
+#include <pe/util/logging/InfoSection.h>
 
 // Forward declaration for DistanceMap (avoid circular dependency)
 namespace pe {
@@ -948,6 +951,9 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
 {
    // ROUTE 1: DistanceMap acceleration (O(1) - highest priority)
    if (hasDistanceMap()) {
+      pe_LOG_INFO_SECTION( log ) {
+         log << "We have access to a distance map.\n";
+      }
       // Fast bounding box check in world coordinates first
       if (!getAABB().contains(point)) {
          return false;  // Early exit - point is outside bounding box
@@ -970,12 +976,19 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
    using Tag = detail::NoCgalTag;
 #endif
    
+   pe_LOG_INFO_SECTION( log ) {
+      log << "We have do not have access to a distance map and use the fallback.\n";
+   }
+
    // Get the vertices and faces from the base class
    const Vertices& vertices = this->getBFVertices();
    const IndicesLists& faces = this->getFaceIndices();
+
+   // Transform query point from world to local coordinate system
+   Vec3 localPoint = pointFromWFtoBF(point);
    
    // Use tag dispatch to call the appropriate implementation
-   return detail::CgalFunctions<Tag>::containsPoint(vertices, faces, point);
+   return detail::CgalFunctions<Tag>::containsPoint(vertices, faces, localPoint);
 }
 //*************************************************************************************************
 

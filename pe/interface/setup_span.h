@@ -10,7 +10,7 @@
 
 // VTK output functionality for DistanceMap visualization
 #ifdef PE_USE_CGAL
-#include "../../examples/cgal_examples/VtkOutput.h"
+//#include "../../examples/cgal_examples/VtkOutput.h"
 #endif
 
 using namespace pe::povray;
@@ -47,14 +47,14 @@ void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint,
     
     // Print chip AABB for reference
     const auto& bbox = chip->getAABB();
-    std::cout << "Chip AABB: [" << bbox[3] << "," << bbox[0] << "] x ["
-              << bbox[4] << "," << bbox[1] << "] x ["
-              << bbox[5] << "," << bbox[2] << "]" << std::endl;
+    std::cout << "Chip AABB: [" << bbox[0] << "," << bbox[3] << "] x ["
+              << bbox[1] << "," << bbox[4] << "] x ["
+              << bbox[2] << "," << bbox[5] << "]" << std::endl;
     
     // Check if point is in AABB
-    bool inAABB = (testPoint[0] >= bbox[3] && testPoint[0] <= bbox[0]) &&
-                  (testPoint[1] >= bbox[4] && testPoint[1] <= bbox[1]) &&
-                  (testPoint[2] >= bbox[5] && testPoint[2] <= bbox[2]);
+    bool inAABB = (testPoint[0] >= bbox[0] && testPoint[0] <= bbox[3]) &&
+                  (testPoint[1] >= bbox[1] && testPoint[1] <= bbox[4]) &&
+                  (testPoint[2] >= bbox[2] && testPoint[2] <= bbox[5]);
     std::cout << "Point in AABB: " << (inAABB ? "YES" : "NO") << std::endl;
 }
 
@@ -207,12 +207,13 @@ void setupSpan(MPI_Comm ex0) {
   real chipDensity = 8.19;  // Keep hardcoded - no config function available
   MaterialID chipMat = createMaterial("chip"    , chipDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  Vec3 chipPos = Vec3(0.22, 0.01, 0.0874807);  // Keep hardcoded - no config function available
+  Vec3 chipPos = Vec3(0.0, 0.0, 5.0);  // Keep hardcoded - no config function available
   TriangleMeshID chip;
 
   if(!resume) {
     if(world->ownsPoint(chipPos)) {
       chip = createTriangleMesh(++id, chipPos, fileName, chipMat, true, true, Vec3(1.0,1.0,1.0), false, false);
+      std::cout << "Chip is owned by domain: " << mpisystem->getRank() << " initially." << std::endl;
       std::cout << "Chip x:[" << chip->getAABB()[3] << "," << chip->getAABB()[0] << "]" << std::endl;
       
       // Enable DistanceMap acceleration for the chip
@@ -256,29 +257,29 @@ void setupSpan(MPI_Comm ex0) {
         chip->calcBoundingBox();
         
         // Export DistanceMap to VTI file for visualization
-#ifdef PE_USE_CGAL
-        if (chip->hasDistanceMap()) {
-          const DistanceMap* dm = chip->getDistanceMap();
-          if (dm) {
-            std::cout << "\n=== EXPORTING DISTANCEMAP TO VTI ===" << std::endl;
-            std::string dmVtiFile = "chip_distance_map.vti";
-            std::cout << "Exporting DistanceMap to " << dmVtiFile << "..." << std::endl;
-            
-            write_vti(dmVtiFile,
-                     dm->getSdfData(),
-                     dm->getAlphaData(),
-                     dm->getNormalData(),
-                     dm->getContactPointData(),
-                     std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
-                     dm->getNx(), dm->getNy(), dm->getNz(),
-                     dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
-                     dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
-            
-            std::cout << "DistanceMap export completed successfully!" << std::endl;
-            std::cout << "Note: DistanceMap is in LOCAL chip coordinates" << std::endl;
-          }
-        }
-#endif
+//#ifdef PE_USE_CGAL
+//        if (chip->hasDistanceMap()) {
+//          const DistanceMap* dm = chip->getDistanceMap();
+//          if (dm) {
+//            std::cout << "\n=== EXPORTING DISTANCEMAP TO VTI ===" << std::endl;
+//            std::string dmVtiFile = "chip_distance_map.vti";
+//            std::cout << "Exporting DistanceMap to " << dmVtiFile << "..." << std::endl;
+//            
+//            write_vti(dmVtiFile,
+//                     dm->getSdfData(),
+//                     dm->getAlphaData(),
+//                     dm->getNormalData(),
+//                     dm->getContactPointData(),
+//                     std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
+//                     dm->getNx(), dm->getNy(), dm->getNz(),
+//                     dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
+//                     dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
+//            
+//            std::cout << "DistanceMap export completed successfully!" << std::endl;
+//            std::cout << "Note: DistanceMap is in LOCAL chip coordinates" << std::endl;
+//          }
+//        }
+//#endif
         
         std::cout << "\n=== COORDINATE DEBUG TEST COMPLETE ===" << std::endl;
         std::cout << "Chip reset to original position for simulation." << std::endl;
@@ -289,17 +290,19 @@ void setupSpan(MPI_Comm ex0) {
     checkpointer.read( "../start.1" );
   }
 
-  //=========================================================================================  
-  pe_GLOBAL_SECTION
-  {
-     // Setup of the ground plane
-     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, gr );
-     // +y
-     createPlane( id++, 0.0, 1.0, 0.0,  0.0, gr );
-     // -y
-     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, gr );
-  }
-  //=========================================================================================  
+//  //=========================================================================================  
+//  // No bounding planes for now
+//  //=========================================================================================  
+//  pe_GLOBAL_SECTION
+//  {
+//     // Setup of the ground plane
+//     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, gr );
+//     // +y
+//     createPlane( id++, 0.0, 1.0, 0.0,  0.0, gr );
+//     // -y
+//     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, gr );
+//  }
+//  //=========================================================================================  
 
   // Synchronization of the MPI processes
   world->synchronize();
