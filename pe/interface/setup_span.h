@@ -6,10 +6,57 @@
 #include <iostream>
 #include <sstream>
 #include <pe/core/Types.h>
+#include <pe/core/detection/fine/DistanceMap.h>
+
+// VTK output functionality for DistanceMap visualization
+#ifdef PE_USE_CGAL
+#include "../../examples/cgal_examples/VtkOutput.h"
+#endif
 
 using namespace pe::povray;
 //=================================================================================================
 
+// Helper function for coordinate transformation debug test
+void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint, const std::string& description) {
+    std::cout << "\n=== " << description << " ===" << std::endl;
+    
+    // Print chip position
+    std::cout << "Chip position: (" << chip->getPosition()[0] << ", " << chip->getPosition()[1] << ", " << chip->getPosition()[2] << ")" << std::endl;
+    std::cout << "Test point:    (" << testPoint[0] << ", " << testPoint[1] << ", " << testPoint[2] << ")" << std::endl;
+    
+    // Test with DistanceMap if available
+    if (chip->hasDistanceMap()) {
+        bool dmResult = chip->containsPoint(testPoint);
+        std::cout << "DistanceMap result: " << (dmResult ? "INSIDE" : "OUTSIDE") << std::endl;
+        
+        // Get additional DistanceMap info for debugging
+        const DistanceMap* dm = chip->getDistanceMap();
+        if (dm) {
+            // Transform point to local coordinates (same as mesh does internally)
+            Vec3 localPoint = chip->pointFromWFtoBF(testPoint);
+            std::cout << "Local point:   (" << localPoint[0] << ", " << localPoint[1] << ", " << localPoint[2] << ")" << std::endl;
+            
+            // Query distance directly
+            pe::real distance = dm->interpolateDistance(localPoint[0], localPoint[1], localPoint[2]);
+            std::cout << "Signed distance: " << distance << std::endl;
+            std::cout << "Distance sign indicates: " << (distance < 0 ? "INSIDE" : "OUTSIDE") << std::endl;
+        }
+    } else {
+        std::cout << "No DistanceMap available!" << std::endl;
+    }
+    
+    // Print chip AABB for reference
+    const auto& bbox = chip->getAABB();
+    std::cout << "Chip AABB: [" << bbox[3] << "," << bbox[0] << "] x ["
+              << bbox[4] << "," << bbox[1] << "] x ["
+              << bbox[5] << "," << bbox[2] << "]" << std::endl;
+    
+    // Check if point is in AABB
+    bool inAABB = (testPoint[0] >= bbox[3] && testPoint[0] <= bbox[0]) &&
+                  (testPoint[1] >= bbox[4] && testPoint[1] <= bbox[1]) &&
+                  (testPoint[2] >= bbox[5] && testPoint[2] <= bbox[2]);
+    std::cout << "Point in AABB: " << (inAABB ? "YES" : "NO") << std::endl;
+}
 
 //=================================================================================================
 // Setup for the Chip Case
@@ -105,13 +152,13 @@ void setupSpan(MPI_Comm ex0) {
   int py = config.getProcessesY();
   int pz = config.getProcessesZ();
 
-  real bx = 0.0;
-  real by = 0.0;
+  real bx =-4.5;
+  real by =-4.5;
   real bz = 0.0;
 
-  const real dx( config.getDomainSizeX() / px );
-  const real dy( config.getDomainSizeY() / py );
-  const real dz( config.getDomainSizeZ() / pz );
+  const real dx( 9.0 / px );
+  const real dy( 9.0 / py );
+  const real dz( 10. / pz );
 
   decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
 
@@ -141,12 +188,12 @@ void setupSpan(MPI_Comm ex0) {
   int idx = 0;
   real h = 0.00125;
 
-  std::string fileName = std::string("span_cm.obj");
+  std::string fileName = std::string("chip1.obj");
 
   //=========================================================================================  
-  // Creation and positioning of the span
+  // Creation and positioning of the chip
   //=========================================================================================  
-  // Create a custom material for the span
+  // Create a custom material for the chip
   // Creates the material "myMaterial" with the following material properties:
   //  - material density               : 2.54
   //  - coefficient of restitution     : 0.8
@@ -157,18 +204,85 @@ void setupSpan(MPI_Comm ex0) {
   //  - Contact stiffness              : 100
   //  - dampingN                       : 10
   //  - dampingT                       : 11
-  //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-  real spanDensity = 8.19;  // Keep hardcoded - no config function available
-  MaterialID spanMat = createMaterial("span"    , spanDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+  real chipDensity = 8.19;  // Keep hardcoded - no config function available
+  MaterialID chipMat = createMaterial("chip"    , chipDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  Vec3 spanPos = Vec3(0.22, 0.01, 0.0874807);  // Keep hardcoded - no config function available
-  TriangleMeshID span;
+  Vec3 chipPos = Vec3(0.22, 0.01, 0.0874807);  // Keep hardcoded - no config function available
+  TriangleMeshID chip;
 
   if(!resume) {
-    if(world->ownsPoint(spanPos)) {
-      span = createTriangleMesh(++id, spanPos, fileName, spanMat, true, true, Vec3(1.0,1.0,1.0), false, false);
-      //AABB &aabb = span->getAABB();
-      std::cout << "Span x:[" << span->getAABB()[3] << "," << span->getAABB()[0] << "]" << std::endl;
+    if(world->ownsPoint(chipPos)) {
+      chip = createTriangleMesh(++id, chipPos, fileName, chipMat, true, true, Vec3(1.0,1.0,1.0), false, false);
+      std::cout << "Chip x:[" << chip->getAABB()[3] << "," << chip->getAABB()[0] << "]" << std::endl;
+      
+      // Enable DistanceMap acceleration for the chip
+      chip->enableDistanceMapAcceleration(0.05, 64, 3);  // spacing, resolution, tolerance
+      if (!chip->hasDistanceMap()) {
+        std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
+      } else {
+        std::cout << "DistanceMap acceleration enabled successfully for chip!" << std::endl;
+        const DistanceMap* dm = chip->getDistanceMap();
+        if (dm) {
+          std::cout << "DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
+          std::cout << "DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
+          std::cout << "DistanceMap spacing: " << dm->getSpacing() << std::endl;
+        }
+        
+        // Coordinate transformation debug test (similar to debug_coordinate_transform.cpp)
+        Vec3 testPoint(-0.086035, -0.869566, 0.477526);  // Fixed test point from debug example
+        
+        std::cout << "\n=== COORDINATE TRANSFORMATION DEBUG TEST ===" << std::endl;
+        std::cout << "Running 4-phase coordinate validation test..." << std::endl;
+        
+        // Test 1: Original point with chip at current position
+        testChipPointContainment(chip, testPoint, "Test 1: Point vs Chip at Original Position");
+        
+        // Test 2: Translate point +10 in Z - should be OUTSIDE
+        Vec3 translatedPoint = testPoint + Vec3(0, 0, 10);
+        testChipPointContainment(chip, translatedPoint, "Test 2: Point+10Z vs Chip at Original Position (Expected: OUTSIDE)");
+        
+        // Test 3: Translate chip +10 in Z to align with translated point
+        Vec3 originalChipPos = chip->getPosition();
+        chip->setPosition(originalChipPos + Vec3(0, 0, 10));
+        chip->calcBoundingBox();  // Force update of cached data
+        
+        testChipPointContainment(chip, translatedPoint, "Test 3: Point+10Z vs Chip+10Z (Expected: INSIDE if coord transforms work)");
+        
+        // Test 4: Original point vs translated chip - should be OUTSIDE
+        testChipPointContainment(chip, testPoint, "Test 4: Original Point vs Chip+10Z (Expected: OUTSIDE)");
+        
+        // Reset chip to original position for simulation
+        chip->setPosition(originalChipPos);
+        chip->calcBoundingBox();
+        
+        // Export DistanceMap to VTI file for visualization
+#ifdef PE_USE_CGAL
+        if (chip->hasDistanceMap()) {
+          const DistanceMap* dm = chip->getDistanceMap();
+          if (dm) {
+            std::cout << "\n=== EXPORTING DISTANCEMAP TO VTI ===" << std::endl;
+            std::string dmVtiFile = "chip_distance_map.vti";
+            std::cout << "Exporting DistanceMap to " << dmVtiFile << "..." << std::endl;
+            
+            write_vti(dmVtiFile,
+                     dm->getSdfData(),
+                     dm->getAlphaData(),
+                     dm->getNormalData(),
+                     dm->getContactPointData(),
+                     std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
+                     dm->getNx(), dm->getNy(), dm->getNz(),
+                     dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
+                     dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
+            
+            std::cout << "DistanceMap export completed successfully!" << std::endl;
+            std::cout << "Note: DistanceMap is in LOCAL chip coordinates" << std::endl;
+          }
+        }
+#endif
+        
+        std::cout << "\n=== COORDINATE DEBUG TEST COMPLETE ===" << std::endl;
+        std::cout << "Chip reset to original position for simulation." << std::endl;
+      }
     }
   }
   else {
@@ -228,11 +342,11 @@ void setupSpan(MPI_Comm ex0) {
       << " Total number of particles               = " << 1 << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Density                           = " << simRho << " [g/cm**3]"  << "\n"
-      << " Span  Density                           = " << spanDensity << " [g/cm**3]"  << "\n"
+      << " Chip  Density                           = " << chipDensity << " [g/cm**3]"  << "\n"
       << " Gravity constant                        = " << world->getGravity() << "\n" 
       << " Contact threshold                       = " << contactThreshold << "\n"
       << " Domain volume                           = " << 0.1 * 0.1 * 0.1 << " [cm**3]" << "\n"
-      << " Span volume                             = " << 0.000103797 << " [cm**3]" << "\n"
+      << " Chip volume                             = " << 0.000103797 << " [cm**3]" << "\n"
       << " Resume                                  = " << resOut  << "\n"
       << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
