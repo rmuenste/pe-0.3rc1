@@ -298,7 +298,9 @@ void MeshDataWriter::writeMeshData( const std::string& filename,
 
    std::ofstream out( filename );
    if( !out ) {
-      pe_THROW( std::runtime_error, "Cannot open output file: " << filename );
+      std::ostringstream oss;
+      oss << "Cannot open output file: " << filename;
+      throw std::runtime_error(oss.str());
    }
 
    out << std::fixed << std::setprecision(6);
@@ -489,24 +491,27 @@ void MeshDataWriter::extractMeshData( const TriangleMeshID& mesh,
    faces.clear();
 
    // Extract vertices
-   const size_t numVertices = mesh->getNumVertices();
+   const size_t numVertices = mesh->getWFVertices().size();
    vertices.reserve( numVertices );
+
+   const Vertices& origVerts = mesh->getWFVertices(); 
+   
    
    for( size_t i = 0; i < numVertices; ++i ) {
-      vertices.push_back( mesh->getVertex(i) );
+      vertices.push_back( origVerts[i] );
    }
 
    // Extract faces
-   const size_t numFaces = mesh->getNumFaces();
+   const size_t numFaces = mesh->getFaceIndices().size();
    faces.reserve( numFaces );
 
    for( size_t i = 0; i < numFaces; ++i ) {
-      const auto& faceIndices = mesh->getFace(i);
+      const auto& faceIndices = mesh->getFaceIndices()[i];
       std::vector<int> face;
       face.reserve( faceIndices.size() );
       
-      for( auto index : faceIndices ) {
-         face.push_back( static_cast<int>(index) );
+      for( size_t j = 0; j < faceIndices.size(); ++j ) {
+         face.push_back( static_cast<int>(faceIndices[j]) );
       }
       faces.push_back( std::move(face) );
    }

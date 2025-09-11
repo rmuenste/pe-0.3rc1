@@ -185,7 +185,9 @@ void DistanceMapWriter::writeCustomGrid( const std::string& filename,
 
    std::ofstream out( filename );
    if( !out ) {
-      pe_THROW( std::runtime_error, "Cannot open output file: " << filename );
+      std::ostringstream oss;
+      oss << "Cannot open output file: " << filename;
+      throw std::runtime_error(oss.str());
    }
 
    out << std::fixed << std::setprecision(6);
@@ -319,7 +321,9 @@ void DistanceMapWriter::writeVTI( const std::string& filename,
 
    std::ofstream out( filename );
    if( !out ) {
-      pe_THROW( std::runtime_error, "Cannot open output file: " << filename );
+      std::ostringstream oss;
+      oss << "Cannot open output file: " << filename;
+      throw std::runtime_error( oss.str() );
    }
 
    out << std::fixed << std::setprecision(6);
