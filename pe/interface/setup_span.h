@@ -190,9 +190,35 @@ void setupSpan(MPI_Comm ex0) {
 
   std::string fileName = std::string("chip1.obj");
 
-  //=========================================================================================  
+  //=========================================================================================
+  // Creation and positioning of the global tool
+  //=========================================================================================
+  MaterialID toolMat = createMaterial("tool", chipDensity, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+
+  pe_GLOBAL_SECTION
+  {
+    Vec3 toolPos = Vec3(0.0, 0.0, 0.0);
+    TriangleMeshID tool = createTriangleMesh(++id, toolPos, "tool.obj", toolMat, true, true, Vec3(1.0,1.0,1.0), true, true);
+    std::cout << "Global fixed tool created at position: (" << toolPos[0] << ", " << toolPos[1] << ", " << toolPos[2] << ")" << std::endl;
+
+    // Enable DistanceMap acceleration for the tool
+    tool->enableDistanceMapAcceleration(0.05, 64, 3);  // spacing, resolution, tolerance
+    if (!tool->hasDistanceMap()) {
+      std::cerr << "WARNING: DistanceMap acceleration failed to initialize for tool" << std::endl;
+    } else {
+      std::cout << "DistanceMap acceleration enabled successfully for tool!" << std::endl;
+      const DistanceMap* dm = tool->getDistanceMap();
+      if (dm) {
+        std::cout << "Tool DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
+        std::cout << "Tool DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
+        std::cout << "Tool DistanceMap spacing: " << dm->getSpacing() << std::endl;
+      }
+    }
+  }
+
+  //=========================================================================================
   // Creation and positioning of the chip
-  //=========================================================================================  
+  //=========================================================================================
   // Create a custom material for the chip
   // Creates the material "myMaterial" with the following material properties:
   //  - material density               : 2.54
