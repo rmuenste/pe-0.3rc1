@@ -230,7 +230,7 @@ void stepSimulation() {
       if( maxA <= a) 
         maxA = a;
       
-//#define SINGLE_PARTICLE_OUTPUT
+#define SINGLE_PARTICLE_OUTPUT
 #ifdef SINGLE_PARTICLE_OUTPUT
       singleOutput_v1(body, timestep);
 #endif

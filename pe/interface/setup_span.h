@@ -185,6 +185,7 @@ void setupSpan(MPI_Comm ex0) {
   real h = 0.00125;
 
   std::string fileName = std::string("chip1.obj");
+  real chipDensity = 1.00;  // Keep hardcoded - no config function available
 
   //=========================================================================================
   // Creation and positioning of the global tool
@@ -194,7 +195,8 @@ void setupSpan(MPI_Comm ex0) {
   pe_GLOBAL_SECTION
   {
     Vec3 toolPos = Vec3(0.0, 0.0, 0.0);
-    TriangleMeshID tool = createTriangleMesh(++id, toolPos, "tool.obj", toolMat, true, true, Vec3(1.0,1.0,1.0), true, true);
+    TriangleMeshID tool = createTriangleMesh(++id, toolPos, "tool.obj", toolMat, false, true);
+    tool->setFixed(true);
     std::cout << "Global fixed tool created at position: (" << toolPos[0] << ", " << toolPos[1] << ", " << toolPos[2] << ")" << std::endl;
 
     // Enable DistanceMap acceleration for the tool
@@ -239,15 +241,14 @@ void setupSpan(MPI_Comm ex0) {
   //  - Contact stiffness              : 100
   //  - dampingN                       : 10
   //  - dampingT                       : 11
-  real chipDensity = 8.19;  // Keep hardcoded - no config function available
   MaterialID chipMat = createMaterial("chip"    , chipDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  Vec3 chipPos = Vec3(0.0, 0.0, 5.0);  // Keep hardcoded - no config function available
+  Vec3 chipPos = Vec3(0.0, 0.0, 7.0);  // Keep hardcoded - no config function available
   TriangleMeshID chip;
 
   if(!resume) {
     if(world->ownsPoint(chipPos)) {
-      chip = createTriangleMesh(++id, chipPos, fileName, chipMat, true, true, Vec3(1.0,1.0,1.0), false, false);
+      chip = createTriangleMesh(++id, chipPos, fileName, chipMat, false, true);
       std::cout << "Chip is owned by domain: " << mpisystem->getRank() << " initially." << std::endl;
       std::cout << "Chip x:[" << chip->getAABB()[3] << "," << chip->getAABB()[0] << "]" << std::endl;
       
