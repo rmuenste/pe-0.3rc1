@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <numeric>
 #include <map>
+#include <pe/vtk/UtilityWriters.h>
+#include <pe/core/detection/fine/DistanceMap.h>
 
 //#define ONLY_ROTATION 
 using namespace pe;
@@ -1422,8 +1424,6 @@ bool map_local_to_system2(int lidx, int vidx) {
 //=================================================================================================
 void exportDistanceMapsFromBodies() {
   
-#include <pe/vtk/UtilityWriters.h>
-#include <pe/core/detection/fine/DistanceMap.h>
   
   // Get the world and MPI system
   WorldID world = theWorld();
@@ -1497,7 +1497,6 @@ void exportDistanceMapsFromBodies() {
 //=================================================================================================
 void debugDistanceMapBoundingBoxes() {
   
-#include <pe/core/detection/fine/DistanceMap.h>
   
   // Get the world and MPI system
   WorldID world = theWorld();
@@ -1570,8 +1569,8 @@ void debugDistanceMapBoundingBoxes() {
         // Body properties
         std::cout << "Body is fixed:       " << (triangleMesh->isFixed() ? "YES" : "NO") << std::endl;
         std::cout << "Body is visible:     " << (triangleMesh->isVisible() ? "YES" : "NO") << std::endl;
-        std::cout << "Num vertices:        " << triangleMesh->getNumVertices() << std::endl;
-        std::cout << "Num faces:           " << triangleMesh->getNumFaces() << std::endl;
+        std::cout << "Num vertices:        " << triangleMesh->getWFVertices().size() << std::endl;
+        std::cout << "Num faces:           " << triangleMesh->getFaceIndices().size() << std::endl;
       }
     }
   }
