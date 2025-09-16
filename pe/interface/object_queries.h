@@ -346,4 +346,15 @@ void uint64toByteArray(boost::uint64_t id, short int byte_array[8]);
  */
 void exportDistanceMapsFromBodies();
 
+/*
+ *!\brief Debug bounding boxes of TriangleMesh objects with DistanceMap
+ * 
+ * This function iterates through all rigid bodies owned by the current process,
+ * identifies TriangleMesh objects that have DistanceMap acceleration enabled,
+ * and outputs detailed bounding box information to the console for debugging.
+ * 
+ * Outputs include: body ID, position, AABB bounds, and DistanceMap origin.
+ */
+void debugDistanceMapBoundingBoxes();
+
 #endif

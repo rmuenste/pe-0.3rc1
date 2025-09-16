@@ -1483,3 +1483,101 @@ void exportDistanceMapsFromBodies() {
             << exportedCount << " files exported." << std::endl;
 }
 
+
+//=================================================================================================
+/*
+ *!\brief Debug bounding boxes of TriangleMesh objects with DistanceMap
+ * 
+ * This function iterates through all rigid bodies owned by the current process,
+ * identifies TriangleMesh objects that have DistanceMap acceleration enabled,
+ * and outputs detailed bounding box information to the console for debugging.
+ * 
+ * Outputs include: body ID, position, AABB bounds, and DistanceMap origin.
+ */
+//=================================================================================================
+void debugDistanceMapBoundingBoxes() {
+  
+#include <pe/core/detection/fine/DistanceMap.h>
+  
+  // Get the world and MPI system
+  WorldID world = theWorld();
+  MPISystemID mpisystem = theMPISystem();
+  
+  // Get the current MPI rank
+  int rank = 0;
+  if (mpisystem) {
+    rank = mpisystem->getRank();
+  }
+  
+  int meshCount = 0;
+  std::cout << "\n=== DISTANCEMAP BOUNDING BOX DEBUG (Process " << rank << ") ===" << std::endl;
+  
+  // Iterate through all bodies in the collision system
+  for (unsigned int j = 0; j < theCollisionSystem()->getBodyStorage().size(); j++) {
+    World::SizeType widx = static_cast<World::SizeType>(j);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    
+    // Check if this is a TriangleMesh
+    if (body->getType() == triangleMeshType) {
+      TriangleMeshID triangleMesh = static_cast<TriangleMeshID>(body);
+      
+      // Check if the mesh has DistanceMap acceleration enabled
+      if (triangleMesh->hasDistanceMap()) {
+        meshCount++;
+        const DistanceMap* dm = triangleMesh->getDistanceMap();
+        
+        std::cout << "\n--- TriangleMesh Body " << triangleMesh->getSystemID() << " ---" << std::endl;
+        
+        // Body position
+        const Vec3& pos = triangleMesh->getPosition();
+        std::cout << "Body position:       (" << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
+        
+        // Body AABB bounds
+        const auto& aabb = triangleMesh->getAABB();
+        std::cout << "AABB bounds:         [" << aabb[0] << ", " << aabb[3] << "] x [" 
+                  << aabb[1] << ", " << aabb[4] << "] x [" << aabb[2] << ", " << aabb[5] << "]" << std::endl;
+        
+        // AABB center and size
+        Vec3 aabbCenter((aabb[0] + aabb[3])/2.0, (aabb[1] + aabb[4])/2.0, (aabb[2] + aabb[5])/2.0);
+        Vec3 aabbSize(aabb[3] - aabb[0], aabb[4] - aabb[1], aabb[5] - aabb[2]);
+        std::cout << "AABB center:         (" << aabbCenter[0] << ", " << aabbCenter[1] << ", " << aabbCenter[2] << ")" << std::endl;
+        std::cout << "AABB size:           (" << aabbSize[0] << ", " << aabbSize[1] << ", " << aabbSize[2] << ")" << std::endl;
+        
+        // DistanceMap information
+        if (dm) {
+          const Vec3& dmOrigin = dm->getOrigin();
+          std::cout << "DistanceMap origin:  (" << dmOrigin[0] << ", " << dmOrigin[1] << ", " << dmOrigin[2] << ")" << std::endl;
+          std::cout << "DistanceMap grid:    " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
+          std::cout << "DistanceMap spacing: " << dm->getSpacing() << std::endl;
+          
+          // DistanceMap bounds
+          real spacing = dm->getSpacing();
+          Vec3 dmMin = dmOrigin;
+          Vec3 dmMax(dmOrigin[0] + (dm->getNx()-1)*spacing, 
+                     dmOrigin[1] + (dm->getNy()-1)*spacing,
+                     dmOrigin[2] + (dm->getNz()-1)*spacing);
+          std::cout << "DistanceMap bounds:  [" << dmMin[0] << ", " << dmMax[0] << "] x [" 
+                    << dmMin[1] << ", " << dmMax[1] << "] x [" << dmMin[2] << ", " << dmMax[2] << "]" << std::endl;
+          
+          // Check if DistanceMap bounds encompass AABB
+          bool xOk = (dmMin[0] <= aabb[0]) && (dmMax[0] >= aabb[3]);
+          bool yOk = (dmMin[1] <= aabb[1]) && (dmMax[1] >= aabb[4]);
+          bool zOk = (dmMin[2] <= aabb[2]) && (dmMax[2] >= aabb[5]);
+          std::cout << "DM encompasses AABB: " << (xOk && yOk && zOk ? "YES" : "NO") 
+                    << " (X:" << (xOk?"OK":"FAIL") << ", Y:" << (yOk?"OK":"FAIL") << ", Z:" << (zOk?"OK":"FAIL") << ")" << std::endl;
+        }
+        
+        // Body properties
+        std::cout << "Body is fixed:       " << (triangleMesh->isFixed() ? "YES" : "NO") << std::endl;
+        std::cout << "Body is visible:     " << (triangleMesh->isVisible() ? "YES" : "NO") << std::endl;
+        std::cout << "Num vertices:        " << triangleMesh->getNumVertices() << std::endl;
+        std::cout << "Num faces:           " << triangleMesh->getNumFaces() << std::endl;
+      }
+    }
+  }
+  
+  std::cout << "\n=== SUMMARY ===" << std::endl;
+  std::cout << "Process " << rank << ": Found " << meshCount << " TriangleMesh objects with DistanceMap acceleration." << std::endl;
+  std::cout << "===============\n" << std::endl;
+}
+

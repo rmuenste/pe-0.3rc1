@@ -93,3 +93,20 @@ extern "C" void exportOwnedDistanceMaps() {
   exportDistanceMapsFromBodies();
 }
 //=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Debug bounding boxes of TriangleMesh objects with DistanceMap
+ * 
+ * This function iterates through all rigid bodies owned by the current process,
+ * identifies TriangleMesh objects that have DistanceMap acceleration enabled,
+ * and outputs detailed bounding box information to the console for debugging.
+ */
+//=================================================================================================
+// Bound to Fortran function debugDistanceMapBBoxes() in
+// source/src_particles/dem_query.f90 (to be added)
+extern "C" void debugDistanceMapBBoxes() {
+  debugDistanceMapBoundingBoxes();
+}
+//=================================================================================================
