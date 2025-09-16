@@ -7,11 +7,7 @@
 #include <sstream>
 #include <pe/core/Types.h>
 #include <pe/core/detection/fine/DistanceMap.h>
-
-// VTK output functionality for DistanceMap visualization
-#ifdef PE_USE_CGAL
-//#include "../../examples/cgal_examples/VtkOutput.h"
-#endif
+#include <pe/vtk/UtilityWriters.h>
 
 using namespace pe::povray;
 //=================================================================================================
@@ -212,6 +208,19 @@ void setupSpan(MPI_Comm ex0) {
         std::cout << "Tool DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
         std::cout << "Tool DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
         std::cout << "Tool DistanceMap spacing: " << dm->getSpacing() << std::endl;
+        
+        // Export tool DistanceMap to VTI file for visualization
+        std::cout << "\n=== EXPORTING TOOL DISTANCEMAP TO VTI ===" << std::endl;
+        std::string toolVtiFile = "tool.vti";
+        std::cout << "Exporting tool DistanceMap to " << toolVtiFile << "..." << std::endl;
+        
+        try {
+          pe::vtk::DistanceMapWriter::writeVTI(toolVtiFile, *dm);
+          std::cout << "Tool DistanceMap export completed successfully!" << std::endl;
+          std::cout << "Note: DistanceMap is in LOCAL tool coordinates" << std::endl;
+        } catch (const std::exception& e) {
+          std::cerr << "ERROR: Failed to export tool DistanceMap: " << e.what() << std::endl;
+        }
       }
     }
   }
