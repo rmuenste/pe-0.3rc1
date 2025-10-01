@@ -148,13 +148,13 @@ void setupSpan(MPI_Comm ex0) {
   int py = config.getProcessesY();
   int pz = config.getProcessesZ();
 
-  real bx =-4.5;
-  real by =-4.5;
+  real bx = 0.0;
+  real by = 0.0;
   real bz = 0.0;
 
-  const real dx( 9.0 / px );
-  const real dy( 9.0 / py );
-  const real dz( 10. / pz );
+  const real dx( 6.0 / px );
+  const real dy( 6.0 / py );
+  const real dz( 15. / pz );
 
   decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
 
@@ -185,47 +185,47 @@ void setupSpan(MPI_Comm ex0) {
   real h = 0.00125;
 
   std::string fileName = std::string("chip1.obj");
-  real chipDensity = 1.00;  // Keep hardcoded - no config function available
+  real chipDensity = 1000.00;  // Keep hardcoded - no config function available
 
   //=========================================================================================
   // Creation and positioning of the global tool
   //=========================================================================================
   MaterialID toolMat = createMaterial("tool", chipDensity, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  pe_GLOBAL_SECTION
-  {
-    Vec3 toolPos = Vec3(0.0, 0.0, 0.0);
-    TriangleMeshID tool = createTriangleMesh(++id, toolPos, "tool.obj", toolMat, false, true);
-    tool->setFixed(true);
-    std::cout << "Global fixed tool created at position: (" << toolPos[0] << ", " << toolPos[1] << ", " << toolPos[2] << ")" << std::endl;
-
-    // Enable DistanceMap acceleration for the tool
-    tool->enableDistanceMapAcceleration(0.05, 64, 3);  // spacing, resolution, tolerance
-    if (!tool->hasDistanceMap()) {
-      std::cerr << "WARNING: DistanceMap acceleration failed to initialize for tool" << std::endl;
-    } else {
-      std::cout << "DistanceMap acceleration enabled successfully for tool!" << std::endl;
-      const DistanceMap* dm = tool->getDistanceMap();
-      if (dm) {
-        std::cout << "Tool DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
-        std::cout << "Tool DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
-        std::cout << "Tool DistanceMap spacing: " << dm->getSpacing() << std::endl;
-        
-        // Export tool DistanceMap to VTI file for visualization
-        std::cout << "\n=== EXPORTING TOOL DISTANCEMAP TO VTI ===" << std::endl;
-        std::string toolVtiFile = "tool.vti";
-        std::cout << "Exporting tool DistanceMap to " << toolVtiFile << "..." << std::endl;
-        
-        try {
-          pe::vtk::DistanceMapWriter::writeVTI(toolVtiFile, *dm);
-          std::cout << "Tool DistanceMap export completed successfully!" << std::endl;
-          std::cout << "Note: DistanceMap is in LOCAL tool coordinates" << std::endl;
-        } catch (const std::exception& e) {
-          std::cerr << "ERROR: Failed to export tool DistanceMap: " << e.what() << std::endl;
-        }
-      }
-    }
-  }
+//  pe_GLOBAL_SECTION
+//  {
+//    Vec3 toolPos = Vec3(0.0, 0.0, 0.0);
+//    TriangleMeshID tool = createTriangleMesh(++id, toolPos, "tool.obj", toolMat, false, true);
+//    tool->setFixed(true);
+//    std::cout << "Global fixed tool created at position: (" << toolPos[0] << ", " << toolPos[1] << ", " << toolPos[2] << ")" << std::endl;
+//
+//    // Enable DistanceMap acceleration for the tool
+//    tool->enableDistanceMapAcceleration(0.05, 64, 3);  // spacing, resolution, tolerance
+//    if (!tool->hasDistanceMap()) {
+//      std::cerr << "WARNING: DistanceMap acceleration failed to initialize for tool" << std::endl;
+//    } else {
+//      std::cout << "DistanceMap acceleration enabled successfully for tool!" << std::endl;
+//      const DistanceMap* dm = tool->getDistanceMap();
+//      if (dm) {
+//        std::cout << "Tool DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
+//        std::cout << "Tool DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
+//        std::cout << "Tool DistanceMap spacing: " << dm->getSpacing() << std::endl;
+//        
+//        // Export tool DistanceMap to VTI file for visualization
+//        std::cout << "\n=== EXPORTING TOOL DISTANCEMAP TO VTI ===" << std::endl;
+//        std::string toolVtiFile = "tool.vti";
+//        std::cout << "Exporting tool DistanceMap to " << toolVtiFile << "..." << std::endl;
+//        
+//        try {
+//          pe::vtk::DistanceMapWriter::writeVTI(toolVtiFile, *dm);
+//          std::cout << "Tool DistanceMap export completed successfully!" << std::endl;
+//          std::cout << "Note: DistanceMap is in LOCAL tool coordinates" << std::endl;
+//        } catch (const std::exception& e) {
+//          std::cerr << "ERROR: Failed to export tool DistanceMap: " << e.what() << std::endl;
+//        }
+//      }
+//    }
+//  }
 
   //=========================================================================================
   // Creation and positioning of the chip
@@ -243,7 +243,7 @@ void setupSpan(MPI_Comm ex0) {
   //  - dampingT                       : 11
   MaterialID chipMat = createMaterial("chip"    , chipDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  Vec3 chipPos = Vec3(0.0, 0.0, 7.0);  // Keep hardcoded - no config function available
+  Vec3 chipPos = Vec3(3.0, 3.0, 7.5);  // Keep hardcoded - no config function available
   TriangleMeshID chip;
 
   if(!resume) {

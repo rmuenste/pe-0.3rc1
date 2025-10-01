@@ -137,6 +137,10 @@ void singleOutput_v1(BodyID body, int timestep) {
                                    body->getLinearVel()[0] << " " <<
                                    body->getLinearVel()[1] << " " <<
                                    body->getLinearVel()[2] << std::endl;
+      std::cout << "Omega:    " << body->getSystemID() << " " << timestep * stepsize << " " << 
+                                   body->getAngularVel()[0] << " " <<
+                                   body->getAngularVel()[1] << " " <<
+                                   body->getAngularVel()[2] << std::endl;
 }
 //=================================================================================================
 
@@ -185,7 +189,7 @@ void stepSimulation() {
   MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   particlesTotalBefore = particlesTotal;
 
-  real h = 0.022;
+  real h = 0.125;
 
   //=================================================================================================
   int subSteps = 1;
