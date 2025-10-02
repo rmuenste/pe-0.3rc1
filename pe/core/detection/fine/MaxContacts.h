@@ -151,6 +151,9 @@ protected:
    // DistanceMap-based collision detection helpers
    template< typename CC >
    static bool collideWithDistanceMap(TriangleMeshID mA, TriangleMeshID mB, CC& contacts);
+
+   template< typename CC >
+   static bool collidePlaneTMeshWithDistanceMap(PlaneID plane, TriangleMeshID mesh, CC& contacts);
    //@}
    //**********************************************************************************************
 };
@@ -3238,9 +3241,15 @@ void MaxContacts::collidePlaneTMesh( PlaneID p, TriangleMeshID m, CC& contacts )
    static size_t maxQue = 0;
    static size_t maxRes = 0;
 
+   // NEW: Priority-based collision detection
+   // Try DistanceMap-based collision detection first (if available)
+   if (m->hasDistanceMap()) {
+      if (collidePlaneTMeshWithDistanceMap(p, m, contacts)) {
+         return; // DistanceMap collision successful
+      }
+   }
 
-
-
+   // Existing support-based fallback for non-convex or non-DistanceMap meshes
    size_t supportIdx = 0;
    Vec3 support = m->supportContactThreshold(-p->getNormal(),0, &supportIdx);
 
@@ -4169,6 +4178,370 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
    
 #endif
    return false; // DistanceMap collision detection failed or not available
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief DistanceMap-based plane-mesh collision detection.
+ *
+ * \param plane The plane for collision detection.
+ * \param mesh The triangle mesh with DistanceMap acceleration.
+ * \param contacts Contact container for generated contacts.
+ * \return True if collision detected and contacts generated, false otherwise.
+ *
+ * This function uses DistanceMap acceleration to efficiently detect collisions between a plane
+ * and a triangle mesh. It samples points on the plane surface in the region where the mesh's
+ * AABB projects onto the plane, then queries the DistanceMap for penetration information.
+ * Contact candidates are clustered to generate a stable contact manifold.
+ */
+template< typename CC >  // Type of the contact container
+bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshID mesh, CC& contacts )
+{
+#ifdef PE_USE_CGAL
+   // Check if mesh has DistanceMap acceleration
+   if (!mesh->hasDistanceMap()) {
+      return false; // No DistanceMap available
+   }
+
+   const DistanceMap* distMap = mesh->getDistanceMap();
+   if (!distMap) {
+      return false;
+   }
+
+   try {
+      // Phase 1: AABB-Plane Proximity Check
+      const auto& meshAABB = mesh->getAABB();
+
+      // Calculate minimum distance from AABB to plane by checking all 8 corners
+      real minDistance = std::numeric_limits<real>::max();
+
+      // Check all 8 AABB corners
+      Vec3 corners[8] = {
+         Vec3(meshAABB[0], meshAABB[1], meshAABB[2]), // min corner
+         Vec3(meshAABB[3], meshAABB[1], meshAABB[2]),
+         Vec3(meshAABB[0], meshAABB[4], meshAABB[2]),
+         Vec3(meshAABB[0], meshAABB[1], meshAABB[5]),
+         Vec3(meshAABB[3], meshAABB[4], meshAABB[2]),
+         Vec3(meshAABB[3], meshAABB[1], meshAABB[5]),
+         Vec3(meshAABB[0], meshAABB[4], meshAABB[5]),
+         Vec3(meshAABB[3], meshAABB[4], meshAABB[5])  // max corner
+      };
+
+      for (int i = 0; i < 8; ++i) {
+         real distance = plane->getDepth(corners[i]);
+         minDistance = std::min(minDistance, distance);
+      }
+
+      // Early exit if AABB is too far from plane
+      if (minDistance < -contactThreshold) {
+         return false; // No collision possible
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap plane collision: AABB minimum distance to plane = " << minDistance << "\n";
+      }
+
+      // Phase 2: AABB Projection onto Plane Surface
+      // Project all 8 AABB corners onto the plane to determine sampling region
+      std::vector<Vec3> projectedCorners;
+      projectedCorners.reserve(8);
+
+      for (int i = 0; i < 8; ++i) {
+         real depth = plane->getDepth(corners[i]);
+         Vec3 projectedPoint = corners[i] - depth * plane->getNormal();
+         projectedCorners.push_back(projectedPoint);
+      }
+
+      // Create orthonormal tangent vectors for the plane
+      Vec3 planeNormal = plane->getNormal();
+      Vec3 planeU, planeV;
+
+      // Choose first tangent vector perpendicular to normal
+      if (std::abs(planeNormal[0]) < 0.9) {
+         planeU = planeNormal % Vec3(1.0, 0.0, 0.0);
+      } else {
+         planeU = planeNormal % Vec3(0.0, 1.0, 0.0);
+      }
+      planeU = planeU.getNormalized();
+      planeV = planeNormal % planeU;
+      planeV = planeV.getNormalized();
+
+      // Find 2D bounding box in plane's tangent space
+      real minU = std::numeric_limits<real>::max();
+      real maxU = -std::numeric_limits<real>::max();
+      real minV = std::numeric_limits<real>::max();
+      real maxV = -std::numeric_limits<real>::max();
+
+      // Get a reference point on the plane (project origin onto plane)
+      Vec3 planeOrigin = -plane->getDepth(Vec3(0.0, 0.0, 0.0)) * planeNormal;
+
+      for (const Vec3& projected : projectedCorners) {
+         Vec3 relative = projected - planeOrigin;
+         real u = trans(relative) * planeU;
+         real v = trans(relative) * planeV;
+         minU = std::min(minU, u); maxU = std::max(maxU, u);
+         minV = std::min(minV, v); maxV = std::max(maxV, v);
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "Projected AABB bounds: U=[" << minU << ", " << maxU << "], V=[" << minV << ", " << maxV << "]\n";
+      }
+
+      // Phase 3: Adaptive Grid Sampling in Projected Region
+      real projectedWidth = maxU - minU;
+      real projectedHeight = maxV - minV;
+      real samplingSpacing = 2.0 * distMap->getSpacing(); // Adaptive to DistanceMap resolution
+
+      int samplesU = static_cast<int>(std::ceil(projectedWidth / samplingSpacing)) + 1;
+      int samplesV = static_cast<int>(std::ceil(projectedHeight / samplingSpacing)) + 1;
+
+      // Limit maximum samples for performance
+      samplesU = std::min(samplesU, 25);
+      samplesV = std::min(samplesV, 25);
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "Sampling grid: " << samplesU << " x " << samplesV << " = " << (samplesU * samplesV) << " points\n";
+      }
+
+      // Contact candidate structure for plane contacts
+      struct PlaneContactCandidate {
+         Vec3 planePoint;        // Sample point on plane (world coordinates)
+         Vec3 worldNormal;       // Contact normal from DistanceMap
+         real penetration;       // Penetration depth (positive = penetrating)
+         Vec3 contactPoint;      // Closest surface point on mesh
+
+         PlaneContactCandidate(const Vec3& plane, const Vec3& normal, real pen, const Vec3& contact)
+            : planePoint(plane), worldNormal(normal), penetration(pen), contactPoint(contact) {}
+      };
+
+      std::vector<PlaneContactCandidate> candidates;
+      candidates.reserve(samplesU * samplesV);
+
+      // Generate grid samples and query DistanceMap
+      for (int i = 0; i < samplesU; ++i) {
+         for (int j = 0; j < samplesV; ++j) {
+            real u = minU + i * (projectedWidth / std::max(1, samplesU - 1));
+            real v = minV + j * (projectedHeight / std::max(1, samplesV - 1));
+
+            // Convert (u,v) back to world coordinates on plane
+            Vec3 planeSamplePoint = planeOrigin + u * planeU + v * planeV;
+
+            // Transform plane point to mesh local coordinates for DistanceMap query
+            Vec3 localPoint = mesh->pointFromWFtoBF(planeSamplePoint);
+
+            // Query signed distance
+            real distance = distMap->interpolateDistance(localPoint[0], localPoint[1], localPoint[2]);
+
+            // Check for penetration (negative distance = inside mesh)
+            if (distance < contactThreshold) {
+               // Get contact geometry
+               Vec3 surfaceNormal = distMap->interpolateNormal(localPoint[0], localPoint[1], localPoint[2]);
+               Vec3 contactPointLocal = distMap->interpolateContactPoint(localPoint[0], localPoint[1], localPoint[2]);
+
+               // Transform back to world coordinates
+               Vec3 worldNormal = mesh->vectorFromBFtoWF(surfaceNormal);
+               Vec3 worldContactPoint = mesh->pointFromBFtoWF(contactPointLocal);
+
+               // Create candidate
+               real penetration = -distance; // Positive penetration
+               candidates.emplace_back(planeSamplePoint, worldNormal, penetration, worldContactPoint);
+            }
+         }
+      }
+
+      if (candidates.empty()) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "No penetrating contacts found in DistanceMap plane collision\n";
+         }
+         return false; // No penetrating contacts found
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "Found " << candidates.size() << " contact candidates\n";
+      }
+
+      // Phase 4: Contact Clustering for Plane Contacts
+      const real clusteringRadius = 3.0 * distMap->getSpacing(); // Larger for plane contacts
+      const real normalSimilarityThreshold = 0.85; // Slightly more permissive for plane
+      const size_t maxContactsPerPair = 6; // Limit total contacts for performance
+
+      // Contact clustering structure for plane contacts
+      struct PlaneContactCluster {
+         std::vector<size_t> candidateIndices; // Indices into candidates array
+         Vec3 averageNormal;
+         Vec3 averagePlanePoint;      // Center of contact region on plane
+         real maxPenetration;
+         real contactArea;            // Approximate contact patch area
+
+         PlaneContactCluster() : averageNormal(0.0, 0.0, 0.0), averagePlanePoint(0.0, 0.0, 0.0), maxPenetration(0.0), contactArea(0.0) {}
+      };
+
+      std::vector<PlaneContactCluster> clusters;
+      std::vector<bool> assigned(candidates.size(), false);
+
+      // Cluster candidates by proximity and normal similarity
+      for (size_t i = 0; i < candidates.size(); ++i) {
+         if (assigned[i]) continue;
+
+         PlaneContactCluster cluster;
+         cluster.candidateIndices.push_back(i);
+         cluster.averageNormal = candidates[i].worldNormal;
+         cluster.averagePlanePoint = candidates[i].planePoint;
+         cluster.maxPenetration = candidates[i].penetration;
+         assigned[i] = true;
+
+         // Find nearby candidates with similar normals
+         for (size_t j = i + 1; j < candidates.size(); ++j) {
+            if (assigned[j]) continue;
+
+            // Check proximity in 3D space
+            real distance = (candidates[i].planePoint - candidates[j].planePoint).length();
+            if (distance > clusteringRadius) continue;
+
+            // Check normal similarity
+            real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
+            if (normalDot < normalSimilarityThreshold) continue;
+
+            // Add to cluster
+            cluster.candidateIndices.push_back(j);
+            cluster.averageNormal += candidates[j].worldNormal;
+            cluster.averagePlanePoint += candidates[j].planePoint;
+            cluster.maxPenetration = std::max(cluster.maxPenetration, candidates[j].penetration);
+            assigned[j] = true;
+         }
+
+         // Finalize cluster properties
+         if (cluster.candidateIndices.size() > 1) {
+            cluster.averageNormal = cluster.averageNormal.getNormalized();
+            cluster.averagePlanePoint /= static_cast<real>(cluster.candidateIndices.size());
+
+            // Estimate contact area from point distribution
+            real maxDist = 0.0;
+            for (size_t idx1 : cluster.candidateIndices) {
+               for (size_t idx2 : cluster.candidateIndices) {
+                  real dist = (candidates[idx1].planePoint - candidates[idx2].planePoint).length();
+                  maxDist = std::max(maxDist, dist);
+               }
+            }
+            cluster.contactArea = maxDist * maxDist; // Rough area estimate
+         } else {
+            cluster.contactArea = samplingSpacing * samplingSpacing; // Single point area
+         }
+
+         clusters.push_back(cluster);
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap plane collision clustering results:\n";
+         log << "  Total clusters: " << clusters.size() << "\n";
+         for (size_t i = 0; i < clusters.size(); ++i) {
+            const auto& cluster = clusters[i];
+            log << "  Cluster " << i << ":\n";
+            log << "    Contact points: " << cluster.candidateIndices.size() << "\n";
+            log << "    Average normal: (" << cluster.averageNormal[0] << ", "
+                << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
+            log << "    Deepest penetration: " << cluster.maxPenetration << "\n";
+            log << "    Contact area: " << cluster.contactArea << "\n";
+         }
+      }
+
+      // Phase 5: Generate Final Contacts from Cluster Representatives
+      size_t contactsGenerated = 0;
+      for (const auto& cluster : clusters) {
+         if (contactsGenerated >= maxContactsPerPair) break;
+
+         // Select representatives for stable contact manifold
+         std::vector<size_t> representatives;
+
+         // Find deepest penetration contact
+         size_t deepestIdx = cluster.candidateIndices[0];
+         real maxPen = candidates[deepestIdx].penetration;
+         for (size_t idx : cluster.candidateIndices) {
+            if (candidates[idx].penetration > maxPen) {
+               maxPen = candidates[idx].penetration;
+               deepestIdx = idx;
+            }
+         }
+         representatives.push_back(deepestIdx);
+
+         // For larger clusters, add extremal contacts in plane tangent directions
+         if (cluster.candidateIndices.size() > 1 && representatives.size() < 4) {
+            // Create two tangent vectors orthogonal to average normal
+            Vec3 tangent1, tangent2;
+            if (std::abs(cluster.averageNormal[0]) < 0.9) {
+               tangent1 = cluster.averageNormal % Vec3(1.0, 0.0, 0.0);
+            } else {
+               tangent1 = cluster.averageNormal % Vec3(0.0, 1.0, 0.0);
+            }
+            tangent1 = tangent1.getNormalized();
+            tangent2 = cluster.averageNormal % tangent1;
+
+            // Find extremals in tangent directions
+            real minT1 = std::numeric_limits<real>::max(), maxT1 = -std::numeric_limits<real>::max();
+            real minT2 = std::numeric_limits<real>::max(), maxT2 = -std::numeric_limits<real>::max();
+            size_t minT1Idx = deepestIdx, maxT1Idx = deepestIdx;
+            size_t minT2Idx = deepestIdx, maxT2Idx = deepestIdx;
+
+            for (size_t idx : cluster.candidateIndices) {
+               Vec3 relative = candidates[idx].planePoint - cluster.averagePlanePoint;
+               real t1 = trans(relative) * tangent1;
+               real t2 = trans(relative) * tangent2;
+
+               if (t1 < minT1) { minT1 = t1; minT1Idx = idx; }
+               if (t1 > maxT1) { maxT1 = t1; maxT1Idx = idx; }
+               if (t2 < minT2) { minT2 = t2; minT2Idx = idx; }
+               if (t2 > maxT2) { maxT2 = t2; maxT2Idx = idx; }
+            }
+
+            // Add unique extremal contacts
+            if (maxT1Idx != deepestIdx && representatives.size() < 4) representatives.push_back(maxT1Idx);
+            if (minT1Idx != deepestIdx && minT1Idx != maxT1Idx && representatives.size() < 4) representatives.push_back(minT1Idx);
+            if (maxT2Idx != deepestIdx && std::find(representatives.begin(), representatives.end(), maxT2Idx) == representatives.end() && representatives.size() < 4) representatives.push_back(maxT2Idx);
+            if (minT2Idx != deepestIdx && std::find(representatives.begin(), representatives.end(), minT2Idx) == representatives.end() && representatives.size() < 4) representatives.push_back(minT2Idx);
+         }
+
+         // Generate contacts from representatives
+         for (size_t idx : representatives) {
+            if (contactsGenerated >= maxContactsPerPair) break;
+
+            const auto& candidate = candidates[idx];
+
+            // Contact point is midway between plane point and mesh surface
+            Vec3 finalContactPoint = (candidate.planePoint + candidate.contactPoint) * 0.5;
+
+            // Normal points from plane to mesh (PE convention: body2 to body1)
+            Vec3 contactNormal = candidate.worldNormal;
+
+            // Add contact (mesh is body1, plane is body2)
+            contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, candidate.penetration);
+
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "      Contact created between triangle mesh " << mesh->getID()
+                   << " and plane " << plane->getID()
+                   << " (penetration=" << candidate.penetration << ", normal=("
+                   << contactNormal[0] << "," << contactNormal[1] << "," << contactNormal[2] << "))\n";
+            }
+
+            ++contactsGenerated;
+         }
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "Generated " << contactsGenerated << " final contacts from " << clusters.size() << " clusters\n";
+      }
+
+      return contactsGenerated > 0;
+
+   } catch (const std::exception& e) {
+      pe_LOG_WARNING_SECTION( log ) {
+         log << "DistanceMap plane collision failed: " << e.what() << "\n";
+      }
+      return false;
+   }
+
+#endif
+   return false; // DistanceMap plane collision not available
 }
 //*************************************************************************************************
 
