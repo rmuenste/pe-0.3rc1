@@ -3243,9 +3243,28 @@ void MaxContacts::collidePlaneTMesh( PlaneID p, TriangleMeshID m, CC& contacts )
 
    // NEW: Priority-based collision detection
    // Try DistanceMap-based collision detection first (if available)
-   if (m->hasDistanceMap()) {
+   bool hasDistanceMapBefore = m->hasDistanceMap();
+   const DistanceMap* dmBefore = m->getDistanceMap();
+
+   std::cout << "DEBUG: collidePlaneTMesh - Mesh " << m->getID()
+             << " hasDistanceMap=" << hasDistanceMapBefore
+             << " DistanceMap ptr=" << (void*)dmBefore << std::endl;
+
+   if (hasDistanceMapBefore) {
       if (collidePlaneTMeshWithDistanceMap(p, m, contacts)) {
          return; // DistanceMap collision successful
+      }
+
+      // Check if DistanceMap state changed after the call
+      bool hasDistanceMapAfter = m->hasDistanceMap();
+      const DistanceMap* dmAfter = m->getDistanceMap();
+
+      std::cout << "DEBUG: After collidePlaneTMeshWithDistanceMap - Mesh " << m->getID()
+                << " hasDistanceMap=" << hasDistanceMapAfter
+                << " DistanceMap ptr=" << (void*)dmAfter << std::endl;
+
+      if (hasDistanceMapBefore != hasDistanceMapAfter) {
+         std::cout << "ERROR: DistanceMap state changed during collision!" << std::endl;
       }
    }
 
@@ -4199,8 +4218,13 @@ template< typename CC >  // Type of the contact container
 bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshID mesh, CC& contacts )
 {
 #ifdef PE_USE_CGAL
+   std::cout << "DEBUG: Inside collidePlaneTMeshWithDistanceMap - Mesh " << mesh->getID()
+             << " hasDistanceMap=" << mesh->hasDistanceMap()
+             << " DistanceMap ptr=" << (void*)mesh->getDistanceMap() << std::endl;
+
    // Check if mesh has DistanceMap acceleration
    if (!mesh->hasDistanceMap()) {
+      std::cout << "DEBUG: DistanceMap check failed inside collidePlaneTMeshWithDistanceMap!" << std::endl;
       return false; // No DistanceMap available
    }
 
