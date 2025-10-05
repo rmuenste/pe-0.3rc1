@@ -78,7 +78,7 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps ( 500 );    // Total number of time steps
+   const unsigned int timesteps ( 2500 );    // Total number of time steps
    const unsigned int visspacing(   10 );   // Spacing between two visualizations
    const real timestep_size( 0.005 );       // Size of each simulation time step
          unsigned int id( 0 );              // User-specific ID counter
@@ -130,8 +130,8 @@ int main( int argc, char* argv[] )
    MaterialID mesh2Material = createMaterial("mesh2_mat", 0.8, 0.0, 0.25, 0.08, 0.2, 80, 100, 10, 11);
 
    // Setup of the ground plane with normal (0,0,1) at location (0,0,0)
-//   PlaneID groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, groundMaterial );
-//   std::cout << "Ground plane created with normal (0,0,1) at z=0" << std::endl;
+   PlaneID groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, groundMaterial );
+   std::cout << "Ground plane created with normal (0,0,1) at z=0" << std::endl;
 
    // Load mesh objects
    TriangleMeshID mesh1 = nullptr;
@@ -164,19 +164,26 @@ int main( int argc, char* argv[] )
       //  TriangleMeshID testSphere = createTriangleMesh(2, Vec3(-1.02965, 1.80596, 5.78679), testSphereFile, material2, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(-1.55176,2.2521, 5.82685), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(-0.95, 1.80596, 5.78679), mesh2File, mesh2Material, false, true);
-      mesh2 = createTriangleMesh(++id, Vec3(1.13668,-2.79345, 6.24138), mesh2File, mesh2Material, false, true);
+
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 8.3), mesh2File, mesh2Material, false, true);
+      mesh2 = createTriangleMesh(++id, Vec3(0.0,-2.335, 9.3), mesh2File, mesh2Material, false, true);
+
+      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 1.5), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(2.0, 0.0, 6.2), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 6.02), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 6.41), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3(-0.0, 0.0, 2.01), mesh2File, mesh2Material, false, true);
       //mesh2 = createTriangleMesh(++id, Vec3( 0.0, 0.1, 2.1), mesh2File, mesh2Material, false, true);
       std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices at position: " << mesh2->getPosition() << std::endl;
-      // (0, -1.72496 m , 8.36196 m)
-      //3.03749 m, 5.82685 m
-      // Vec3(-1.55176,2.2521, 5.82685);
-      //  
-      // Set initial linear velocity (slight sideways and downward motion)
-      //mesh2->setLinearVel( -0.3, 0.2, -0.1 );
+
+      // Enable DistanceMap acceleration on mesh 1
+      mesh2->enableDistanceMapAcceleration(0.025, 64, 6);  // spacing=0.1, resolution=30, tolerance=3
+      std::cout << "DistanceMap acceleration enabled on mesh 2: " << (mesh2->hasDistanceMap() ? "SUCCESS" : "FAILED") << std::endl;
+
+      //auto origin2 = mesh2->getDistanceMap()->getOrigin();
+      //// Create dummy face index for VTI export (not used in DistanceMap)
+      //std::vector<int> face_index2(mesh2->getDistanceMap()->getSdfData().size(), 0);
+      //pe::vtk::DistanceMapWriter::writeVTI("span1.vti", *mesh2->getDistanceMap());
       
    }
    catch (const std::exception& e) {

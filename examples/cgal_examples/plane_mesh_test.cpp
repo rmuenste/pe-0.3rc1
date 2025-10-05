@@ -77,7 +77,7 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps ( 100 );    // Total number of time steps
+   const unsigned int timesteps ( 800 );    // Total number of time steps
    const unsigned int visspacing(   10 );    // Spacing between two visualizations
    const real timestep_size( 0.001 );        // Size of each simulation time step
          unsigned int id( 0 );              // User-specific ID counter
@@ -137,7 +137,7 @@ int main( int argc, char* argv[] )
       std::cout << "Test mesh created with " << testMesh->getBFVertices().size() << " vertices at position: " << testMesh->getPosition() << std::endl;
 
       // Enable DistanceMap acceleration on the mesh
-      testMesh->enableDistanceMapAcceleration(0.05, 32, 3);  // spacing=0.05, resolution=32, tolerance=3
+      testMesh->enableDistanceMapAcceleration(0.025, 64, 6);  // spacing=0.05, resolution=32, tolerance=3
       bool distanceMapEnabled = testMesh->hasDistanceMap();
       std::cout << "DistanceMap acceleration enabled on test mesh: " << (distanceMapEnabled ? "SUCCESS" : "FAILED") << std::endl;
 
