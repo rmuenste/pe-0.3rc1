@@ -1955,6 +1955,28 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
       iteration_ = it;
 
+      // DEBUG: Output relative normal velocities BEFORE contact resolution
+      if (iteration_ == 0) {  // Only log on first iteration to avoid spam
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "   BEFORE contact resolution - relative normal velocities:\n";
+            size_t numContactsMasked = p_.size();
+            for (size_t i = 0; i < numContactsMasked; ++i) {
+               // Calculate relative velocity (same as in relaxation methods)
+               Vec3 gdot = ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] )
+                         + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i]
+                         - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i];
+
+               // Project to contact frame
+               Mat3 contactframe( n_[i], t_[i], o_[i] );
+               Vec3 gdot_nto( trans( contactframe ) * gdot );
+               gdot_nto[0] += dist_[i] * dtinv;  // Add penetration correction
+
+               log << "      Contact " << i << ": gdot_n=" << gdot_nto[0]
+                   << ", dist=" << dist_[i] << ", bodies=" << body1_[i]->getID() << "-" << body2_[i]->getID() << "\n";
+            }
+         }
+      }
+
       switch( relaxationModel_ ) {
          case InelasticFrictionlessContact:
             delta_max = relaxInelasticFrictionlessContacts( dtinv );
@@ -1985,6 +2007,28 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       }
 
       synchronizeVelocities();
+
+      // DEBUG: Output relative normal velocities AFTER contact resolution
+      if (iteration_ == 0) {  // Only log on first iteration to avoid spam
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "   AFTER contact resolution - relative normal velocities:\n";
+            size_t numContactsMasked = p_.size();
+            for (size_t i = 0; i < numContactsMasked; ++i) {
+               // Calculate relative velocity after resolution
+               Vec3 gdot = ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] )
+                         + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i]
+                         - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i];
+
+               // Project to contact frame
+               Mat3 contactframe( n_[i], t_[i], o_[i] );
+               Vec3 gdot_nto( trans( contactframe ) * gdot );
+               gdot_nto[0] += dist_[i] * dtinv;  // Add penetration correction
+
+               log << "      Contact " << i << ": gdot_n=" << gdot_nto[0]
+                   << ", dist=" << dist_[i] << ", force=" << p_[i] << "\n";
+            }
+         }
+      }
 
       // Compute maximum impulse variation.
       // TODO:

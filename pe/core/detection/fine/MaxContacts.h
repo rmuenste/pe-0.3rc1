@@ -3243,29 +3243,15 @@ void MaxContacts::collidePlaneTMesh( PlaneID p, TriangleMeshID m, CC& contacts )
 
    // NEW: Priority-based collision detection
    // Try DistanceMap-based collision detection first (if available)
-   bool hasDistanceMapBefore = m->hasDistanceMap();
-   const DistanceMap* dmBefore = m->getDistanceMap();
-
-   std::cout << "DEBUG: collidePlaneTMesh - Mesh " << m->getID()
-             << " hasDistanceMap=" << hasDistanceMapBefore
-             << " DistanceMap ptr=" << (void*)dmBefore << std::endl;
-
-   if (hasDistanceMapBefore) {
+   if (m->hasDistanceMap()) {
       if (collidePlaneTMeshWithDistanceMap(p, m, contacts)) {
          return; // DistanceMap collision successful
       }
+   }
 
-      // Check if DistanceMap state changed after the call
-      bool hasDistanceMapAfter = m->hasDistanceMap();
-      const DistanceMap* dmAfter = m->getDistanceMap();
 
-      std::cout << "DEBUG: After collidePlaneTMeshWithDistanceMap - Mesh " << m->getID()
-                << " hasDistanceMap=" << hasDistanceMapAfter
-                << " DistanceMap ptr=" << (void*)dmAfter << std::endl;
-
-      if (hasDistanceMapBefore != hasDistanceMapAfter) {
-         std::cout << "ERROR: DistanceMap state changed during collision!" << std::endl;
-      }
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "If we get here it is a mistake\n";
    }
 
    // Existing support-based fallback for non-convex or non-DistanceMap meshes
@@ -4058,11 +4044,11 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             
             // Check proximity
             real distance = (candidates[i].worldPos - candidates[j].worldPos).length();
-            if (distance > clusteringRadius) continue;
+            // if (distance > clusteringRadius) continue;
             
             // Check normal similarity
             real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
-            if (normalDot < normalSimilarityThreshold) continue;
+            // if (normalDot < normalSimilarityThreshold) continue;
             
             // Add to cluster
             cluster.candidateIndices.push_back(j);
@@ -4100,12 +4086,12 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
                 << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
             oss << "    Deepest penetration: " << cluster.maxPenetration << "\n";
          }
-      //std::cout << oss.str(); // Also output to standard console
+      std::cout << oss.str(); // Also output to standard console
       
       // Generate final contacts from cluster representatives
-      size_t contactsGenerated = 0;
+      // size_t contactsGenerated = 0;  // Already declared below
       for (const auto& cluster : clusters) {
-         if (contactsGenerated >= maxContactsPerPair) break;
+         // if (contactsGenerated >= maxContactsPerPair) break;
          
          // Select up to 4 representatives per cluster: deepest + extremals in tangent directions
          std::vector<size_t> representatives;
@@ -4120,7 +4106,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             }
          }
          representatives.push_back(deepestIdx);
-         
+
          // For larger clusters, add extremal contacts in tangent directions
          if (cluster.candidateIndices.size() > 1 && representatives.size() < 4) {
             // Create two tangent vectors orthogonal to average normal
@@ -4166,7 +4152,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          
          // Generate contacts for selected representatives
          for (size_t repIdx : representatives) {
-            if (contactsGenerated >= maxContactsPerPair) break;
+            // if (contactsGenerated >= maxContactsPerPair) break;
             
             const ContactCandidate& candidate = candidates[repIdx];
             
@@ -4178,17 +4164,17 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             contacts.addVertexFaceContact( queryMesh, referenceMesh, 
                                           candidate.contactPoint, candidate.worldNormal , -candidate.penetration );
             
-            ++contactsGenerated;
+            // ++contactsGenerated;
          }
       }
       
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      DistanceMap contact manifold created between triangle mesh " << mA->getID()
-             << " and triangle mesh " << mB->getID() << " (" << contactsGenerated 
+             << " and triangle mesh " << mB->getID() << " (" << "X"
              << " contacts from " << candidates.size() << " candidates in " << clusters.size() << " clusters)";
       }
-      
-      return contactsGenerated > 0;
+
+      return true; // contactsGenerated > 0;
    } catch (const std::exception& e) {
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      DistanceMap collision detection failed: " << e.what();
@@ -4217,28 +4203,48 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
 template< typename CC >  // Type of the contact container
 bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshID mesh, CC& contacts )
 {
-#ifdef PE_USE_CGAL
-   std::cout << "DEBUG: Inside collidePlaneTMeshWithDistanceMap - Mesh " << mesh->getID()
-             << " hasDistanceMap=" << mesh->hasDistanceMap()
-             << " DistanceMap ptr=" << (void*)mesh->getDistanceMap() << std::endl;
 
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "At least we inside collidePlaneTMeshWithDistanceMap \n";
+   }
+#ifdef PE_USE_CGAL
    // Check if mesh has DistanceMap acceleration
    if (!mesh->hasDistanceMap()) {
-      std::cout << "DEBUG: DistanceMap check failed inside collidePlaneTMeshWithDistanceMap!" << std::endl;
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "Mesh " << mesh->getID() << " does not have DistanceMap available.\n";
+      }
       return false; // No DistanceMap available
+   } else {
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "Mesh " << mesh->getID() << " has DistanceMap available.\n";
+      }
    }
 
    const DistanceMap* distMap = mesh->getDistanceMap();
    if (!distMap) {
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DEBUG: DistanceMap pointer is null, returning false\n";
+      }
       return false;
+   }
+
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "DEBUG: DistanceMap pointer is valid, proceeding with collision detection\n";
    }
 
    try {
       // Phase 1: AABB-Plane Proximity Check
       const auto& meshAABB = mesh->getAABB();
 
-      // Calculate minimum distance from AABB to plane by checking all 8 corners
-      real minDistance = std::numeric_limits<real>::max();
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DEBUG: Mesh AABB bounds: [" << meshAABB[0] << ", " << meshAABB[1] << ", " << meshAABB[2]
+             << "] to [" << meshAABB[3] << ", " << meshAABB[4] << ", " << meshAABB[5] << "]\n";
+         log << "DEBUG: Mesh position: " << mesh->getPosition() << "\n";
+         log << "DEBUG: Plane normal: " << plane->getNormal() << ", displacement: " << plane->getDisplacement() << "\n";
+      }
+
+      // Calculate maximum distance (closest approach) from AABB to plane by checking all 8 corners
+      real maxDistance = std::numeric_limits<real>::lowest();
 
       // Check all 8 AABB corners
       Vec3 corners[8] = {
@@ -4252,18 +4258,38 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
          Vec3(meshAABB[3], meshAABB[4], meshAABB[5])  // max corner
       };
 
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DEBUG: AABB corner distances to plane:\n";
+      }
+
       for (int i = 0; i < 8; ++i) {
          real distance = plane->getDepth(corners[i]);
-         minDistance = std::min(minDistance, distance);
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "  Corner " << i << ": " << corners[i] << " -> distance = " << distance << "\n";
+         }
+         maxDistance = std::max(maxDistance, distance);
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DEBUG: Maximum AABB distance to plane (closest approach): " << maxDistance << "\n";
+         log << "DEBUG: contactThreshold: " << contactThreshold << "\n";
       }
 
       // Early exit if AABB is too far from plane
-      if (minDistance < -contactThreshold) {
+      if (maxDistance < -contactThreshold) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "DEBUG: AABB too far from plane (maxDistance=" << maxDistance
+                << " < -contactThreshold=" << -contactThreshold << "), returning false\n";
+         }
          return false; // No collision possible
       }
 
       pe_LOG_DEBUG_SECTION( log ) {
-         log << "DistanceMap plane collision: AABB minimum distance to plane = " << minDistance << "\n";
+         log << "DEBUG: AABB proximity check passed (maxDistance=" << maxDistance << ")\n";
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap plane collision: AABB maximum distance to plane = " << maxDistance << "\n";
       }
 
       // Phase 2: AABB Projection onto Plane Surface
@@ -4385,10 +4411,32 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
          log << "Found " << candidates.size() << " contact candidates\n";
       }
 
-      // Phase 4: Contact Clustering for Plane Contacts
-      const real clusteringRadius = 3.0 * distMap->getSpacing(); // Larger for plane contacts
-      const real normalSimilarityThreshold = 0.85; // Slightly more permissive for plane
-      const size_t maxContactsPerPair = 6; // Limit total contacts for performance
+      // Phase 4: Generate Contacts Directly from All Candidates (No Clustering)
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DEBUG: Generating contacts directly from all candidates (no clustering)\n";
+      }
+
+      size_t contactsGenerated = 0;
+      for (const auto& candidate : candidates) {
+         // Contact point is midway between plane point and mesh surface
+         Vec3 finalContactPoint = (candidate.planePoint + candidate.contactPoint) * 0.5;
+
+         // Normal points from plane to mesh (PE convention: body2 to body1)
+         Vec3 contactNormal = plane->getNormal();
+
+         // Add contact (mesh is body1, plane is body2)
+         // NOTE: Use negative penetration to match fallback algorithm convention
+         contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, -candidate.penetration);
+
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between triangle mesh " << mesh->getID()
+                << " and plane " << plane->getID()
+                << " (penetration=" << -candidate.penetration << ", normal=("
+                << contactNormal[0] << "," << contactNormal[1] << "," << contactNormal[2] << "))\n";
+         }
+
+         ++contactsGenerated;
+      }
 
       // Contact clustering structure for plane contacts
       struct PlaneContactCluster {
@@ -4410,7 +4458,7 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
 
          PlaneContactCluster cluster;
          cluster.candidateIndices.push_back(i);
-         cluster.averageNormal = candidates[i].worldNormal;
+         cluster.averageNormal = plane->getNormal(); // Use plane normal for all clusters
          cluster.averagePlanePoint = candidates[i].planePoint;
          cluster.maxPenetration = candidates[i].penetration;
          assigned[i] = true;
@@ -4421,15 +4469,15 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
 
             // Check proximity in 3D space
             real distance = (candidates[i].planePoint - candidates[j].planePoint).length();
-            if (distance > clusteringRadius) continue;
+            // if (distance > clusteringRadius) continue;
 
             // Check normal similarity
             real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
-            if (normalDot < normalSimilarityThreshold) continue;
+            // if (normalDot < normalSimilarityThreshold) continue;
 
             // Add to cluster
             cluster.candidateIndices.push_back(j);
-            cluster.averageNormal += candidates[j].worldNormal;
+            // Keep using plane normal (no need to average since all contacts are with same plane)
             cluster.averagePlanePoint += candidates[j].planePoint;
             cluster.maxPenetration = std::max(cluster.maxPenetration, candidates[j].penetration);
             assigned[j] = true;
@@ -4470,10 +4518,14 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
          }
       }
 
+      // Output cluster count for debugging
+      std::cout << "DistanceMap plane collision generated " << clusters.size() << " contact clusters from "
+                << candidates.size() << " contact candidates" << std::endl;
+
       // Phase 5: Generate Final Contacts from Cluster Representatives
-      size_t contactsGenerated = 0;
+      // size_t contactsGenerated = 0;  // Already declared above
       for (const auto& cluster : clusters) {
-         if (contactsGenerated >= maxContactsPerPair) break;
+         // if (contactsGenerated >= maxContactsPerPair) break;
 
          // Select representatives for stable contact manifold
          std::vector<size_t> representatives;
@@ -4527,7 +4579,7 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
 
          // Generate contacts from representatives
          for (size_t idx : representatives) {
-            if (contactsGenerated >= maxContactsPerPair) break;
+            // if (contactsGenerated >= maxContactsPerPair) break;
 
             const auto& candidate = candidates[idx];
 
@@ -4535,7 +4587,8 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
             Vec3 finalContactPoint = (candidate.planePoint + candidate.contactPoint) * 0.5;
 
             // Normal points from plane to mesh (PE convention: body2 to body1)
-            Vec3 contactNormal = candidate.worldNormal;
+            // Use plane normal instead of DistanceMap gradient for correct direction
+            Vec3 contactNormal = plane->getNormal();
 
             // Add contact (mesh is body1, plane is body2)
             contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, candidate.penetration);
@@ -4547,12 +4600,13 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
                    << contactNormal[0] << "," << contactNormal[1] << "," << contactNormal[2] << "))\n";
             }
 
-            ++contactsGenerated;
+            // ++contactsGenerated;
          }
       }
 
       pe_LOG_DEBUG_SECTION( log ) {
-         log << "Generated " << contactsGenerated << " final contacts from " << clusters.size() << " clusters\n";
+         log << "Generated " << contactsGenerated << " final contacts from " << candidates.size() << " candidates (no clustering)\n";
+         log << "DEBUG: About to return " << (contactsGenerated > 0 ? "true" : "false") << "\n";
       }
 
       return contactsGenerated > 0;
@@ -4560,6 +4614,7 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
    } catch (const std::exception& e) {
       pe_LOG_WARNING_SECTION( log ) {
          log << "DistanceMap plane collision failed: " << e.what() << "\n";
+         log << "DEBUG: Exception caught, returning false\n";
       }
       return false;
    }
