@@ -1410,43 +1410,44 @@ bool map_local_to_system2(int lidx, int vidx) {
 }
 
 
+#ifdef PE_USE_CGAL
 //=================================================================================================
 /*
  *!\brief Export DistanceMap data from all owned TriangleMesh objects to VTI files
- * 
+ *
  * This function iterates through all rigid bodies owned by the current domain/world,
  * identifies TriangleMesh objects that have DistanceMap acceleration enabled,
  * and exports their DistanceMap data to VTI files for visualization.
- * 
+ *
  * Output files are named: "distancemap_rank{rank}_body{bodyid}.vti"
  * where {rank} is the MPI process rank and {bodyid} is the body ID.
  */
 //=================================================================================================
 void exportDistanceMapsFromBodies() {
-  
-  
+
+
   // Get the world and MPI system
   WorldID world = theWorld();
   MPISystemID mpisystem = theMPISystem();
-  
+
   // Get the current MPI rank
   int rank = 0;
   if (mpisystem) {
     rank = mpisystem->getRank();
   }
-  
+
   int exportedCount = 0;
   std::cout << "Process " << rank << ": Scanning owned bodies for DistanceMap export..." << std::endl;
-  
+
   // Iterate through all bodies in the collision system
   for (unsigned int j = 0; j < theCollisionSystem()->getBodyStorage().size(); j++) {
     World::SizeType widx = static_cast<World::SizeType>(j);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    
+
     // Check if this is a TriangleMesh
     if (body->getType() == triangleMeshType) {
       TriangleMeshID triangleMesh = static_cast<TriangleMeshID>(body);
-      
+
       // Check if the mesh has DistanceMap acceleration enabled
       if (triangleMesh->hasDistanceMap()) {
         const DistanceMap* dm = triangleMesh->getDistanceMap();
@@ -1454,34 +1455,35 @@ void exportDistanceMapsFromBodies() {
           // Generate filename with rank and body ID
           std::ostringstream filename;
           filename << "distancemap_rank" << rank << "_body" << triangleMesh->getSystemID() << ".vti";
-          
-          std::cout << "Process " << rank << ": Exporting DistanceMap for body " 
+
+          std::cout << "Process " << rank << ": Exporting DistanceMap for body "
                     << triangleMesh->getSystemID() << " to " << filename.str() << std::endl;
-          
+
           try {
             // Export using the new PE VTK utility
             pe::vtk::DistanceMapWriter::writeVTI(filename.str(), *dm);
             exportedCount++;
-            
-            std::cout << "Process " << rank << ": Successfully exported DistanceMap for body " 
+
+            std::cout << "Process " << rank << ": Successfully exported DistanceMap for body "
                       << triangleMesh->getSystemID() << std::endl;
-            
+
             // Print some info about the exported DistanceMap
-            std::cout << "  Grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() 
+            std::cout << "  Grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz()
                       << ", Spacing: " << dm->getSpacing() << std::endl;
-                      
+
           } catch (const std::exception& e) {
-            std::cerr << "Process " << rank << ": ERROR exporting DistanceMap for body " 
+            std::cerr << "Process " << rank << ": ERROR exporting DistanceMap for body "
                       << triangleMesh->getSystemID() << ": " << e.what() << std::endl;
           }
         }
       }
     }
   }
-  
-  std::cout << "Process " << rank << ": DistanceMap export complete. " 
+
+  std::cout << "Process " << rank << ": DistanceMap export complete. "
             << exportedCount << " files exported." << std::endl;
 }
+#endif
 
 
 //=================================================================================================

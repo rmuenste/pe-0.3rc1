@@ -334,17 +334,19 @@ bool isInsideRemObject(int idx, double pos[3]);
  */
 void uint64toByteArray(boost::uint64_t id, short int byte_array[8]);
 
+#ifdef PE_USE_CGAL
 /*
  *!\brief Export DistanceMap data from all owned TriangleMesh objects to VTI files
- * 
+ *
  * This function iterates through all rigid bodies owned by the current domain/world,
  * identifies TriangleMesh objects that have DistanceMap acceleration enabled,
  * and exports their DistanceMap data to VTI files for visualization.
- * 
+ *
  * Output files are named: "distancemap_rank{rank}_body{bodyid}.vti"
  * where {rank} is the MPI process rank and {bodyid} is the body ID.
  */
 void exportDistanceMapsFromBodies();
+#endif
 
 /*
  *!\brief Debug bounding boxes of TriangleMesh objects with DistanceMap

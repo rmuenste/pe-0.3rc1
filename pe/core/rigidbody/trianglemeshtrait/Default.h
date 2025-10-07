@@ -951,6 +951,7 @@ template< typename C >  // Type of the configuration
 bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
 {
    // ROUTE 1: DistanceMap acceleration (O(1) - highest priority)
+#ifdef PE_USE_CGAL
    if (hasDistanceMap()) {
       pe_LOG_INFO_SECTION( log ) {
          log << "We have access to a distance map.\n";
@@ -959,16 +960,17 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
       if (!getAABB().contains(point)) {
          return false;  // Early exit - point is outside bounding box
       }
-      
+
       // Transform query point from world to local coordinate system
       Vec3 localPoint = pointFromWFtoBF(point);
-      
+
       // O(1) trilinear interpolation query on the DistanceMap
       pe::real distance = distanceMap_->interpolateDistance(
          localPoint[0], localPoint[1], localPoint[2]);
-      
+
       return distance < pe::real(0);  // negative distance = inside mesh
    }
+#endif
    
    // ROUTE 2: CGAL ray shooting fallback (O(k*log n) - medium priority)
 #ifdef PE_USE_CGAL

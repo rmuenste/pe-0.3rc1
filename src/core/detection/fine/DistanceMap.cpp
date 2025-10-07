@@ -414,6 +414,7 @@ std::unique_ptr<DistanceMap> DistanceMap::create(
 }
 
 // Create from serialized data method (for shadow copies)
+#ifdef PE_USE_CGAL
 std::unique_ptr<DistanceMap> DistanceMap::createFromData(
     const std::vector<pe::real>& sdfData,
     const std::vector<int>& alphaData,
@@ -423,12 +424,11 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromData(
     pe::real spacing,
     const pe::Vec3& origin)
 {
-#ifdef PE_USE_CGAL
     try {
         auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
-        map->_pimpl = std::make_unique<Impl>(sdfData, alphaData, normalData, contactPointData, 
+        map->_pimpl = std::make_unique<Impl>(sdfData, alphaData, normalData, contactPointData,
                                            nx, ny, nz, spacing, origin);
-        
+
         if (!map->_pimpl->isValid()) {
             return nullptr;
         }
@@ -438,11 +438,8 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromData(
         std::cerr << "Error creating DistanceMap from serialized data: " << e.what() << std::endl;
         return nullptr;
     }
-#else
-    std::cerr << "Warning: DistanceMap::createFromData requires CGAL support. Please rebuild with PE_USE_CGAL=ON" << std::endl;
-    return nullptr;
-#endif
 }
+#endif
 
 // Template implementation for CGAL Surface_mesh
 #ifdef PE_USE_CGAL
