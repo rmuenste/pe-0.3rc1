@@ -120,7 +120,7 @@ inline OBJMeshLoader::~OBJMeshLoader()
 template <typename T>
 inline void  OBJMeshLoader::manageCapacity(std::vector<T>& vec) {
    if(vec.capacity() == 0) {
-      vec.reserve(4);//closed triangle mash consist of at least 4 vertices/faces (tetrahedron)
+      vec.reserve(4);//closed triangle mesh consists of at least 4 vertices/faces (tetrahedron)
    }
    else if(vec.capacity() == vec.size()) {
       vec.reserve(2*vec.capacity()); //Exponential resizing of the vector do prevent frequent memory reallocation

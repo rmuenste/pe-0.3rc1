@@ -391,7 +391,7 @@ void intersectLines( const Vec3& o1, const Vec3& d1, const Vec3& o2, const Vec3&
 
    if( sqrlen < parallelThreshold )
    {
-      s = real(0),
+      s = real(0);
       t = real(0);
    }
    else
