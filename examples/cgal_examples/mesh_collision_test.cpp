@@ -83,7 +83,7 @@ int main(int argc, char* argv[]) {
         
         // Enable DistanceMap on reference mesh
         std::cout << "Enabling DistanceMap acceleration on reference mesh..." << std::endl;
-        referenceMesh->enableDistanceMapAcceleration(0.1, 50, 5);  // spacing=0.1, resolution=50, tolerance=5
+        referenceMesh->enableDistanceMapAcceleration(50, 5);  // resolution=50, tolerance=5
         
         // Verify DistanceMap creation
         std::cout << "Reference mesh has DistanceMap: " << (referenceMesh->hasDistanceMap() ? "YES" : "NO") << std::endl;

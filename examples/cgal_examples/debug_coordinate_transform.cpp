@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Mesh loaded successfully!" << std::endl;
         
         // Enable DistanceMap
-        mesh->enableDistanceMapAcceleration(0.05, 64, 3);
+        mesh->enableDistanceMapAcceleration(64, 3);
         
         if (!mesh->hasDistanceMap()) {
             std::cerr << "ERROR: DistanceMap failed to initialize" << std::endl;

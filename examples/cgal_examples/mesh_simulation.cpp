@@ -145,7 +145,7 @@ int main( int argc, char* argv[] )
       std::cout << "Mesh 1 created with " << mesh1->getBFVertices().size() << " vertices at position: " << mesh1->getPosition() << std::endl;
       
       // Enable DistanceMap acceleration on mesh 1
-      mesh1->enableDistanceMapAcceleration(0.1, 30, 3);  // spacing=0.1, resolution=30, tolerance=3
+      mesh1->enableDistanceMapAcceleration(30, 3);  // resolution=30, tolerance=3
       std::cout << "DistanceMap acceleration enabled on mesh 1: " << (mesh1->hasDistanceMap() ? "SUCCESS" : "FAILED") << std::endl;
 
       auto origin = mesh1->getDistanceMap()->getOrigin();
@@ -176,8 +176,8 @@ int main( int argc, char* argv[] )
       //mesh2 = createTriangleMesh(++id, Vec3( 0.0, 0.1, 2.1), mesh2File, mesh2Material, false, true);
       std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices at position: " << mesh2->getPosition() << std::endl;
 
-      // Enable DistanceMap acceleration on mesh 1
-      mesh2->enableDistanceMapAcceleration(0.025, 64, 6);  // spacing=0.1, resolution=30, tolerance=3
+      // Enable DistanceMap acceleration on mesh 2
+      mesh2->enableDistanceMapAcceleration(64, 6);  // resolution=64, tolerance=6
       std::cout << "DistanceMap acceleration enabled on mesh 2: " << (mesh2->hasDistanceMap() ? "SUCCESS" : "FAILED") << std::endl;
 
       //auto origin2 = mesh2->getDistanceMap()->getOrigin();

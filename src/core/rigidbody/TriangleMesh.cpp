@@ -3350,12 +3350,12 @@ void TriangleMesh::enableDistanceAcceleration(size_t maxReferencePoints)
  * improve collision detection performance for mesh-mesh interactions at the cost of memory usage.
  * This implementation overrides the base trait method to provide actual DistanceMap creation.
  */
-void TriangleMesh::enableDistanceMapAcceleration(pe::real spacing, int resolution, int tolerance)
+void TriangleMesh::enableDistanceMapAcceleration(int resolution, int tolerance)
 {
 #ifdef PE_USE_CGAL
    try {
       // Access protected members from trait base class
-      distanceMap_ = DistanceMap::create(this, spacing, resolution, tolerance);
+      distanceMap_ = DistanceMap::create(this, resolution, tolerance);
       distanceMapEnabled_ = (distanceMap_ != nullptr);
       
       if (!distanceMapEnabled_) {

@@ -29,7 +29,7 @@ The DistanceMap has been successfully integrated into the PE physics engine coll
   ```
 
 - **✅ Public Interface:** Added methods to TriangleMeshTrait base class:
-  - `enableDistanceMapAcceleration(spacing, resolution, tolerance)`
+  - `enableDistanceMapAcceleration(resolution, tolerance)`
   - `disableDistanceMapAcceleration()`
   - `hasDistanceMap()`
   - `getDistanceMap()`

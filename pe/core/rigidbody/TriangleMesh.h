@@ -227,7 +227,7 @@ public:
    void invalidateAABBTree();
    
    // DistanceMap acceleration (overrides base trait methods)
-   void enableDistanceMapAcceleration(pe::real spacing, int resolution = 50, int tolerance = 5);
+   void enableDistanceMapAcceleration(int resolution = 50, int tolerance = 5);
    void disableDistanceMapAcceleration();
    bool hasDistanceMap() const;
    const DistanceMap* getDistanceMap() const;

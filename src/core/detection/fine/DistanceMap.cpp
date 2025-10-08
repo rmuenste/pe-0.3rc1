@@ -44,7 +44,7 @@ public:
     using face_descriptor = boost::graph_traits<Surface_mesh>::face_descriptor;
 
     // Constructor: Computes the SDF grid from a CGAL mesh
-    Impl(const Surface_mesh& mesh, pe::real spacing, int resolution, int tolerance) {
+    Impl(const Surface_mesh& mesh, int resolution, int tolerance) {
         // Build AABB tree for distance queries
         Tree tree(faces(mesh).first, faces(mesh).second, mesh);
         tree.accelerate_distance_queries();
@@ -305,7 +305,6 @@ DistanceMap::~DistanceMap() = default;
 // Factory function
 std::unique_ptr<DistanceMap> DistanceMap::createFromFile(
     const std::string& meshFile,
-    pe::real spacing,
     int resolution,
     int tolerance)
 {
@@ -356,7 +355,7 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromFile(
     }
 
     auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
-    map->_pimpl = std::make_unique<Impl>(cgal_mesh, spacing, resolution, tolerance);
+    map->_pimpl = std::make_unique<Impl>(cgal_mesh, resolution, tolerance);
     
     if (!map->_pimpl->isValid()) {
         return nullptr;
@@ -371,7 +370,6 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromFile(
 // Create method for PE TriangleMesh
 std::unique_ptr<DistanceMap> DistanceMap::create(
     const pe::TriangleMeshID& mesh,
-    pe::real spacing,
     int resolution,
     int tolerance)
 {
@@ -396,7 +394,7 @@ std::unique_ptr<DistanceMap> DistanceMap::create(
         }
         
         auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
-        map->_pimpl = std::make_unique<Impl>(cgal_mesh, spacing, resolution, tolerance);
+        map->_pimpl = std::make_unique<Impl>(cgal_mesh, resolution, tolerance);
         
         if (!map->_pimpl->isValid()) {
             return nullptr;
@@ -446,13 +444,12 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromData(
 template<typename Point>
 std::unique_ptr<DistanceMap> DistanceMap::create(
     const SurfaceMesh<Point>& mesh,
-    pe::real spacing,
     int resolution,
     int tolerance)
 {
     try {
         auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
-        map->_pimpl = std::make_unique<Impl>(mesh, spacing, resolution, tolerance);
+        map->_pimpl = std::make_unique<Impl>(mesh, resolution, tolerance);
         
         if (!map->_pimpl->isValid()) {
             return nullptr;
@@ -468,7 +465,6 @@ std::unique_ptr<DistanceMap> DistanceMap::create(
 // Explicit template instantiation for the kernel type we use
 template std::unique_ptr<DistanceMap> DistanceMap::create<DistanceMap::Impl::CGALKernel::Point_3>(
     const SurfaceMesh<DistanceMap::Impl::CGALKernel::Point_3>& mesh,
-    pe::real spacing,
     int resolution,
     int tolerance);
 #endif

@@ -463,7 +463,7 @@ public:
    real signedDistance(const Vec3& point) const;
    
    // DistanceMap acceleration methods
-   void enableDistanceMapAcceleration(pe::real spacing, int resolution = 50, int tolerance = 5);
+   void enableDistanceMapAcceleration(int resolution = 50, int tolerance = 5);
    void disableDistanceMapAcceleration();
    bool hasDistanceMap() const;
    const DistanceMap* getDistanceMap() const;
@@ -1021,15 +1021,16 @@ real TriangleMeshTrait<C>::signedDistance(const Vec3& point) const
 //*************************************************************************************************
 /*!\brief Enables DistanceMap acceleration for fast collision detection.
  *
- * \param spacing Grid spacing (uniform in all directions).
- * \param resolution Number of grid cells along the largest dimension.
- * \param tolerance Number of empty boundary cells around the mesh.
+ * \param resolution Number of grid cells along the largest dimension of the mesh bounding box.
+ * \param tolerance Number of additive cell layers in all directions around the mesh bounding box.
  *
  * This method creates and stores a DistanceMap for this triangle mesh, which can significantly
  * improve collision detection performance for mesh-mesh interactions at the cost of memory usage.
+ * The actual grid spacing is automatically computed as: spacing = max(dx,dy,dz) / resolution,
+ * where dx, dy, dz are the bounding box dimensions.
  */
 template< typename C >  // Type of the configuration
-void TriangleMeshTrait<C>::enableDistanceMapAcceleration(pe::real spacing, int resolution, int tolerance)
+void TriangleMeshTrait<C>::enableDistanceMapAcceleration(int resolution, int tolerance)
 {
 #ifdef PE_USE_CGAL
    // Store the parameters for later use by derived class

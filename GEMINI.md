@@ -176,7 +176,7 @@ DistanceMap acceleration has been integrated into the PE core library as a fine 
 
 // Create triangle mesh with DistanceMap acceleration
 TriangleMeshID mesh = createTriangleMesh(id, position, "mesh.obj", material, false, true);
-mesh->enableDistanceMapAcceleration(resolution, tolerance);  // resolution=50, tolerance=5 (defaults)
+mesh->enableDistanceMapAcceleration(resolution, tolerance);
 
 // DistanceMap will be automatically used in collision detection
 ```

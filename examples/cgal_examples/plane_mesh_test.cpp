@@ -137,7 +137,7 @@ int main( int argc, char* argv[] )
       std::cout << "Test mesh created with " << testMesh->getBFVertices().size() << " vertices at position: " << testMesh->getPosition() << std::endl;
 
       // Enable DistanceMap acceleration on the mesh
-      testMesh->enableDistanceMapAcceleration(0.025, 64, 6);  // spacing=0.05, resolution=32, tolerance=3
+      testMesh->enableDistanceMapAcceleration(64, 6);  // resolution=64, tolerance=6
       bool distanceMapEnabled = testMesh->hasDistanceMap();
       std::cout << "DistanceMap acceleration enabled on test mesh: " << (distanceMapEnabled ? "SUCCESS" : "FAILED") << std::endl;
 

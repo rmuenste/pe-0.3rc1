@@ -36,14 +36,14 @@ public:
     /**
      * @brief Create a distance map from a mesh file (.obj or .off)
      * @param meshFile Path to the input mesh file.
-     * @param spacing Grid spacing (uniform in all directions).
-     * @param resolution Number of grid cells along the largest dimension (default: 50).
-     * @param tolerance Number of empty boundary cells around the mesh (default: 5).
+     * @param resolution Number of grid cells along the largest dimension of the mesh bounding box (default: 50).
+     * @param tolerance Number of additive cell layers in all directions around the mesh bounding box (default: 5).
      * @return Unique pointer to the created DistanceMap, or nullptr on failure.
+     *
+     * Grid spacing is automatically computed as: spacing = max(dx,dy,dz) / resolution
      */
     static std::unique_ptr<DistanceMap> createFromFile(
         const std::string& meshFile,
-        pe::real spacing,
         int resolution = 50,
         int tolerance = 5
     );
@@ -51,14 +51,14 @@ public:
     /**
      * @brief Create a distance map from a PE TriangleMesh
      * @param mesh Reference to the PE TriangleMesh
-     * @param spacing Grid spacing (uniform in all directions).
-     * @param resolution Number of grid cells along the largest dimension (default: 50).
-     * @param tolerance Number of empty boundary cells around the mesh (default: 5).
+     * @param resolution Number of grid cells along the largest dimension of the mesh bounding box (default: 50).
+     * @param tolerance Number of additive cell layers in all directions around the mesh bounding box (default: 5).
      * @return Unique pointer to the created DistanceMap, or nullptr on failure.
+     *
+     * Grid spacing is automatically computed as: spacing = max(dx,dy,dz) / resolution
      */
     static std::unique_ptr<DistanceMap> create(
         const pe::TriangleMeshID& mesh,
-        pe::real spacing,
         int resolution = 50,
         int tolerance = 5
     );
@@ -72,15 +72,15 @@ public:
     /**
      * @brief Create a distance map from a CGAL Surface_mesh
      * @param mesh Reference to the CGAL Surface_mesh
-     * @param spacing Grid spacing (uniform in all directions).
-     * @param resolution Number of grid cells along the largest dimension (default: 50).
-     * @param tolerance Number of empty boundary cells around the mesh (default: 5).
+     * @param resolution Number of grid cells along the largest dimension of the mesh bounding box (default: 50).
+     * @param tolerance Number of additive cell layers in all directions around the mesh bounding box (default: 5).
      * @return Unique pointer to the created DistanceMap, or nullptr on failure.
+     *
+     * Grid spacing is automatically computed as: spacing = max(dx,dy,dz) / resolution
      */
     template<typename Point>
     static std::unique_ptr<DistanceMap> create(
         const SurfaceMesh<Point>& mesh,
-        pe::real spacing,
         int resolution = 50,
         int tolerance = 5
     );

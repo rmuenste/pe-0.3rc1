@@ -119,7 +119,7 @@ bool testCGALContainment(TriangleMeshID& mesh, const Vec3& point, TestStats& sta
     
     // Re-enable DistanceMap if it was enabled before
     if (hadDistanceMap) {
-        mesh->enableDistanceMapAcceleration(0.05, 64, 3);  // Re-enable with same parameters
+        mesh->enableDistanceMapAcceleration(64, 3);  // Re-enable with same parameters
     }
     
     if (result) {
@@ -323,8 +323,8 @@ int main(int argc, char* argv[]) {
         std::cout << "  Spacing: " << config.spacing << std::endl;
         std::cout << "  Resolution: " << config.resolution << std::endl;
         std::cout << "  Tolerance: " << config.tolerance << std::endl;
-        
-        mesh->enableDistanceMapAcceleration(config.spacing, config.resolution, config.tolerance);
+
+        mesh->enableDistanceMapAcceleration(config.resolution, config.tolerance);
         
         if (!mesh->hasDistanceMap()) {
             std::cerr << "ERROR: DistanceMap acceleration failed to initialize" << std::endl;

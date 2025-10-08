@@ -461,7 +461,7 @@ int main(int argc, char* argv[]) {
         
         // Enable DistanceMap acceleration
         std::cout << "\nEnabling DistanceMap acceleration..." << std::endl;
-        mesh->enableDistanceMapAcceleration(config.dmSpacing, config.dmResolution, config.dmTolerance);
+        mesh->enableDistanceMapAcceleration(config.dmResolution, config.dmTolerance);
         
         if (!mesh->hasDistanceMap()) {
             std::cerr << "ERROR: DistanceMap acceleration failed to initialize" << std::endl;
