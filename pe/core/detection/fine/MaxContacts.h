@@ -4313,8 +4313,9 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
       real minV = std::numeric_limits<real>::max();
       real maxV = -std::numeric_limits<real>::max();
 
-      // Get a reference point on the plane (project origin onto plane)
-      Vec3 planeOrigin = -plane->getDepth(Vec3(0.0, 0.0, 0.0)) * planeNormal;
+      // Get a reference point on the plane surface
+      // For a plane ax + by + cz = d with normalized normal n, a point on the plane is p = d * n
+      Vec3 planeOrigin = plane->getDisplacement() * planeNormal;
 
       for (const Vec3& projected : projectedCorners) {
          Vec3 relative = projected - planeOrigin;
@@ -4555,15 +4556,22 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
 
             const auto& candidate = candidates[idx];
 
-            // Contact point is midway between plane point and mesh surface
-            Vec3 finalContactPoint = (candidate.planePoint + candidate.contactPoint) * 0.5;
+            // Project mesh contact point onto plane to get the actual contact location
+            real meshDepth = plane->getDepth(candidate.contactPoint);
+            Vec3 projectedMeshPoint = candidate.contactPoint - meshDepth * plane->getNormal();
+
+            // Contact point is midway between mesh surface and its projection on plane
+            Vec3 finalContactPoint = (candidate.contactPoint + projectedMeshPoint) * 0.5;
 
             // Normal points from plane to mesh (PE convention: body2 to body1)
             Vec3 contactNormal = plane->getNormal();
 
+            // Penetration is the distance from mesh surface point to plane
+            real actualPenetration = meshDepth;
+
             // Add contact (mesh is body1, plane is body2)
             // NOTE: Use negative penetration to match fallback algorithm convention
-            contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, -candidate.penetration);
+            contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, -actualPenetration);
 
             pe_LOG_DEBUG_SECTION( log ) {
                log << "      Contact created between triangle mesh " << mesh->getID()
@@ -4588,15 +4596,22 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
       }
 
       for (const auto& candidate : candidates) {
-         // Contact point is midway between plane point and mesh surface
-         Vec3 finalContactPoint = (candidate.planePoint + candidate.contactPoint) * 0.5;
+         // Project mesh contact point onto plane to get the actual contact location
+         real meshDepth = plane->getDepth(candidate.contactPoint);
+         Vec3 projectedMeshPoint = candidate.contactPoint - meshDepth * plane->getNormal();
+
+         // Contact point is midway between mesh surface and its projection on plane
+         Vec3 finalContactPoint = (candidate.contactPoint + projectedMeshPoint) * 0.5;
 
          // Normal points from plane to mesh (PE convention: body2 to body1)
          Vec3 contactNormal = plane->getNormal();
 
+         // Penetration is the distance from mesh surface point to plane
+         real actualPenetration = meshDepth;
+
          // Add contact (mesh is body1, plane is body2)
          // NOTE: Use negative penetration to match fallback algorithm convention
-         contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, -candidate.penetration);
+         contacts.addVertexFaceContact(mesh, plane, finalContactPoint, contactNormal, -actualPenetration);
 
          pe_LOG_DEBUG_SECTION( log ) {
             log << "      Contact created between triangle mesh " << mesh->getID()
