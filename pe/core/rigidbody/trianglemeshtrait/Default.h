@@ -953,9 +953,6 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
    // ROUTE 1: DistanceMap acceleration (O(1) - highest priority)
 #ifdef PE_USE_CGAL
    if (hasDistanceMap()) {
-      pe_LOG_INFO_SECTION( log ) {
-         log << "We have access to a distance map.\n";
-      }
       // Fast bounding box check in world coordinates first
       if (!getAABB().contains(point)) {
          return false;  // Early exit - point is outside bounding box
@@ -978,10 +975,6 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
 #else
    using Tag = detail::NoCgalTag;
 #endif
-   
-   pe_LOG_INFO_SECTION( log ) {
-      log << "We have do not have access to a distance map and use the fallback.\n";
-   }
 
    // Get the vertices and faces from the base class
    const Vertices& vertices = this->getBFVertices();

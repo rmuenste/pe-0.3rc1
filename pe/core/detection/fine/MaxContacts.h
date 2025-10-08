@@ -4061,33 +4061,21 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          cluster.averageNormal = cluster.averageNormal.getNormalized();
          clusters.push_back(cluster);
       }
-      
+
       // Debug logging for cluster analysis
-      pe_LOG_INFO_SECTION(log) {
+      pe_LOG_DEBUG_SECTION(log) {
          log << "DistanceMap collision clustering results:\n";
          log << "  Total clusters: " << clusters.size() << "\n";
          for (size_t i = 0; i < clusters.size(); ++i) {
             const auto& cluster = clusters[i];
             log << "  Cluster " << i << ":\n";
             log << "    Contact points: " << cluster.candidateIndices.size() << "\n";
-            log << "    Average normal: (" << cluster.averageNormal[0] << ", " 
+            log << "    Average normal: (" << cluster.averageNormal[0] << ", "
                 << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
             log << "    Deepest penetration: " << cluster.maxPenetration << "\n";
          }
       }
-      std::ostringstream oss;
-         oss << "DistanceMap collision clustering results:\n";
-         oss << "  Total clusters: " << clusters.size() << "\n";
-         for (size_t i = 0; i < clusters.size(); ++i) {
-            const auto& cluster = clusters[i];
-            oss << "  Cluster " << i << ":\n";
-            oss << "    Contact points: " << cluster.candidateIndices.size() << "\n";
-            oss << "    Average normal: (" << cluster.averageNormal[0] << ", " 
-                << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
-            oss << "    Deepest penetration: " << cluster.maxPenetration << "\n";
-         }
-      std::cout << oss.str(); // Also output to standard console
-      
+
       // Generate final contacts from cluster representatives
       // size_t contactsGenerated = 0;  // Already declared below
       for (const auto& cluster : clusters) {
@@ -4506,10 +4494,6 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
             log << "    Contact area: " << cluster.contactArea << "\n";
          }
       }
-
-      // Output cluster count for debugging
-      std::cout << "DistanceMap plane collision generated " << clusters.size() << " contact clusters from "
-                << candidates.size() << " contact candidates" << std::endl;
 
       // Phase 5: Generate Final Contacts from Cluster Representatives
       for (const auto& cluster : clusters) {
