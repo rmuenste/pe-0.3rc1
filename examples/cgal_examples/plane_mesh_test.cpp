@@ -77,7 +77,7 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps ( 800 );    // Total number of time steps
+   const unsigned int timesteps ( 2501 );    // Total number of time steps
    const unsigned int visspacing(   10 );    // Spacing between two visualizations
    const real timestep_size( 0.001 );        // Size of each simulation time step
          unsigned int id( 0 );              // User-specific ID counter
@@ -113,10 +113,11 @@ int main( int argc, char* argv[] )
 
    // Simulation world setup
    WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, -9.81 );  // Standard gravity in -z direction
+   // Version 1: 
+   world->setGravity( 0.0, 0.0,-9.81 );  // Standard gravity in -z direction
 
    // Disable error reduction for cleaner contact dynamics
-   theCollisionSystem()->setErrorReductionParameter(0.0);
+   theCollisionSystem()->setErrorReductionParameter(0.075);
    std::cout << "\\nWorld initialized with gravity: " << world->getGravity() << std::endl;
 
    // Create materials
@@ -127,17 +128,29 @@ int main( int argc, char* argv[] )
    PlaneID groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, planeMaterial );
    std::cout << "Ground plane created with normal (0,0,1) at z=0" << std::endl;
 
+   // plane normal in y directions
+   PlaneID yMinus = createPlane( id++, 0.0,-1.0, 0.0,-3.0, planeMaterial );
+   PlaneID yPlus = createPlane( id++, 0.0, 1.0, 0.0,-3.0, planeMaterial );
+
+   // plane normal in y directions
+   PlaneID xMinus = createPlane( id++,-1.0, 0.0, 0.0,-3.0, planeMaterial );
+   PlaneID xPlus = createPlane( id++, 1.0, 0.0, 0.0,-3.0, planeMaterial );
+
    // Load mesh object
    TriangleMeshID testMesh = nullptr;
 
    try {
       // Load mesh at elevated position (will fall onto plane)
       std::cout << "\\nLoading test mesh from: " << meshFile << std::endl;
-      testMesh = createTriangleMesh(++id, Vec3(0.0, 0.0, 1.03), meshFile, meshMaterial, false, true);
+      testMesh = createTriangleMesh(++id, Vec3(0.0, 0.0, 8.03), meshFile, meshMaterial, false, true);
       std::cout << "Test mesh created with " << testMesh->getBFVertices().size() << " vertices at position: " << testMesh->getPosition() << std::endl;
 
       // Enable DistanceMap acceleration on the mesh
       testMesh->enableDistanceMapAcceleration(64, 6);  // resolution=64, tolerance=6
+
+      // Version 1: Orientation for gravity in -z direction
+      testMesh->rotate(-M_PI/2.0, 0.0, 0.0);
+      //testMesh->rotate(0.0, 0.0,-M_PI);
       bool distanceMapEnabled = testMesh->hasDistanceMap();
       std::cout << "DistanceMap acceleration enabled on test mesh: " << (distanceMapEnabled ? "SUCCESS" : "FAILED") << std::endl;
 
