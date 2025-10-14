@@ -253,7 +253,7 @@ void setupSpan(MPI_Comm ex0) {
       std::cout << "Chip x:[" << chip->getAABB()[3] << "," << chip->getAABB()[0] << "]" << std::endl;
       
       // Enable DistanceMap acceleration for the chip
-      chip->enableDistanceMapAcceleration(0.05, 64, 3);  // spacing, resolution, tolerance
+      chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
       if (!chip->hasDistanceMap()) {
         std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
       } else {
