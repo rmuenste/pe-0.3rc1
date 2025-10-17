@@ -605,13 +605,12 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
       contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
    }
    else if( dist < lubricationThreshold + contactThreshold ) {
-   //else if( dist < contactThreshold ) {
-
       normal.normalize();
       const real k( s2->getRadius() + real(0.5) * dist );
       const Vec3 gPos( s2->getPosition() + normal * k );
 
-      contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
+      // Mark as a lubrication interaction (non-penetrating)
+      contacts.addLubricationContact( s1, s2, gPos, normal, dist );
 
    }
 }
@@ -969,6 +968,11 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
       }
 
       contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
+   }
+   else if( dist < lubricationThreshold + contactThreshold ) {
+      // Within lubrication gap: create a lubrication contact
+      const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
+      contacts.addLubricationContact( s, p, gPos, p->getNormal(), dist );
    }
 }
 //*************************************************************************************************
