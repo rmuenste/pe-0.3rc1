@@ -19,7 +19,7 @@
 
 ## Collision System Integration
 - File: `pe/core/collisionsystem/HardContactLubricated.h`
-- Excludes lubrication contacts from the hard-contact constraint arrays (they don’t enter the unilateral constraint solver).
+- Excludes lubrication contacts from the hard-contact constraint arrays (they don't enter the unilateral constraint solver).
 - After velocity synchronization inside `resolveContacts`, applies lubrication as external velocity corrections for flagged lubrication pairs:
   - Relative velocity at contact: `gdot = (v1 + w1 × r1) − (v2 + w2 × r2)`.
   - Normal component `vrn = n · gdot`; only resist approaching motion (`vrn < 0`).
@@ -30,6 +30,19 @@
     - `μ` from `Settings::liquidViscosity()`
     - `gap = max(dist, eps_lub)` to regularize
   - Apply as velocity corrections to both bodies (linear and angular through torque `r × F`).
+
+### MPI Synchronization (Critical)
+- **Velocity synchronization is required AFTER applying lubrication forces**
+- Sequence in `resolveContacts()`:
+  1. `synchronizeVelocities()` - sync before lubrication
+  2. Apply lubrication force loop (modifies `dv_`, `dw_` arrays)
+  3. `synchronizeVelocities()` - **sync after lubrication (REQUIRED for MPI correctness)**
+  4. Hard contact solver iterations
+- **Why this is critical**: Without the second sync, shadow copies on remote processes have stale velocity values, leading to:
+  - Inconsistent forces in the hard contact solver
+  - Incorrect collision response for bodies shared across process boundaries
+  - Potential simulation divergence or unphysical results
+- This synchronization overhead is necessary but minimal (one additional MPI exchange per time step)
 
 ## Stability Safeguards
 - Regularization: `eps_lub = 1e-8` (member `minEpsLub_`).
@@ -43,15 +56,59 @@
 - Fluid properties from `pe/core/Settings.h`:
   - `Settings::liquidViscosity()` and `Settings::liquidDensity()` (buoyancy already present elsewhere).
 
-## Limitations (Initial Cut)
+## Hysteresis (Regime Transition Stability)
+To prevent flickering between contact regimes when gaps oscillate near threshold boundaries, a hysteresis mechanism has been implemented:
+
+### Implementation
+- **Persistent State Storage**: Each body pair's contact regime (NO_CONTACT, LUBRICATION, HARD_CONTACT) is tracked in `CollisionSystem::contactRegimeHistory_`
+- **Body Pair Identification**: Uses canonical ordering of system IDs via `BodyPairID` struct
+- **State-Dependent Thresholds**: Different transition thresholds depending on current regime:
+  - From HARD_CONTACT: Exit at `contactThreshold + contactHysteresisDelta`
+  - To HARD_CONTACT: Enter at `contactThreshold - contactHysteresisDelta`
+  - From LUBRICATION: Exit at `lubricationThreshold + contactThreshold + lubricationHysteresisDelta`
+  - To LUBRICATION: Enter at `lubricationThreshold + contactThreshold - lubricationHysteresisDelta`
+
+### Hysteresis Parameters
+- `contactHysteresisDelta_`: Width of hysteresis band around `contactThreshold` (default: 1e-9)
+- `lubricationHysteresisDelta_`: Width of hysteresis band around `lubricationThreshold` (default: 1e-9)
+- Configurable via `setContactHysteresisDelta()` and `setLubricationHysteresisDelta()`
+
+### Benefits
+- **Eliminates flickering**: No rapid regime switching at threshold boundaries
+- **Numerically stable**: Smooth force evolution during transitions
+- **Physically realistic**: Mimics real adhesion/separation dynamics
+- **Low overhead**: Simple map lookup per contact pair
+
+### State Management
+- `getContactRegime(b1, b2)`: Query previous regime for body pair
+- `updateContactRegime(b1, b2, regime)`: Update regime after classification
+- `clearContactRegimeHistory()`: Reset all stored states (e.g., after major simulation events)
+
+### Detection Integration
+- Implemented in `pe/core/detection/fine/MaxContacts.h`:
+  - `collideSphereSphere()`: Sphere-sphere detection with hysteresis
+  - `collideSpherePlane()`: Sphere-plane detection with hysteresis
+- Accesses `CollisionSystem` via `theCollisionSystem()` singleton
+
+## Limitations (Current Implementation)
 - Only sphere–sphere and sphere–plane pairs are supported.
 - No tangential lubrication yet; normal component only.
-- No hysteresis on thresholds (can be added later to avoid regime flicker).
 - No partial submersion logic or deeper CFD coupling; keeps a simple analytical model.
+- Hysteresis state is never automatically cleaned up (may grow unbounded for long simulations with many transient contacts)
+
+## MPI Parallel Execution
+- **Fully supported**: Lubrication forces work correctly in MPI simulations
+- **Synchronization overhead**: One additional `synchronizeVelocities()` call per time step (after lubrication, before hard contact solver)
+- **Hysteresis state**: Currently local to each process; not synchronized across MPI boundaries
+  - Works correctly because detection happens locally and regime transitions are deterministic
+  - Body pairs are consistently classified across all processes that see them
+- **Performance**: Minimal overhead for MPI communication (~1 additional MPI_Allreduce per time step)
 
 ## Next Steps
 - Expose `eps_lub` and cap `α` as configuration/settings.
-- Add optional hysteresis (`lubricationOn`, `lubricationOff`).
 - Extend to additional geometries once the core is validated.
+- Add periodic cleanup of stale hysteresis states
 - Add a minimal example validating slowdown in lubrication range and smooth transition to contact.
+- Consider explicit hysteresis state synchronization across MPI domain decomposition changes (currently not needed due to deterministic classification)
+- Profile MPI overhead of additional synchronization in large-scale simulations
 
