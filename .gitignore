@@ -1,0 +1,9 @@
+# Build artifacts
+/build/
+
+# IDE/editor settings
+/.vscode/
+
+# Logs
+debug.log
+

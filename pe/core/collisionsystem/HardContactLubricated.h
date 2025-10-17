@@ -362,6 +362,10 @@ private:
    std::vector<real> reductionBuffer_;                    //!< Buffer for the reduction of forces and torques acting on global non-fixed bodies.
    bool requireSync_;         //!< Flag indicating whether this process requires a synchronization prior to the next time step.
 
+   // Lubrication parameters (initial, simple regularization/cap)
+   real minEpsLub_;       //!< Minimal lubrication gap regularization
+   real alphaImpulseCap_; //!< Cap factor for lubrication impulse relative to approach momentum
+
    timing::WcTimer timeSimulationStep_, timeCollisionDetection_, timeCollisionResponse_, timeCollisionResponseContactFiltering_, timeCollisionResponseContactCaching_, timeCollisionResponseBodyCaching_, timeCollisionResponseSolving_, timeCollisionResponseIntegration_, timeBodySync_, timeBodySyncAssembling_, timeBodySyncCommunicate_, timeBodySyncParsing_, timeVelocitiesSync_, timeVelocitiesSyncCorrectionsAssembling_, timeVelocitiesSyncCorrectionsCommunicate_, timeVelocitiesSyncCorrectionsParsing_, timeVelocitiesSyncUpdatesAssembling_, timeVelocitiesSyncUpdatesCommunicate_, timeVelocitiesSyncUpdatesParsing_, timeVelocitiesSyncGlobals_;
    std::vector<timing::WcTimer*> timers_;
 
@@ -442,6 +446,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::CollisionSystem(
    , numContacts_      ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
+   , minEpsLub_        ( real(1e-8) )
+   , alphaImpulseCap_  ( real(1.0) )
 {
    // Registering all timers
    timers_.push_back( &timeSimulationStep_ );
@@ -1733,21 +1739,30 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
       memCollisionResponseContactCaching_.start();
    }
 
-   // Cache contact properties
-   body1_.resize( numContactsMasked );
-   body2_.resize( numContactsMasked );
-   r1_.resize( numContactsMasked );
-   r2_.resize( numContactsMasked );
-   n_.resize( numContactsMasked );
-   t_.resize( numContactsMasked );
-   o_.resize( numContactsMasked );
-   dist_.resize( numContactsMasked );
-   mu_.resize( numContactsMasked );
-   diag_nto_.resize( numContactsMasked );
-   diag_nto_inv_.resize( numContactsMasked );
-   diag_to_inv_.resize( numContactsMasked );
-   diag_n_inv_.resize( numContactsMasked );
-   p_.resize( numContactsMasked );
+   // Determine number of hard contacts (exclude lubrication-only pairs from constraint solve)
+   size_t numContactsMaskedHard( 0 );
+   for( size_t i = 0; i < numContacts; ++i ) {
+      if( !contactsMask_[i] ) continue;
+      const ContactID c( contacts[i] );
+      if( c->getLubricationFlag() ) continue;
+      ++numContactsMaskedHard;
+   }
+
+   // Cache contact properties (hard contacts only)
+   body1_.resize( numContactsMaskedHard );
+   body2_.resize( numContactsMaskedHard );
+   r1_.resize( numContactsMaskedHard );
+   r2_.resize( numContactsMaskedHard );
+   n_.resize( numContactsMaskedHard );
+   t_.resize( numContactsMaskedHard );
+   o_.resize( numContactsMaskedHard );
+   dist_.resize( numContactsMaskedHard );
+   mu_.resize( numContactsMaskedHard );
+   diag_nto_.resize( numContactsMaskedHard );
+   diag_nto_inv_.resize( numContactsMaskedHard );
+   diag_to_inv_.resize( numContactsMaskedHard );
+   diag_n_inv_.resize( numContactsMaskedHard );
+   p_.resize( numContactsMaskedHard );
 
    {
       maximumPenetration_ = 0;
@@ -1759,6 +1774,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
             continue;
 
          const ContactID c( contacts[i] );
+         if( c->getLubricationFlag() )
+            continue; // handled separately
          BodyID b1( c->getBody1() );
          BodyID b2( c->getBody2() );
 
@@ -1854,14 +1871,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
              real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
              // TODO: find out what happens here
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
-//             std::cout << "==========================================================" << std::endl;
-//             std::cout << "Velocity update: " << v_[j][2] << std::endl;
-//             std::cout << "vol : " << vol  << std::endl;
-//             std::cout << "rho : " << rho  << std::endl;
-//             std::cout << "rho-liquid : " << Settings::liquidDensity()  << std::endl;
-//             std::cout << "invMass : " << body->getInvMass() << std::endl;
-//             std::cout << "buoyancy : " << buoyancy  << std::endl;
-//             std::cout << "==========================================================" << std::endl;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
            else if(body->getType() == capsuleType) {
@@ -1933,6 +1942,81 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
       }
 
       synchronizeVelocities();
+      // Apply lubrication velocity corrections for tagged pairs (sphere-sphere, sphere-plane)
+      {
+         for( size_t i = 0; i < numContacts; ++i ) {
+            if( !contactsMask_[i] ) continue;
+            const ContactID c( contacts[i] );
+            // Only act on lubrication contacts; keep hard contacts for solver below
+            if( !c->getLubricationFlag() ) continue;
+
+            BodyID b1( c->getBody1() );
+            BodyID b2( c->getBody2() );
+            const size_t i1 = b1->index_;
+            const size_t i2 = b2->index_;
+
+            // Geometry offsets at contact
+            const Vec3 r1 = c->getPosition() - b1->getPosition();
+            const Vec3 r2 = c->getPosition() - b2->getPosition();
+            const Vec3 n  = c->getNormal();
+            const real gap = std::max( c->getDistance(), minEpsLub_ );
+
+            // Relative velocity at contact
+            const Vec3 gdot = ( v_[i1] + dv_[i1] ) - ( v_[i2] + dv_[i2] )
+                            + ( w_[i1] + dw_[i1] ) % r1
+                            - ( w_[i2] + dw_[i2] ) % r2;
+            const real vrn = trans(n) * gdot; // normal component
+            if( vrn >= real(0) ) continue;    // only resist approaching motion
+
+            // Determine effective radius for lubrication
+            real R_eff = real(0);
+            if( b1->getType() == sphereType && b2->getType() == sphereType ) {
+               SphereID s1 = static_body_cast<Sphere>( b1 );
+               SphereID s2 = static_body_cast<Sphere>( b2 );
+               const real r1s = s1->getRadius();
+               const real r2s = s2->getRadius();
+               R_eff = ( r1s * r2s ) / ( r1s + r2s );
+            }
+            else if( b1->getType() == sphereType && b2->getType() == planeType ) {
+               SphereID s1 = static_body_cast<Sphere>( b1 );
+               R_eff = s1->getRadius();
+            }
+            else if( b2->getType() == sphereType && b1->getType() == planeType ) {
+               SphereID s2 = static_body_cast<Sphere>( b2 );
+               R_eff = s2->getRadius();
+            }
+            else {
+               // For now only sphere-sphere and sphere-plane
+               continue;
+            }
+
+            if( R_eff <= real(0) ) continue;
+
+            const real mu = Settings::liquidViscosity();
+            // Classical normal lubrication coefficient: 6*pi*mu*R_eff^2
+            real Fmag = real(6) * M_PI * mu * R_eff * R_eff * (-vrn) / gap;
+
+            // Impulse capping relative to approach momentum
+            const real invm1 = b1->getInvMass();
+            const real invm2 = b2->getInvMass();
+            const real invm_sum = invm1 + invm2;
+            if( invm_sum > real(0) ) {
+               const real m_eff = real(1) / invm_sum;
+               const real J     = Fmag * dt;               // proposed impulse magnitude
+               const real Jcap  = alphaImpulseCap_ * m_eff * (-vrn);
+               if( J > Jcap && J > real(0) ) {
+                  Fmag *= ( Jcap / J );
+               }
+            }
+
+            const Vec3 F = Fmag * n;
+            // Apply as velocity corrections
+            dv_[i1] += invm1 * F * dt;
+            dw_[i1] += b1->getInvInertia() * ( r1 % ( F * dt ) );
+            dv_[i2] -= invm2 * F * dt;
+            dw_[i2] += b2->getInvInertia() * ( r2 % ( -F * dt ) );
+         }
+      }
    }
 
    pe_PROFILING_SECTION {
