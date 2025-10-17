@@ -52,6 +52,7 @@
 #include <pe/core/GeomTools.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Types.h>
+#include <pe/core/CollisionSystemID.h>
 #include <pe/math/Accuracy.h>
 #include <pe/math/Epsilon.h>
 #include <pe/math/Functions.h>
@@ -76,6 +77,7 @@ namespace pe {
 
 // Forward declarations
 class DistanceMap;
+CollisionSystemID theCollisionSystem();
 
 namespace detection {
 
@@ -592,7 +594,51 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
    Vec3 normal( s1->getPosition() - s2->getPosition() );
    const real dist( normal.length() - s1->getRadius() - s2->getRadius() );
 
-   if( dist < contactThreshold ) {
+   // Get collision system to query hysteresis state
+   CollisionSystemID collisionSystem = theCollisionSystem();
+   const ContactRegime prevRegime = collisionSystem->getContactRegime( s1, s2 );
+   const real contactHyst = collisionSystem->getContactHysteresisDelta();
+   const real lubHyst = collisionSystem->getLubricationHysteresisDelta();
+
+   // Apply hysteresis-based regime classification
+   ContactRegime newRegime;
+
+   if( prevRegime == HARD_CONTACT ) {
+      // Exiting hard contact: use upper threshold
+      if( dist < contactThreshold + contactHyst ) {
+         newRegime = HARD_CONTACT;
+      } else if( dist < lubricationThreshold + contactThreshold ) {
+         newRegime = LUBRICATION;
+      } else {
+         newRegime = NO_CONTACT;
+      }
+   }
+   else if( prevRegime == LUBRICATION ) {
+      // In lubrication: check both transitions
+      if( dist < contactThreshold - contactHyst ) {
+         newRegime = HARD_CONTACT;
+      } else if( dist < lubricationThreshold + contactThreshold + lubHyst ) {
+         newRegime = LUBRICATION;
+      } else {
+         newRegime = NO_CONTACT;
+      }
+   }
+   else { // NO_CONTACT or first encounter
+      // Entering contact: use lower thresholds
+      if( dist < contactThreshold - contactHyst ) {
+         newRegime = HARD_CONTACT;
+      } else if( dist < lubricationThreshold + contactThreshold - lubHyst ) {
+         newRegime = LUBRICATION;
+      } else {
+         newRegime = NO_CONTACT;
+      }
+   }
+
+   // Update regime state
+   collisionSystem->updateContactRegime( s1, s2, newRegime );
+
+   // Create appropriate contact based on regime
+   if( newRegime == HARD_CONTACT ) {
       normal.normalize();
       const real k( s2->getRadius() + real(0.5) * dist );
       const Vec3 gPos( s2->getPosition() + normal * k );
@@ -604,15 +650,15 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
 
       contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
    }
-   else if( dist < lubricationThreshold + contactThreshold ) {
+   else if( newRegime == LUBRICATION ) {
       normal.normalize();
       const real k( s2->getRadius() + real(0.5) * dist );
       const Vec3 gPos( s2->getPosition() + normal * k );
 
       // Mark as a lubrication interaction (non-penetrating)
       contacts.addLubricationContact( s1, s2, gPos, normal, dist );
-
    }
+   // else NO_CONTACT: do nothing
 }
 //*************************************************************************************************
 
@@ -959,7 +1005,51 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
    const real k( trans( p->getNormal() ) * s->getPosition() );
    const real dist( k - s->getRadius() - p->getDisplacement() );
 
-   if( dist < contactThreshold ) {
+   // Get collision system to query hysteresis state
+   CollisionSystemID collisionSystem = theCollisionSystem();
+   const ContactRegime prevRegime = collisionSystem->getContactRegime( s, p );
+   const real contactHyst = collisionSystem->getContactHysteresisDelta();
+   const real lubHyst = collisionSystem->getLubricationHysteresisDelta();
+
+   // Apply hysteresis-based regime classification
+   ContactRegime newRegime;
+
+   if( prevRegime == HARD_CONTACT ) {
+      // Exiting hard contact: use upper threshold
+      if( dist < contactThreshold + contactHyst ) {
+         newRegime = HARD_CONTACT;
+      } else if( dist < lubricationThreshold + contactThreshold ) {
+         newRegime = LUBRICATION;
+      } else {
+         newRegime = NO_CONTACT;
+      }
+   }
+   else if( prevRegime == LUBRICATION ) {
+      // In lubrication: check both transitions
+      if( dist < contactThreshold - contactHyst ) {
+         newRegime = HARD_CONTACT;
+      } else if( dist < lubricationThreshold + contactThreshold + lubHyst ) {
+         newRegime = LUBRICATION;
+      } else {
+         newRegime = NO_CONTACT;
+      }
+   }
+   else { // NO_CONTACT or first encounter
+      // Entering contact: use lower thresholds
+      if( dist < contactThreshold - contactHyst ) {
+         newRegime = HARD_CONTACT;
+      } else if( dist < lubricationThreshold + contactThreshold - lubHyst ) {
+         newRegime = LUBRICATION;
+      } else {
+         newRegime = NO_CONTACT;
+      }
+   }
+
+   // Update regime state
+   collisionSystem->updateContactRegime( s, p, newRegime );
+
+   // Create appropriate contact based on regime
+   if( newRegime == HARD_CONTACT ) {
       const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
 
       pe_LOG_DEBUG_SECTION( log ) {
@@ -969,11 +1059,12 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
 
       contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
    }
-   else if( dist < lubricationThreshold + contactThreshold ) {
+   else if( newRegime == LUBRICATION ) {
       // Within lubrication gap: create a lubrication contact
       const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
       contacts.addLubricationContact( s, p, gPos, p->getNormal(), dist );
    }
+   // else NO_CONTACT: do nothing
 }
 //*************************************************************************************************
 
