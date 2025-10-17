@@ -104,11 +104,36 @@ To prevent flickering between contact regimes when gaps oscillate near threshold
   - Body pairs are consistently classified across all processes that see them
 - **Performance**: Minimal overhead for MPI communication (~1 additional MPI_Allreduce per time step)
 
-## Next Steps
-- Expose `eps_lub` and cap `α` as configuration/settings.
-- Extend to additional geometries once the core is validated.
-- Add periodic cleanup of stale hysteresis states
-- Add a minimal example validating slowdown in lubrication range and smooth transition to contact.
-- Consider explicit hysteresis state synchronization across MPI domain decomposition changes (currently not needed due to deterministic classification)
-- Profile MPI overhead of additional synchronization in large-scale simulations
+## Hysteresis (Recommended)
+- Goal: avoid regime flapping when the gap oscillates near the threshold.
+- Definitions:
+  - `lubricationOn  = contactThreshold + h_on`
+  - `lubricationOff = contactThreshold + h_off` with `h_on > h_off`
+- Behavior:
+  - If a pair is not in lubrication and `dist ≤ lubricationOn` → enter lubrication.
+  - If a pair is in lubrication and `dist ≥ lubricationOff` → leave lubrication.
+- State tracking:
+  - Maintain a per-pair boolean “isLubricationActive”. For deterministic keys across MPI ranks, use ordered `(owner(body1), id1, owner(body2), id2)`.
+  - Clear state when pairs disappear or ownership changes.
+- Configuration:
+  - `h_on`, `h_off` set from simulation input; can be tied to CFD grid size (e.g., one or fractions of a cell).
 
+## MPI Considerations (High Priority)
+- The lubrication feature targets FSI workflows that always run in MPI; design must be consistent across ranks.
+- Ownership and determinism:
+  - Generate/flag lubrication contacts only on the owning rank of the contact point (consistent with contact handling).
+  - Ensure deterministic ordering when deriving keys for hysteresis state (use system IDs and owner ranks).
+- Velocity synchronization:
+  - After applying lubrication corrections, perform a velocity synchronization so shadow copies see identical states before contact relaxation and position integration.
+  - Practical ordering within `resolveContacts`:
+    1) Cache contacts and body velocities
+    2) synchronizeVelocities() (as usual)
+    3) Apply lubrication `dv_/dw_` corrections
+    4) synchronizeVelocities() again (ensure consistency of lubrication effects across ranks)
+    5) Run hard-contact relaxation
+
+## Next Steps
+- Expose `eps_lub`, cap `α`, and hysteresis (`h_on`, `h_off`) as configuration/settings.
+- Implement per-pair hysteresis state with MPI-safe keys and lifecycle.
+- Extend to additional geometries once the core is validated.
+- Add a minimal example validating slowdown in lubrication range, hysteresis behavior, and smooth transition to contact.
