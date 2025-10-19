@@ -73,11 +73,26 @@
 #include <pe/core/detection/fine/DistanceMap.h>
 #endif
 
+// Detect if lubrication contacts are enabled based on configured solver
+#include <pe/config/Collisions.h>
+
 namespace pe {
 
 // Forward declarations
 class DistanceMap;
 CollisionSystemID theCollisionSystem();
+
+// ContactRegime enum: defined here for all builds.
+// Lubrication solvers will use all three values; non-lubrication solvers
+// will only use the enum as a placeholder (not actively used in non-lubrication builds).
+#ifndef PE_CONTACTREGIME_DEFINED
+#define PE_CONTACTREGIME_DEFINED
+enum ContactRegime {
+   NO_CONTACT,
+   LUBRICATION,
+   HARD_CONTACT
+};
+#endif
 
 namespace detection {
 
@@ -594,6 +609,8 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
    Vec3 normal( s1->getPosition() - s2->getPosition() );
    const real dist( normal.length() - s1->getRadius() - s2->getRadius() );
 
+#ifdef PE_LUBRICATION_CONTACTS
+   // Lubrication-enabled collision detection with hysteresis
    // Get collision system to query hysteresis state
    CollisionSystemID collisionSystem = theCollisionSystem();
    const ContactRegime prevRegime = collisionSystem->getContactRegime( s1, s2 );
@@ -659,6 +676,21 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
       contacts.addLubricationContact( s1, s2, gPos, normal, dist );
    }
    // else NO_CONTACT: do nothing
+#else
+   // Standard sphere-sphere collision (no lubrication)
+   if( dist < contactThreshold ) {
+      normal.normalize();
+      const real k( s2->getRadius() + real(0.5) * dist );
+      const Vec3 gPos( s2->getPosition() + normal * k );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between sphere " << s1->getID()
+             << " and sphere " << s2->getID() << " (dist=" << dist << ")";
+      }
+
+      contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
+   }
+#endif
 }
 //*************************************************************************************************
 
@@ -1005,6 +1037,8 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
    const real k( trans( p->getNormal() ) * s->getPosition() );
    const real dist( k - s->getRadius() - p->getDisplacement() );
 
+#ifdef PE_LUBRICATION_CONTACTS
+   // Lubrication-enabled collision detection with hysteresis
    // Get collision system to query hysteresis state
    CollisionSystemID collisionSystem = theCollisionSystem();
    const ContactRegime prevRegime = collisionSystem->getContactRegime( s, p );
@@ -1065,6 +1099,19 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
       contacts.addLubricationContact( s, p, gPos, p->getNormal(), dist );
    }
    // else NO_CONTACT: do nothing
+#else
+   // Standard sphere-plane collision (no lubrication)
+   if( dist < contactThreshold ) {
+      const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between sphere " << s->getID()
+             << " and plane " << p->getID() << " (dist=" << dist << ")";
+      }
+
+      contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
+   }
+#endif
 }
 //*************************************************************************************************
 

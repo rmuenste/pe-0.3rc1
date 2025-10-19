@@ -24,6 +24,8 @@
 #ifndef _PE_CORE_COLLISIONSYSTEM_HARDCONTACTLUBRICATED_H_
 #define _PE_CORE_COLLISIONSYSTEM_HARDCONTACTLUBRICATED_H_
 
+// Define macro to enable lubrication-specific code in fine collision detection
+#define PE_LUBRICATION_CONTACTS 1
 
 //*************************************************************************************************
 // Includes
@@ -110,12 +112,18 @@ namespace pe {
  *
  * This enumeration is used to track the current regime of each body pair to implement
  * hysteresis in the transition between no contact, lubrication contact, and hard contact.
+ *
+ * Note: The enum is defined in pe/core/detection/fine/MaxContacts.h to ensure it's available
+ * to all parts of the collision detection system. This avoids multiple definitions.
  */
+#ifndef PE_CONTACTREGIME_DEFINED
+#define PE_CONTACTREGIME_DEFINED
 enum ContactRegime {
    NO_CONTACT,      //!< Bodies are separated beyond lubrication threshold
    LUBRICATION,     //!< Bodies are in lubrication regime (gap within lubrication threshold)
    HARD_CONTACT     //!< Bodies are in hard contact (penetrating or very close)
 };
+#endif
 //*************************************************************************************************
 
 
