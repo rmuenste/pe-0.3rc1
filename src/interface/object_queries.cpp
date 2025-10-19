@@ -64,10 +64,14 @@ void synchronizeForces() {
     // Get the current time step size
     real stepsize = TimeStep::size();
     WorldID world = theWorld();
+
+#ifndef PE_SERIAL_MODE
+    // Parallel PE mode: use MPI synchronization
     MPI_Comm cartcomm = theMPISystem()->getComm();
     int rank = theMPISystem()->getRank();
     MPI_Barrier(cartcomm);
     theCollisionSystem()->synchronizeForces();
+#endif
 
     for (pe::World::SizeType i = 0; i < world->size(); i++) {
         BodyID body = world->getBody(i);
@@ -79,10 +83,10 @@ void synchronizeForces() {
             real vel_f = 0.0;
             real fd = 6. * M_PI * rad * mu * (vel_f - body->getLinearVel()[0]);
             printStokesData(body, fd);
-        } 
-        else if (body->getType() == capsuleType || 
-                 body->getType() == ellipsoidType || 
-                 (body->getType() == cylinderType && !body->isFixed()) || 
+        }
+        else if (body->getType() == capsuleType ||
+                 body->getType() == ellipsoidType ||
+                 (body->getType() == cylinderType && !body->isFixed()) ||
                  (body->getType() == triangleMeshType && !body->isFixed())
                  ) {
             Vec3 tau = body->getTorque();
@@ -93,12 +97,16 @@ void synchronizeForces() {
         body->applyFluidForces(stepsize);
     }
 
+#ifndef PE_SERIAL_MODE
+    // Parallel PE mode: apply forces to shadow copies
     for (std::size_t i = 0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
         BodyID body = world->getShadowBody(i);
         body->applyFluidForces(stepsize);
     }
 
     world->synchronize();
+#endif
+    // Serial PE mode: no shadow copies, no world synchronization needed
 }
 
 //=================================================================================================
@@ -617,6 +625,11 @@ int getTotalParts() {
     }
   }
 
+#ifdef PE_SERIAL_MODE
+  // Serial PE mode: all particles are local, no MPI reduction needed
+  return numBodies;
+#else
+  // Parallel PE mode: use MPI to get global particle count
   // Calculating the total number of particles and primitives
   unsigned long particlesTotal ( 0 );
 
@@ -624,6 +637,7 @@ int getTotalParts() {
   MPI_Reduce(&bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, theMPISystem()->getComm());
 
   return numBodies;
+#endif
 }
 //=================================================================================================
 

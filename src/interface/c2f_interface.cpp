@@ -1,12 +1,13 @@
 #include <pe/interface/c2f_interface.h>
-
-#if HAVE_MPI
-#include <pe/interface/sim_setup.h>
 #include <pe/interface/object_queries.h>
 
+// Interface headers are always needed (both parallel and serial PE modes)
 #include <pe/interface/c_interface_queries.h>
 #include <pe/interface/c_interface_particle_fbm.h>
 #include <pe/interface/c_interface_particle_getset.h>
+
+#if HAVE_MPI
+#include <pe/interface/sim_setup.h>
 
 
 
