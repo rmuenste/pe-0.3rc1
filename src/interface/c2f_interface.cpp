@@ -8,12 +8,6 @@
 
 #if HAVE_MPI
 #include <pe/interface/sim_setup.h>
-#endif
-
-#ifdef PE_SERIAL_MODE
-#include <pe/interface/sim_setup_serial.h>
-
-
 
 //=================================================================================================
 /*
@@ -251,6 +245,8 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
 #endif
 
 #ifdef PE_SERIAL_MODE
+#include <pe/interface/sim_setup_serial.h>
+
 //=================================================================================================
 // Serial PE Mode: Setup function implementations
 //=================================================================================================

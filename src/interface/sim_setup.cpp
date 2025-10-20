@@ -393,3 +393,22 @@ void loadSimulationConfig(const std::string &fileName) {
 //
 
 #endif
+
+//=================================================================================================
+//
+//    SERIAL PE MODE IMPLEMENTATIONS
+//
+//=================================================================================================
+#ifdef PE_SERIAL_MODE
+
+#include <pe/interface/sim_setup_serial.h>
+
+//=================================================================================================
+// C Wrapper for stepSimulationSerial - used when PE_SERIAL_MODE is defined
+//=================================================================================================
+extern "C" void step_simulation_() {
+  pe::stepSimulationSerial();
+}
+//=================================================================================================
+
+#endif  // PE_SERIAL_MODE

@@ -216,6 +216,27 @@ inline void setupDCAVSerial() {
   TimeStep::stepsize(0.001);
 }
 
+/**
+ * @brief Serial PE time stepping function
+ *
+ * This function performs one time step of the PE simulation in serial mode.
+ * Unlike the MPI version, this does not use MPI communications or domain decomposition.
+ * Each CFD domain runs its own independent PE instance.
+ */
+inline void stepSimulationSerial() {
+  WorldID world = theWorld();
+  
+  // Get the configured time step size
+  real stepsize = TimeStep::size();
+  
+  // Perform one simulation step without MPI operations
+  // In serial mode, all particles are local to this domain
+  world->simulationStep(stepsize);
+  
+  // No MPI barriers or reductions needed in serial mode
+  // Force synchronization is handled by the CFD layer
+}
+
 } // namespace pe
 
 #endif  // PE_SERIAL_MODE
