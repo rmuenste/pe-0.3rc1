@@ -48,6 +48,25 @@ namespace logging {
 
 //=================================================================================================
 //
+//  STATIC MEMBER INITIALIZATION
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Static initialization of customRank_.
+ *
+ * The default value of -1 indicates that no custom rank has been set, and the logger will
+ * use the standard MPI rank detection (if MPI is available) or create a single log file
+ * for serial execution.
+ */
+int Logger::customRank_ = -1;
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
 //  CONSTRUCTOR
 //
 //=================================================================================================
@@ -107,6 +126,42 @@ Logger::~Logger()
 
 //=================================================================================================
 //
+//  CONFIGURATION FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Sets a custom rank for the log filename.
+ *
+ * \param rank The custom rank to use in the log filename.
+ * \return void
+ *
+ * This function allows setting a custom rank that will be used in the log filename instead of
+ * the MPI rank from MPI_COMM_WORLD. This is particularly useful in serial PE mode where each
+ * CFD domain runs an independent serial PE instance but needs unique log files.
+ *
+ * The custom rank should be set BEFORE any logging occurs (i.e., before the first log message
+ * is written). Once the log file is opened, changing the rank has no effect.
+ *
+ * Example usage in serial PE mode:
+ * \code
+ * // In setupParticleBenchSerial(), called with CFD rank from Fortran
+ * pe::logging::Logger::setCustomRank(cfd_rank);
+ * \endcode
+ *
+ * Setting rank to -1 disables the custom rank and reverts to standard behavior.
+ */
+void Logger::setCustomRank( int rank )
+{
+   customRank_ = rank;
+}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
 //  UTILITY FUNCTIONS
 //
 //=================================================================================================
@@ -128,14 +183,21 @@ void Logger::openLogFile()
    std::ostringstream filename;
    filename << "pe";
 
+   // Check for custom rank first (used in serial PE mode with CFD MPI rank)
+   if( customRank_ >= 0 ) {
+      filename << customRank_;
+   }
 #if HAVE_MPI
-   int initialized( 0 );
-   MPI_Initialized( &initialized );
+   else {
+      // Standard MPI mode - use MPI_COMM_WORLD rank
+      int initialized( 0 );
+      MPI_Initialized( &initialized );
 
-   if( initialized ) {
-      int rank( 0 );
-      MPI_Comm_rank( MPI_COMM_WORLD, &rank );  // Estimating the rank of this process
-      filename << rank;
+      if( initialized ) {
+         int rank( 0 );
+         MPI_Comm_rank( MPI_COMM_WORLD, &rank );  // Estimating the rank of this process
+         filename << rank;
+      }
    }
 #endif
 

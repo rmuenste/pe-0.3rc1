@@ -1,5 +1,6 @@
 
 #include <pe/interface/decompose.h>
+#include <pe/config/SimulationConfig.h>
 #include <random>
 #include <algorithm>
 #include <vector>

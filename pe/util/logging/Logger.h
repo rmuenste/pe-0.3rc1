@@ -80,6 +80,13 @@ public:
    //@}
    //**********************************************************************************************
 
+   //**Configuration functions*********************************************************************
+   /*!\name Configuration functions */
+   //@{
+   static void setCustomRank( int rank );
+   //@}
+   //**********************************************************************************************
+
 private:
    //**Logging functions***************************************************************************
    /*!\name Logging functions */
@@ -98,8 +105,9 @@ private:
    //**Member variables****************************************************************************
    /*!\name Member variables */
    //@{
-   boost::mutex  mutex_;  //!< Synchronization mutex for thread-parallel logging.
-   std::ofstream log_;    //!< The log file.
+   boost::mutex  mutex_;     //!< Synchronization mutex for thread-parallel logging.
+   std::ofstream log_;       //!< The log file.
+   static int customRank_;   //!< Custom rank override for serial PE mode (default: -1 = disabled).
    //@}
    //**********************************************************************************************
 

@@ -43,7 +43,7 @@ extern "C" void output_delaunay_(int *istep) {
   outputDelaunay(step);
 }
 //=================================================================================================
-#endif
+#endif // endif HAVE_CGAL
 
 
 //=================================================================================================
@@ -52,38 +52,8 @@ extern "C" void output_delaunay_(int *istep) {
 //
 //=================================================================================================
 
-// Implementation of SimulationConfig
+// SimulationConfig implementation has been moved to src/config/SimulationConfig.cpp
 namespace pe {
-
-SimulationConfig::SimulationConfig()
-    : timesteps_(15000)
-    , stepsize_(0.001)
-    , processesX_(3)
-    , processesY_(3)
-    , processesZ_(3)
-    , seed_(12345)
-    , verbose_(false)
-    , vtk_(true)
-    , visspacing_(50)
-    , pointerspacing_(100)
-    , useCheckpointer_(true)
-    , checkpoint_path_("checkpoints/")
-    , volumeFraction_(0.3)
-    , benchRadius_(0.0015)
-    , resume_(false)
-    , packingMethod_(PackingMethod::Grid)
-    , xyzFilePath_("")
-    , particleDensity_(1.0)
-    , fluidViscosity_(1.0)
-    , fluidDensity_(1.0)
-    , gravity_(0.0, 0.0, -9.81)
-{
-}
-
-SimulationConfig& SimulationConfig::getInstance() {
-    static SimulationConfig instance;
-    return instance;
-}
 
 } // namespace pe
 
@@ -272,104 +242,17 @@ void stepSimulation() {
 
 namespace pe {
 
+//*************************************************************************************************
+/*!\brief Wrapper function for backwards compatibility.
+ *
+ * \param fileName Path to the JSON configuration file.
+ * \return void
+ *
+ * This function is a backwards-compatible wrapper that calls SimulationConfig::loadFromFile().
+ * New code should call SimulationConfig::loadFromFile() directly.
+ */
 void loadSimulationConfig(const std::string &fileName) {
-
-#if HAVE_JSON
-    // Open the configuration file
-    std::ifstream file(fileName);
-    if (!file.is_open()) {
-        throw std::runtime_error("Could not open config file: " + fileName);
-    }
-
-    // Parse the JSON file using nlohmann::json
-    nlohmann::json j;
-    file >> j;
-
-    // Retrieve the singleton instance of SimulationConfig
-    SimulationConfig &config = SimulationConfig::getInstance();
-
-    // Set time parameters
-    if (j.contains("timesteps_"))
-        config.setTimesteps(j["timesteps_"].get<size_t>());
-    if (j.contains("stepsize_"))
-        config.setStepsize(j["stepsize_"].get<real>());
-
-    // Set process parameters
-    if (j.contains("processesX_"))
-        config.setProcessesX(j["processesX_"].get<int>());
-    if (j.contains("processesY_"))
-        config.setProcessesY(j["processesY_"].get<int>());
-    if (j.contains("processesZ_"))
-        config.setProcessesZ(j["processesZ_"].get<int>());
-
-    // Set random number generator parameter
-    if (j.contains("seed_"))
-        config.setSeed(j["seed_"].get<size_t>());
-
-    // Set verbose mode
-    if (j.contains("verbose_"))
-        config.setVerbose(j["verbose_"].get<bool>());
-
-    // Set VTK visualization flag
-    if (j.contains("vtk_"))
-        config.setVtk(j["vtk_"].get<bool>());
-
-    // Set visualization parameters
-    if (j.contains("visspacing_"))
-        config.setVisspacing(j["visspacing_"].get<unsigned int>());
-
-    // Set the number of steps between checkpoints
-    if (j.contains("pointerspacing_"))
-        config.setPointerspacing(j["pointerspacing_"].get<unsigned int>());
-
-    // Set checkpointer usage
-    if (j.contains("useCheckpointer_"))
-        config.setUseCheckpointer(j["useCheckpointer_"].get<bool>());
-    
-    // Set resume 
-    if (j.contains("resume_"))
-        config.setResume(j["resume_"].get<bool>());
-
-    // Set the checkpoint path (assuming the JSON key is a string)
-    if (j.contains("checkpoint_path_"))
-        config.setCheckpointPath(boost::filesystem::path(j["checkpoint_path_"].get<std::string>()));
-
-    // Set simulation parameters
-    if (j.contains("volumeFraction_"))
-        config.setVolumeFraction(j["volumeFraction_"].get<real>());
-    
-    if (j.contains("benchRadius_"))
-        config.setBenchRadius(j["benchRadius_"].get<real>());
-
-    if (j.contains("packingMethod_"))
-        config.setPackingMethod(SimulationConfig::parsePackingMethod(j["packingMethod_"].get<std::string>()));
-    
-    if (j.contains("xyzFilePath_"))
-        config.setXyzFilePath(boost::filesystem::path(j["xyzFilePath_"].get<std::string>()));        
-
-    // Set particle density
-    if (j.contains("particleDensity_"))
-        config.setParticleDensity(j["particleDensity_"].get<real>());
-
-    // Set fluid viscosity
-    if (j.contains("fluidViscosity_"))
-        config.setFluidViscosity(j["fluidViscosity_"].get<real>());
-
-    // Set fluid density
-    if (j.contains("fluidDensity_"))
-        config.setFluidDensity(j["fluidDensity_"].get<real>());
-
-    // Set gravity vector
-    if (j.contains("gravity_")) {
-        if (j["gravity_"].is_array() && j["gravity_"].size() == 3) {
-            Vec3 gravity(j["gravity_"][0].get<real>(), 
-                        j["gravity_"][1].get<real>(), 
-                        j["gravity_"][2].get<real>());
-            config.setGravity(gravity);
-        }
-    }
-
-#endif
+    SimulationConfig::loadFromFile(fileName);
 }
 
 } // namespace pe

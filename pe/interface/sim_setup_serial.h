@@ -7,6 +7,9 @@
 #include <pe/core/CollisionSystemID.h>
 #include <pe/core/Materials.h>
 #include <pe/vtk/Writer.h>
+#include <pe/util/logging/Logger.h>
+#include <pe/config/SimulationConfig.h>
+#include <string>
 
 namespace pe {
 
@@ -15,18 +18,30 @@ namespace pe {
  *
  * In serial PE mode, each CFD domain runs its own independent serial PE instance.
  * No MPI domain decomposition or shadow copies are needed - all particles are local.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupParticleBenchSerial() {
+inline void setupParticleBenchSerial(int cfd_rank) {
 
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
   WorldID world = theWorld();
 
-  // Set default gravity (can be overridden by loadSimulationConfig if available)
-  world->setGravity(0.0, 0.0, -9.807);
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
 
   // Default fluid properties
-  real simViscosity(1.0);
-  real simRho(1.0);
   real slipLength(0.75);
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
 
   world->setLiquidSolid(true);
   world->setLiquidDensity(simRho);
@@ -41,6 +56,20 @@ inline void setupParticleBenchSerial() {
   MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
 
+  int idx = 0;
+  //==============================================================================================
+  // Bench Configuration
+  //==============================================================================================
+  real radBench = config.getBenchRadius();
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-0.0, -0.0, 0.1275);
+
+  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  SphereID sphere(nullptr);
+  sphere = createSphere(idx, position, radBench, myMaterial, true);
+  ++idx;
+
+
   // Set default timestep
   TimeStep::stepsize(0.001);
 
@@ -53,8 +82,12 @@ inline void setupParticleBenchSerial() {
  *
  * This is a generic initialization function that can be used for various
  * simulation setups in serial mode.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupGeneralInitSerial() {
+inline void setupGeneralInitSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   // Basic world setup
@@ -69,8 +102,12 @@ inline void setupGeneralInitSerial() {
 
 /**
  * @brief FSI benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupFSIBenchSerial() {
+inline void setupFSIBenchSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   // FSI-specific settings
@@ -90,8 +127,12 @@ inline void setupFSIBenchSerial() {
 
 /**
  * @brief Archimedes benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupArchimedesSerial() {
+inline void setupArchimedesSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   // Archimedes buoyancy test
@@ -111,8 +152,12 @@ inline void setupArchimedesSerial() {
 
 /**
  * @brief Kroupa setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupKroupaSerial() {
+inline void setupKroupaSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   world->setGravity(0.0, 0.0, -9.81);
@@ -130,8 +175,12 @@ inline void setupKroupaSerial() {
 
 /**
  * @brief Creep flow setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupCreepSerial() {
+inline void setupCreepSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   world->setGravity(0.0, 0.0, 0.0);  // Often negligible in creep flow
@@ -149,8 +198,12 @@ inline void setupCreepSerial() {
 
 /**
  * @brief Draft-Kiss-Tumble benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupDraftKissTumbSerial() {
+inline void setupDraftKissTumbSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   world->setGravity(0.0, 0.0, -9.81);
@@ -168,8 +221,12 @@ inline void setupDraftKissTumbSerial() {
 
 /**
  * @brief 2x2x2 domain setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setup2x2x2Serial() {
+inline void setup2x2x2Serial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   world->setGravity(0.0, 0.0, -9.81);
@@ -180,8 +237,12 @@ inline void setup2x2x2Serial() {
 
 /**
  * @brief Cylinder setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupCylSerial() {
+inline void setupCylSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   world->setGravity(0.0, 0.0, -9.81);
@@ -192,22 +253,30 @@ inline void setupCylSerial() {
 
 /**
  * @brief Generic benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupBenchSerial() {
-  setupGeneralInitSerial();
+inline void setupBenchSerial(int cfd_rank) {
+  setupGeneralInitSerial(cfd_rank);
 }
 
 /**
  * @brief Span setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupSpanSerial() {
-  setupFSIBenchSerial();
+inline void setupSpanSerial(int cfd_rank) {
+  setupFSIBenchSerial(cfd_rank);
 }
 
 /**
  * @brief DCAV (Double Concentric Annular Viscometer?) setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
-inline void setupDCAVSerial() {
+inline void setupDCAVSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
   WorldID world = theWorld();
 
   world->setGravity(0.0, 0.0, 0.0);

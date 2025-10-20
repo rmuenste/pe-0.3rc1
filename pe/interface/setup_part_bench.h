@@ -1,5 +1,6 @@
 
 #include <pe/interface/decompose.h>
+#include <pe/config/SimulationConfig.h>
 
 void setupParticleBench(MPI_Comm ex0) {
 

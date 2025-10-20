@@ -39,7 +39,7 @@
  *  - \a debug   : Extends the \a progress setting by debug information.
  *  - \a detail  : Extends the \a debug setting by very fine grained detail information.
  */
-const LogLevel loglevel = info;
+const LogLevel loglevel = debug;
 //*************************************************************************************************
 
 

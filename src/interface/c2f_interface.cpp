@@ -256,47 +256,48 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
 
 extern "C" void commf2c_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Initialize PE world for this domain
-  pe::setupParticleBenchSerial();
+  // Pass CFD rank for unique log filenames (pe<rank>.log)
+  pe::setupParticleBenchSerial(*remoteRank);
 }
 
 extern "C" void commf2c_dcav_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: DCAV setup
-  pe::setupDCAVSerial();
+  pe::setupDCAVSerial(*remoteRank);
 }
 
 extern "C" void commf2c_cyl_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Cylinder setup
-  pe::setupCylSerial();
+  pe::setupCylSerial(*remoteRank);
 }
 
 extern "C" void commf2c_init_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Generic initialization
-  pe::setupGeneralInitSerial();
+  pe::setupGeneralInitSerial(*remoteRank);
 }
 
 extern "C" void commf2c_fsi_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: FSI benchmark setup
-  pe::setupFSIBenchSerial();
+  pe::setupFSIBenchSerial(*remoteRank);
 }
 
 extern "C" void commf2c_kroupa_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Kroupa setup
-  pe::setupKroupaSerial();
+  pe::setupKroupaSerial(*remoteRank);
 }
 
 extern "C" void commf2c_creep_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Creep flow setup
-  pe::setupCreepSerial();
+  pe::setupCreepSerial(*remoteRank);
 }
 
 extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Archimedes buoyancy setup
-  pe::setupArchimedesSerial();
+  pe::setupArchimedesSerial(*remoteRank);
 }
 
 extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Draft-Kiss-Tumble setup
-  pe::setupDraftKissTumbSerial();
+  pe::setupDraftKissTumbSerial(*remoteRank);
 }
 
 #endif  // PE_SERIAL_MODE
