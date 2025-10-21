@@ -1,5 +1,9 @@
 # Lubrication Contacts: Design and Initial Integration
 
+Status
+- Canonical implementation: HardContactLubricated
+- Deprecated (to be removed next version): HardContactAndFluidWithLubrication, HardContactFluidLubrication
+
 ## Overview
 - Introduces a lubrication interaction regime between “no contact” and “hard contact”.
 - Pairs are classified by surface gap `dist`:

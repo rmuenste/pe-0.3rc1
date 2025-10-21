@@ -84,4 +84,13 @@
  *   - pe::response::OpenCLSolver
  */
 #define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
+
+// Deprecation note: HardContactAndFluidWithLubrication and HardContactFluidLubrication are
+// deprecated. The canonical lubrication stack is HardContactLubricated.
+// To opt-in to using HardContactLubricated as the default solver in your build, define
+// PE_USE_LUBRICATED_DEFAULT prior to including this header.
+#ifdef PE_USE_LUBRICATED_DEFAULT
+#  undef pe_CONSTRAINT_SOLVER
+#  define pe_CONSTRAINT_SOLVER  pe::response::HardContactLubricated
+#endif
 //*************************************************************************************************
