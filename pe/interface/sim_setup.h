@@ -8,6 +8,7 @@ namespace pe {
 // Configuration loading function (available in all modes)
 void loadSimulationConfig(const std::string &fileName);
 
+}  // namespace pe
 extern "C" void step_simulation_();
 void stepSimulation();
 void setupParticleBench(MPI_Comm ex0);
@@ -21,4 +22,6 @@ void setupArchimedes(MPI_Comm ex0);
 void setupDraftKissTumbBench(MPI_Comm ex0);
 void setupGeneralInit(MPI_Comm ex0);
 void setupSpan(MPI_Comm ex0);
+
+
 #endif
