@@ -91,88 +91,12 @@
 #include <pe/util/Timing.h>
 #include <pe/util/Types.h>
 #include <pe/util/Vector.h>
-#include <map>
 #include <set>
 
 
 
 
 namespace pe {
-
-
-//=================================================================================================
-//
-//  CONTACT REGIME ENUM
-//
-//=================================================================================================
-
-//*************************************************************************************************
-/*!\brief Contact regime classification for hysteresis.
- * \ingroup core
- *
- * This enumeration is used to track the current regime of each body pair to implement
- * hysteresis in the transition between no contact, lubrication contact, and hard contact.
- *
- * Note: The enum is defined in pe/core/detection/fine/MaxContacts.h to ensure it's available
- * to all parts of the collision detection system. This avoids multiple definitions.
- */
-#ifndef PE_CONTACTREGIME_DEFINED
-#define PE_CONTACTREGIME_DEFINED
-enum ContactRegime {
-   NO_CONTACT,      //!< Bodies are separated beyond lubrication threshold
-   LUBRICATION,     //!< Bodies are in lubrication regime (gap within lubrication threshold)
-   HARD_CONTACT     //!< Bodies are in hard contact (penetrating or very close)
-};
-#endif
-//*************************************************************************************************
-
-
-//=================================================================================================
-//
-//  BODY PAIR IDENTIFIER
-//
-//=================================================================================================
-
-//*************************************************************************************************
-/*!\brief Identifier for a pair of rigid bodies.
- * \ingroup core
- *
- * This struct provides a unique identifier for a pair of rigid bodies using their system IDs.
- * The pair is stored in canonical ordering (smaller ID first) to ensure consistent hashing
- * regardless of the order in which the bodies are specified.
- */
-struct BodyPairID {
-   id_t body1_sys_id;  //!< System ID of first body (always <= body2_sys_id)
-   id_t body2_sys_id;  //!< System ID of second body (always >= body1_sys_id)
-
-   //**Constructor**********************************************************************************
-   /*!\brief Constructor for BodyPairID.
-    *
-    * \param id1 System ID of first body.
-    * \param id2 System ID of second body.
-    *
-    * Automatically orders the IDs canonically (smaller ID first).
-    */
-   BodyPairID( id_t id1, id_t id2 )
-      : body1_sys_id( id1 < id2 ? id1 : id2 )
-      , body2_sys_id( id1 < id2 ? id2 : id1 )
-   {}
-   //**********************************************************************************************
-
-   //**Comparison operator**************************************************************************
-   /*!\brief Less-than comparison for map ordering.
-    *
-    * \param other The other BodyPairID to compare against.
-    * \return True if this pair is less than the other pair.
-    */
-   bool operator<( const BodyPairID& other ) const {
-      if( body1_sys_id != other.body1_sys_id )
-         return body1_sys_id < other.body1_sys_id;
-      return body2_sys_id < other.body2_sys_id;
-   }
-   //**********************************************************************************************
-};
-//*************************************************************************************************
 
 
 //=================================================================================================
@@ -313,12 +237,9 @@ public:
    //@}
    //**********************************************************************************************
 
-   //**Hysteresis state management*****************************************************************
-   /*!\name Hysteresis state management */
+   //**Transition blend parameters*****************************************************************
+   /*!\name Transition blend parameters */
    //@{
-   inline ContactRegime   getContactRegime( BodyID b1, BodyID b2 ) const;
-   inline void            updateContactRegime( BodyID b1, BodyID b2, ContactRegime regime );
-   inline void            clearContactRegimeHistory();
    inline real            getContactHysteresisDelta() const;
    inline real            getLubricationHysteresisDelta() const;
    //@}
@@ -457,10 +378,9 @@ private:
    real minEpsLub_;       //!< Minimal lubrication gap regularization
    real alphaImpulseCap_; //!< Cap factor for lubrication impulse relative to approach momentum
 
-   // Hysteresis parameters and state storage
+   // Transition blending parameters
    real contactHysteresisDelta_;      //!< Hysteresis band width for hard contact transitions
    real lubricationHysteresisDelta_;  //!< Hysteresis band width for lubrication transitions
-   std::map<BodyPairID, ContactRegime> contactRegimeHistory_;  //!< Persistent state tracking for body pairs
 
    timing::WcTimer timeSimulationStep_, timeCollisionDetection_, timeCollisionResponse_, timeCollisionResponseContactFiltering_, timeCollisionResponseContactCaching_, timeCollisionResponseBodyCaching_, timeCollisionResponseSolving_, timeCollisionResponseIntegration_, timeBodySync_, timeBodySyncAssembling_, timeBodySyncCommunicate_, timeBodySyncParsing_, timeVelocitiesSync_, timeVelocitiesSyncCorrectionsAssembling_, timeVelocitiesSyncCorrectionsCommunicate_, timeVelocitiesSyncCorrectionsParsing_, timeVelocitiesSyncUpdatesAssembling_, timeVelocitiesSyncUpdatesCommunicate_, timeVelocitiesSyncUpdatesParsing_, timeVelocitiesSyncGlobals_;
    std::vector<timing::WcTimer*> timers_;
@@ -546,7 +466,6 @@ CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::CollisionSystem(
    , alphaImpulseCap_  ( real(1.0) )
    , contactHysteresisDelta_     ( real(1e-9) )
    , lubricationHysteresisDelta_ ( real(1e-9) )
-   , contactRegimeHistory_()
 {
    // Registering all timers
    timers_.push_back( &timeSimulationStep_ );
@@ -1055,88 +974,6 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setL
 {
    pe_INTERNAL_ASSERT( delta >= 0, "Lubrication hysteresis delta must be non-negative." );
    lubricationHysteresisDelta_ = delta;
-}
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-/*!\brief Retrieves the current contact regime for a body pair.
- *
- * \param b1 First body in the pair.
- * \param b2 Second body in the pair.
- * \return The current contact regime (NO_CONTACT if pair has no history).
- *
- * This function queries the persistent state storage to determine the last known regime
- * for the specified body pair. If the pair has not been encountered before, NO_CONTACT
- * is returned as the default.
- */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-inline ContactRegime CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getContactRegime( BodyID b1, BodyID b2 ) const
-{
-   BodyPairID pairID( b1->getSystemID(), b2->getSystemID() );
-   std::map<BodyPairID, ContactRegime>::const_iterator it = contactRegimeHistory_.find( pairID );
-   if( it != contactRegimeHistory_.end() ) {
-      return it->second;
-   }
-   return NO_CONTACT;  // Default for new pairs
-}
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-/*!\brief Updates the contact regime for a body pair.
- *
- * \param b1 First body in the pair.
- * \param b2 Second body in the pair.
- * \param regime The new contact regime to store.
- * \return void
- *
- * This function updates the persistent state storage with the current regime for the
- * specified body pair. This state is used in subsequent time steps to implement hysteresis.
- */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::updateContactRegime( BodyID b1, BodyID b2, ContactRegime regime )
-{
-   BodyPairID pairID( b1->getSystemID(), b2->getSystemID() );
-   contactRegimeHistory_[pairID] = regime;
-}
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-/*!\brief Clears all contact regime history.
- *
- * \return void
- *
- * This function clears the entire persistent state storage, resetting all body pairs to
- * an unknown state. This might be useful after major simulation events (e.g., body deletions,
- * domain decomposition changes) or for periodic cleanup to prevent unbounded memory growth.
- */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::clearContactRegimeHistory()
-{
-   contactRegimeHistory_.clear();
 }
 //*************************************************************************************************
 
@@ -2235,6 +2072,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
             const Vec3 r2 = c->getPosition() - b2->getPosition();
             const Vec3 n  = c->getNormal();
             const real gap = std::max( c->getDistance(), minEpsLub_ );
+            const real blend = c->getLubricationWeight();
+
+            if( blend <= real(0) ) {
+               pe_LOG_DEBUG_SECTION( log ) {
+                  log << "         Status: SKIPPED (blend factor <= 0)\n";
+               }
+               continue;
+            }
 
             // Store pre-correction velocities for logging
             const Vec3 v1_pre = v_[i1] + dv_[i1];
@@ -2298,8 +2143,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
 
             const real mu = Settings::liquidViscosity();
             // Classical normal lubrication coefficient: 6*pi*mu*R_eff^2
-            real Fmag = real(6) * M_PI * mu * R_eff * R_eff * (-vrn) / gap;
-            const real Fmag_uncapped = Fmag;
+            const real Fmag_uncapped = real(6) * M_PI * mu * R_eff * R_eff * (-vrn) / gap;
+            real Fmag_capped = Fmag_uncapped;
 
             // Impulse capping relative to approach momentum
             const real invm1 = b1->getInvMass();
@@ -2308,15 +2153,16 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
             bool capped = false;
             if( invm_sum > real(0) ) {
                const real m_eff = real(1) / invm_sum;
-               const real J     = Fmag * dt;               // proposed impulse magnitude
+               const real J     = Fmag_capped * dt;               // proposed impulse magnitude
                const real Jcap  = alphaImpulseCap_ * m_eff * (-vrn);
                if( J > Jcap && J > real(0) ) {
-                  Fmag *= ( Jcap / J );
+                  Fmag_capped *= ( Jcap / J );
                   capped = true;
                }
             }
 
-            const Vec3 F = Fmag * n;
+            const real Fmag_weighted = Fmag_capped * blend;
+            const Vec3 F = Fmag_weighted * n;
 
             pe_LOG_DEBUG_SECTION( log ) {
                log << "         Geometry        = " << geometryType << "\n"
@@ -2324,9 +2170,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
                    << "         Viscosity μ     = " << mu << "\n"
                    << "         Force magnitude = " << Fmag_uncapped;
                if( capped ) {
-                  log << " (capped to " << Fmag << ")";
+                  log << " (capped to " << Fmag_capped << ")";
                }
                log << "\n"
+                   << "         Blend factor    = " << blend << "\n"
+                   << "         Applied force   = " << Fmag_weighted << "\n"
                    << "         Force direction = " << n << "\n"
                    << "         Force vector    = " << F << "\n"
                    << "         Pre-velocities:\n"

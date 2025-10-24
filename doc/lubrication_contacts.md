@@ -60,73 +60,51 @@ Status
 - Fluid properties from `pe/core/Settings.h`:
   - `Settings::liquidViscosity()` and `Settings::liquidDensity()` (buoyancy already present elsewhere).
 
-## Hysteresis (Regime Transition Stability)
-To prevent flickering between contact regimes when gaps oscillate near threshold boundaries, a hysteresis mechanism has been implemented:
+## Regime Transition Blending
+To prevent flickering between contact regimes when gaps oscillate near threshold boundaries, the detection step computes smooth blend weights directly from the current gap distance:
 
-### Implementation
-- **Persistent State Storage**: Each body pair's contact regime (NO_CONTACT, LUBRICATION, HARD_CONTACT) is tracked in `CollisionSystem::contactRegimeHistory_`
-- **Body Pair Identification**: Uses canonical ordering of system IDs via `BodyPairID` struct
-- **State-Dependent Thresholds**: Different transition thresholds depending on current regime:
-  - From HARD_CONTACT: Exit at `contactThreshold + contactHysteresisDelta`
-  - To HARD_CONTACT: Enter at `contactThreshold - contactHysteresisDelta`
-  - From LUBRICATION: Exit at `lubricationThreshold + contactThreshold + lubricationHysteresisDelta`
-  - To LUBRICATION: Enter at `lubricationThreshold + contactThreshold - lubricationHysteresisDelta`
+### Blended Weights
+- Hard-contact weight `w_hard(dist)` is 1 for `dist ≤ contactThreshold − contactHysteresisDelta` and decreases smoothly to 0 at `dist = contactThreshold + contactHysteresisDelta`.
+- Lubrication weight `w_lub(dist)` ramps from 0 to 1 across the same entry band, stays at 1 inside the lubrication window, then fades to 0 over `lubricationHysteresisDelta` around `contactThreshold + lubricationThreshold`.
+- Weights are computed analytically each detection step—no per-pair history or bookkeeping.
 
-### Hysteresis Parameters
-- `contactHysteresisDelta_`: Width of hysteresis band around `contactThreshold` (default: 1e-9)
-- `lubricationHysteresisDelta_`: Width of hysteresis band around `lubricationThreshold` (default: 1e-9)
-- Configurable via `setContactHysteresisDelta()` and `setLubricationHysteresisDelta()`
+### Blend Parameters
+- `contactHysteresisDelta_`: Half-width of the hard-contact blend zone (default: 1e-9).
+- `lubricationHysteresisDelta_`: Half-width of the lubrication cutoff blend zone (default: 1e-9).
+- Both exposed via `setContactHysteresisDelta()` and `setLubricationHysteresisDelta()`.
 
 ### Benefits
-- **Eliminates flickering**: No rapid regime switching at threshold boundaries
-- **Numerically stable**: Smooth force evolution during transitions
-- **Physically realistic**: Mimics real adhesion/separation dynamics
-- **Low overhead**: Simple map lookup per contact pair
-
-### State Management
-- `getContactRegime(b1, b2)`: Query previous regime for body pair
-- `updateContactRegime(b1, b2, regime)`: Update regime after classification
-- `clearContactRegimeHistory()`: Reset all stored states (e.g., after major simulation events)
+- **No bookkeeping**: Eliminates maps and cleanup for per-pair regime state.
+- **Smooth transitions**: Hard and lubrication responses fade continuously, preventing regime flapping.
+- **MPI-friendly**: Purely local evaluation removes cross-rank synchronization concerns.
 
 ### Detection Integration
 - Implemented in `pe/core/detection/fine/MaxContacts.h`:
-  - `collideSphereSphere()`: Sphere-sphere detection with hysteresis
-  - `collideSpherePlane()`: Sphere-plane detection with hysteresis
-- Accesses `CollisionSystem` via `theCollisionSystem()` singleton
+  - `collideSphereSphere()`: Computes blend weights and emits weighted lubrication contacts.
+  - `collideSpherePlane()`: Same blending logic for sphere-plane gaps.
+- Accesses `CollisionSystem` via `theCollisionSystem()` singleton for blend parameter queries.
 
 ## Limitations (Current Implementation)
 - Only sphere–sphere and sphere–plane pairs are supported.
 - No tangential lubrication yet; normal component only.
 - No partial submersion logic or deeper CFD coupling; keeps a simple analytical model.
-- Hysteresis state is never automatically cleaned up (may grow unbounded for long simulations with many transient contacts)
 
 ## MPI Parallel Execution
 - **Fully supported**: Lubrication forces work correctly in MPI simulations
 - **Synchronization overhead**: One additional `synchronizeVelocities()` call per time step (after lubrication, before hard contact solver)
-- **Hysteresis state**: Currently local to each process; not synchronized across MPI boundaries
-  - Works correctly because detection happens locally and regime transitions are deterministic
-  - Body pairs are consistently classified across all processes that see them
+- **Blending**: Weights are derived from the instantaneous gap on each process, so no regime state needs to be communicated.
 - **Performance**: Minimal overhead for MPI communication (~1 additional MPI_Allreduce per time step)
 
-## Hysteresis (Recommended)
-- Goal: avoid regime flapping when the gap oscillates near the threshold.
-- Definitions:
-  - `lubricationOn  = contactThreshold + h_on`
-  - `lubricationOff = contactThreshold + h_off` with `h_on > h_off`
-- Behavior:
-  - If a pair is not in lubrication and `dist ≤ lubricationOn` → enter lubrication.
-  - If a pair is in lubrication and `dist ≥ lubricationOff` → leave lubrication.
-- State tracking:
-  - Maintain a per-pair boolean “isLubricationActive”. For deterministic keys across MPI ranks, use ordered `(owner(body1), id1, owner(body2), id2)`.
-  - Clear state when pairs disappear or ownership changes.
-- Configuration:
-  - `h_on`, `h_off` set from simulation input; can be tied to CFD grid size (e.g., one or fractions of a cell).
+## Regime Blending (Configuration)
+- Goal: avoid regime flapping when the gap oscillates near the contact threshold.
+- Configure entry/exit smoothness via `contactHysteresisDelta` (hard-contact blend) and `lubricationHysteresisDelta` (lubrication falloff).
+- For coarse meshes or noisy distance signals, increase the deltas to widen the blend regions; reduce them for sharper transitions.
 
 ## MPI Considerations (High Priority)
 - The lubrication feature targets FSI workflows that always run in MPI; design must be consistent across ranks.
 - Ownership and determinism:
   - Generate/flag lubrication contacts only on the owning rank of the contact point (consistent with contact handling).
-  - Ensure deterministic ordering when deriving keys for hysteresis state (use system IDs and owner ranks).
+  - The blend weights depend solely on the instantaneous gap, so deterministic collision detection keeps ranks in sync without extra state.
 - Velocity synchronization:
   - After applying lubrication corrections, perform a velocity synchronization so shadow copies see identical states before contact relaxation and position integration.
   - Practical ordering within `resolveContacts`:
@@ -137,7 +115,6 @@ To prevent flickering between contact regimes when gaps oscillate near threshold
     5) Run hard-contact relaxation
 
 ## Next Steps
-- Expose `eps_lub`, cap `α`, and hysteresis (`h_on`, `h_off`) as configuration/settings.
-- Implement per-pair hysteresis state with MPI-safe keys and lifecycle.
+- Expose `eps_lub`, cap `α`, and blend widths (`contactHysteresisDelta`, `lubricationHysteresisDelta`) as configuration/settings.
 - Extend to additional geometries once the core is validated.
 - Add a minimal example validating slowdown in lubrication range, hysteresis behavior, and smooth transition to contact.
