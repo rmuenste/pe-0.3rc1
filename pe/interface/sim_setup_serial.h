@@ -295,6 +295,7 @@ inline void setupDCAVSerial(int cfd_rank) {
 inline void stepSimulationSerial() {
   WorldID world = theWorld();
   
+  static int timestep = 0;
   // Get the configured time step size
   real stepsize = TimeStep::size();
   
@@ -302,8 +303,29 @@ inline void stepSimulationSerial() {
   // In serial mode, all particles are local to this domain
   world->simulationStep(stepsize);
   
+  unsigned int i(0);
   // No MPI barriers or reductions needed in serial mode
   // Force synchronization is handled by the CFD layer
+  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+    World::SizeType widx = static_cast<World::SizeType>(i);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    if(body->getType() == sphereType || 
+       body->getType() == capsuleType || 
+       body->getType() == ellipsoidType || 
+       body->getType() == cylinderType || 
+       body->getType() == triangleMeshType) {
+
+      Vec3 vel = body->getLinearVel();
+      Vec3 ang = body->getAngularVel();
+
+      std::cout << "==Single Particle Data========================================================" << std::endl;
+      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
+      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
+      
+    }
+  }
+  timestep++;
 }
 
 } // namespace pe
