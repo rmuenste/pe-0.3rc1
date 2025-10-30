@@ -161,13 +161,15 @@ TriMeshBoundary::TriMeshBoundary(TriangleMeshID triangleMesh)
 
    calcBoundingBox();
 
-   std::cout << file << std::endl;
-   std::cout << "Total Volume = " << totalVolume << std::endl;
-   std::cout << "X center = " << center[0] << std::endl; //xCenter/totalVolume
-   std::cout << "Y center = " << center[1] << std::endl; //yCenter/totalVolume
-   std::cout << "Z center = " << center[2] << std::endl; //zCenter/totalVolume
-   std::cout << "#Verts   = " << vertices_.size() << std::endl; //zCenter/totalVolume
-   std::cout << "#Faces   = " << faceIndices_.size() << std::endl; //zCenter/totalVolume
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << file << '\n'
+          << "Total Volume = " << totalVolume << '\n'
+          << "X center = " << center[0] << '\n'
+          << "Y center = " << center[1] << '\n'
+          << "Z center = " << center[2] << '\n'
+          << "#Verts   = " << vertices_.size() << '\n'
+          << "#Faces   = " << faceIndices_.size() << '\n';
+   }
 
    // Logging the successful creation of the triangle mesh
    pe_LOG_DETAIL_SECTION( log ) {

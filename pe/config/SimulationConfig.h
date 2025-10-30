@@ -125,6 +125,8 @@ public:
     int getPx() const { return processesX_; }
     int getPy() const { return processesY_; }
     int getPz() const { return processesZ_; }
+    int getCfdRank() const { return cfdRank_; }
+    void setCfdRank(int value) { cfdRank_ = value; }
     //@}
     //**************************************************************************************
 
@@ -221,6 +223,7 @@ private:
     int processesX_;             //!< Number of processes in x-direction
     int processesY_;             //!< Number of processes in y-direction
     int processesZ_;             //!< Number of processes in z-direction
+    int cfdRank_;                //!< Designated CFD rank owning the authoritative particle state
 
     // Random number generator parameters
     size_t seed_;                //!< Seed for random number generator

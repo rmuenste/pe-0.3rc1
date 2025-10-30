@@ -53,6 +53,7 @@ SimulationConfig::SimulationConfig()
     , processesX_(3)
     , processesY_(3)
     , processesZ_(3)
+    , cfdRank_(1)
     , seed_(12345)
     , verbose_(false)
     , vtk_(true)
@@ -148,6 +149,8 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
         config.setProcessesY(j["processesY_"].get<int>());
     if (j.contains("processesZ_"))
         config.setProcessesZ(j["processesZ_"].get<int>());
+    if (j.contains("cfdRank_"))
+        config.setCfdRank(j["cfdRank_"].get<int>());
 
     // Set random number generator parameter
     if (j.contains("seed_"))

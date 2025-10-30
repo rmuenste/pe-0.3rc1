@@ -2527,13 +2527,15 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
    static const real sixth = 1.0 / 6.0;
    totalVolume *= sixth;
 
-   std::cout << file << std::endl;
-   std::cout << "Total Volume = " << totalVolume << std::endl;
-   std::cout << "X center = " << center[0] << std::endl; //xCenter/totalVolume
-   std::cout << "Y center = " << center[1] << std::endl; //yCenter/totalVolume
-   std::cout << "Z center = " << center[2] << std::endl; //zCenter/totalVolume
-   std::cout << "#Verts   = " << vertices.size() << std::endl; //zCenter/totalVolume
-   std::cout << "#Faces   = " << faceIndices.size() << std::endl; //zCenter/totalVolume
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << file << '\n'
+          << "Total Volume = " << totalVolume << '\n'
+          << "X center = " << center[0] << '\n'
+          << "Y center = " << center[1] << '\n'
+          << "Z center = " << center[2] << '\n'
+          << "#Verts   = " << vertices.size() << '\n'
+          << "#Faces   = " << faceIndices.size() << '\n';
+   }
 
    //move the triangle mesh so that the COM is the coordinate origin
    //and scale it

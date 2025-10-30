@@ -11,6 +11,7 @@
 #include <pe/core.h>
 #include <pe/math.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
+#include <pe/util/logging/DebugSection.h>
 
 // Conditionally include CGAL headers
 #ifdef PE_USE_CGAL
@@ -74,8 +75,10 @@ public:
         // Grid origin (shifted by tolerance)
         origin_.set(bbox.xmin() - tolerance * h, bbox.ymin() - tolerance * h, bbox.zmin() - tolerance * h);
         
-        std::cout << "Creating SDF grid: " << nx_ << " x " << ny_ << " x " << nz_ 
-                  << " (spacing: " << spacing_ << ")" << std::endl;
+        pe_LOG_DEBUG_SECTION( log ) {
+            log << "Creating SDF grid: " << nx_ << " x " << ny_ << " x " << nz_
+                << " (spacing: " << spacing_ << ")\n";
+        }
         
         // Resize data vectors
         size_t total_size = nx_ * ny_ * nz_;
@@ -136,8 +139,10 @@ public:
             }
         }
         
-        std::cout << "SDF computation complete. Inside points: " << inside_count 
-                  << " (" << double(inside_count) / double(nx_*ny_*nz_) * 100 << "%)" << std::endl;
+        pe_LOG_DEBUG_SECTION( log ) {
+            log << "SDF computation complete. Inside points: " << inside_count
+                << " (" << double(inside_count) / double(nx_*ny_*nz_) * 100 << "%)\n";
+        }
     }
 
     // Trilinear interpolation for scalar values

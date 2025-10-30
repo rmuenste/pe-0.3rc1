@@ -31,6 +31,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   SimulationConfig::loadFromFile("example.json");
 
   auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
   WorldID world = theWorld();
 
   // Set gravity from configuration
@@ -88,6 +89,8 @@ inline void setupParticleBenchSerial(int cfd_rank) {
 inline void setupGeneralInitSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
   WorldID world = theWorld();
 
   // Basic world setup
@@ -95,7 +98,7 @@ inline void setupGeneralInitSerial(int cfd_rank) {
   world->setDamping(1.0);
 
   // Default timestep
-  TimeStep::stepsize(0.001);
+  TimeStep::stepsize(config.getStepsize());
 
   // Serial mode: minimal setup, particles managed by CFD code
 }
@@ -106,23 +109,100 @@ inline void setupGeneralInitSerial(int cfd_rank) {
  * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
 inline void setupFSIBenchSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
   pe::logging::Logger::setCustomRank(cfd_rank);
 
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
   WorldID world = theWorld();
 
-  // FSI-specific settings
-  world->setGravity(0.0, 0.0, 0.0);  // Often no gravity in FSI benchmarks
-  world->setDamping(1.0);
+  //==============================================================================================
+  // Simulation Input Parameters 
+  //==============================================================================================
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
 
-  // Fluid properties for FSI
-  real simViscosity(1.0e-3);  // Water-like
-  real simRho(1000.0);        // Water density
+  // Default fluid properties
+  real slipLength(0.75);
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
 
   world->setLiquidSolid(true);
   world->setLiquidDensity(simRho);
   world->setViscosity(simViscosity);
+  world->setDamping(1.0);
 
-  TimeStep::stepsize(0.001);
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0,
+                                               config.getTimesteps(), 
+                                               false);
+  }
+
+  // Serial mode: no MPI, no domain decomposition
+  // The entire simulation domain is owned by this process
+  // Domain boundaries are handled by the CFD code
+  // Create ground plane (global, owned by this domain)
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+  int idx = 0;
+  //==============================================================================================
+  // Bench Configuration
+  //==============================================================================================
+  real radBench = config.getBenchRadius();
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-0.0, -0.0, 0.1275);
+  std::string fileName = std::string("span2_scaled.obj");
+
+  // Set default timestep
+  TimeStep::stepsize(config.getStepsize());
+  MaterialID chipMat = createMaterial("chip"    , rhoParticle , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+
+  Vec3 chipPos = position;  // Keep hardcoded - no config function available
+  TriangleMeshID chip = createTriangleMesh(++idx, chipPos, fileName, chipMat, false, true);
+
+  // Enable DistanceMap acceleration for the chip
+  chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
+  const bool distanceMapEnabled = chip->hasDistanceMap();
+  const DistanceMap* dm = distanceMapEnabled ? chip->getDistanceMap() : nullptr;
+  if (!distanceMapEnabled && isRepresentative) {
+    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
+  }
+
+  if (isRepresentative) {
+    std::cout << "\n--" << "SIMULATION SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Triangle mesh file                      = " << fileName << "\n"
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n" 
+              << " Distance map enabled                    = " << (distanceMapEnabled ? "yes" : "no") << "\n";
+
+    if (distanceMapEnabled && dm) {
+      std::cout << " Distance map grid size                  = "
+                << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << "\n"
+                << " Distance map origin                     = ("
+                << dm->getOrigin()[0] << ", "
+                << dm->getOrigin()[1] << ", "
+                << dm->getOrigin()[2] << ")\n"
+                << " Distance map spacing                    = " << dm->getSpacing() << "\n";
+    }
+
+    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+
 }
 
 /**
@@ -132,6 +212,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
  */
 inline void setupArchimedesSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -157,6 +238,7 @@ inline void setupArchimedesSerial(int cfd_rank) {
  */
 inline void setupKroupaSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -180,6 +262,7 @@ inline void setupKroupaSerial(int cfd_rank) {
  */
 inline void setupCreepSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -203,6 +286,7 @@ inline void setupCreepSerial(int cfd_rank) {
  */
 inline void setupDraftKissTumbSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -226,6 +310,7 @@ inline void setupDraftKissTumbSerial(int cfd_rank) {
  */
 inline void setup2x2x2Serial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -242,6 +327,7 @@ inline void setup2x2x2Serial(int cfd_rank) {
  */
 inline void setupCylSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -276,6 +362,7 @@ inline void setupSpanSerial(int cfd_rank) {
  */
 inline void setupDCAVSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
 
   WorldID world = theWorld();
 
@@ -294,6 +381,8 @@ inline void setupDCAVSerial(int cfd_rank) {
  */
 inline void stepSimulationSerial() {
   WorldID world = theWorld();
+  auto &config = SimulationConfig::getInstance();
+  const bool isRepresentative = (config.getCfdRank() == 1);
   
   static int timestep = 0;
   // Get the configured time step size
@@ -315,14 +404,14 @@ inline void stepSimulationSerial() {
        body->getType() == cylinderType || 
        body->getType() == triangleMeshType) {
 
-      Vec3 vel = body->getLinearVel();
-      Vec3 ang = body->getAngularVel();
-
-      std::cout << "==Single Particle Data========================================================" << std::endl;
-      std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Velocity: " << body->getSystemID() << " " << body->getLinearVel()[2]  << " " << timestep * stepsize << std::endl;
-      std::cout << "Angular: " << body->getSystemID() << " "<< body->getAngularVel()  << " " << timestep * stepsize << std::endl;
-      
+      if (isRepresentative) {
+        const Vec3 vel = body->getLinearVel();
+        const Vec3 ang = body->getAngularVel();
+        std::cout << "==Single Particle Data========================================================" << std::endl;
+        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
+        std::cout << "Velocity: " << body->getSystemID() << " " << vel[2]  << " " << timestep * stepsize << std::endl;
+        std::cout << "Angular: " << body->getSystemID() << " "<< ang  << " " << timestep * stepsize << std::endl;
+      }
     }
   }
   timestep++;
