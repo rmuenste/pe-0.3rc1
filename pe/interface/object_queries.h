@@ -7,12 +7,14 @@
 #include <pe/config/Precision.h>
 
 typedef struct {
-  real position[3]; 
-  real velocity[3]; 
-  real angvel[3]; 
-  real force[3]; 
-  real torque[3]; 
+  real position[3];
+  real velocity[3];
+  real angvel[3];
+  real force[3];
+  real torque[3];
   real time;
+  real density;        // Material density from PE
+  real aabb[3];        // AABB extents (xmax-xmin, ymax-ymin, zmax-zmin)
   int localIdx;
   int uniqueIdx;
   int systemIdx;

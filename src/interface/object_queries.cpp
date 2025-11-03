@@ -1094,8 +1094,42 @@ void getPartStructByIdx(int idx, particleData_t *particle) {
     particle->localIdx  = idx;
     particle->systemIdx = -1;
     particle->time = -1.0;
-    
-    uint64toByteArray(body->getSystemID(), particle->bytes); 
+
+    // Get material density (need to cast to specific geometry type)
+    MaterialID mat;
+    if(body->getType() == sphereType) {
+      SphereID s = static_body_cast<Sphere>(body);
+      mat = s->getMaterial();
+    }
+    else if(body->getType() == capsuleType) {
+      CapsuleID c = static_body_cast<Capsule>(body);
+      mat = c->getMaterial();
+    }
+    else if(body->getType() == ellipsoidType) {
+      EllipsoidID e = static_body_cast<Ellipsoid>(body);
+      mat = e->getMaterial();
+    }
+    else if(body->getType() == cylinderType) {
+      CylinderID c = static_body_cast<Cylinder>(body);
+      mat = c->getMaterial();
+    }
+    else if(body->getType() == triangleMeshType) {
+      TriangleMeshID t = static_body_cast<TriangleMesh>(body);
+      mat = t->getMaterial();
+    }
+    else {
+      // Default material if type unknown
+      mat = Material::find(0);
+    }
+    particle->density = Material::getDensity(mat);
+
+    // Get AABB extents (max - min for each axis)
+    const auto& aabb = body->getAABB();
+    particle->aabb[0] = aabb[3] - aabb[0];  // x extent
+    particle->aabb[1] = aabb[4] - aabb[1];  // y extent
+    particle->aabb[2] = aabb[5] - aabb[2];  // z extent
+
+    uint64toByteArray(body->getSystemID(), particle->bytes);
 
   }
   else {
@@ -1242,8 +1276,42 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     particle->localIdx  = idx;
     particle->systemIdx = -1;
     particle->time = -1.0;
-    
-    uint64toByteArray(body->getSystemID(), particle->bytes); 
+
+    // Get material density (need to cast to specific geometry type)
+    MaterialID mat;
+    if(body->getType() == sphereType) {
+      SphereID s = static_body_cast<Sphere>(body);
+      mat = s->getMaterial();
+    }
+    else if(body->getType() == capsuleType) {
+      CapsuleID c = static_body_cast<Capsule>(body);
+      mat = c->getMaterial();
+    }
+    else if(body->getType() == ellipsoidType) {
+      EllipsoidID e = static_body_cast<Ellipsoid>(body);
+      mat = e->getMaterial();
+    }
+    else if(body->getType() == cylinderType) {
+      CylinderID c = static_body_cast<Cylinder>(body);
+      mat = c->getMaterial();
+    }
+    else if(body->getType() == triangleMeshType) {
+      TriangleMeshID t = static_body_cast<TriangleMesh>(body);
+      mat = t->getMaterial();
+    }
+    else {
+      // Default material if type unknown
+      mat = Material::find(0);
+    }
+    particle->density = Material::getDensity(mat);
+
+    // Get AABB extents (max - min for each axis)
+    const auto& aabb = body->getAABB();
+    particle->aabb[0] = aabb[3] - aabb[0];  // x extent
+    particle->aabb[1] = aabb[4] - aabb[1];  // y extent
+    particle->aabb[2] = aabb[5] - aabb[2];  // z extent
+
+    uint64toByteArray(body->getSystemID(), particle->bytes);
   }
   else {
     unsigned int i(0);
