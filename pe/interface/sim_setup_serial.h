@@ -171,6 +171,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   Vec3 chipPos = position;  // Keep hardcoded - no config function available
   TriangleMeshID chip = createTriangleMesh(++idx, chipPos, fileName, chipMat, false, true);
 
+#ifdef PE_USE_CGAL
   // Enable DistanceMap acceleration for the chip
   chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
   const bool distanceMapEnabled = chip->hasDistanceMap();
@@ -178,6 +179,9 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   if (!distanceMapEnabled && isRepresentative) {
     std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
   }
+#else
+  const bool distanceMapEnabled = false;
+#endif
 
   if (isRepresentative) {
     std::cout << "\n--" << "SIMULATION SETUP"
@@ -187,9 +191,10 @@ inline void setupFSIBenchSerial(int cfd_rank) {
               << " Fluid density                           = " << simRho << "\n"
               << " Gravity                                 = " << world->getGravity() << "\n"
               << " Triangle mesh file                      = " << fileName << "\n"
-              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n" 
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
               << " Distance map enabled                    = " << (distanceMapEnabled ? "yes" : "no") << "\n";
 
+#ifdef PE_USE_CGAL
     if (distanceMapEnabled && dm) {
       std::cout << " Distance map grid size                  = "
                 << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << "\n"
@@ -199,6 +204,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
                 << dm->getOrigin()[2] << ")\n"
                 << " Distance map spacing                    = " << dm->getSpacing() << "\n";
     }
+#endif
 
     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
