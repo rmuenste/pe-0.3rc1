@@ -362,6 +362,79 @@ inline void setupSpanSerial(int cfd_rank) {
 }
 
 /**
+ * @brief Lubrication Lab setup for serial mode
+ *
+ * Flexible setup for lubrication model experiments based on setupParticleBenchSerial.
+ * Configuration loaded from JSON file.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupLubricationLabSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+  WorldID world = theWorld();
+
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  // Serial mode: no MPI, no domain decomposition
+  // The entire simulation domain is owned by this process
+  // Domain boundaries are handled by the CFD code
+
+  // Create ground plane (global, owned by this domain)
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+  int idx = 0;
+  //==============================================================================================
+  // Lubrication Lab Configuration
+  //==============================================================================================
+  real radBench = config.getBenchRadius();
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-0.0, -0.0, 0.1275);
+
+  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  SphereID sphere(nullptr);
+  sphere = createSphere(idx, position, radBench, myMaterial, true);
+  ++idx;
+
+  // Set default timestep
+  TimeStep::stepsize(config.getStepsize());
+
+  if (isRepresentative) {
+    std::cout << "\n--" << "LUBRICATION LAB SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Particle radius                         = " << radBench << "\n"
+              << " Particle density                        = " << rhoParticle << "\n"
+              << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+
+  // Note: Particles will be added by FeatFloWer via the interface functions
+  // This setup just initializes the PE world for this domain
+}
+
+/**
  * @brief DCAV (Double Concentric Annular Viscometer?) setup for serial mode
  *
  * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
