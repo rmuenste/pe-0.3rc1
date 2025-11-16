@@ -32,6 +32,7 @@
 // Includes
 //*************************************************************************************************
 
+#include <string>
 #include <pe/core/BodyBinaryReader.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPISettings.h>
@@ -581,17 +582,44 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
             for( size_t i = 0; i < size; ++i ) {
                TriangleMesh::Parameters objparam;
                unmarshal( buffer, objparam, false );
-//               if( reassignSystemID )
-//                  objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
-//               TriangleMeshID obj = instantiateTriangleMesh( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.vertices_, objparam.faceIndices_, objparam.material_, objparam.visible_, objparam.fixed_, false );
-//               obj->setLinearVel( objparam.v_ );
-//               obj->setAngularVel( objparam.w_ );
-//               obj->setRemote( false );
-//               manager->add( obj );
-               pe_LOG_INFO_SECTION( log ) {
-                  log << "Skipping geometry type " << (int)geomType << ".\n";
-               }
+               if( reassignSystemID )
+                  objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
+               TriangleMeshID obj = instantiateTriangleMesh( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.vertices_, objparam.faceIndices_, objparam.material_, objparam.visible_, objparam.fixed_, false );
+               obj->setLinearVel( objparam.v_ );
+               obj->setAngularVel( objparam.w_ );
+               obj->setRemote( false );
 
+#ifdef PE_USE_CGAL
+               // Reconstruct DistanceMap from parameters if available
+               if (objparam.hasDistanceMapParams_) {
+                  // Check version compatibility
+                  if (objparam.dmVersion_ != 1) {
+                     pe_LOG_WARNING_SECTION( log ) {
+                        log << "Warning: DistanceMap version " << (int)objparam.dmVersion_
+                            << " not supported. Expected version 1. Skipping DistanceMap reconstruction.\n";
+                     }
+                  } else {
+                     pe_LOG_DEBUG_SECTION( log ) {
+                        log << "Rebuilding DistanceMap for TriangleMesh " << obj->getID()
+                            << " with resolution=" << objparam.dmResolution_
+                            << ", tolerance=" << objparam.dmTolerance_ << "\n";
+                     }
+                     obj->enableDistanceMapAcceleration(objparam.dmResolution_, objparam.dmTolerance_);
+                  }
+               }
+#else
+               // Error if checkpoint contains DistanceMap but build lacks CGAL
+               if (objparam.hasDistanceMapParams_) {
+                  throw std::runtime_error(
+                     "Checkpoint contains DistanceMap data for TriangleMesh " + std::to_string(objparam.uid_) +
+                     " but PE was built without CGAL support. "
+                     "Rebuild with -DCGAL=ON or use a checkpoint without DistanceMap acceleration."
+                  );
+               }
+#endif
+
+               if( global ) obj->setGlobal();
+               manager->add( obj );
             }
             break;
          }

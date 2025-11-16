@@ -494,41 +494,49 @@ inline void marshal( Buffer& buffer, const TriangleMesh& obj ) {
       marshal( buffer, obj.getFaceIndices()[i] );
 
 #ifdef PE_USE_CGAL
-   // Marshal DistanceMap data if available
+   // Marshal DistanceMap data if available (for MPI shadow copies)
    bool hasDistanceMap = obj.hasDistanceMap();
    buffer << hasDistanceMap;
-   
+
    if (hasDistanceMap) {
       const DistanceMap* dm = obj.getDistanceMap();
       if (dm) {
          buffer << dm->getNx() << dm->getNy() << dm->getNz();
          buffer << dm->getSpacing();
          marshal( buffer, dm->getOrigin() );
-         
+
          // Serialize SDF data
          const std::vector<pe::real>& sdfData = dm->getSdfData();
          buffer << sdfData.size();
          for( size_t i = 0; i < sdfData.size(); ++i )
             buffer << sdfData[i];
-         
+
          // Serialize alpha data
          const std::vector<int>& alphaData = dm->getAlphaData();
          buffer << alphaData.size();
          for( size_t i = 0; i < alphaData.size(); ++i )
             buffer << alphaData[i];
-         
+
          // Serialize normal data
          const std::vector<pe::Vec3>& normalData = dm->getNormalData();
          buffer << normalData.size();
          for( size_t i = 0; i < normalData.size(); ++i )
             marshal( buffer, normalData[i] );
-         
+
          // Serialize contact point data
          const std::vector<pe::Vec3>& contactData = dm->getContactPointData();
          buffer << contactData.size();
          for( size_t i = 0; i < contactData.size(); ++i )
             marshal( buffer, contactData[i] );
+
+         // Marshal DistanceMap rebuild parameters (for checkpointing - lightweight)
+         buffer << static_cast<uint8_t>(1);  // Version 1
+         buffer << obj.getDistanceMapResolution();
+         buffer << obj.getDistanceMapTolerance();
       }
+   } else {
+      // Even if no DistanceMap, write flag indicating no parameters
+      buffer << static_cast<uint8_t>(0);  // No parameters to restore
    }
 #endif
 }
@@ -562,41 +570,52 @@ inline void unmarshal( Buffer& buffer, TriangleMesh::Parameters& objparam, bool 
       unmarshal( buffer, objparam.faceIndices_[i] );
 
 #ifdef PE_USE_CGAL
-   // Unmarshal DistanceMap data if available
+   // Unmarshal DistanceMap data if available (for MPI shadow copies)
    buffer >> objparam.hasDistanceMapData_;
-   
+
    if (objparam.hasDistanceMapData_) {
       buffer >> objparam.nx_ >> objparam.ny_ >> objparam.nz_;
       buffer >> objparam.spacing_;
       unmarshal( buffer, objparam.origin_ );
-      
+
       // Deserialize SDF data
       size_t sdfSize;
       buffer >> sdfSize;
       objparam.sdfData_.resize( sdfSize );
       for( size_t i = 0; i < sdfSize; ++i )
          buffer >> objparam.sdfData_[i];
-      
+
       // Deserialize alpha data
       size_t alphaSize;
       buffer >> alphaSize;
       objparam.alphaData_.resize( alphaSize );
       for( size_t i = 0; i < alphaSize; ++i )
          buffer >> objparam.alphaData_[i];
-      
+
       // Deserialize normal data
       size_t normalSize;
       buffer >> normalSize;
       objparam.normalData_.resize( normalSize );
       for( size_t i = 0; i < normalSize; ++i )
          unmarshal( buffer, objparam.normalData_[i] );
-      
+
       // Deserialize contact point data
       size_t contactSize;
       buffer >> contactSize;
       objparam.contactPointData_.resize( contactSize );
       for( size_t i = 0; i < contactSize; ++i )
          unmarshal( buffer, objparam.contactPointData_[i] );
+
+      // Unmarshal DistanceMap rebuild parameters (for checkpointing)
+      buffer >> objparam.dmVersion_;
+      buffer >> objparam.dmResolution_;
+      buffer >> objparam.dmTolerance_;
+      objparam.hasDistanceMapParams_ = true;
+   } else {
+      // Check if we have rebuild parameters even without full data
+      uint8_t hasParams;
+      buffer >> hasParams;
+      objparam.hasDistanceMapParams_ = (hasParams != 0);
    }
 #endif
 }

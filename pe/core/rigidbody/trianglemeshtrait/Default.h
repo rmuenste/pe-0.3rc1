@@ -468,6 +468,8 @@ public:
    bool hasDistanceMap() const;
    const DistanceMap* getDistanceMap() const;
    void setDistanceMap(std::unique_ptr<DistanceMap> distanceMap);
+   int getDistanceMapResolution() const;
+   int getDistanceMapTolerance() const;
    //@}
    //**********************************************************************************************
 
@@ -492,6 +494,8 @@ protected:
 #ifdef PE_USE_CGAL
    mutable std::unique_ptr<DistanceMap> distanceMap_;
    mutable bool distanceMapEnabled_;
+   mutable int dmResolution_;       // Stored resolution parameter for checkpointing
+   mutable int dmTolerance_;        // Stored tolerance parameter for checkpointing
 #endif
    //@}
    //**********************************************************************************************
@@ -537,6 +541,8 @@ TriangleMeshTrait<C>::TriangleMeshTrait( id_t sid, id_t uid, const Vec3& gpos,
    , distanceAccelerationEnabled_(false)
    , maxReferencePoints_(100000)
    , distanceMapEnabled_(false)
+   , dmResolution_(50)
+   , dmTolerance_(5)
 #endif
 {}
 //*************************************************************************************************
@@ -1110,6 +1116,46 @@ void TriangleMeshTrait<C>::setDistanceMap(std::unique_ptr<DistanceMap> distanceM
 #ifdef PE_USE_CGAL
    distanceMap_ = std::move(distanceMap);
    distanceMapEnabled_ = (distanceMap_ != nullptr);
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Gets the stored DistanceMap resolution parameter.
+ *
+ * \return The resolution parameter used to create the DistanceMap.
+ *
+ * This method returns the resolution parameter that was used when enableDistanceMapAcceleration()
+ * was called. This value is needed for checkpointing to rebuild the DistanceMap on restart.
+ */
+template< typename C >  // Type of the configuration
+int TriangleMeshTrait<C>::getDistanceMapResolution() const
+{
+#ifdef PE_USE_CGAL
+   return dmResolution_;
+#else
+   return 0;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Gets the stored DistanceMap tolerance parameter.
+ *
+ * \return The tolerance parameter used to create the DistanceMap.
+ *
+ * This method returns the tolerance parameter that was used when enableDistanceMapAcceleration()
+ * was called. This value is needed for checkpointing to rebuild the DistanceMap on restart.
+ */
+template< typename C >  // Type of the configuration
+int TriangleMeshTrait<C>::getDistanceMapTolerance() const
+{
+#ifdef PE_USE_CGAL
+   return dmTolerance_;
+#else
+   return 0;
 #endif
 }
 //*************************************************************************************************
