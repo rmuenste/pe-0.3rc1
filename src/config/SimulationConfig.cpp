@@ -50,6 +50,7 @@ namespace pe {
 SimulationConfig::SimulationConfig()
     : timesteps_(15000)
     , stepsize_(0.001)
+    , substeps_(1)
     , processesX_(3)
     , processesY_(3)
     , processesZ_(3)
@@ -141,6 +142,8 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
         config.setTimesteps(j["timesteps_"].get<size_t>());
     if (j.contains("stepsize_"))
         config.setStepsize(j["stepsize_"].get<real>());
+    if (j.contains("substeps_"))
+        config.setSubsteps(j["substeps_"].get<int>());
 
     // Set process parameters
     if (j.contains("processesX_"))
