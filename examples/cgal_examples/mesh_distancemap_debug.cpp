@@ -249,9 +249,92 @@ void runDistanceMapComparison(TriangleMeshID checkpointMesh, TriangleMeshID fres
    std::cout << "  Resolution: " << resolution << std::endl;
    std::cout << "  Tolerance: " << tolerance << std::endl;
 
+   // Compare mesh vertices
+   std::cout << "\n" << pe_BLUE << "Comparing Mesh Geometry:" << pe_OLDCOLOR << std::endl;
+   const auto& checkpointVertices = checkpointMesh->getBFVertices();
+   const auto& freshVertices = freshMesh->getBFVertices();
+
+   std::cout << "  Checkpoint mesh: " << checkpointVertices.size() << " vertices" << std::endl;
+   std::cout << "  Fresh mesh: " << freshVertices.size() << " vertices" << std::endl;
+
+   if (checkpointVertices.size() != freshVertices.size()) {
+      std::cout << "  " << pe_RED << "[ERROR] Vertex count mismatch!" << pe_OLDCOLOR << std::endl;
+   } else {
+      size_t numDiff = 0;
+      real maxDiff = 0.0;
+      for (size_t i = 0; i < checkpointVertices.size(); ++i) {
+         real diff = (checkpointVertices[i] - freshVertices[i]).length();
+         if (diff > 1e-12) {
+            numDiff++;
+            maxDiff = std::max(maxDiff, diff);
+            if (numDiff <= 5) {  // Show first 5 differences
+               std::cout << "  Vertex[" << i << "] diff: " << std::scientific << diff
+                         << " (checkpoint: " << checkpointVertices[i] << ", fresh: " << freshVertices[i] << ")" << std::endl;
+            }
+         }
+      }
+      if (numDiff == 0) {
+         std::cout << "  " << pe_GREEN << "[MATCH] All vertices identical!" << pe_OLDCOLOR << std::endl;
+      } else {
+         std::cout << "  " << pe_RED << "[MISMATCH] " << numDiff << " vertices differ (max diff: "
+                   << std::scientific << maxDiff << ")" << pe_OLDCOLOR << std::endl;
+      }
+   }
+
    // Compare bounding boxes
    compareBoundingBoxes(checkpointMesh, freshMesh,
                        "Checkpoint Mesh", "Fresh Mesh");
+
+   // Compare mass properties
+   std::cout << "\n" << pe_BLUE << "Comparing Mass Properties:" << pe_OLDCOLOR << std::endl;
+   real checkpointMass = checkpointMesh->getMass();
+   real freshMass = freshMesh->getMass();
+
+   std::cout << "  Checkpoint mesh mass: " << std::setprecision(15) << checkpointMass << std::endl;
+   std::cout << "  Fresh mesh mass: " << freshMass << std::endl;
+
+   real massDiff = std::abs(checkpointMass - freshMass);
+   real massRelError = (checkpointMass > 1e-12) ? (massDiff / checkpointMass) : massDiff;
+   std::cout << "  Mass difference: " << std::scientific << massDiff << std::endl;
+   std::cout << "  Mass relative error: " << std::fixed << std::setprecision(6) << (massRelError * 100.0) << "%" << std::endl;
+
+   if (massRelError > 1e-10) {
+      std::cout << "  " << pe_RED << "[MISMATCH] Masses differ!" << pe_OLDCOLOR << std::endl;
+   } else {
+      std::cout << "  " << pe_GREEN << "[MATCH] Masses match" << pe_OLDCOLOR << std::endl;
+   }
+
+   // Compare inertia tensors
+   std::cout << "\n" << pe_BLUE << "Comparing Inertia Tensors:" << pe_OLDCOLOR << std::endl;
+   const auto& checkpointI = checkpointMesh->getBodyInertia();
+   const auto& freshI = freshMesh->getBodyInertia();
+
+   std::cout << "  Checkpoint mesh inertia:" << std::endl;
+   std::cout << "    [" << std::setprecision(15) << checkpointI[0] << ", " << checkpointI[1] << ", " << checkpointI[2] << "]" << std::endl;
+   std::cout << "    [" << checkpointI[3] << ", " << checkpointI[4] << ", " << checkpointI[5] << "]" << std::endl;
+   std::cout << "    [" << checkpointI[6] << ", " << checkpointI[7] << ", " << checkpointI[8] << "]" << std::endl;
+
+   std::cout << "  Fresh mesh inertia:" << std::endl;
+   std::cout << "    [" << std::setprecision(15) << freshI[0] << ", " << freshI[1] << ", " << freshI[2] << "]" << std::endl;
+   std::cout << "    [" << freshI[3] << ", " << freshI[4] << ", " << freshI[5] << "]" << std::endl;
+   std::cout << "    [" << freshI[6] << ", " << freshI[7] << ", " << freshI[8] << "]" << std::endl;
+
+   real maxInertiaDiff = 0.0;
+   for (int i = 0; i < 9; ++i) {
+      real diff = std::abs(checkpointI[i] - freshI[i]);
+      maxInertiaDiff = std::max(maxInertiaDiff, diff);
+   }
+
+   std::cout << "  Max inertia tensor element difference: " << std::scientific << maxInertiaDiff << std::endl;
+
+   if (maxInertiaDiff > 1e-10) {
+      std::cout << "  " << pe_RED << "[MISMATCH] Inertia tensors differ!" << pe_OLDCOLOR << std::endl;
+   } else {
+      std::cout << "  " << pe_GREEN << "[MATCH] Inertia tensors match" << pe_OLDCOLOR << std::endl;
+   }
+
+   // Reset output format to default (fixed, precision 6)
+   std::cout << std::fixed << std::setprecision(6);
 
    // Get DistanceMaps
    const DistanceMap* checkpointDM = checkpointMesh->getDistanceMap();
@@ -271,6 +354,68 @@ void runDistanceMapComparison(TriangleMeshID checkpointMesh, TriangleMeshID fres
    bool metadataMatch = compareDistanceMapMetadata(checkpointDM, freshDM,
                                                    "Checkpoint DistanceMap", "Fresh DistanceMap");
 
+   // Compare actual SDF data
+   std::cout << "\n" << pe_BLUE << "Comparing SDF Data Arrays:" << pe_OLDCOLOR << std::endl;
+
+   std::cout << "  Fetching SDF data from DistanceMaps..." << std::endl;
+   const auto& checkpointSDF = checkpointDM->getSdfData();
+   const auto& freshSDF = freshDM->getSdfData();
+
+   std::cout << "  Checkpoint SDF size: " << checkpointSDF.size() << std::endl;
+   std::cout << "  Fresh SDF size: " << freshSDF.size() << std::endl;
+
+   if (checkpointSDF.size() == 0) {
+      std::cout << "  " << pe_YELLOW << "[WARNING] Checkpoint SDF data is empty!" << pe_OLDCOLOR << std::endl;
+   }
+   if (freshSDF.size() == 0) {
+      std::cout << "  " << pe_YELLOW << "[WARNING] Fresh SDF data is empty!" << pe_OLDCOLOR << std::endl;
+   }
+
+   if (checkpointSDF.size() != freshSDF.size()) {
+      std::cout << "  " << pe_RED << "[ERROR] SDF data size mismatch!" << pe_OLDCOLOR << std::endl;
+      std::cout << "  Checkpoint: " << checkpointSDF.size() << " values" << std::endl;
+      std::cout << "  Fresh: " << freshSDF.size() << " values" << std::endl;
+   } else {
+      std::cout << "  SDF array size: " << checkpointSDF.size() << " values" << std::endl;
+
+      size_t numDiff = 0;
+      real maxDiff = 0.0;
+      real sumDiff = 0.0;
+      size_t sampleSize = std::min(size_t(10), checkpointSDF.size());
+
+      for (size_t i = 0; i < checkpointSDF.size(); ++i) {
+         real diff = std::abs(checkpointSDF[i] - freshSDF[i]);
+         if (diff > 1e-12) {
+            numDiff++;
+            maxDiff = std::max(maxDiff, diff);
+            sumDiff += diff;
+         }
+      }
+
+      if (numDiff == 0) {
+         std::cout << "  " << pe_GREEN << "[MATCH] All SDF values identical!" << pe_OLDCOLOR << std::endl;
+      } else {
+         real avgDiff = sumDiff / numDiff;
+         std::cout << "  " << pe_RED << "[MISMATCH] SDF values differ!" << pe_OLDCOLOR << std::endl;
+         std::cout << "  Number of differing values: " << numDiff << " / " << checkpointSDF.size()
+                   << " (" << (100.0 * numDiff / checkpointSDF.size()) << "%)" << std::endl;
+         std::cout << "  Max difference: " << std::scientific << maxDiff << std::endl;
+         std::cout << "  Average difference: " << avgDiff << std::endl;
+
+         // Show first few differences
+         std::cout << "\n  First " << sampleSize << " differing values:" << std::endl;
+         size_t shown = 0;
+         for (size_t i = 0; i < checkpointSDF.size() && shown < sampleSize; ++i) {
+            real diff = std::abs(checkpointSDF[i] - freshSDF[i]);
+            if (diff > 1e-12) {
+               std::cout << "    [" << i << "] Checkpoint: " << std::setprecision(15) << checkpointSDF[i]
+                         << ", Fresh: " << freshSDF[i] << ", Diff: " << std::scientific << diff << std::endl;
+               shown++;
+            }
+         }
+      }
+   }
+
    // Export VTI files for visual comparison
    std::cout << "\n" << pe_BLUE << "Exporting VTI files for visualization:" << pe_OLDCOLOR << std::endl;
 
@@ -288,6 +433,8 @@ void runDistanceMapComparison(TriangleMeshID checkpointMesh, TriangleMeshID fres
    } catch (const std::exception& e) {
       std::cerr << pe_RED << "ERROR exporting VTI files: " << e.what() << pe_OLDCOLOR << std::endl;
    }
+
+  std::cout << std::defaultfloat << std::setprecision(6);
 }
 
 #endif // PE_USE_CGAL
@@ -379,7 +526,7 @@ int main( int argc, char* argv[] )
    // Simulation world setup
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -9.81 );
-   theCollisionSystem()->setErrorReductionParameter(0.00);
+   theCollisionSystem()->setErrorReductionParameter(0.01);
 
    // Create materials
    MaterialID groundMaterial = createMaterial("ground", 2.5, 0.0, 0.3, 0.05, 0.2, 80, 100, 10, 11);
@@ -490,40 +637,39 @@ int main( int argc, char* argv[] )
       std::cout << pe_BROWN << "========================================" << pe_OLDCOLOR << std::endl;
       std::cout << "\nCheck the generated .vti files in ParaView for visual comparison." << std::endl;
 
-      // Remove checkpoint meshes and keep fresh meshes for simulation
-      // This tests if the checkpoint-restored DistanceMaps are causing issues
-      std::cout << "\n" << pe_BLUE << "Removing checkpoint meshes, keeping fresh meshes for simulation..." << pe_OLDCOLOR << std::endl;
+      // Remove fresh meshes and keep checkpoint meshes for simulation
+      // This tests the checkpoint-restored DistanceMaps to diagnose issues
+      std::cout << "\n" << pe_BLUE << "Removing fresh meshes, keeping checkpoint meshes for simulation..." << pe_OLDCOLOR << std::endl;
 
-      if (mesh1Checkpoint) {
-         // Find the checkpoint mesh in the world and destroy it
+      if (mesh1Fresh) {
+         // Find the fresh mesh in the world and destroy it
          for (World::Iterator it = world->begin(); it != world->end(); ++it) {
-            if (it->getID() == mesh1Checkpoint->getID()) {
+            if (it->getID() == mesh1Fresh->getID()) {
                world->destroy(it);
-               std::cout << "  Removed mesh 1 checkpoint (ID: " << mesh1Checkpoint->getID() << ")" << std::endl;
-               mesh1Checkpoint = nullptr;
+               std::cout << "  Removed mesh 1 fresh (ID: " << mesh1Fresh->getID() << ")" << std::endl;
+               mesh1Fresh = nullptr;
                break;
             }
          }
       }
 
-      if (mesh2Checkpoint) {
-         // Find the checkpoint mesh in the world and destroy it
+      if (mesh2Fresh) {
+         // Find the fresh mesh in the world and destroy it
          for (World::Iterator it = world->begin(); it != world->end(); ++it) {
-            if (it->getID() == mesh2Checkpoint->getID()) {
+            if (it->getID() == mesh2Fresh->getID()) {
                world->destroy(it);
-               std::cout << "  Removed mesh 2 checkpoint (ID: " << mesh2Checkpoint->getID() << ")" << std::endl;
-               mesh2Checkpoint = nullptr;
+               std::cout << "  Removed mesh 2 fresh (ID: " << mesh2Fresh->getID() << ")" << std::endl;
+               mesh2Fresh = nullptr;
                break;
             }
          }
       }
 
-      // Reassign fresh meshes to checkpoint variables for simulation loop
-      mesh1Checkpoint = mesh1Fresh;
-      mesh2Checkpoint = mesh2Fresh;
+      // Checkpoint meshes remain in the simulation
+      // (no reassignment needed - mesh1Checkpoint and mesh2Checkpoint already point to the loaded meshes)
 
       std::cout << "Bodies remaining in world: " << world->size() << std::endl;
-      std::cout << "\n" << pe_GREEN << "Now continuing with simulation using FRESH meshes..." << pe_OLDCOLOR << std::endl;
+      std::cout << "\n" << pe_GREEN << "Now continuing with simulation using CHECKPOINT meshes..." << pe_OLDCOLOR << std::endl;
 
    } else {
       // ===== NORMAL MODE =====
@@ -546,8 +692,8 @@ int main( int argc, char* argv[] )
          std::cout << "Loading mesh 2: " << mesh2File << std::endl;
 
 
-         mesh2Checkpoint = createTriangleMesh(++id, Vec3(0.0, 0.0, 7.695888000000004e-02), mesh2File, mesh2Material, false, true);
-         //mesh2Checkpoint = createTriangleMesh(++id, Vec3(0.0, 0.0, 0.1275), mesh2File, mesh2Material, false, true);
+         //mesh2Checkpoint = createTriangleMesh(++id, Vec3(0.0, 0.0, 7.695888000000004e-02), mesh2File, mesh2Material, false, true);
+         mesh2Checkpoint = createTriangleMesh(++id, Vec3(0.0, 0.0, 0.1275), mesh2File, mesh2Material, false, true);
          mesh2Checkpoint->enableDistanceMapAcceleration(dmResolution, dmTolerance);
          std::cout << "Mesh 2 created: " << mesh2Checkpoint->getBFVertices().size() << " vertices" << std::endl;
          std::cout << "  DistanceMap enabled: " << (mesh2Checkpoint->hasDistanceMap() ? "YES" : "NO") << std::endl;
@@ -565,6 +711,10 @@ int main( int argc, char* argv[] )
       std::cout << "\nVTK visualization enabled - output: " << vtkPath << std::endl;
    }
 
+   // Collision detection tracking
+   size_t collisionChecks = 0;
+   size_t contactsGenerated = 0;
+
    // Simulation loop
    {
       std::cout << "\n" << pe_BROWN << "========================================" << pe_OLDCOLOR << std::endl;
@@ -574,6 +724,33 @@ int main( int argc, char* argv[] )
          std::cout << pe_BROWN << "STARTING SIMULATION (NORMAL MODE)" << pe_OLDCOLOR << std::endl;
       }
       std::cout << pe_BROWN << "========================================" << pe_OLDCOLOR << std::endl;
+
+      // Check DistanceMap status before simulation
+      std::cout << "\nDistanceMap status before simulation:" << std::endl;
+      if (mesh1Checkpoint) {
+         std::cout << "  Mesh 1 (ID " << mesh1Checkpoint->getID() << "): hasDistanceMap="
+                   << (mesh1Checkpoint->hasDistanceMap() ? "YES" : "NO");
+         if (mesh1Checkpoint->hasDistanceMap()) {
+            const DistanceMap* dm = mesh1Checkpoint->getDistanceMap();
+            std::cout << ", getDistanceMap()=" << (dm ? "NON-NULL" : "NULL");
+            if (dm) {
+               std::cout << ", grid=" << dm->getNx() << "x" << dm->getNy() << "x" << dm->getNz();
+            }
+         }
+         std::cout << std::endl;
+      }
+      if (mesh2Checkpoint) {
+         std::cout << "  Mesh 2 (ID " << mesh2Checkpoint->getID() << "): hasDistanceMap="
+                   << (mesh2Checkpoint->hasDistanceMap() ? "YES" : "NO");
+         if (mesh2Checkpoint->hasDistanceMap()) {
+            const DistanceMap* dm = mesh2Checkpoint->getDistanceMap();
+            std::cout << ", getDistanceMap()=" << (dm ? "NON-NULL" : "NULL");
+            if (dm) {
+               std::cout << ", grid=" << dm->getNx() << "x" << dm->getNy() << "x" << dm->getNz();
+            }
+         }
+         std::cout << std::endl;
+      }
 
       for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
          std::cout << "\r Time step " << timestep+1 << " of " << timesteps+1 << "   " << std::flush;
@@ -598,17 +775,22 @@ int main( int argc, char* argv[] )
          }
 
          // Print positions periodically
-         if( timestep % 20 == 0 ) {
+//         if( timestep % 20 == 0 ) {
+//            std::cout << std::endl;
+//            std::cout << "Timestep " << timestep << " (t=" << timestep * timestep_size << "s):" << std::endl;
+//            if (mesh1Checkpoint) {
+//               std::cout << "  Mesh 1: pos=" << mesh1Checkpoint->getPosition()
+//                         << " vel=" << mesh1Checkpoint->getLinearVel() << std::endl;
+//            }
+//            if (mesh2Checkpoint) {
+//               std::cout << "  Mesh 2: pos=" << mesh2Checkpoint->getPosition()
+//                         << " vel=" << mesh2Checkpoint->getLinearVel() << std::endl;
+//            }
+//         }
+         if (mesh2Checkpoint) {
             std::cout << std::endl;
-            std::cout << "Timestep " << timestep << " (t=" << timestep * timestep_size << "s):" << std::endl;
-            if (mesh1Checkpoint) {
-               std::cout << "  Mesh 1: pos=" << mesh1Checkpoint->getPosition()
-                         << " vel=" << mesh1Checkpoint->getLinearVel() << std::endl;
-            }
-            if (mesh2Checkpoint) {
-               std::cout << "  Mesh 2: pos=" << mesh2Checkpoint->getPosition()
-                         << " vel=" << mesh2Checkpoint->getLinearVel() << std::endl;
-            }
+            std::cout << "  Mesh 2: pos=" << mesh2Checkpoint->getPosition()
+                      << " vel=" << mesh2Checkpoint->getLinearVel() << std::endl;
          }
       }
 
@@ -618,10 +800,10 @@ int main( int argc, char* argv[] )
 
       if (mesh1Checkpoint || mesh2Checkpoint) {
          std::cout << "Final states:" << std::endl;
-         if (mesh1Checkpoint) {
-            std::cout << "  Mesh 1: pos=" << mesh1Checkpoint->getPosition()
-                      << " vel=" << mesh1Checkpoint->getLinearVel() << std::endl;
-         }
+//         if (mesh1Checkpoint) {
+//            std::cout << "  Mesh 1: pos=" << mesh1Checkpoint->getPosition()
+//                      << " vel=" << mesh1Checkpoint->getLinearVel() << std::endl;
+//         }
          if (mesh2Checkpoint) {
             std::cout << "  Mesh 2: pos=" << mesh2Checkpoint->getPosition()
                       << " vel=" << mesh2Checkpoint->getLinearVel() << std::endl;
