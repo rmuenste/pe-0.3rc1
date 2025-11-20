@@ -413,6 +413,14 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         return true;
       }
     }
+    else if(body->getType() == triangleMeshType && (body->isFixed())) {
+      if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes); 
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
   }
   for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++) {
 

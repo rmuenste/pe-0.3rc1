@@ -435,6 +435,146 @@ inline void setupLubricationLabSerial(int cfd_rank) {
 }
 
 /**
+ * @brief Drill application setup for serial mode
+ *
+ * Setup for drill simulation with rotating drill mesh and workpiece.
+ * Based on FSI benchmark setup with additional drill mesh.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupDrillSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+  WorldID world = theWorld();
+
+  //==============================================================================================
+  // Simulation Input Parameters
+  //==============================================================================================
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0,
+                                               config.getTimesteps(),
+                                               false);
+  }
+
+  // Serial mode: no MPI, no domain decomposition
+  // The entire simulation domain is owned by this process
+  // Domain boundaries are handled by the CFD code
+  // Create ground plane (global, owned by this domain)
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+  int idx = 0;
+  //==============================================================================================
+  // Workpiece Configuration
+  //==============================================================================================
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-0.0, -0.0, 0.1275);
+  std::string fileName = std::string("span2_scaled.obj");
+
+  // Set default timestep
+  TimeStep::stepsize(config.getStepsize());
+  MaterialID chipMat = createMaterial("chip", rhoParticle, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+
+  Vec3 chipPos = position;  // Keep hardcoded - no config function available
+  TriangleMeshID chip = createTriangleMesh(++idx, chipPos, fileName, chipMat, false, true);
+
+#ifdef PE_USE_CGAL
+  // Enable DistanceMap acceleration for the chip (workpiece)
+  chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
+  const bool chipDistanceMapEnabled = chip->hasDistanceMap();
+  const DistanceMap* chipDM = chipDistanceMapEnabled ? chip->getDistanceMap() : nullptr;
+  if (!chipDistanceMapEnabled && isRepresentative) {
+    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
+  }
+#else
+  const bool chipDistanceMapEnabled = false;
+#endif
+
+  //==============================================================================================
+  // Drill Configuration
+  //==============================================================================================
+  std::string drillFileName = std::string("tool_scaled.obj");
+  Vec3 drillPos(0.0, 0.0, 0.0);  // Position drill above workpiece
+  MaterialID drillMat = createMaterial("drill", 7800.0, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);  // Steel density
+
+  // Create drill as global rigid body
+  TriangleMeshID drill = createTriangleMesh(++idx, drillPos, drillFileName, drillMat, false, true);
+  drill->setFixed(true);
+
+#ifdef PE_USE_CGAL
+  // Enable DistanceMap acceleration for the drill
+  drill->enableDistanceMapAcceleration(64, 3);
+  const bool drillDistanceMapEnabled = drill->hasDistanceMap();
+  const DistanceMap* drillDM = drillDistanceMapEnabled ? drill->getDistanceMap() : nullptr;
+  if (!drillDistanceMapEnabled && isRepresentative) {
+    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for drill" << std::endl;
+  }
+#else
+  const bool drillDistanceMapEnabled = false;
+#endif
+
+  if (isRepresentative) {
+    std::cout << "\n--" << "DRILL SIMULATION SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Workpiece mesh file                     = " << fileName << "\n"
+              << " Drill mesh file                         = " << drillFileName << "\n"
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
+              << " Workpiece distance map enabled          = " << (chipDistanceMapEnabled ? "yes" : "no") << "\n"
+              << " Drill distance map enabled              = " << (drillDistanceMapEnabled ? "yes" : "no") << "\n";
+
+#ifdef PE_USE_CGAL
+    if (chipDistanceMapEnabled && chipDM) {
+      std::cout << " Workpiece distance map grid size        = "
+                << chipDM->getNx() << " x " << chipDM->getNy() << " x " << chipDM->getNz() << "\n"
+                << " Workpiece distance map origin           = ("
+                << chipDM->getOrigin()[0] << ", "
+                << chipDM->getOrigin()[1] << ", "
+                << chipDM->getOrigin()[2] << ")\n"
+                << " Workpiece distance map spacing          = " << chipDM->getSpacing() << "\n";
+    }
+    if (drillDistanceMapEnabled && drillDM) {
+      std::cout << " Drill distance map grid size            = "
+                << drillDM->getNx() << " x " << drillDM->getNy() << " x " << drillDM->getNz() << "\n"
+                << " Drill distance map origin               = ("
+                << drillDM->getOrigin()[0] << ", "
+                << drillDM->getOrigin()[1] << ", "
+                << drillDM->getOrigin()[2] << ")\n"
+                << " Drill distance map spacing              = " << drillDM->getSpacing() << "\n";
+    }
+#endif
+
+    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+}
+
+/**
  * @brief DCAV (Double Concentric Annular Viscometer?) setup for serial mode
  *
  * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
@@ -487,9 +627,22 @@ inline void stepSimulationSerial() {
         const Vec3 vel = body->getLinearVel();
         const Vec3 ang = body->getAngularVel();
         std::cout << "==Single Particle Data========================================================" << std::endl;
-        std::cout << "Position: " << body->getSystemID() << " " << body->getPosition()[2]  << " " << timestep * stepsize << std::endl;
-        std::cout << "Velocity: " << body->getSystemID() << " " << vel[2]  << " " << timestep * stepsize << std::endl;
-        std::cout << "Angular: " << body->getSystemID() << " "<< ang  << " " << timestep * stepsize << std::endl;
+
+        std::cout << "Position: " << body->getSystemID() << " " << timestep * stepsize << " " <<
+                                     body->getPosition()[0] << " " <<
+                                     body->getPosition()[1] << " " <<
+                                     body->getPosition()[2] << std::endl;
+        std::cout << "Velocity: " << body->getSystemID() << " " << timestep * stepsize << " " << 
+                                     body->getLinearVel()[0] << " " <<
+                                     body->getLinearVel()[1] << " " <<
+                                     body->getLinearVel()[2] << std::endl;
+        std::cout << "Omega:    " << body->getSystemID() << " " << timestep * stepsize << " " << 
+                                     body->getAngularVel()[0] << " " <<
+                                     body->getAngularVel()[1] << " " <<
+                                     body->getAngularVel()[2] << std::endl;
+
+
+
       }
     }
   }
