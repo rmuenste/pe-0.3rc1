@@ -3356,10 +3356,14 @@ void TriangleMesh::enableDistanceMapAcceleration(int resolution, int tolerance)
 {
 #ifdef PE_USE_CGAL
    try {
+      // Store parameters for checkpointing
+      dmResolution_ = resolution;
+      dmTolerance_ = tolerance;
+
       // Access protected members from trait base class
       distanceMap_ = DistanceMap::create(this, resolution, tolerance);
       distanceMapEnabled_ = (distanceMap_ != nullptr);
-      
+
       if (!distanceMapEnabled_) {
          std::cerr << "Warning: Failed to create DistanceMap for TriangleMesh " << getID() << std::endl;
       }

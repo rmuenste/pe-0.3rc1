@@ -127,7 +127,7 @@ public:
       Vertices     vertices_;
       IndicesLists faceIndices_;
 #ifdef PE_USE_CGAL
-      // DistanceMap reconstruction data for shadow copies
+      // DistanceMap reconstruction data for shadow copies (MPI communication)
       bool hasDistanceMapData_;
       std::vector<pe::real> sdfData_;
       std::vector<int> alphaData_;
@@ -136,9 +136,17 @@ public:
       int nx_, ny_, nz_;
       pe::real spacing_;
       pe::Vec3 origin_;
-      
+
+      // DistanceMap rebuild parameters for checkpointing (lightweight)
+      bool hasDistanceMapParams_;     // Flag indicating DistanceMap was enabled
+      uint8_t dmVersion_;             // Version for future compatibility (currently 1)
+      int dmResolution_;              // Resolution parameter for rebuild
+      int dmTolerance_;               // Tolerance parameter for rebuild
+      pe::real dmSpacing_;            // Spacing parameter (if explicitly set, otherwise derived from resolution)
+
       // Constructor to initialize DistanceMap fields
-      Parameters() : hasDistanceMapData_(false), nx_(0), ny_(0), nz_(0), spacing_(0.0) {}
+      Parameters() : hasDistanceMapData_(false), nx_(0), ny_(0), nz_(0), spacing_(0.0),
+                     hasDistanceMapParams_(false), dmVersion_(1), dmResolution_(50), dmTolerance_(5), dmSpacing_(0.0) {}
 #endif
    };
    //**********************************************************************************************

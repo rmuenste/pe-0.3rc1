@@ -3760,7 +3760,7 @@ void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& c
 {
    // Force a defined order of collision detection across processes
    if( mB->getSystemID() < mA->getSystemID() )
-      std::swap( mA, mB );
+     std::swap( mA, mB );
 
    // NEW: Priority-based collision detection
    // Try DistanceMap-based collision detection first (if available)
@@ -3896,7 +3896,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
    const DistanceMap* distMap = nullptr;
    TriangleMeshID queryMesh = nullptr;
    TriangleMeshID referenceMesh = nullptr;
-   
+
    if (mA->hasDistanceMap()) {
       distMap = mA->getDistanceMap();
       referenceMesh = mA;
@@ -3908,7 +3908,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
    } else {
       return false; // No DistanceMap available
    }
-   
+
    if (!distMap) {
       return false;
    }

@@ -1,190 +1,352 @@
-# What’s solid already
+# DistanceMap Implementation Status & Remaining Improvements
 
-* **Coherent SDF pipeline** (AABB tree → signed distance via `Side_of_triangle_mesh` → trilinear interpolation).
-* **Clear frame handling** (BF↔WF transforms) — critical for SDFs living in the ref mesh’s local frame.
-* **Clean integration** (try SDF; else GJK/EPA) with a single collision entry point.
+## Implementation Summary (Updated 2025-11-19)
 
----
+### ✅ What's Implemented and Working Well
 
-# High-impact issues & immediate fixes
+#### Core SDF Infrastructure
+* **Coherent SDF pipeline** (AABB tree → signed distance via `Side_of_triangle_mesh` → trilinear interpolation)
+* **Clear frame handling** (BF↔WF transforms) — critical for SDFs living in the ref mesh's local frame
+* **Clean integration** (try SDF; else GJK/EPA) with a single collision entry point
+* **Checkpointing support** — DistanceMap parameters saved/restored for simulation restart (rebuilds SDF from parameters)
 
-## 1) Single contact point: physically under-constrained
+#### Multi-Contact Manifold System ✅ IMPLEMENTED (Commit 8745056)
+* **Comprehensive candidate gathering:**
+  * ✅ Vertex sampling (all vertices)
+  * ✅ Edge midpoint sampling (with deduplication)
+  * ✅ Triangle barycenter sampling (face-face collision detection)
+  * Eliminates face-face collision misses from vertex-only testing
 
-**Effect:** Chairs/tables rock or collapse; wrong torques; friction jitter.
-**Fix now:** Build a *persistent contact manifold* per pair; keep 3–8 points total.
+* **Contact clustering & reduction:**
+  * ✅ Proximity clustering (2.0 × DistanceMap spacing)
+  * ✅ Normal similarity grouping (dot product > 0.9)
+  * ✅ Prevents redundant nearby contacts
 
-* **Candidate gathering** (cheap, fits your current loop):
+* **Representative selection:**
+  * ✅ Deepest contact per cluster (max penetration)
+  * ✅ Extremal contacts in tangent directions (up to 4 per cluster)
+  * ✅ Proper tangent space calculations with orthonormal basis
+  * ✅ Contact limit: 6 contacts per mesh pair for performance
 
-  * While scanning vertices, collect all with `distance < 0` (or `< threshold`).
-  * Augment with **edge midpoints** and **triangle barycenters** for the query mesh to catch face–face/edge–face penetrations that no vertex samples (this is crucial; see §3).
-* **Clustering & reduction:**
+* **Additional features:**
+  * ✅ Comprehensive debug logging with cluster statistics
+  * ✅ Contact area estimation for plane collisions
+  * ✅ Configurable clustering for plane-mesh collisions (compile-time flag)
 
-  * Cluster by proximity (e.g., radius = 2–3 \* spacing) **and** normal similarity (dot > 0.9).
-  * For each cluster/patch, pick up to 4 representatives: the deepest point + extremals in two tangent directions (a “quadrant” heuristic).
-* **Persistence:**
-
-  * Match contacts frame-to-frame by nearest neighbor in BF, re-project onto φ=0, **warm-start** impulses.
-
-> Start simple: keep `max_contacts=6` per pair; you’ll get 90% of the benefit.
-
----
-
-## 2) Vertex-only tests miss collisions
-
-Your doc states “complete vertex enumeration (no sampling)”. That still **misses face–face** configurations where neither side has a vertex inside the other.
-
-**Fix:** For the *query* mesh, add:
-
-* **Edge midpoints** (or a 2-pt subdivision of long edges).
-* **Triangle barycenters** (1 per face).
-  Gate this with a cheap **broadphase** (BVH vs. ref AABB of negative band) to keep it fast.
+**Result:** Chair/table stability significantly improved; proper torque distribution; reduced friction jitter.
 
 ---
 
-## 3) Symmetry: query both directions when both SDFs exist
+## Remaining High-Priority Improvements
 
-Right now you pick whichever mesh has a distance map. That’s fine if only one has it, but if **both have SDFs**, do **A→B and B→A** and union the manifolds (deduplicate by position/normal). This dramatically reduces misses in grazing contacts and thin features.
+### 1) Symmetric Testing (High Priority)
 
----
-
-## 4) Normal/closest-point consistency
-
-You mix **SDF gradient** for normals with **AABB closest point** for the contact point. These can disagree near sharp features → tangential energy injection/jitter.
-
-**Better options:**
-
-* **Project along gradient:** `x_c = x - φ(x) * n(x)` (one Newton step; optionally refine by 1–2 secant steps using interpolated φ).
-* Or **use CGAL closest point** for both position **and** normal (derive normal from the face; blend if on edges/vertices).
-* If you keep gradient normals, **average normals per cluster** to de-noise.
-
----
-
-## 5) Gradient quality & bounds
-
-* Use **centered differences** for ∇φ; clamp when sampling hits grid edges.
-* Add a tiny **ε** in normalization.
-* Consider **on-the-fly gradient** from φ instead of storing normals (saves memory and guarantees consistency).
-
----
-
-## 6) Sign convention & thresholds
-
-Doc says **positive outside**, **negative inside** — good. In code you check `distance < contactThreshold`. Make this explicit:
-
-* Use `penetration = -min(distance, 0)`.
-* Use a **band** around 0 for candidate collection (e.g., `distance < 2*spacing`) to build patches even when barely touching.
-
----
-
-## 7) Memory math in the doc is off
-
-You claim `≈ nx*ny*nz*40 bytes (double)`. With what you list:
-
-* `sdf_`: 8 B
-* `alpha_`: 8 B (but see §8)
-* `normals_`: 3\*8 = 24 B
-* `contact_points_`: 24 B
-  **Total** ≈ **64 B** per voxel (or **80 B** if `alpha_` is used). Correct the doc and/or reduce storage (see below).
-
----
-
-## 8) Storage & perf knobs
-
-* If you **compute gradient on demand**, you can drop `normals_`.
-* If you **project along gradient**, you can drop `contact_points_`.
-* `alpha_` is listed but not used in the doc — either remove it or document how it’s used (e.g., cached barycentric weights).
-
-Consider:
-
-* **Narrow band SDF** (store only |φ|≤band) + **mip pyramid** for early-out.
-* **Half precision** for φ in far field if memory is tight.
-
----
-
-## 9) Contact orientation
-
-You flip the normal when `referenceMesh == mB`. Make sure the final normal follows your engine convention (e.g., points from **A→B**). Add an assertion in debug builds to check that the relative positions satisfy `n·(x_B - x_A) ≥ 0`.
-
----
-
-## 10) Robustness of inside/outside
-
-`Side_of_triangle_mesh` can be brittle on **non-watertight** or **self-intersecting** meshes. For assets like scanned or CAD-repaired geometry, a **generalized winding number** or **ray stabbing with tie-breaking** is more stable. At minimum, dilate the mesh by a **tolerance band** equal to your grid spacing to stabilize signs.
-
----
-
-## 11) CCD guardrail
-
-Even a fast SDF narrow-phase can tunnel. Add a **conservative advancement** step using φ and ‖∇φ‖ to bracket TOI, or sub-step when the minimum distance crosses a small positive threshold.
-
----
-
-# Concrete “do-next” (drop-in with your current code)
-
-### A) Multi-contact manifold (within your current loop)
-
+**Current Behavior:**
 ```cpp
-struct Cand { Vec3 x_w; Vec3 n_w; pe::real phi; Vec3 x0_w; }; // x0_w: projected contact
-std::vector<Cand> cands;
-
-// 1) Collect candidates: vertices, plus edge midpoints & face barycenters (see §2)
-for (auto p_w : query_points /* verts + mids + bary */) {
-    Vec3 p_b = referenceMesh->pointFromWFtoBF(p_w);
-    auto phi = distMap->interpolateDistance(p_b[0], p_b[1], p_b[2]);
-    if (phi < band) {
-        Vec3 n_b = distMap->interpolateNormal(p_b[0], p_b[1], p_b[2]).normalized();
-        Vec3 n_w = referenceMesh->vectorFromBFtoWF(n_b);
-        // project along gradient for consistent x0
-        Vec3 x0_b = p_b - phi * n_b;
-        Vec3 x0_w = referenceMesh->pointFromBFtoWF(x0_b);
-        cands.push_back({p_w, n_w, phi, x0_w});
-    }
+// In collideWithDistanceMap (lines 3900-3910 in MaxContacts.h)
+if (mA->hasDistanceMap()) {
+    distMap = mA->getDistanceMap();
+    referenceMesh = mA;
+    queryMesh = mB;
+} else if (mB->hasDistanceMap()) {
+    distMap = mB->getDistanceMap();
+    referenceMesh = mB;
+    queryMesh = mA;
 }
-
-// 2) Cluster by position (r = 2–3 * spacing) and normal (dot > 0.9)
-// 3) For each cluster, pick up to 4 reps: deepest and extremals in two tangents
-// 4) Add to 'contacts' with penetration depth = max(0, -phi), position = x0_w, normal = n_w
 ```
 
-### B) Symmetric pass when both SDFs exist
+**Issue:** When **both** meshes have DistanceMaps, only one direction is tested (A→B or B→A, whichever comes first).
 
-Run the same routine swapping roles and **merge** contacts (dedupe by x within 1–2 \* spacing and normal similarity).
+**Fix Needed:**
+```cpp
+// Proposed implementation
+bool hasContactA = false, hasContactB = false;
 
-### C) Persistence
+if (mA->hasDistanceMap()) {
+    hasContactA = collideWithDistanceMapUnidirectional(mA, mB, contacts);
+}
 
-Keep previous step’s contacts and try to **re-match** by nearest neighbor in BF, then **re-project** and **warm-start** impulses.
+if (mB->hasDistanceMap()) {
+    hasContactB = collideWithDistanceMapUnidirectional(mB, mA, contacts);
+}
 
----
+// Deduplicate merged contacts by position (within 1-2 * spacing) and normal similarity
+if (hasContactA && hasContactB) {
+    deduplicateContacts(contacts, spacing);
+}
 
-# Solver-side recommendations (since you use semi-implicit hard contact)
+return hasContactA || hasContactB;
+```
 
-* **Friction pyramid**: 4 directions (or 8 if iterations are cheap) per contact.
-* **Small normal compliance** (ERP/CFM) to suppress buzz, especially with SDF normal noise.
-* **Split impulses** for penetration correction to remove energy injection on restitution.
-* **Rolling resistance & torsional friction** (tiny coefficients) help tall stacks and “chair legs” stability a lot.
+**Benefits:**
+* Dramatically reduces misses in grazing contacts
+* Better detection for thin features and edge-edge contacts
+* More robust collision detection for complex geometry
 
----
-
-# Testing you’ll want (fast, diagnostic)
-
-* **Chair on plane** (4 legs): drift & angular jitter with 1, 2, 4, 6 contact limits.
-* **Face–face** plate on plate (no vertex penetration): verify that edge/bary sampling finds contacts.
-* **Grazing contact** (thin wedge): normal continuity while sliding.
-* **Friction ramp**: stick→slip angle ≈ arctan(μ).
-* **Resolution sweep**: spacing = 0.5%, 1%, 2% of bbox diag; penetration bias & jitter vs. spacing.
-
----
-
-# Minor doc nits to fix
-
-* Correct **memory estimate** (see §7).
-* Clarify **penetration criterion** (negative φ vs. positive threshold band).
-* Mention that **closest point** and **normal** are either both SDF-derived or both CGAL-derived — don’t mix without noting implications.
-* State clearly whether you **also** test **edge midpoints / face centers** (currently the doc says no).
+**Implementation Notes:**
+* Refactor current `collideWithDistanceMap` into unidirectional version
+* Add contact deduplication function with spatial hashing or naive O(n²) for small contact sets
+* Use position proximity (1-2 × spacing) and normal similarity (dot > 0.95) for deduplication
 
 ---
 
-# Summary
+### 2) Contact Persistence & Warm-Starting (Medium Priority)
 
-Your SDF path is a solid base and already a big win over pure GJK/EPA for complex, non-convex meshes. The main limitation is the *single-point* model and vertex-only sampling. Implementing a **persistent multi-point manifold** (with edge/bary sampling) is the single biggest upgrade: it fixes chairs/tables, improves torque correctness, and stabilizes stacks — without blowing up cost if you cap contacts at \~6 and reuse warm-starts. Add symmetry when both shapes have SDFs, and make normals/closest points consistent. The rest (CCD guardrail, sign robustness, memory trims) are incremental and straightforward.
+**Current Behavior:** Contacts rebuilt from scratch each frame; solver starts with zero impulses.
 
+**Issue:** Contact jittering, lost temporal coherence, slower constraint convergence.
+
+**Fix Needed:**
+* **Frame-to-frame contact matching:**
+  * Store previous frame's contacts in body-frame coordinates
+  * Match by nearest neighbor distance in BF (within tolerance)
+  * Re-project matched contacts onto current φ=0 surface
+
+* **Warm-start impulses:**
+  * Store accumulated impulses (normal + friction) per contact
+  * Transfer impulses to matched contacts in next frame
+  * Apply temporal decay factor (0.95-0.99) to prevent stale impulse buildup
+
+**Implementation Approach:**
+```cpp
+struct PersistentContact {
+    Vec3 positionBF;           // In reference mesh body frame
+    Vec3 normalBF;             // In reference mesh body frame
+    real normalImpulse;        // Accumulated normal impulse
+    Vec3 tangentialImpulse;    // Accumulated friction impulse
+    int lifetimeFrames;        // Track contact age
+};
+
+// Per mesh-pair storage (in RigidBody or ContactCache)
+std::vector<PersistentContact> previousContacts_;
+
+// Match current contacts to previous, warm-start solver
+void matchAndWarmStart(const std::vector<Contact>& current) {
+    for (auto& contact : current) {
+        auto* prev = findNearestMatch(contact, previousContacts_);
+        if (prev && isValidMatch(contact, *prev)) {
+            contact.setWarmStartImpulse(prev->normalImpulse * 0.95,
+                                        prev->tangentialImpulse * 0.95);
+        }
+    }
+}
+```
+
+**Benefits:**
+* Reduced jittering and contact oscillation
+* Faster constraint solver convergence (fewer iterations)
+* More stable stacking behavior
+* Smoother sliding motion
+
+---
+
+### 3) Continuous Collision Detection (CCD) Guardrail (Low-Medium Priority)
+
+**Issue:** Fast-moving objects can tunnel through thin geometry even with SDF acceleration.
+
+**Fix Options:**
+
+**A) Conservative Advancement:**
+```cpp
+real computeSafeTOI(const DistanceMap* distMap,
+                    const Vec3& startPos, const Vec3& velocity, real dt) {
+    // Use SDF gradient magnitude as Lipschitz bound for conservative advancement
+    real minDist = distMap->interpolateDistance(startPos);
+    real gradMag = distMap->interpolateGradient(startPos).length();
+
+    // Conservative safe distance based on gradient
+    real safeDist = std::max(minDist - distMap->getSpacing(), 0.0);
+    real maxSafeVelocity = safeDist * gradMag; // Lipschitz bound
+
+    if (velocity.length() > maxSafeVelocity) {
+        return safeDist / velocity.length(); // Sub-step needed
+    }
+    return dt; // Full timestep safe
+}
+```
+
+**B) Adaptive Sub-Stepping:**
+```cpp
+// In time integration loop, before position update
+for each body pair with DistanceMap {
+    real minDist = computeMinimumDistance(bodyA, bodyB);
+    real relativeSpeed = (bodyA.velocity - bodyB.velocity).length();
+
+    if (minDist < threshold && relativeSpeed > speedThreshold) {
+        int subSteps = std::ceil(relativeSpeed * dt / minDist);
+        // Trigger sub-stepping for this pair
+    }
+}
+```
+
+**Benefits:**
+* Prevents tunneling through thin geometry
+* Maintains collision detection reliability at high velocities
+* Leverages SDF's distance information for efficient bracketing
+
+**Trade-offs:**
+* Adds computational overhead for fast-moving objects
+* Requires integration with time-stepping loop
+* Most benefit for high-speed impact scenarios
+
+---
+
+## Medium-Priority Refinements
+
+### 4) Normal/Contact Point Consistency
+
+**Current Approach:** Mix of SDF gradient normals and CGAL AABB closest points.
+
+**Potential Issues:** Near sharp features, gradient and closest point can disagree → tangential energy injection.
+
+**Options:**
+
+**A) Gradient-Based Projection (Recommended):**
+```cpp
+// Project query point onto surface along gradient
+Vec3 localNormal = distMap->interpolateNormal(localPos).getNormalized();
+real phi = distMap->interpolateDistance(localPos);
+Vec3 projectedContact = localPos - phi * localNormal;
+
+// Optional: refine with 1-2 Newton steps
+for (int i = 0; i < 2; ++i) {
+    real newPhi = distMap->interpolateDistance(projectedContact);
+    Vec3 newNormal = distMap->interpolateNormal(projectedContact).getNormalized();
+    projectedContact -= newPhi * newNormal;
+}
+```
+
+**B) Cluster Normal Averaging:**
+```cpp
+// Already implemented: average normals per cluster to de-noise
+Vec3 averageNormal = Vec3(0, 0, 0);
+for (size_t idx : cluster.candidateIndices) {
+    averageNormal += candidates[idx].worldNormal;
+}
+averageNormal = averageNormal.getNormalized();
+```
+
+**Status:** Current averaging approach is reasonable; gradient projection could further improve consistency near sharp features.
+
+---
+
+### 5) Memory Optimization Opportunities
+
+**Current Storage per Voxel:**
+* `sdf_`: 8 bytes (double)
+* `alpha_`: 8 bytes (purpose unclear — document or remove)
+* `normals_`: 24 bytes (3 doubles)
+* `contact_points_`: 24 bytes (3 doubles)
+* **Total:** 64 bytes/voxel (or 80 bytes if alpha is used)
+
+**Note:** Documentation claims 40 bytes/voxel — should be corrected to 64 bytes.
+
+**Optimization Options:**
+
+1. **On-the-fly gradient computation:**
+   * Drop `normals_` storage (saves 24 bytes/voxel)
+   * Compute gradient from `sdf_` using centered differences on query
+   * Trade: -37% memory for +small compute per query
+
+2. **Drop precomputed contact points:**
+   * If using gradient projection, `contact_points_` redundant (saves 24 bytes/voxel)
+   * Compute on-the-fly: `contact = queryPos - phi * normal`
+
+3. **Narrow-band SDF:**
+   * Store only voxels with |φ| ≤ band (e.g., 5 × spacing)
+   * Use sparse storage (hash map or run-length encoding)
+   * Can reduce memory by 80-95% for large grids with small geometry
+
+4. **Half-precision far-field:**
+   * Use `float16` for voxels with |φ| > threshold
+   * Keep `double` precision near surface
+
+**Recommendation:** Start with on-the-fly gradient computation (easy win); defer narrow-band until memory becomes bottleneck.
+
+---
+
+### 6) Robustness Improvements
+
+**A) Inside/Outside Classification:**
+* Current: `CGAL::Side_of_triangle_mesh` (brittle on non-watertight meshes)
+* Improvement: Add tolerance band (dilate mesh by grid spacing) to stabilize signs
+* Alternative: Generalized winding number for CAD/scanned geometry
+
+**B) Gradient Quality:**
+* Use centered differences for ∇φ
+* Clamp near grid boundaries
+* Add epsilon (1e-10) in normalization to prevent division by zero
+
+**C) Sign Convention:**
+* Already correct: positive outside, negative inside
+* Make penetration calculation explicit: `penetration = -min(distance, 0.0)`
+
+---
+
+## Solver-Side Recommendations
+
+(These apply to the constraint solver, not DistanceMap directly)
+
+* **Friction pyramid**: 4-8 directions per contact for anisotropic friction
+* **Small normal compliance** (ERP/CFM): suppress contact buzz from SDF gradient noise
+* **Split impulses**: separate penetration correction from velocity solve to prevent energy injection
+* **Rolling resistance & torsional friction**: tiny coefficients (0.001-0.01) dramatically improve tall stack stability
+
+---
+
+## Diagnostic Testing Checklist
+
+Recommended tests to validate improvements:
+
+* ✅ **Vertex-only miss test**: Face-face plate collision (FIXED with edge/bary sampling)
+* ⚠️ **Symmetric detection**: Two meshes with DistanceMaps, grazing contact (TODO: implement symmetric testing)
+* ⚠️ **Persistence test**: Rolling sphere, track contact lifetime and impulse warm-starting (TODO: implement persistence)
+* ✅ **Multi-contact stability**: Chair on plane (4 legs), verify no rocking (FIXED with manifold)
+* ⚠️ **CCD test**: Fast-moving sphere vs thin wall, verify no tunneling (TODO: implement CCD guardrail)
+* 📊 **Resolution sweep**: spacing = 0.5%, 1%, 2% of bbox diagonal; measure penetration error vs. spacing
+* 📊 **Performance benchmark**: GJK/EPA vs DistanceMap collision time for various mesh complexities
+
+---
+
+## Implementation Priority Ranking
+
+### High Priority (Immediate)
+1. **Symmetric testing** when both meshes have DistanceMaps
+   * Effort: Medium (1-2 days)
+   * Impact: High (better collision coverage, fewer misses)
+
+### Medium Priority (Next Sprint)
+2. **Contact persistence & warm-starting**
+   * Effort: High (3-5 days, requires solver integration)
+   * Impact: High (stability, convergence speed)
+
+3. **Memory optimization** (on-the-fly gradients)
+   * Effort: Low (1 day)
+   * Impact: Medium (memory reduction, slight compute increase)
+
+### Low Priority (Future Work)
+4. **CCD guardrail** for high-velocity scenarios
+   * Effort: Medium (2-3 days)
+   * Impact: Medium (specific to fast-moving objects)
+
+5. **Narrow-band SDF** for memory-constrained applications
+   * Effort: High (4-7 days, significant refactor)
+   * Impact: Medium (conditional on memory bottleneck)
+
+---
+
+## Conclusion
+
+The DistanceMap system has matured significantly with the **multi-contact manifold implementation** (commit 8745056), addressing the primary stability issues from single-point contacts. The system now provides:
+
+* ✅ Comprehensive collision detection (vertex + edge + face sampling)
+* ✅ Stable multi-contact manifolds with intelligent clustering
+* ✅ Proper coordinate transformation handling
+* ✅ Checkpoint/restart support
+
+**Key remaining work:**
+* **Symmetric testing** for bidirectional DistanceMap collision (highest priority)
+* **Contact persistence** for temporal coherence and warm-starting
+* **CCD guardrails** for high-velocity robustness
+
+The system is production-ready for most scenarios; remaining improvements target advanced use cases (very fast motion, very complex contact scenarios, memory-constrained deployments).

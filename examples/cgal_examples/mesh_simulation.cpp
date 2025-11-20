@@ -39,12 +39,15 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <pe/core.h>
 #include <pe/support.h>
 #include <pe/povray.h>
 #include <pe/vtk.h>
 #include <pe/util.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
+#include <pe/core/BodyBinaryWriter.h>
+#include <pe/core/BodyBinaryReader.h>
 #include <pe/vtk/UtilityWriters.h>
 
 using namespace pe;
@@ -78,9 +81,9 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps ( 2500 );    // Total number of time steps
+   const unsigned int timesteps ( 2501 );    // Total number of time steps
    const unsigned int visspacing(   10 );   // Spacing between two visualizations
-   const real timestep_size( 0.005 );       // Size of each simulation time step
+   const real timestep_size( 0.001 );       // Size of each simulation time step
          unsigned int id( 0 );              // User-specific ID counter
 
    // Visualization variables
@@ -92,7 +95,9 @@ int main( int argc, char* argv[] )
    CommandLineInterface& cli = CommandLineInterface::getInstance();
    cli.getDescription().add_options()
      ( "mesh1", value<std::string>()->default_value(""), "first mesh file to be loaded" )
-     ( "mesh2", value<std::string>()->default_value(""), "second mesh file to be loaded" );
+     ( "mesh2", value<std::string>()->default_value(""), "second mesh file to be loaded" )
+     ( "checkpoint-spacing", value<unsigned int>()->default_value(500), "write checkpoint every N timesteps (0 = disabled)" )
+     ( "restart-from", value<std::string>()->default_value(""), "restart from checkpoint file" );
    cli.parse( argc, argv );
    cli.evaluateOptions();
    variables_map& vm = cli.getVariablesMap();
@@ -101,9 +106,14 @@ int main( int argc, char* argv[] )
 
    std::string mesh1File(vm["mesh1"].as<std::string>());
    std::string mesh2File(vm["mesh2"].as<std::string>());
+   unsigned int checkpointSpacing = vm["checkpoint-spacing"].as<unsigned int>();
+   std::string restartFile = vm["restart-from"].as<std::string>();
 
-   if( mesh1File.empty() || mesh2File.empty() ) {
+   bool restartFromCheckpoint = !restartFile.empty();
+
+   if( !restartFromCheckpoint && (mesh1File.empty() || mesh2File.empty()) ) {
      std::cout << "Usage: " << argv[0] << " --mesh1 <file1.obj> --mesh2 <file2.obj>" << std::endl;
+     std::cout << "       " << argv[0] << " --restart-from <checkpoint.peb>" << std::endl;
      std::cout << "Using default mesh files for demonstration." << std::endl;
      mesh1File = std::string("mesh1.obj");
      mesh2File = std::string("mesh2.obj");
@@ -111,10 +121,22 @@ int main( int argc, char* argv[] )
 
    std::cout << "\n--" << pe_BROWN << "CGAL MESH SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
-   std::cout << "Mesh 1: " << mesh1File << std::endl;
-   std::cout << "Mesh 2: " << mesh2File << std::endl;
+
+   if (restartFromCheckpoint) {
+      std::cout << "Restart mode: Loading from checkpoint: " << restartFile << std::endl;
+   } else {
+      std::cout << "Mesh 1: " << mesh1File << std::endl;
+      std::cout << "Mesh 2: " << mesh2File << std::endl;
+   }
+
    std::cout << "Timesteps: " << timesteps << std::endl;
    std::cout << "Time step size: " << timestep_size << std::endl;
+
+   if (checkpointSpacing > 0) {
+      std::cout << "Checkpointing enabled: every " << checkpointSpacing << " timesteps" << std::endl;
+   } else {
+      std::cout << "Checkpointing disabled" << std::endl;
+   }
 
    // Simulation world setup
    WorldID world = theWorld();
@@ -129,13 +151,56 @@ int main( int argc, char* argv[] )
    MaterialID mesh1Material = createMaterial("mesh1_mat", 1.2, 0.0, 0.2, 0.1, 0.2, 80, 100, 10, 11);
    MaterialID mesh2Material = createMaterial("mesh2_mat", 0.8, 0.0, 0.25, 0.08, 0.2, 80, 100, 10, 11);
 
-   // Setup of the ground plane with normal (0,0,1) at location (0,0,0)
-   PlaneID groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, groundMaterial );
-   std::cout << "Ground plane created with normal (0,0,1) at z=0" << std::endl;
+   // Initialize checkpoint writer
+   BodyBinaryWriter checkpointWriter;
 
-   // Load mesh objects
+   // Load mesh objects or restart from checkpoint
    TriangleMeshID mesh1 = nullptr;
    TriangleMeshID mesh2 = nullptr;
+   PlaneID groundPlane = nullptr;
+
+   if (restartFromCheckpoint) {
+      // Load from checkpoint
+      std::cout << "\nLoading simulation state from checkpoint: " << restartFile << std::endl;
+
+      try {
+         BodyBinaryReader checkpointReader;
+         checkpointReader.readFile(restartFile.c_str());
+
+         std::cout << "Checkpoint loaded successfully!" << std::endl;
+         std::cout << "Total bodies in world: " << world->size() << std::endl;
+
+         // Find mesh objects in the loaded world
+         for (World::Iterator it = world->begin(); it != world->end(); ++it) {
+            if (it->getType() == triangleMeshType) {
+               TriangleMeshID tmesh = static_cast<TriangleMeshID>(*it);
+               if (!mesh1) {
+                  mesh1 = tmesh;
+                  std::cout << "Found mesh 1 with " << mesh1->getBFVertices().size() << " vertices" << std::endl;
+                  std::cout << "  Position: " << mesh1->getPosition() << std::endl;
+                  std::cout << "  DistanceMap enabled: " << (mesh1->hasDistanceMap() ? "YES" : "NO") << std::endl;
+               } else if (!mesh2) {
+                  mesh2 = tmesh;
+                  std::cout << "Found mesh 2 with " << mesh2->getBFVertices().size() << " vertices" << std::endl;
+                  std::cout << "  Position: " << mesh2->getPosition() << std::endl;
+                  std::cout << "  DistanceMap enabled: " << (mesh2->hasDistanceMap() ? "YES" : "NO") << std::endl;
+               }
+            }
+            else if (it->getType() == planeType) {
+               groundPlane = static_cast<PlaneID>(*it);
+               std::cout << "Found ground plane" << std::endl;
+            }
+         }
+
+      } catch (const std::exception& e) {
+         std::cerr << "ERROR loading checkpoint: " << e.what() << std::endl;
+         return 1;
+      }
+   } else {
+      // Create new simulation from scratch
+      // Setup of the ground plane with normal (0,0,1) at location (0,0,0)
+      groundPlane = createPlane( id++, 0.0, 0.0, 1.0, 0.0, groundMaterial );
+      std::cout << "\nGround plane created with normal (0,0,1) at z=0" << std::endl;
 
    try {
       // Load first mesh at elevated position
@@ -145,7 +210,8 @@ int main( int argc, char* argv[] )
       std::cout << "Mesh 1 created with " << mesh1->getBFVertices().size() << " vertices at position: " << mesh1->getPosition() << std::endl;
       
       // Enable DistanceMap acceleration on mesh 1
-      mesh1->enableDistanceMapAcceleration(30, 3);  // resolution=30, tolerance=3
+      mesh1->enableDistanceMapAcceleration(64, 6);  // resolution=30, tolerance=3
+      mesh1->setFixed(true);
       std::cout << "DistanceMap acceleration enabled on mesh 1: " << (mesh1->hasDistanceMap() ? "SUCCESS" : "FAILED") << std::endl;
 
       auto origin = mesh1->getDistanceMap()->getOrigin();
@@ -158,22 +224,8 @@ int main( int argc, char* argv[] )
       
       // Load second mesh at different elevated position
       std::cout << "\nLoading mesh 2 from: " << mesh2File << std::endl;
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 3.1, 4.7), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, -1.72496, 8.36196), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 3.03749, 5.82685), mesh2File, mesh2Material, false, true);
-      //  TriangleMeshID testSphere = createTriangleMesh(2, Vec3(-1.02965, 1.80596, 5.78679), testSphereFile, material2, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(-1.55176,2.2521, 5.82685), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(-0.95, 1.80596, 5.78679), mesh2File, mesh2Material, false, true);
+      mesh2 = createTriangleMesh(++id, Vec3(0.0,0.0, 0.1275), mesh2File, mesh2Material, false, true);
 
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 8.3), mesh2File, mesh2Material, false, true);
-      mesh2 = createTriangleMesh(++id, Vec3(0.0,-2.335, 9.3), mesh2File, mesh2Material, false, true);
-
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 1.5), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(2.0, 0.0, 6.2), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 6.02), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(0.0, 0.0, 6.41), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3(-0.0, 0.0, 2.01), mesh2File, mesh2Material, false, true);
-      //mesh2 = createTriangleMesh(++id, Vec3( 0.0, 0.1, 2.1), mesh2File, mesh2Material, false, true);
       std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices at position: " << mesh2->getPosition() << std::endl;
 
       // Enable DistanceMap acceleration on mesh 2
@@ -186,11 +238,12 @@ int main( int argc, char* argv[] )
       //pe::vtk::DistanceMapWriter::writeVTI("span1.vti", *mesh2->getDistanceMap());
       
    }
-   catch (const std::exception& e) {
-      std::cerr << "ERROR loading mesh files: " << e.what() << std::endl;
-      std::cout << "Note: Make sure the mesh files exist in the current directory or provide valid paths." << std::endl;
-      std::cout << "The simulation will continue without mesh objects for demonstration purposes." << std::endl;
-   }
+      catch (const std::exception& e) {
+         std::cerr << "ERROR loading mesh files: " << e.what() << std::endl;
+         std::cout << "Note: Make sure the mesh files exist in the current directory or provide valid paths." << std::endl;
+         std::cout << "The simulation will continue without mesh objects for demonstration purposes." << std::endl;
+      }
+   } // End of if/else for checkpoint loading
 
    // Setup of the VTK visualization
    if( vtk && (mesh1 || mesh2) ) {
@@ -214,21 +267,37 @@ int main( int argc, char* argv[] )
 
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
       std::cout << "\r Time step " << timestep+1 << " of " << timesteps+1 << "   " << std::flush;
-      
+
       // Advance physics simulation by one time step
       world->simulationStep( timestep_size );
-      
+
+      // Write checkpoint if enabled and at the right interval
+      if (checkpointSpacing > 0 && timestep > 0 && timestep % checkpointSpacing == 0) {
+         std::cout << std::endl;
+         std::ostringstream checkpointName;
+         checkpointName << "checkpoint_" << std::setfill('0') << std::setw(6) << timestep << ".peb";
+
+         std::cout << "Writing checkpoint: " << checkpointName.str() << std::endl;
+         try {
+            checkpointWriter.writeFileAsync(checkpointName.str().c_str());
+            checkpointWriter.wait();  // Wait for async write to complete
+            std::cout << "Checkpoint written successfully" << std::endl;
+         } catch (const std::exception& e) {
+            std::cerr << "ERROR writing checkpoint: " << e.what() << std::endl;
+         }
+      }
+
       // Print object positions periodically
       if( timestep % 20 == 0 ) {
          std::cout << std::endl;
          std::cout << "Timestep " << timestep << " (t=" << timestep * timestep_size << "s):" << std::endl;
-         
+
          if (mesh1) {
-            std::cout << "  Mesh 1 position: " << mesh1->getPosition() 
+            std::cout << "  Mesh 1 position: " << mesh1->getPosition()
                       << ", velocity: " << mesh1->getLinearVel() << std::endl;
          }
          if (mesh2) {
-            std::cout << "  Mesh 2 position: " << mesh2->getPosition() 
+            std::cout << "  Mesh 2 position: " << mesh2->getPosition()
                       << ", velocity: " << mesh2->getLinearVel() << std::endl;
          }
       }
