@@ -83,5 +83,13 @@
  *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver
  */
-#define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
+#define pe_CONSTRAINT_SOLVER  pe::response::HardContactLubricated
+
+// To opt-in to the legacy hard contact solver without lubrication, define
+// PE_USE_LEGACY_HARD_CONTACT prior to including this header. This escape hatch is kept for
+// projects that have not yet migrated away from HardContactAndFluid.
+#ifdef PE_USE_LEGACY_HARD_CONTACT
+#  undef pe_CONSTRAINT_SOLVER
+#  define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
+#endif
 //*************************************************************************************************

@@ -112,6 +112,11 @@ Most simulations need to:
 
 The PE library can be built as static (default) or shared library. The library name is "pe" and will be found in the `build/lib` directory.
 
+Deprecation notice (lubrication stacks)
+- The canonical lubrication implementation is `HardContactLubricated`.
+- `HardContactAndFluidWithLubrication` and `HardContactFluidLubrication` are deprecated and will be removed in the next version.
+- New work and integrations should target `HardContactLubricated` only.
+
 When extending the codebase:
 - Prefer adding to existing modules over creating new ones
 - Follow the existing naming conventions and class hierarchies
@@ -158,11 +163,7 @@ PE uses a template-based design to specialize the collision system for different
    #define pe_CONSTRAINT_SOLVER  pe::response::YourSpecialization
    ```
 
-6. Create a specialization of the RigidBodyTrait in `pe/core/rigidbody/rigidbodytrait/HardContactFluidLubrication.h`:
-   ```cpp
-   class RigidBodyTrait< C<CD,FD,BG,response::HardContactFluidLubrication> > : public MPIRigidBodyTrait
-   { /*...implementation details...*/ };
-   ```
+6. Note on legacy examples: older documentation may refer to `HardContactAndFluidWithLubrication` or `HardContactFluidLubrication` trait specializations. These are deprecated; prefer creating specializations that use `response::HardContactLubricated`.
 
 ## DistanceMap Integration
 

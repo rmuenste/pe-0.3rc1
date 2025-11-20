@@ -52,6 +52,7 @@
 #include <pe/core/GeomTools.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Types.h>
+#include <pe/core/CollisionSystemID.h>
 #include <pe/math/Accuracy.h>
 #include <pe/math/Epsilon.h>
 #include <pe/math/Functions.h>
@@ -72,10 +73,79 @@
 #include <pe/core/detection/fine/DistanceMap.h>
 #endif
 
+// Detect if lubrication contacts are enabled based on configured solver
+#include <pe/config/Collisions.h>
+
 namespace pe {
 
 // Forward declarations
 class DistanceMap;
+CollisionSystemID theCollisionSystem();
+
+namespace detail {
+
+inline real clamp01( real value )
+{
+   if( value <= real(0) ) return real(0);
+   if( value >= real(1) ) return real(1);
+   return value;
+}
+
+inline real rampUp( real x, real start, real end )
+{
+   if( end <= start ) {
+      return x >= end ? real(1) : real(0);
+   }
+   if( x <= start ) return real(0);
+   if( x >= end )   return real(1);
+   return ( x - start ) / ( end - start );
+}
+
+inline real rampDown( real x, real start, real end )
+{
+   if( end <= start ) {
+      return x <= start ? real(1) : real(0);
+   }
+   if( x <= start ) return real(1);
+   if( x >= end )   return real(0);
+   return ( end - x ) / ( end - start );
+}
+
+inline real computeHardWeight( real dist, real threshold, real blendHalfWidth )
+{
+   if( blendHalfWidth <= real(0) ) {
+      return dist < threshold ? real(1) : real(0);
+   }
+
+   const real lower = threshold - blendHalfWidth;
+   const real upper = threshold + blendHalfWidth;
+   return rampDown( dist, lower, upper );
+}
+
+inline real computeLubricationWeight( real dist,
+                                      real threshold,
+                                      real lubricationThreshold,
+                                      real contactBlend,
+                                      real lubricationBlend )
+{
+   const real entryStart = threshold - contactBlend;
+   const real entryEnd   = threshold + contactBlend;
+   const real exitCenter = threshold + lubricationThreshold;
+   const real exitStart  = exitCenter - lubricationBlend;
+   const real exitEnd    = exitCenter + lubricationBlend;
+
+   const real weightUp = ( contactBlend > real(0) )
+                         ? rampUp( dist, entryStart, entryEnd )
+                         : ( dist > threshold ? real(1) : real(0) );
+
+   const real weightDown = ( lubricationBlend > real(0) )
+                           ? rampDown( dist, exitStart, exitEnd )
+                           : ( dist < exitCenter ? real(1) : real(0) );
+
+   return clamp01( weightUp * weightDown );
+}
+
+} // namespace detail
 
 namespace detection {
 
@@ -592,6 +662,39 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
    Vec3 normal( s1->getPosition() - s2->getPosition() );
    const real dist( normal.length() - s1->getRadius() - s2->getRadius() );
 
+#ifdef PE_LUBRICATION_CONTACTS
+   CollisionSystemID collisionSystem = theCollisionSystem();
+   const real contactBlend = collisionSystem->getContactHysteresisDelta();
+   const real lubricationBlend = collisionSystem->getLubricationHysteresisDelta();
+
+   const real hardWeight = detail::computeHardWeight( dist, contactThreshold, contactBlend );
+   const real lubWeight  = detail::computeLubricationWeight( dist, contactThreshold, lubricationThreshold, contactBlend, lubricationBlend );
+
+   if( hardWeight > real(0) || lubWeight > real(0) ) {
+      normal.normalize();
+   }
+
+   if( hardWeight > real(0) ) {
+      const real k( s2->getRadius() + real(0.5) * dist );
+      const Vec3 gPos( s2->getPosition() + normal * k );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between sphere " << s1->getID()
+             << " and sphere " << s2->getID() << " (dist=" << dist
+             << ", hardWeight=" << hardWeight << ")";
+      }
+
+      contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
+   }
+
+   if( lubWeight > real(0) ) {
+      const real k( s2->getRadius() + real(0.5) * dist );
+      const Vec3 gPos( s2->getPosition() + normal * k );
+
+      contacts.addLubricationContact( s1, s2, gPos, normal, dist, lubWeight );
+   }
+#else
+   // Standard sphere-sphere collision (no lubrication)
    if( dist < contactThreshold ) {
       normal.normalize();
       const real k( s2->getRadius() + real(0.5) * dist );
@@ -604,16 +707,7 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
 
       contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
    }
-   else if( dist < lubricationThreshold + contactThreshold ) {
-   //else if( dist < contactThreshold ) {
-
-      normal.normalize();
-      const real k( s2->getRadius() + real(0.5) * dist );
-      const Vec3 gPos( s2->getPosition() + normal * k );
-
-      contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
-
-   }
+#endif
 }
 //*************************************************************************************************
 
@@ -960,6 +1054,32 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
    const real k( trans( p->getNormal() ) * s->getPosition() );
    const real dist( k - s->getRadius() - p->getDisplacement() );
 
+#ifdef PE_LUBRICATION_CONTACTS
+   CollisionSystemID collisionSystem = theCollisionSystem();
+   const real contactBlend = collisionSystem->getContactHysteresisDelta();
+   const real lubricationBlend = collisionSystem->getLubricationHysteresisDelta();
+
+   const real hardWeight = detail::computeHardWeight( dist, contactThreshold, contactBlend );
+   const real lubWeight  = detail::computeLubricationWeight( dist, contactThreshold, lubricationThreshold, contactBlend, lubricationBlend );
+
+   if( hardWeight > real(0) ) {
+      const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between sphere " << s->getID()
+             << " and plane " << p->getID() << " (dist=" << dist
+             << ", hardWeight=" << hardWeight << ")";
+      }
+
+      contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
+   }
+
+   if( lubWeight > real(0) ) {
+      const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
+      contacts.addLubricationContact( s, p, gPos, p->getNormal(), dist, lubWeight );
+   }
+#else
+   // Standard sphere-plane collision (no lubrication)
    if( dist < contactThreshold ) {
       const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
 
@@ -970,6 +1090,7 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
 
       contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
    }
+#endif
 }
 //*************************************************************************************************
 
