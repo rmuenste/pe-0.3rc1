@@ -191,9 +191,7 @@ public:
    //! Threshold for all points/checks.
    /*! Only points with a distance to the all smaller than this threshold are considered
        for lubrication. */
-   //static inline double lubricationThreshold() { return 33e-3; }
-   //static inline double lubricationThreshold() { return 1.041e-3; }
-   static inline double lubricationThreshold() { return 1E-8; }
+   static inline double lubricationThreshold() { return 1E-2; }
    // The lubricationThreshold is used in: 
    // -HardContactSemiImplicitTimesteppingSolver
    // -MaxContacts: line 592
