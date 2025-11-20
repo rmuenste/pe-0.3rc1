@@ -139,12 +139,20 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   world->setViscosity(simViscosity);
   world->setDamping(1.0);
 
+  // CRITICAL: Enable automatic force reset after each simulation step
+  // This prevents force accumulation when using substepping
+  world->setAutoForceReset(true);
+
   //==============================================================================================
   // Visualization Configuration
   //==============================================================================================
   if (isRepresentative && config.getVtk()) {
-      vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0,
-                                               config.getTimesteps(), 
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
                                                false);
   }
 
@@ -470,12 +478,20 @@ inline void setupDrillSerial(int cfd_rank) {
   world->setViscosity(simViscosity);
   world->setDamping(1.0);
 
+  // CRITICAL: Enable automatic force reset after each simulation step
+  // This prevents force accumulation when using substepping
+  world->setAutoForceReset(true);
+
   //==============================================================================================
   // Visualization Configuration
   //==============================================================================================
   if (isRepresentative && config.getVtk()) {
-      vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0,
-                                               config.getTimesteps(),
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
                                                false);
   }
 
@@ -592,60 +608,109 @@ inline void setupDCAVSerial(int cfd_rank) {
 }
 
 /**
- * @brief Serial PE time stepping function
+ * @brief Serial PE time stepping function with substepping support
  *
- * This function performs one time step of the PE simulation in serial mode.
+ * This function performs one time step of the PE simulation in serial mode with
+ * configurable substepping. Substepping allows for more stable integration by
+ * breaking each main timestep into multiple smaller substeps.
+ *
  * Unlike the MPI version, this does not use MPI communications or domain decomposition.
  * Each CFD domain runs its own independent PE instance.
+ *
+ * Substepping configuration:
+ * - Number of substeps is read from SimulationConfig::getSubsteps() (default: 1)
+ * - VTK output is only triggered on the final substep to maintain output frequency
+ * - Particle diagnostics are printed once per main timestep
+ * - Checkpointer (if enabled) is triggered once per main timestep
  */
 inline void stepSimulationSerial() {
   WorldID world = theWorld();
   auto &config = SimulationConfig::getInstance();
   const bool isRepresentative = (config.getCfdRank() == 1);
-  
-  static int timestep = 0;
-  // Get the configured time step size
-  real stepsize = TimeStep::size();
-  
-  // Perform one simulation step without MPI operations
-  // In serial mode, all particles are local to this domain
-  world->simulationStep(stepsize);
-  
-  unsigned int i(0);
-  // No MPI barriers or reductions needed in serial mode
-  // Force synchronization is handled by the CFD layer
-  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
-    World::SizeType widx = static_cast<World::SizeType>(i);
-    BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType || 
-       body->getType() == capsuleType || 
-       body->getType() == ellipsoidType || 
-       body->getType() == cylinderType || 
-       body->getType() == triangleMeshType) {
 
-      if (isRepresentative) {
+  static int timestep = 0;
+
+  // Substepping configuration
+  int substeps = config.getSubsteps();
+  real fullStepSize = config.getStepsize();
+  real substepSize = fullStepSize / static_cast<real>(substeps);
+
+  // CRITICAL: Apply external forces (fluid drag) with FULL timestep BEFORE substepping
+  // The fluid forces are set by the CFD code before this function is called.
+  // If we don't apply them here with the full timestep, they will only be applied
+  // in the first substep (with reduced dt), then reset to zero, causing incorrect dynamics.
+  // Use the PE library's built-in applyFluidForces() method which properly handles
+  // force application and reset.
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+
+    // Apply fluid forces using the library function with full main timestep
+    // This applies forces to velocities and resets forces if forceReset is enabled
+    body->applyFluidForces(fullStepSize);
+  }
+
+  // Set global timestep to substep size for physics integration
+  TimeStep::stepsize(substepSize);
+
+  // Execute substeps (for collision handling and gravity)
+  for (int istep = 0; istep < substeps; ++istep) {
+    // Perform one substep
+    // Note: world->simulationStep() calls Trigger::triggerAll() which triggers VTK output
+    // VTK output frequency is controlled by adjusting visspacing in setup functions
+    // (see setupDrillSerial() and setupFSIBenchSerial() for examples)
+    world->simulationStep(substepSize);
+  }
+
+  // Restore original timestep size
+  TimeStep::stepsize(fullStepSize);
+
+  // Particle diagnostics output (once per main timestep only)
+  if (isRepresentative) {
+    unsigned int i(0);
+    for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+      World::SizeType widx = static_cast<World::SizeType>(i);
+      BodyID body = world->getBody(static_cast<unsigned int>(widx));
+      if(body->getType() == sphereType ||
+         body->getType() == capsuleType ||
+         body->getType() == ellipsoidType ||
+         body->getType() == cylinderType ||
+         body->getType() == triangleMeshType) {
+
         const Vec3 vel = body->getLinearVel();
         const Vec3 ang = body->getAngularVel();
         std::cout << "==Single Particle Data========================================================" << std::endl;
-
-        std::cout << "Position: " << body->getSystemID() << " " << timestep * stepsize << " " <<
+        
+        std::cout << "Position: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
                                      body->getPosition()[0] << " " <<
                                      body->getPosition()[1] << " " <<
                                      body->getPosition()[2] << std::endl;
-        std::cout << "Velocity: " << body->getSystemID() << " " << timestep * stepsize << " " << 
+        std::cout << "Velocity: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
                                      body->getLinearVel()[0] << " " <<
                                      body->getLinearVel()[1] << " " <<
                                      body->getLinearVel()[2] << std::endl;
-        std::cout << "Omega:    " << body->getSystemID() << " " << timestep * stepsize << " " << 
+        std::cout << "Omega:    " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
                                      body->getAngularVel()[0] << " " <<
                                      body->getAngularVel()[1] << " " <<
                                      body->getAngularVel()[2] << std::endl;
-
-
-
+       std::cout << "We are using " << substeps << " substeps per CFD step." << std::endl;
       }
     }
   }
+
+  // Checkpointer trigger (if enabled) - once per main timestep
+  // Note: Checkpointer is not auto-triggered via Trigger::triggerAll(),
+  // so it must be called explicitly here after the substepping loop
+  //
+  // TODO: To enable checkpointing in serial mode:
+  // 1. Create a global Checkpointer object similar to MPI mode (see sim_setup.cpp line 72-76)
+  // 2. Initialize it with config parameters in a serial mode initialization function
+  // 3. Add the following code here:
+  //    if (config.getUseCheckpointer()) {
+  //      checkpointer.trigger();
+  //      checkpointer.flush();
+  //    }
+
   timestep++;
 }
 

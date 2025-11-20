@@ -108,8 +108,10 @@ public:
     //@{
     size_t getTimesteps() const { return timesteps_; }
     real getStepsize() const { return stepsize_; }
+    int getSubsteps() const { return substeps_; }
     void setTimesteps(size_t value) { timesteps_ = value; }
     void setStepsize(real value) { stepsize_ = value; }
+    void setSubsteps(int value) { substeps_ = value; }
     //@}
     //**************************************************************************************
 
@@ -218,6 +220,7 @@ private:
     // Time parameters
     size_t timesteps_;           //!< Number of time steps for the simulation
     real stepsize_;              //!< Size of a single time step
+    int substeps_;               //!< Number of substeps per main timestep (for substepping integration)
 
     // Process parameters (for MPI domain decomposition)
     int processesX_;             //!< Number of processes in x-direction
