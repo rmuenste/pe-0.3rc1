@@ -28,6 +28,7 @@
 // Includes
 //*************************************************************************************************
 
+#include <algorithm>
 #include <cmath>
 #include <pe/core/rigidbody/GeomPrimitive.h>
 #include <pe/core/Types.h>
@@ -95,7 +96,7 @@ inline ContactTrait<C>::ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
 
 //=================================================================================================
 //
-//  SPECIALIZATION FOR THE LUBRICATION CONTACT SOLVER
+//  SPECIALIZATION FOR THE LEGACY LUBRICATION CONTACT SOLVER
 //
 //=================================================================================================
 
@@ -128,6 +129,7 @@ public:
    /*!\name Get functions */
    //@{
    inline void setLubricationFlag();
+   inline void setLubricationWeight( real weight );
    //@}
    //**********************************************************************************************
 
@@ -135,6 +137,7 @@ public:
    /*!\name Get functions */
    //@{
    inline bool getLubricationFlag() const;
+   inline real getLubricationWeight() const;
    //@}
    //**********************************************************************************************
 
@@ -143,6 +146,7 @@ private:
    /*!\name Member variables */
    //@{
    bool isLubricationContact_;
+   real lubricationWeight_;
    //@}
    //**********************************************************************************************
 };
@@ -169,6 +173,7 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::ContactTrait( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal ) :
    isLubricationContact_( false )
+ , lubricationWeight_( real(1) )
 {
 }
 //*************************************************************************************************
@@ -195,6 +200,26 @@ inline bool ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::getL
 
 
 //*************************************************************************************************
+/*!\brief Returns the lubrication weight.
+ *
+ * \return Weight in the range [0,1].
+ */
+template< template<typename> class CD
+        , typename FD
+        , template<typename> class BG
+        , template< template<typename> class
+                  , typename
+                  , template<typename> class
+                  , template<typename,typename,typename> class
+                  > class C >
+inline real ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::getLubricationWeight() const
+{
+   return lubricationWeight_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Sets the lubrication flag.
  *
  * \return Reference to the first tangent of the contact.
@@ -211,6 +236,64 @@ inline void ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::setL
 {
    isLubricationContact_ = true;
 }
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the lubrication weight applied in the response step.
+ *
+ * \param weight Blend factor in [0,1].
+ */
+template< template<typename> class CD
+        , typename FD
+        , template<typename> class BG
+        , template< template<typename> class
+                  , typename
+                  , template<typename> class
+                  , template<typename,typename,typename> class
+                  > class C >
+inline void ContactTrait< C<CD,FD,BG,HardContactAndFluidWithLubrication> >::setLubricationWeight( real weight )
+{
+   lubricationWeight_ = std::max( real(0), std::min( real(1), weight ) );
+}
+//*************************************************************************************************
+
+
+//=================================================================================================
+//
+//  SPECIALIZATION FOR THE HARD CONTACT LUBRICATED SOLVER
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Specialization of ContactTrait to carry a lubrication flag for HardContactLubricated.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+class ContactTrait< C<CD,FD,BG,HardContactLubricated> >
+{
+public:
+   explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/, const Vec3& /*gpos*/, const Vec3& /*normal*/ )
+     : isLubricationContact_( false )
+     , lubricationWeight_( real(1) ) {}
+
+   inline void setLubricationFlag() { isLubricationContact_ = true; }
+   inline void setLubricationWeight( real weight ) {
+      lubricationWeight_ = std::max( real(0), std::min( real(1), weight ) );
+   }
+   inline bool getLubricationFlag() const { return isLubricationContact_; }
+   inline real getLubricationWeight() const { return lubricationWeight_; }
+
+private:
+   bool isLubricationContact_;
+   real lubricationWeight_;
+};
 //*************************************************************************************************
 //=================================================================================================
 //

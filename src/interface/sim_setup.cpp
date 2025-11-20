@@ -206,7 +206,7 @@ void stepSimulation() {
       
 #define SINGLE_PARTICLE_OUTPUT
 #ifdef SINGLE_PARTICLE_OUTPUT
-      singleOutput_v1(body, timestep);
+      singleOutput_v2(body, timestep);
 #endif
     }
   }
@@ -271,6 +271,7 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_archimedes_xy.h>
 #include <pe/interface/setup_archimedes_empty.h>
 #include <pe/interface/setup_span.h>
+#include <pe/interface/setup_drill.h>
 //
 //=================================================================================================
 //

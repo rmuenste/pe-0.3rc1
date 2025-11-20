@@ -267,6 +267,31 @@ extern "C" void commf2c_lubrication_lab_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
 //=================================================================================================
 
 
+//=================================================================================================
+extern "C" void commf2c_drill_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{
+  int remRank = *remoteRank;
+
+  if(remRank != 0) {
+    int rank, size;
+
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
+    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
+    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
+
+    if (rank == 1) {
+      printf( "%d> C) Configuration Drill with %d processes.\n", remRank, size );
+    }
+    if( CcommEx0 == MPI_COMM_NULL ) {
+      printf( "%d> C)Error converting fortran communicator\n", rank);
+       return;
+    }
+    setupDrill(CcommEx0);
+  }
+}
+//=================================================================================================
+
+
 #endif
 
 #ifdef PE_SERIAL_MODE
@@ -328,6 +353,11 @@ extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank) {
 extern "C" void commf2c_lubrication_lab_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Lubrication Lab setup
   pe::setupLubricationLabSerial(*remoteRank);
+}
+
+extern "C" void commf2c_drill_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Drill setup
+  pe::setupDrillSerial(*remoteRank);
 }
 
 #endif  // PE_SERIAL_MODE

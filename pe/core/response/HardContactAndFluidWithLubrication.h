@@ -23,6 +23,14 @@
 #ifndef _PE_CORE_RESPONSE_HARDCONTACTANDFLUIDWITHLUBRICATION_H_
 #define _PE_CORE_RESPONSE_HARDCONTACTANDFLUIDWITHLUBRICATION_H_
 
+// DEPRECATION: This response will be removed in the next version.
+// Prefer pe::response::HardContactLubricated instead.
+#if !defined(PE_SUPPRESS_DEPRECATION_WARNINGS)
+#  if defined(__clang__) || defined(__GNUC__) || defined(_MSC_VER)
+#    pragma message("pe: HardContactAndFluidWithLubrication response is deprecated; use HardContactLubricated")
+#  endif
+#endif
+
 
 //*************************************************************************************************
 // Includes

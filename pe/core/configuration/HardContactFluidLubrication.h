@@ -23,6 +23,14 @@
 #ifndef _PE_CORE_CONFIGURATION_HARDCONTACTFLUIDLUBRICATION_H_
 #define _PE_CORE_CONFIGURATION_HARDCONTACTFLUIDLUBRICATION_H_
 
+// DEPRECATION: This configuration will be removed in the next version.
+// Prefer the HardContactLubricated configuration instead.
+#if !defined(PE_SUPPRESS_DEPRECATION_WARNINGS)
+#  if defined(__clang__) || defined(__GNUC__) || defined(_MSC_VER)
+#    pragma message("pe: HardContactFluidLubrication configuration is deprecated; use HardContactLubricated")
+#  endif
+#endif
+
 
 //*************************************************************************************************
 // Includes

@@ -12,6 +12,7 @@ add_subdirectory(triangle_mesh)
 add_subdirectory(usage_demo)
 add_subdirectory(simple_demo)
 add_subdirectory(basic_lubrication)
+add_subdirectory(lubrication_demo)
 
 # CGAL Examples
 if( CGAL )

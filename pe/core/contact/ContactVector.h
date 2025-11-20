@@ -99,7 +99,7 @@ public:
    /*!\name Contact setup functions */
    //@{
    inline void addVertexFaceContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, real dist );
-   inline void addLubricationContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, real dist );
+   inline void addLubricationContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, real dist, real weight = real(1) );
    inline void addEdgeEdgeContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal,
                                    const Vec3& e1, const Vec3& e2, real dist );
    //@}
@@ -195,11 +195,12 @@ template< typename C    // Type of the contact
         , typename D    // Deletion policy
         , typename G >  // Growth policy
 inline void ContactVector<C,D,G>::addLubricationContact( GeomID g1, GeomID g2, const Vec3& gpos,
-                                                        const Vec3& normal, real dist )
+                                                        const Vec3& normal, real dist, real weight )
 {
    // Creating a new vertex/face contact
    Contact *contact = new Contact(g1, g2, gpos, normal, dist);
    contact->setLubricationFlag();
+   contact->setLubricationWeight( weight );
    Base::pushBack(contact);
 }
 //*************************************************************************************************

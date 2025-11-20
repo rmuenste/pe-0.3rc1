@@ -23,6 +23,17 @@
 #ifndef _PE_CORE_COLLISIONSYSTEM_HARDCONTACTANDFLUIDWITHLUBRICATION_H_
 #define _PE_CORE_COLLISIONSYSTEM_HARDCONTACTANDFLUIDWITHLUBRICATION_H_
 
+// Define macro to enable lubrication-specific code in fine collision detection
+#define PE_LUBRICATION_CONTACTS 1
+
+// DEPRECATION: This implementation will be removed in the next version.
+// Prefer pe::response::HardContactLubricated instead.
+#if !defined(PE_SUPPRESS_DEPRECATION_WARNINGS)
+#  if defined(__clang__) || defined(__GNUC__) || defined(_MSC_VER)
+#    pragma message("pe: HardContactAndFluidWithLubrication is deprecated; use HardContactLubricated")
+#  endif
+#endif
+
 
 //*************************************************************************************************
 // Includes
@@ -5533,4 +5544,3 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
 } // namespace pe
 
 #endif
-

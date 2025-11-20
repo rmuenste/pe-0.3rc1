@@ -23,6 +23,7 @@ void setupDraftKissTumbBench(MPI_Comm ex0);
 void setupGeneralInit(MPI_Comm ex0);
 void setupSpan(MPI_Comm ex0);
 void setupLubricationLab(MPI_Comm ex0);
+void setupDrill(MPI_Comm ex0);
 
 
 #endif

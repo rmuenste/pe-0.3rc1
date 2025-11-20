@@ -24,6 +24,14 @@
 #ifndef _PE_CORE_RIGIDBODY_RIGIDBODYTRAIT_HARDCONTACTANDFLUIDWITHLUBRICATION_H_
 #define _PE_CORE_RIGIDBODY_RIGIDBODYTRAIT_HARDCONTACTANDFLUIDWITHLUBRICATION_H_
 
+// DEPRECATION: This trait will be removed in the next version.
+// Prefer the HardContactLubricated trait instead.
+#if !defined(PE_SUPPRESS_DEPRECATION_WARNINGS)
+#  if defined(__clang__) || defined(__GNUC__) || defined(_MSC_VER)
+#    pragma message("pe: HardContactAndFluidWithLubrication RigidBodyTrait is deprecated; use HardContactLubricated")
+#  endif
+#endif
+
 
 //*************************************************************************************************
 // Includes
