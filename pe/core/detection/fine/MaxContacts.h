@@ -970,6 +970,16 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
 
       contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
    }
+   else if( dist < lubricationThreshold + contactThreshold ) {
+      const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Lubrication contact created between sphere " << s->getID()
+             << " and plane " << p->getID() << " (dist=" << dist << ")";
+      }
+
+      contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
+   }
 }
 //*************************************************************************************************
 
