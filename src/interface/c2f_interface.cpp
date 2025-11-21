@@ -243,26 +243,27 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
 
 
 //=================================================================================================
+// NOTE: setupLubricationLab() and setupDrill() parallel implementations are WIP
+// Only serial mode (PE_SERIAL_MODE) is currently supported for these simulations
+// These stubs prevent linker errors and provide clear runtime error messages
+//=================================================================================================
 extern "C" void commf2c_lubrication_lab_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
-  int remRank = *remoteRank;
-
-  if(remRank != 0) {
-    int rank, size;
-
-    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
-    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
-    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
-
-    if (rank == 1) {
-      printf( "%d> C) Configuration Lubrication Lab with %d processes.\n", remRank, size );
-    }
-    if( CcommEx0 == MPI_COMM_NULL ) {
-      printf( "%d> C)Error converting fortran communicator\n", rank);
-       return;
-    }
-    setupLubricationLab(CcommEx0);
-  }
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: commf2c_lubrication_lab_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The Lubrication Lab simulation is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
+  fprintf(stderr, "  1. cd build\n");
+  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
+  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
+  fprintf(stderr, "  4. make -j8\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "PE Serial Mode is optimized for large particles that span multiple domains.\n");
+  fprintf(stderr, "========================================================================\n");
+  exit(1);
 }
 //=================================================================================================
 
@@ -270,24 +271,21 @@ extern "C" void commf2c_lubrication_lab_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
 //=================================================================================================
 extern "C" void commf2c_drill_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
-  int remRank = *remoteRank;
-
-  if(remRank != 0) {
-    int rank, size;
-
-    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
-    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
-    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
-
-    if (rank == 1) {
-      printf( "%d> C) Configuration Drill with %d processes.\n", remRank, size );
-    }
-    if( CcommEx0 == MPI_COMM_NULL ) {
-      printf( "%d> C)Error converting fortran communicator\n", rank);
-       return;
-    }
-    setupDrill(CcommEx0);
-  }
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: commf2c_drill_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The Drill simulation is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
+  fprintf(stderr, "  1. cd build\n");
+  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
+  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
+  fprintf(stderr, "  4. make -j8\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "PE Serial Mode is optimized for large particles that span multiple domains.\n");
+  fprintf(stderr, "========================================================================\n");
+  exit(1);
 }
 //=================================================================================================
 
