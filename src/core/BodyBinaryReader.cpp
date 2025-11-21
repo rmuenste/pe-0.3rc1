@@ -608,6 +608,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                   }
                }
 #else
+#ifdef PE_USE_CGAL
                // Error if checkpoint contains DistanceMap but build lacks CGAL
                if (objparam.hasDistanceMapParams_) {
                   throw std::runtime_error(
@@ -616,6 +617,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                      "Rebuild with -DCGAL=ON or use a checkpoint without DistanceMap acceleration."
                   );
                }
+#endif
 #endif
 
                if( global ) obj->setGlobal();

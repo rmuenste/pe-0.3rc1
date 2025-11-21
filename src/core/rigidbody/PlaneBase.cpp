@@ -131,18 +131,20 @@ PlaneBase::~PlaneBase()
  */
 void PlaneBase::calcBoundingBox()
 {
+   const real padding = contactThreshold + lubricationThreshold;
+
    aabb_[0] = ( normal_[0] <  real(0) && normal_[1] == real(0) && normal_[2] == real(0) )
-                 ? ( -d_ - contactThreshold ) : ( -inf );
+                 ? ( -d_ - padding ) : ( -inf );
    aabb_[1] = ( normal_[0] == real(0) && normal_[1] <  real(0) && normal_[2] == real(0) )
-                 ? ( -d_ - contactThreshold ) : ( -inf );
+                 ? ( -d_ - padding ) : ( -inf );
    aabb_[2] = ( normal_[0] == real(0) && normal_[1] == real(0) && normal_[2] <  real(0) )
-                 ? ( -d_ - contactThreshold ) : ( -inf );
+                 ? ( -d_ - padding ) : ( -inf );
    aabb_[3] = ( normal_[0] >  real(0) && normal_[1] == real(0) && normal_[2] == real(0) )
-                 ? (  d_ + contactThreshold ) : (  inf );
+                 ? (  d_ + padding ) : (  inf );
    aabb_[4] = ( normal_[0] == real(0) && normal_[1] >  real(0) && normal_[2] == real(0) )
-                 ? (  d_ + contactThreshold ) : (  inf );
+                 ? (  d_ + padding ) : (  inf );
    aabb_[5] = ( normal_[0] == real(0) && normal_[1] == real(0) && normal_[2] >  real(0) )
-                 ? (  d_ + contactThreshold ) : (  inf );
+                 ? (  d_ + padding ) : (  inf );
 
    pe_INTERNAL_ASSERT( aabb_.isValid(), "Invalid bounding box detected" );
 }

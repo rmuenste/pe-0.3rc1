@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <pe/core/CollisionSystemID.h>
 #include <pe/core/Thresholds.h>
+#include <pe/core/Settings.h>
 #include <pe/core/Configuration.h>
 #include <pe/core/collisionsystem/HardContactLubricated.h>
 #include <pe/core/Types.h>
@@ -41,6 +42,8 @@ struct DemoConfig {
    pe::real lubricationBlend{ pe::real(1e-9) };
    pe::real radiusA{ pe::real(0.01) };
    pe::real radiusB{ pe::real(0.01) };
+   pe::real fluidViscosity{ Settings::liquidViscosity() };
+   pe::real fluidDensity{ Settings::liquidDensity() };
    bool verbose{ true };
 };
 

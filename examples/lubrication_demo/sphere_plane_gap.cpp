@@ -39,6 +39,8 @@ DemoConfig parseCommandLine( int argc, char* argv[] )
       ( "radius", value<double>()->default_value( static_cast<double>( cfg.radiusA ) ), "Sphere radius [m]" )
       ( "contact-blend", value<double>()->default_value( static_cast<double>( cfg.contactBlend ) ), "Half-width of hard-contact blend band" )
       ( "lubrication-blend", value<double>()->default_value( static_cast<double>( cfg.lubricationBlend ) ), "Half-width of lubrication blend band" )
+      ( "fluid-viscosity", value<double>()->default_value( static_cast<double>( cfg.fluidViscosity ) ), "Dynamic viscosity of the surrounding fluid [Pa*s]" )
+      ( "fluid-density", value<double>()->default_value( static_cast<double>( cfg.fluidDensity ) ), "Density of the surrounding fluid [kg/m^3]" )
       ( "min-gap", value<double>()->default_value( static_cast<double>( cfg.minGapRegularization ) ), "Gap regularisation epsilon used for force estimates" )
       ( "disable-info", "Silence info-level stdout logging" );
 
@@ -58,6 +60,8 @@ DemoConfig parseCommandLine( int argc, char* argv[] )
    cfg.contactBlend       = static_cast<real>( vm["contact-blend"].as<double>() );
    cfg.lubricationBlend   = static_cast<real>( vm["lubrication-blend"].as<double>() );
    cfg.minGapRegularization = static_cast<real>( vm["min-gap"].as<double>() );
+   cfg.fluidViscosity     = static_cast<real>( vm["fluid-viscosity"].as<double>() );
+   cfg.fluidDensity       = static_cast<real>( vm["fluid-density"].as<double>() );
    cfg.verbose            = ( vm.count( "disable-info" ) == 0 );
 
    return cfg;
@@ -83,9 +87,11 @@ void logConfiguration( const DemoConfig& cfg )
           << "   retreat speed [m/s]  : " << cfg.retreatSpeed << "\n"
           << "   contact threshold    : " << contactThresholdValue << "\n"
           << "   lubrication threshold: " << lubricationThresholdValue << "\n"
-          << "   contact blend        : " << cfg.contactBlend << "\n"
-          << "   lubrication blend    : " << cfg.lubricationBlend << "\n"
-          << "   min gap epsilon      : " << cfg.minGapRegularization << "\n";
+         << "   contact blend        : " << cfg.contactBlend << "\n"
+         << "   lubrication blend    : " << cfg.lubricationBlend << "\n"
+         << "   min gap epsilon      : " << cfg.minGapRegularization << "\n"
+         << "   fluid viscosity      : " << cfg.fluidViscosity << "\n"
+         << "   fluid density        : " << cfg.fluidDensity << "\n";
    }
 }
 
@@ -110,6 +116,8 @@ int main( int argc, char* argv[] )
 
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, 0.0 );
+   world->setViscosity( cfg.fluidViscosity );
+   world->setLiquidDensity( cfg.fluidDensity );
 
    pe::id_t id( 0 );
    MaterialID material = granite;

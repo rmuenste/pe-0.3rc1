@@ -41,6 +41,8 @@ DemoConfig parseCommandLine( int argc, char* argv[] )
       ( "contact-blend", value<double>()->default_value( static_cast<double>( cfg.contactBlend ) ), "Half-width of hard-contact blend band" )
       ( "lubrication-blend", value<double>()->default_value( static_cast<double>( cfg.lubricationBlend ) ), "Half-width of lubrication blend band" )
       ( "min-gap", value<double>()->default_value( static_cast<double>( cfg.minGapRegularization ) ), "Gap regularisation epsilon used for force estimates" )
+      ( "fluid-viscosity", value<double>()->default_value( static_cast<double>( cfg.fluidViscosity ) ), "Dynamic viscosity of the surrounding fluid [Pa*s]" )
+      ( "fluid-density", value<double>()->default_value( static_cast<double>( cfg.fluidDensity ) ), "Density of the surrounding fluid [kg/m^3]" )
       ( "disable-info", "Silence info-level stdout logging" );
 
    cli.parse( argc, argv );
@@ -60,6 +62,8 @@ DemoConfig parseCommandLine( int argc, char* argv[] )
    cfg.contactBlend       = static_cast<real>( vm["contact-blend"].as<double>() );
    cfg.lubricationBlend   = static_cast<real>( vm["lubrication-blend"].as<double>() );
    cfg.minGapRegularization = static_cast<real>( vm["min-gap"].as<double>() );
+   cfg.fluidViscosity     = static_cast<real>( vm["fluid-viscosity"].as<double>() );
+   cfg.fluidDensity       = static_cast<real>( vm["fluid-density"].as<double>() );
    cfg.verbose            = ( vm.count( "disable-info" ) == 0 );
 
    return cfg;
@@ -88,7 +92,9 @@ void logConfiguration( const DemoConfig& cfg )
           << "   lubrication threshold: " << lubricationThresholdValue << "\n"
           << "   contact blend        : " << cfg.contactBlend << "\n"
           << "   lubrication blend    : " << cfg.lubricationBlend << "\n"
-          << "   min gap epsilon      : " << cfg.minGapRegularization << "\n";
+          << "   min gap epsilon      : " << cfg.minGapRegularization << "\n"
+          << "   fluid viscosity      : " << cfg.fluidViscosity << "\n"
+          << "   fluid density        : " << cfg.fluidDensity << "\n";
    }
 }
 
@@ -113,6 +119,8 @@ int main( int argc, char* argv[] )
 
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, 0.0 );
+   world->setViscosity( cfg.fluidViscosity );
+   world->setLiquidDensity( cfg.fluidDensity );
 
    pe::id_t id( 0 );
    MaterialID material = granite;

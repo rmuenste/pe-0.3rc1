@@ -28,6 +28,7 @@
 #include <pe/system/WarningDisable.h>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <pe/vtk/PointCloudWriter.h>
 #include <pe/util/Assert.h>
@@ -126,16 +127,16 @@ void PointCloudWriter::writePoints( const std::string& filename,
 
    // Validate field sizes
    for( const auto& field : scalarFields ) {
-      pe_USER_ASSERT( field.second.size() == numPoints,
-                      "Scalar field '" << field.first << "' has incorrect size" );
+      const std::string message = "Scalar field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numPoints, message.c_str() );
    }
    for( const auto& field : vectorFields ) {
-      pe_USER_ASSERT( field.second.size() == numPoints,
-                      "Vector field '" << field.first << "' has incorrect size" );
+      const std::string message = "Vector field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numPoints, message.c_str() );
    }
    for( const auto& field : integerFields ) {
-      pe_USER_ASSERT( field.second.size() == numPoints,
-                      "Integer field '" << field.first << "' has incorrect size" );
+      const std::string message = "Integer field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numPoints, message.c_str() );
    }
 
    std::ofstream out( filename );
@@ -224,8 +225,8 @@ void PointCloudWriter::writeBooleanResults( const std::string& filename,
 
    // Validate field sizes
    for( const auto& field : booleanFields ) {
-      pe_USER_ASSERT( field.second.size() == numPoints,
-                      "Boolean field '" << field.first << "' has incorrect size" );
+      const std::string message = "Boolean field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numPoints, message.c_str() );
    }
 
    std::ofstream out( filename );

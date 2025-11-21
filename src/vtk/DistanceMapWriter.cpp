@@ -28,6 +28,7 @@
 #include <pe/system/WarningDisable.h>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <pe/vtk/DistanceMapWriter.h>
 #include <pe/util/Assert.h>
@@ -173,14 +174,14 @@ void DistanceMapWriter::writeCustomGrid( const std::string& filename,
 
    // Validate scalar field sizes
    for( const auto& field : scalarFields ) {
-      pe_USER_ASSERT( field.second.size() == expectedSize,
-                      "Scalar field '" << field.first << "' has incorrect size" );
+      const std::string message = "Scalar field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == expectedSize, message.c_str() );
    }
 
    // Validate vector field sizes
    for( const auto& field : vectorFields ) {
-      pe_USER_ASSERT( field.second.size() == expectedSize,
-                      "Vector field '" << field.first << "' has incorrect size" );
+      const std::string message = "Vector field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == expectedSize, message.c_str() );
    }
 
    std::ofstream out( filename );

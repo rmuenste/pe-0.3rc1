@@ -28,6 +28,7 @@
 #include <pe/system/WarningDisable.h>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <pe/vtk/MeshDataWriter.h>
 #include <pe/util/Assert.h>
@@ -273,26 +274,29 @@ void MeshDataWriter::writeMeshData( const std::string& filename,
 
    // Validate field sizes
    for( const auto& field : scalarFields ) {
-      pe_USER_ASSERT( field.second.size() == numVertices,
-                      "Scalar field '" << field.first << "' has incorrect size" );
+      const std::string message = "Scalar field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numVertices, message.c_str() );
    }
    for( const auto& field : vectorFields ) {
-      pe_USER_ASSERT( field.second.size() == numVertices,
-                      "Vector field '" << field.first << "' has incorrect size" );
+      const std::string message = "Vector field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numVertices, message.c_str() );
    }
    for( const auto& field : integerFields ) {
-      pe_USER_ASSERT( field.second.size() == numVertices,
-                      "Integer field '" << field.first << "' has incorrect size" );
+      const std::string message = "Integer field '" + field.first + "' has incorrect size";
+      pe_USER_ASSERT( field.second.size() == numVertices, message.c_str() );
    }
 
    // Validate face connectivity
    for( size_t i = 0; i < faces.size(); ++i ) {
       const auto& face = faces[i];
-      pe_USER_ASSERT( face.size() >= 3, "Face " << i << " has fewer than 3 vertices" );
+      const std::string faceSizeMsg = "Face " + std::to_string( i ) + " has fewer than 3 vertices";
+      pe_USER_ASSERT( face.size() >= 3, faceSizeMsg.c_str() );
       
       for( int vertexIndex : face ) {
+         const std::string vertexMsg = "Face " + std::to_string( i ) +
+                                       " contains invalid vertex index: " + std::to_string( vertexIndex );
          pe_USER_ASSERT( vertexIndex >= 0 && static_cast<size_t>(vertexIndex) < numVertices,
-                         "Face " << i << " contains invalid vertex index: " << vertexIndex );
+                         vertexMsg.c_str() );
       }
    }
 
