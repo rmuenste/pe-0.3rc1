@@ -635,8 +635,8 @@ if( EXAMPLES )
       endforeach()
    endif()
 
-endif()
 add_subdirectory(examples)
+endif()
 
 
 #==================================================================================================
