@@ -55,3 +55,7 @@ contact preprocessing, and easier debugging.
   honored (e.g., box-plane, mesh-plane cases).
 - Flesh out `HardContactLubricated` solver documentation (currently marked TODO) with the
   algorithmic details, parameter meanings, and convergence guidelines.
+- Gate lubrication-contact generation via `PE_LUBRICATION_CONTACTS` from `pe/config/Collisions.h`
+  once we are ready to enable force application; a conditional define tied to
+  `pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated` can be added there (kept
+  disabled for now to allow diagnostic runs without applied forces).
