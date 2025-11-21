@@ -85,3 +85,9 @@
  */
 #define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
 //*************************************************************************************************
+
+// Optional: enable lubrication-contact generation in fine detection when using HardContactLubricated
+// Uncomment the block below to propagate the flag into MaxContacts (kept disabled for diagnostic runs)
+//#if defined(pe_CONSTRAINT_SOLVER) && pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated
+//#  define PE_LUBRICATION_CONTACTS 1
+//#endif
