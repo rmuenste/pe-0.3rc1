@@ -13,47 +13,6 @@
 using namespace pe::povray;
 //=================================================================================================
 
-// Helper function for coordinate transformation debug test
-void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint, const std::string& description) {
-    std::cout << "\n=== " << description << " ===" << std::endl;
-    
-    // Print chip position
-    std::cout << "Chip position: (" << chip->getPosition()[0] << ", " << chip->getPosition()[1] << ", " << chip->getPosition()[2] << ")" << std::endl;
-    std::cout << "Test point:    (" << testPoint[0] << ", " << testPoint[1] << ", " << testPoint[2] << ")" << std::endl;
-    
-    // Test with DistanceMap if available
-    if (chip->hasDistanceMap()) {
-        bool dmResult = chip->containsPoint(testPoint);
-        std::cout << "DistanceMap result: " << (dmResult ? "INSIDE" : "OUTSIDE") << std::endl;
-        
-        // Get additional DistanceMap info for debugging
-        const DistanceMap* dm = chip->getDistanceMap();
-        if (dm) {
-            // Transform point to local coordinates (same as mesh does internally)
-            Vec3 localPoint = chip->pointFromWFtoBF(testPoint);
-            std::cout << "Local point:   (" << localPoint[0] << ", " << localPoint[1] << ", " << localPoint[2] << ")" << std::endl;
-            
-            // Query distance directly
-            pe::real distance = dm->interpolateDistance(localPoint[0], localPoint[1], localPoint[2]);
-            std::cout << "Signed distance: " << distance << std::endl;
-            std::cout << "Distance sign indicates: " << (distance < 0 ? "INSIDE" : "OUTSIDE") << std::endl;
-        }
-    } else {
-        std::cout << "No DistanceMap available!" << std::endl;
-    }
-    
-    // Print chip AABB for reference
-    const auto& bbox = chip->getAABB();
-    std::cout << "Chip AABB: [" << bbox[0] << "," << bbox[3] << "] x ["
-              << bbox[1] << "," << bbox[4] << "] x ["
-              << bbox[2] << "," << bbox[5] << "]" << std::endl;
-    
-    // Check if point is in AABB
-    bool inAABB = (testPoint[0] >= bbox[0] && testPoint[0] <= bbox[3]) &&
-                  (testPoint[1] >= bbox[1] && testPoint[1] <= bbox[4]) &&
-                  (testPoint[2] >= bbox[2] && testPoint[2] <= bbox[5]);
-    std::cout << "Point in AABB: " << (inAABB ? "YES" : "NO") << std::endl;
-}
 
 //=================================================================================================
 // Setup for the Chip Case
@@ -266,60 +225,7 @@ void setupSpan(MPI_Comm ex0) {
           std::cout << "DistanceMap spacing: " << dm->getSpacing() << std::endl;
         }
         
-        // Coordinate transformation debug test (similar to debug_coordinate_transform.cpp)
-        Vec3 testPoint(-0.086035, -0.869566, 0.477526);  // Fixed test point from debug example
-        
-        std::cout << "\n=== COORDINATE TRANSFORMATION DEBUG TEST ===" << std::endl;
-        std::cout << "Running 4-phase coordinate validation test..." << std::endl;
-        
-        // Test 1: Original point with chip at current position
-        testChipPointContainment(chip, testPoint, "Test 1: Point vs Chip at Original Position");
-        
-        // Test 2: Translate point +10 in Z - should be OUTSIDE
-        Vec3 translatedPoint = testPoint + Vec3(0, 0, 10);
-        testChipPointContainment(chip, translatedPoint, "Test 2: Point+10Z vs Chip at Original Position (Expected: OUTSIDE)");
-        
-        // Test 3: Translate chip +10 in Z to align with translated point
-        Vec3 originalChipPos = chip->getPosition();
-        chip->setPosition(originalChipPos + Vec3(0, 0, 10));
-        chip->calcBoundingBox();  // Force update of cached data
-        
-        testChipPointContainment(chip, translatedPoint, "Test 3: Point+10Z vs Chip+10Z (Expected: INSIDE if coord transforms work)");
-        
-        // Test 4: Original point vs translated chip - should be OUTSIDE
-        testChipPointContainment(chip, testPoint, "Test 4: Original Point vs Chip+10Z (Expected: OUTSIDE)");
-        
-        // Reset chip to original position for simulation
-        chip->setPosition(originalChipPos);
         chip->calcBoundingBox();
-        
-        // Export DistanceMap to VTI file for visualization
-//#ifdef PE_USE_CGAL
-//        if (chip->hasDistanceMap()) {
-//          const DistanceMap* dm = chip->getDistanceMap();
-//          if (dm) {
-//            std::cout << "\n=== EXPORTING DISTANCEMAP TO VTI ===" << std::endl;
-//            std::string dmVtiFile = "chip_distance_map.vti";
-//            std::cout << "Exporting DistanceMap to " << dmVtiFile << "..." << std::endl;
-//            
-//            write_vti(dmVtiFile,
-//                     dm->getSdfData(),
-//                     dm->getAlphaData(),
-//                     dm->getNormalData(),
-//                     dm->getContactPointData(),
-//                     std::vector<int>(dm->getSdfData().size(), 0), // face_index placeholder
-//                     dm->getNx(), dm->getNy(), dm->getNz(),
-//                     dm->getSpacing(), dm->getSpacing(), dm->getSpacing(),
-//                     dm->getOrigin()[0], dm->getOrigin()[1], dm->getOrigin()[2]);
-//            
-//            std::cout << "DistanceMap export completed successfully!" << std::endl;
-//            std::cout << "Note: DistanceMap is in LOCAL chip coordinates" << std::endl;
-//          }
-//        }
-//#endif
-        
-        std::cout << "\n=== COORDINATE DEBUG TEST COMPLETE ===" << std::endl;
-        std::cout << "Chip reset to original position for simulation." << std::endl;
       }
     }
   }
