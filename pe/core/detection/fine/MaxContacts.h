@@ -3886,9 +3886,9 @@ void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& c
    // NEW: Priority-based collision detection
    // Try DistanceMap-based collision detection first (if available)
    if (mA->hasDistanceMap() || mB->hasDistanceMap()) {
-      if (collideWithDistanceMap(mA, mB, contacts)) {
-         return; // DistanceMap collision successful
-      }
+      collideWithDistanceMap(mA, mB, contacts);
+      // If a DistanceMap is present, do NOT fall back to GJK/EPA since meshes are non-convex
+      return;
    }
 
    // Existing GJK/EPA fallback
@@ -4054,7 +4054,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       
       const auto& queryVertices = queryMesh->getWFVertices();
       const auto& queryFaceIndices = queryMesh->getFaceIndices();
-      
+
       // Helper function to process a query point for contact detection
       auto processQueryPoint = [&](const Vec3& queryPoint) {
          // Transform point from world coordinates to reference mesh local coordinates
@@ -4062,15 +4062,34 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          
          // Query distance from this point to the reference mesh surface (in local coordinates)
          real distance = distMap->interpolateDistance(localPoint[0], localPoint[1], localPoint[2]);
+
+         // Detect out-of-grid queries (DistanceMap returns large sentinel)
+         if( distance > real(1e5) ) {
+            return;
+         }
          
          // Collect all penetrating candidates (negative distance = penetration)
          if (distance < contactThreshold) {
+            // Validate against exact signed distance to avoid false negatives from coarse SDF interpolation
+            const real validationSlack = std::max(distMap->getSpacing() * real(0.05), contactThreshold);
+            real exactSignedDistance = referenceMesh->signedDistance(localPoint);
+            if( exactSignedDistance > -validationSlack ) {
+               pe_LOG_DEBUG_SECTION( log ) {
+                  log << "   rejected by exact signed distance check: exactSignedDistance="
+                      << exactSignedDistance << " slack=" << validationSlack << "\n";
+               }
+               return; // Skip spurious penetration reports
+            }
+
             // Get normal and contact point from DistanceMap (in local coordinates)
             Vec3 localNormal = distMap->interpolateNormal(localPoint[0], localPoint[1], localPoint[2]);
             Vec3 localContactPoint = distMap->interpolateContactPoint(localPoint[0], localPoint[1], localPoint[2]);
             
             // Transform results back to world coordinates for collision response
             Vec3 worldNormal = referenceMesh->vectorFromBFtoWF(localNormal);
+            if( worldNormal.length() > real(0) ) {
+               worldNormal.normalize();
+            }
             Vec3 worldContactPoint = referenceMesh->pointFromBFtoWF(localContactPoint);
             
             // Calculate penetration depth (positive for penetration)
@@ -4078,13 +4097,18 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             
             // Add to contact candidates
             candidates.emplace_back(queryPoint, worldNormal, penetration, worldContactPoint);
+
          }
       };
-      
+
       // Phase 1: Collect penetrating contact candidates from vertices
       // Process all vertices for comprehensive collision detection
       for (size_t i = 0; i < queryVertices.size(); ++i) {
          processQueryPoint(queryVertices[i]);
+      }
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap processed " << queryVertices.size() << " vertices, candidates so far: "
+             << candidates.size() << "\n";
       }
       
       // Phase 2: Sample edge midpoints to catch edge-face penetrations
@@ -4111,6 +4135,9 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             }
          }
       }
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap processed edge midpoints, candidates: " << candidates.size() << "\n";
+      }
       
       // Phase 3: Sample triangle barycenters to catch face-face penetrations
       // This is crucial for detecting contact when two flat surfaces meet
@@ -4119,14 +4146,17 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             // Calculate triangle barycenter (centroid)
             Vec3 barycenter(0.0, 0.0, 0.0);
             for (size_t idx = 0; idx < face.size(); ++idx) {
-               barycenter += queryVertices[idx];
+               barycenter += queryVertices[face[idx]];
             }
             barycenter /= static_cast<real>(face.size());
             
             processQueryPoint(barycenter);
          }
       }
-      
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap processed face barycenters, total candidates: " << candidates.size() << "\n";
+      }
+
       // Phase 4: Contact manifold generation from candidates
       if (candidates.empty()) {
          return false; // No penetrating contacts found
