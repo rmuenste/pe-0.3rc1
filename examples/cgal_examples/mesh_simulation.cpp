@@ -40,6 +40,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 #include <pe/core.h>
 #include <pe/support.h>
 #include <pe/povray.h>
@@ -89,6 +90,7 @@ int main( int argc, char* argv[] )
    // Visualization variables
    bool vtk( true );
 
+   // hello
    setSeed( 12345 );  // Setup of the random number generation
 
    // Parsing the command line arguments
@@ -96,6 +98,10 @@ int main( int argc, char* argv[] )
    cli.getDescription().add_options()
      ( "mesh1", value<std::string>()->default_value(""), "first mesh file to be loaded" )
      ( "mesh2", value<std::string>()->default_value(""), "second mesh file to be loaded" )
+     ( "mesh2-position", value< std::vector<real> >()->multitoken()->default_value( std::vector<real>{0.0, 0.0, 0.1275}, "0 0 0.1275" ),
+       "initial position of the second mesh (x y z, only used when not restarting)" )
+     ( "mesh2-euler", value< std::vector<real> >()->multitoken()->default_value( std::vector<real>{0.0, 0.0, 0.0}, "0 0 0" ),
+       "Euler angles (radians) for the second mesh, applied in x-y-z order after creation (only used when not restarting)" )
      ( "checkpoint-spacing", value<unsigned int>()->default_value(500), "write checkpoint every N timesteps (0 = disabled)" )
      ( "restart-from", value<std::string>()->default_value(""), "restart from checkpoint file" );
    cli.parse( argc, argv );
@@ -110,6 +116,25 @@ int main( int argc, char* argv[] )
    std::string restartFile = vm["restart-from"].as<std::string>();
 
    bool restartFromCheckpoint = !restartFile.empty();
+   Vec3 mesh2Position(0.0, 0.0, 0.1275);
+   Vec3 mesh2Euler(0.0, 0.0, 0.0);
+
+   if( !restartFromCheckpoint ) {
+      const auto mesh2PosVec = vm["mesh2-position"].as< std::vector<real> >();
+      const auto mesh2EulerVec = vm["mesh2-euler"].as< std::vector<real> >();
+
+      if( mesh2PosVec.size() == 3 ) {
+         mesh2Position = Vec3( mesh2PosVec[0], mesh2PosVec[1], mesh2PosVec[2] );
+      } else {
+         std::cout << "Warning: --mesh2-position expects three values. Using default position." << std::endl;
+      }
+
+      if( mesh2EulerVec.size() == 3 ) {
+         mesh2Euler = Vec3( mesh2EulerVec[0], mesh2EulerVec[1], mesh2EulerVec[2] );
+      } else {
+         std::cout << "Warning: --mesh2-euler expects three values. Using default orientation." << std::endl;
+      }
+   }
 
    if( !restartFromCheckpoint && (mesh1File.empty() || mesh2File.empty()) ) {
      std::cout << "Usage: " << argv[0] << " --mesh1 <file1.obj> --mesh2 <file2.obj>" << std::endl;
@@ -127,6 +152,8 @@ int main( int argc, char* argv[] )
    } else {
       std::cout << "Mesh 1: " << mesh1File << std::endl;
       std::cout << "Mesh 2: " << mesh2File << std::endl;
+      std::cout << "Mesh 2 initial position: " << mesh2Position << std::endl;
+      std::cout << "Mesh 2 initial Euler angles (rad): " << mesh2Euler << std::endl;
    }
 
    std::cout << "Timesteps: " << timesteps << std::endl;
@@ -224,9 +251,15 @@ int main( int argc, char* argv[] )
       
       // Load second mesh at different elevated position
       std::cout << "\nLoading mesh 2 from: " << mesh2File << std::endl;
-      mesh2 = createTriangleMesh(++id, Vec3(0.0,0.0, 0.1275), mesh2File, mesh2Material, false, true);
+      mesh2 = createTriangleMesh(++id, mesh2Position, mesh2File, mesh2Material, false, true);
 
       std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices at position: " << mesh2->getPosition() << std::endl;
+
+      // Apply user-defined orientation after creation
+      if( mesh2Euler.length() > real(0) ) {
+         mesh2->rotate( mesh2Euler[0], mesh2Euler[1], mesh2Euler[2] );
+         std::cout << "Mesh 2 rotated by Euler angles (rad): " << mesh2Euler << std::endl;
+      }
 
       // Enable DistanceMap acceleration on mesh 2
       mesh2->enableDistanceMapAcceleration(64, 6);  // resolution=64, tolerance=6
