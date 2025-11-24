@@ -52,7 +52,7 @@
 #include <pe/core/GeomTools.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Types.h>
-#include <pe/core/CollisionSystemID.h>
+#include <pe/core/lubrication/Params.h>  // lightweight access to hysteresis parameters
 #include <pe/math/Accuracy.h>
 #include <pe/math/Epsilon.h>
 #include <pe/math/Functions.h>
@@ -78,9 +78,8 @@
 
 namespace pe {
 
-// Forward declarations
+// Forward declaration
 class DistanceMap;
-CollisionSystemID theCollisionSystem();
 
 namespace detail {
 
@@ -113,6 +112,20 @@ inline real rampDown( real x, real start, real end )
 
 inline real computeHardWeight( real dist, real threshold, real blendHalfWidth )
 {
+   // Computes the blending factor for the HARD contact regime. Returns 1.0 when the gap is
+   // below the contact threshold, and smoothly ramps down to 0 across a band of width
+   // 2*blendHalfWidth centered at the threshold.
+   //
+   // Parameters:
+   //   dist            Signed gap (positive when separated, negative when penetrating).
+   //   threshold       The contactThreshold value.
+   //   blendHalfWidth  Half-width of the smoothing band around the threshold. If zero,
+   //                   the function degenerates to a sharp step at 'threshold'.
+   //
+   // Behavior:
+   //   - dist <= threshold - blendHalfWidth : weight = 1 (pure hard contact)
+   //   - dist >= threshold + blendHalfWidth : weight = 0 (no hard contact)
+   //   - otherwise                         : linearly ramps from 1 -> 0
    if( blendHalfWidth <= real(0) ) {
       return dist < threshold ? real(1) : real(0);
    }
@@ -123,11 +136,29 @@ inline real computeHardWeight( real dist, real threshold, real blendHalfWidth )
 }
 
 inline real computeLubricationWeight( real dist,
-                                      real threshold,
-                                      real lubricationThreshold,
-                                      real contactBlend,
-                                      real lubricationBlend )
+                                     real threshold,
+                                     real lubricationThreshold,
+                                     real contactBlend,
+                                     real lubricationBlend )
 {
+   // Computes the blending factor for the LUBRICATION regime. It ramps up as the gap approaches
+   // the contact threshold from above, and ramps down to zero again once the gap exceeds
+   // (threshold + lubricationThreshold), optionally smoothed by 'contactBlend' and
+   // 'lubricationBlend' half-widths.
+   //
+   // Parameters:
+   //   dist                 Signed gap (positive when separated, negative when penetrating).
+   //   threshold            The contactThreshold value.
+   //   lubricationThreshold Distance beyond the contactThreshold where lubrication is fully off.
+   //   contactBlend         Half-width for smoothing the ramp-up near the contact threshold.
+   //   lubricationBlend     Half-width for smoothing the ramp-down near the lubrication cutoff.
+   //
+   // Behavior:
+   //   - Ramps from 0 -> 1 across [threshold - contactBlend, threshold + contactBlend]
+   //   - Stays at 1 between threshold+contactBlend and (threshold + lubricationThreshold - lubricationBlend)
+   //   - Ramps from 1 -> 0 across [(threshold + lubricationThreshold - lubricationBlend),
+   //                               (threshold + lubricationThreshold + lubricationBlend)]
+   //   - Returns 0 outside these bands; clamp01() ensures the product stays within [0,1].
    const real entryStart = threshold - contactBlend;
    const real entryEnd   = threshold + contactBlend;
    const real exitCenter = threshold + lubricationThreshold;
@@ -663,9 +694,8 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
    const real dist( normal.length() - s1->getRadius() - s2->getRadius() );
 
 #ifdef PE_LUBRICATION_CONTACTS
-   CollisionSystemID collisionSystem = theCollisionSystem();
-   const real contactBlend = collisionSystem->getContactHysteresisDelta();
-   const real lubricationBlend = collisionSystem->getLubricationHysteresisDelta();
+   const real contactBlend = lubrication::getContactHysteresisDelta();
+   const real lubricationBlend = lubrication::getLubricationHysteresisDelta();
 
    const real hardWeight = detail::computeHardWeight( dist, contactThreshold, contactBlend );
    const real lubWeight  = detail::computeLubricationWeight( dist, contactThreshold, lubricationThreshold, contactBlend, lubricationBlend );
@@ -1055,9 +1085,8 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
    const real dist( k - s->getRadius() - p->getDisplacement() );
 
 #ifdef PE_LUBRICATION_CONTACTS
-   CollisionSystemID collisionSystem = theCollisionSystem();
-   const real contactBlend = collisionSystem->getContactHysteresisDelta();
-   const real lubricationBlend = collisionSystem->getLubricationHysteresisDelta();
+   const real contactBlend = lubrication::getContactHysteresisDelta();
+   const real lubricationBlend = lubrication::getLubricationHysteresisDelta();
 
    const real hardWeight = detail::computeHardWeight( dist, contactThreshold, contactBlend );
    const real lubWeight  = detail::computeLubricationWeight( dist, contactThreshold, lubricationThreshold, contactBlend, lubricationBlend );
