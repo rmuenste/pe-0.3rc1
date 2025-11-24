@@ -69,6 +69,13 @@ public:
    //@}
    //**********************************************************************************************
 
+   // Lubrication-related no-ops to satisfy ContactVector interface when PE_LUBRICATION_CONTACTS
+   // is enabled. Link contacts are used only for setup and do not participate in lubrication.
+   inline void setLubricationFlag() {}
+   inline void setLubricationWeight( real ) {}
+   inline bool getLubricationFlag() const { return false; }
+   inline real getLubricationWeight() const { return real(0); }
+
 private:
    //**Member variables****************************************************************************
    /*!\name Member variables */

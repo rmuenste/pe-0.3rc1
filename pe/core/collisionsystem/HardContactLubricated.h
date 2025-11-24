@@ -68,6 +68,7 @@
 #include <pe/core/rigidbody/MPIRigidBodyTrait.h>
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/notifications/NotificationType.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/notifications/RigidBodyCopyNotification.h>
 #include <pe/core/notifications/RigidBodyDeletionNotification.h>
 #include <pe/core/notifications/RigidBodyForceNotification.h>
@@ -467,6 +468,9 @@ CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::CollisionSystem(
    , contactHysteresisDelta_     ( real(1e-9) )
    , lubricationHysteresisDelta_ ( real(1e-9) )
 {
+   // Seed lightweight globals for detection without requiring CollisionSystem in headers
+   lubrication::setContactHysteresisDelta( contactHysteresisDelta_ );
+   lubrication::setLubricationHysteresisDelta( lubricationHysteresisDelta_ );
    // Registering all timers
    timers_.push_back( &timeSimulationStep_ );
    timers_.push_back( &timeCollisionDetection_ );
@@ -948,6 +952,7 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setC
 {
    pe_INTERNAL_ASSERT( delta >= 0, "Contact hysteresis delta must be non-negative." );
    contactHysteresisDelta_ = delta;
+   lubrication::setContactHysteresisDelta( contactHysteresisDelta_ );
 }
 //*************************************************************************************************
 
@@ -974,6 +979,7 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setL
 {
    pe_INTERNAL_ASSERT( delta >= 0, "Lubrication hysteresis delta must be non-negative." );
    lubricationHysteresisDelta_ = delta;
+    lubrication::setLubricationHysteresisDelta( lubricationHysteresisDelta_ );
 }
 //*************************************************************************************************
 
