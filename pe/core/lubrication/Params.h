@@ -21,6 +21,10 @@ void setContactHysteresisDelta( real delta );
 real getLubricationHysteresisDelta();
 void setLubricationHysteresisDelta( real delta );
 
+// Getter/setter pair for lubrication threshold distance
+real getLubricationThreshold();
+void setLubricationThreshold( real threshold );
+
 } // namespace lubrication
 } // namespace pe
 

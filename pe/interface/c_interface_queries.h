@@ -11,6 +11,22 @@ bool check_rem_id(int fbmid, int id) {
 
 
 //=================================================================================================
+/*!\brief Sets the lubrication threshold distance from Fortran.
+ *
+ * \param threshold Pointer to the lubrication threshold distance value.
+ * \return void
+ *
+ * This function allows Fortran code to set the runtime lubrication threshold distance,
+ * which determines the maximum separation at which lubrication forces are active.
+ */
+extern "C" void set_lubrication_threshold(double *threshold)
+{
+   pe::lubrication::setLubricationThreshold( static_cast<pe::real>(*threshold) );
+}
+//=================================================================================================
+
+
+//=================================================================================================
 /*
  *!\brief The function returns the total number of particles
  */
