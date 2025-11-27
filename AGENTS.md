@@ -2,6 +2,12 @@
 
 This file provides guidance to OpenAI Agents (e.g., ChatGPT in the Codex CLI) when working with code in this repository.
 
+## Recent Updates (Nov 2025)
+
+- HardContactLubricated now exposes lightweight runtime controls for contact/lubrication blending (`pe/core/lubrication/Params.*`). `MaxContacts` queries these globals instead of walking through `CollisionSystem`, so remember to seed them in new entry points.
+- DistanceMap fine detection recently gained stricter validation and CLI pose controls in `examples/cgal_examples/mesh_simulation.cpp`; leverage `--mesh2-position` / `--mesh2-euler` when reproducing collisions.
+- `set_lubrication_threshold` is available via the C interface, and `sim_setup_serial` positions the validation sphere at `(0.05, 0.05, 0.02)` for the latest lubrication experiments.
+
 ## Build System
 
 The PE (Physics Engine) has two build systems:

@@ -13,6 +13,7 @@ namespace lubrication {
 namespace {
 real contactHystDelta  = real(0);
 real lubricationHystDelta = real(0);
+real lubricationThresh = real(1E-2);  // Default matches Thresholds.h
 }  // namespace
 
 real getContactHysteresisDelta()
@@ -33,6 +34,16 @@ real getLubricationHysteresisDelta()
 void setLubricationHysteresisDelta( real delta )
 {
    lubricationHystDelta = delta;
+}
+
+real getLubricationThreshold()
+{
+   return lubricationThresh;
+}
+
+void setLubricationThreshold( real threshold )
+{
+   lubricationThresh = threshold;
 }
 
 } // namespace lubrication

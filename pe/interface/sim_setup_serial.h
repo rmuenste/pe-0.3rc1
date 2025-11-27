@@ -424,7 +424,7 @@ inline void setupLubricationLabSerial(int cfd_rank) {
   //==============================================================================================
   real radBench = config.getBenchRadius();
   real rhoParticle( config.getParticleDensity() );
-  Vec3 position(-0.0, -0.0, 0.1275);
+  Vec3 position(0.05, 0.05, 0.02);
 
   MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   SphereID sphere(nullptr);

@@ -80,6 +80,7 @@
 #include <pe/core/notifications/RigidBodyVelocityCorrectionNotification.h>
 #include <pe/core/RootSection.h>
 #include <pe/core/SerialSection.h>
+#include <pe/core/TimeStep.h>
 #include <pe/core/Types.h>
 #include <pe/math/Matrix2x2.h>
 #include <pe/math/Vector2.h>
@@ -235,6 +236,7 @@ public:
    inline void            setErrorReductionParameter( real erp );
    inline void            setContactHysteresisDelta( real delta );
    inline void            setLubricationHysteresisDelta( real delta );
+   inline void            setLubricationThreshold( real threshold );
    //@}
    //**********************************************************************************************
 
@@ -243,6 +245,7 @@ public:
    //@{
    inline real            getContactHysteresisDelta() const;
    inline real            getLubricationHysteresisDelta() const;
+   inline real            getLubricationThreshold() const;
    //@}
    //**********************************************************************************************
 
@@ -382,6 +385,7 @@ private:
    // Transition blending parameters
    real contactHysteresisDelta_;      //!< Hysteresis band width for hard contact transitions
    real lubricationHysteresisDelta_;  //!< Hysteresis band width for lubrication transitions
+   real lubricationThreshold_;        //!< Lubrication threshold distance (runtime configurable)
 
    timing::WcTimer timeSimulationStep_, timeCollisionDetection_, timeCollisionResponse_, timeCollisionResponseContactFiltering_, timeCollisionResponseContactCaching_, timeCollisionResponseBodyCaching_, timeCollisionResponseSolving_, timeCollisionResponseIntegration_, timeBodySync_, timeBodySyncAssembling_, timeBodySyncCommunicate_, timeBodySyncParsing_, timeVelocitiesSync_, timeVelocitiesSyncCorrectionsAssembling_, timeVelocitiesSyncCorrectionsCommunicate_, timeVelocitiesSyncCorrectionsParsing_, timeVelocitiesSyncUpdatesAssembling_, timeVelocitiesSyncUpdatesCommunicate_, timeVelocitiesSyncUpdatesParsing_, timeVelocitiesSyncGlobals_;
    std::vector<timing::WcTimer*> timers_;
@@ -467,10 +471,12 @@ CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::CollisionSystem(
    , alphaImpulseCap_  ( real(1.0) )
    , contactHysteresisDelta_     ( real(1e-9) )
    , lubricationHysteresisDelta_ ( real(1e-9) )
+   , lubricationThreshold_       ( real(1e-2) )  // Default matches Thresholds.h
 {
    // Seed lightweight globals for detection without requiring CollisionSystem in headers
    lubrication::setContactHysteresisDelta( contactHysteresisDelta_ );
    lubrication::setLubricationHysteresisDelta( lubricationHysteresisDelta_ );
+   lubrication::setLubricationThreshold( lubricationThreshold_ );
    // Registering all timers
    timers_.push_back( &timeSimulationStep_ );
    timers_.push_back( &timeCollisionDetection_ );
@@ -985,6 +991,32 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setL
 
 
 //*************************************************************************************************
+/*!\brief Sets the lubrication threshold distance.
+ *
+ * \param threshold The lubrication threshold distance.
+ * \return void
+ *
+ * This function sets the lubrication threshold distance, which determines the maximum
+ * separation at which lubrication forces are active (relative to contactThreshold).
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setLubricationThreshold( real threshold )
+{
+   pe_INTERNAL_ASSERT( threshold >= 0, "Lubrication threshold must be non-negative." );
+   lubricationThreshold_ = threshold;
+   lubrication::setLubricationThreshold( lubricationThreshold_ );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Returns the contact hysteresis delta parameter.
  *
  * \return The current contact hysteresis delta value.
@@ -1020,6 +1052,26 @@ template< template<typename> class CD                           // Type of the c
 inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getLubricationHysteresisDelta() const
 {
    return lubricationHysteresisDelta_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the lubrication threshold distance.
+ *
+ * \return The current lubrication threshold distance.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getLubricationThreshold() const
+{
+   return lubricationThreshold_;
 }
 //*************************************************************************************************
 
@@ -2058,6 +2110,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
       synchronizeVelocities();
       // Apply lubrication velocity corrections for tagged pairs (sphere-sphere, sphere-plane)
       {
+         real totalLubricationForce = real(0);  // Track total force for logging
+
          pe_LOG_DEBUG_SECTION( log ) {
             log << "   Applying lubrication forces:\n";
          }
@@ -2170,6 +2224,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
             const real Fmag_weighted = Fmag_capped * blend;
             const Vec3 F = Fmag_weighted * n;
 
+            // Accumulate total lubrication force magnitude for summary logging
+            totalLubricationForce += Fmag_weighted;
+
             pe_LOG_DEBUG_SECTION( log ) {
                log << "         Geometry        = " << geometryType << "\n"
                    << "         R_eff           = " << R_eff << "\n"
@@ -2206,6 +2263,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
                    << "            Body " << b2->getID() << ": v=" << v2_post << ", w=" << w2_post << "\n"
                    << "         Status: APPLIED\n";
             }
+         }
+
+         // Log summary for plotting: always output step and total lubrication force
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "[LUBRICATION_SUMMARY] Step: " << TimeStep::step()
+                << ", TotalForce: " << totalLubricationForce << "\n";
          }
       }
 
