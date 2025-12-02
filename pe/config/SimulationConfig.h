@@ -205,6 +205,8 @@ public:
     void setFluidDensity(real value) { fluidDensity_ = value; }
     const Vec3& getGravity() const { return gravity_; }
     void setGravity(const Vec3& value) { gravity_ = value; }
+    real getLubricationHysteresisDelta() const { return lubricationHysteresisDelta_; }
+    void setLubricationHysteresisDelta(real value) { lubricationHysteresisDelta_ = value; }
     //@}
     //**************************************************************************************
 
@@ -260,6 +262,7 @@ private:
     real fluidViscosity_;        //!< Fluid dynamic viscosity
     real fluidDensity_;          //!< Fluid density
     Vec3 gravity_;               //!< Gravity vector
+    real lubricationHysteresisDelta_; //!< Half-width of lubrication blend band
     //@}
     //**************************************************************************************
 };

@@ -10,5 +10,6 @@
     "visspacing_": 60,
     "pointerspacing_": 120,
     "useCheckpointer_": true,
-    "checkpoint_path_": "checkpoints/test/"
+    "checkpoint_path_": "checkpoints/test/",
+    "lubricationHysteresisDelta_": 0.001
 }
