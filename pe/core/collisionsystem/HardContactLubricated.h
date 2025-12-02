@@ -470,7 +470,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::CollisionSystem(
    , minEpsLub_        ( real(1e-8) )
    , alphaImpulseCap_  ( real(1.0) )
    , contactHysteresisDelta_     ( real(1e-9) )
-   , lubricationHysteresisDelta_ ( real(1e-9) )
+   , lubricationHysteresisDelta_ ( real(1e-3) )
    , lubricationThreshold_       ( real(1e-2) )  // Default matches Thresholds.h
 {
    // Seed lightweight globals for detection without requiring CollisionSystem in headers
@@ -2214,7 +2214,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
             if( invm_sum > real(0) ) {
                const real m_eff = real(1) / invm_sum;
                const real J     = Fmag_capped * dt;               // proposed impulse magnitude
-               const real Jcap  = alphaImpulseCap_ * m_eff * (-vrn);
+               // Scale cap by lubrication blend so it ramps up near hard-contact entry
+               const real Jcap  = ( alphaImpulseCap_ * blend ) * m_eff * (-vrn);
                if( J > Jcap && J > real(0) ) {
                   Fmag_capped *= ( Jcap / J );
                   capped = true;

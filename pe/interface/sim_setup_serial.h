@@ -33,6 +33,8 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
   WorldID world = theWorld();
+  // Apply lubrication hysteresis from configuration
+  theCollisionSystem()->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
@@ -120,6 +122,8 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);
   WorldID world = theWorld();
+  // Apply lubrication hysteresis from configuration
+  theCollisionSystem()->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
 
   //==============================================================================================
   // Simulation Input Parameters 
@@ -389,6 +393,8 @@ inline void setupLubricationLabSerial(int cfd_rank) {
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);
   WorldID world = theWorld();
+  // Apply lubrication hysteresis from configuration
+  theCollisionSystem()->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
@@ -462,6 +468,8 @@ inline void setupDrillSerial(int cfd_rank) {
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);
   WorldID world = theWorld();
+  // Apply lubrication hysteresis from configuration
+  theCollisionSystem()->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
 
   //==============================================================================================
   // Simulation Input Parameters
