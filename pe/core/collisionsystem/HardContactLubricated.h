@@ -237,6 +237,8 @@ public:
    inline void            setContactHysteresisDelta( real delta );
    inline void            setLubricationHysteresisDelta( real delta );
    inline void            setLubricationThreshold( real threshold );
+   inline void            setAlphaImpulseCap( real alpha );
+   inline void            setMinEpsLub( real eps );
    //@}
    //**********************************************************************************************
 
@@ -246,6 +248,8 @@ public:
    inline real            getContactHysteresisDelta() const;
    inline real            getLubricationHysteresisDelta() const;
    inline real            getLubricationThreshold() const;
+   inline real            getAlphaImpulseCap() const;
+   inline real            getMinEpsLub() const;
    //@}
    //**********************************************************************************************
 
@@ -1015,6 +1019,47 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setL
 }
 //*************************************************************************************************
 
+//*************************************************************************************************
+/*!\brief Sets the maximum impulse cap factor for lubrication.
+ *
+ * \param alpha Scaling factor for the impulse cap.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setAlphaImpulseCap( real alpha )
+{
+   pe_INTERNAL_ASSERT( alpha >= real(0), "alphaImpulseCap must be non-negative." );
+   alphaImpulseCap_ = alpha;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the lubrication gap regularization epsilon.
+ *
+ * \param eps Minimal gap to use when computing lubrication forces.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setMinEpsLub( real eps )
+{
+   pe_INTERNAL_ASSERT( eps > real(0), "minEpsLub must be positive." );
+   minEpsLub_ = eps;
+}
+//*************************************************************************************************
+
 
 //*************************************************************************************************
 /*!\brief Returns the contact hysteresis delta parameter.
@@ -1072,6 +1117,46 @@ template< template<typename> class CD                           // Type of the c
 inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getLubricationThreshold() const
 {
    return lubricationThreshold_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the maximum impulse cap factor for lubrication.
+ *
+ * \return Current alphaImpulseCap value.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getAlphaImpulseCap() const
+{
+   return alphaImpulseCap_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the lubrication gap regularization epsilon.
+ *
+ * \return Current minEpsLub value.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getMinEpsLub() const
+{
+   return minEpsLub_;
 }
 //*************************************************************************************************
 

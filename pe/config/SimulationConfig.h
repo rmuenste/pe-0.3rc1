@@ -207,6 +207,12 @@ public:
     void setGravity(const Vec3& value) { gravity_ = value; }
     real getLubricationHysteresisDelta() const { return lubricationHysteresisDelta_; }
     void setLubricationHysteresisDelta(real value) { lubricationHysteresisDelta_ = value; }
+    real getContactHysteresisDelta() const { return contactHysteresisDelta_; }
+    void setContactHysteresisDelta(real value) { contactHysteresisDelta_ = value; }
+    real getAlphaImpulseCap() const { return alphaImpulseCap_; }
+    void setAlphaImpulseCap(real value) { alphaImpulseCap_ = value; }
+    real getMinEpsLub() const { return minEpsLub_; }
+    void setMinEpsLub(real value) { minEpsLub_ = value; }
     //@}
     //**************************************************************************************
 
@@ -263,6 +269,9 @@ private:
     real fluidDensity_;          //!< Fluid density
     Vec3 gravity_;               //!< Gravity vector
     real lubricationHysteresisDelta_; //!< Half-width of lubrication blend band
+    real contactHysteresisDelta_; //!< Half-width of contact blend band
+    real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
+    real minEpsLub_;             //!< Regularization epsilon for lubrication gap
     //@}
     //**************************************************************************************
 };
