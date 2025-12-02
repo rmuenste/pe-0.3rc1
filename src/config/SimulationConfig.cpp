@@ -71,6 +71,7 @@ SimulationConfig::SimulationConfig()
     , fluidViscosity_(1.0)
     , fluidDensity_(1.0)
     , gravity_(0.0, 0.0, -9.81)
+    , lubricationHysteresisDelta_(1e-3)
 {
 }
 //=================================================================================================
@@ -211,6 +212,10 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set fluid density
     if (j.contains("fluidDensity_"))
         config.setFluidDensity(j["fluidDensity_"].get<real>());
+
+    // Set lubrication hysteresis blend half-width
+    if (j.contains("lubricationHysteresisDelta_"))
+        config.setLubricationHysteresisDelta(j["lubricationHysteresisDelta_"].get<real>());
 
     // Set gravity vector
     if (j.contains("gravity_")) {
