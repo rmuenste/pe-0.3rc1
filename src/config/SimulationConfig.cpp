@@ -72,6 +72,9 @@ SimulationConfig::SimulationConfig()
     , fluidDensity_(1.0)
     , gravity_(0.0, 0.0, -9.81)
     , lubricationHysteresisDelta_(1e-3)
+    , contactHysteresisDelta_(1e-9)
+    , alphaImpulseCap_(1.0)
+    , minEpsLub_(1e-8)
 {
 }
 //=================================================================================================
@@ -216,6 +219,18 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set lubrication hysteresis blend half-width
     if (j.contains("lubricationHysteresisDelta_"))
         config.setLubricationHysteresisDelta(j["lubricationHysteresisDelta_"].get<real>());
+
+    // Set contact hysteresis blend half-width
+    if (j.contains("contactHysteresisDelta_"))
+        config.setContactHysteresisDelta(j["contactHysteresisDelta_"].get<real>());
+
+    // Set lubrication impulse cap factor
+    if (j.contains("alphaImpulseCap_"))
+        config.setAlphaImpulseCap(j["alphaImpulseCap_"].get<real>());
+
+    // Set lubrication gap regularization
+    if (j.contains("minEpsLub_"))
+        config.setMinEpsLub(j["minEpsLub_"].get<real>());
 
     // Set gravity vector
     if (j.contains("gravity_")) {
