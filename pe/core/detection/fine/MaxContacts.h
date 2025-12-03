@@ -4070,7 +4070,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          
          // Collect all penetrating candidates (negative distance = penetration)
          if (distance < contactThreshold) {
-            pe_LOG_DEBUG_SECTION( log ) {
+            pe_LOG_DETAIL_SECTION( log ) { 
                // Validate against exact signed distance to avoid false negatives from coarse SDF interpolation
                const real validationSlack = std::max(distMap->getSpacing() * real(0.05), contactThreshold);
                real exactSignedDistance = referenceMesh->signedDistance(localPoint);
