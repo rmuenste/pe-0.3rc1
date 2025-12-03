@@ -1,43 +1,12 @@
-# DistanceMap Implementation Status & Remaining Improvements
+# DistanceMap Future Improvements & Roadmap
 
-## Implementation Summary (Updated 2025-11-19)
+> **Note**: For current implementation details, see [DistanceMap_Implementation.md](DistanceMap_Implementation.md)
 
-### ✅ What's Implemented and Working Well
-
-#### Core SDF Infrastructure
-* **Coherent SDF pipeline** (AABB tree → signed distance via `Side_of_triangle_mesh` → trilinear interpolation)
-* **Clear frame handling** (BF↔WF transforms) — critical for SDFs living in the ref mesh's local frame
-* **Clean integration** (try SDF; else GJK/EPA) with a single collision entry point
-* **Checkpointing support** — DistanceMap parameters saved/restored for simulation restart (rebuilds SDF from parameters)
-
-#### Multi-Contact Manifold System ✅ IMPLEMENTED (Commit 8745056)
-* **Comprehensive candidate gathering:**
-  * ✅ Vertex sampling (all vertices)
-  * ✅ Edge midpoint sampling (with deduplication)
-  * ✅ Triangle barycenter sampling (face-face collision detection)
-  * Eliminates face-face collision misses from vertex-only testing
-
-* **Contact clustering & reduction:**
-  * ✅ Proximity clustering (2.0 × DistanceMap spacing)
-  * ✅ Normal similarity grouping (dot product > 0.9)
-  * ✅ Prevents redundant nearby contacts
-
-* **Representative selection:**
-  * ✅ Deepest contact per cluster (max penetration)
-  * ✅ Extremal contacts in tangent directions (up to 4 per cluster)
-  * ✅ Proper tangent space calculations with orthonormal basis
-  * ✅ Contact limit: 6 contacts per mesh pair for performance
-
-* **Additional features:**
-  * ✅ Comprehensive debug logging with cluster statistics
-  * ✅ Contact area estimation for plane collisions
-  * ✅ Configurable clustering for plane-mesh collisions (compile-time flag)
-
-**Result:** Chair/table stability significantly improved; proper torque distribution; reduced friction jitter.
+This document outlines planned enhancements and future work for the DistanceMap collision detection system.
 
 ---
 
-## Remaining High-Priority Improvements
+## High-Priority Improvements
 
 ### 1) Symmetric Testing (High Priority)
 
@@ -294,17 +263,15 @@ averageNormal = averageNormal.getNormalized();
 
 ---
 
-## Diagnostic Testing Checklist
+## Recommended Validation Tests
 
-Recommended tests to validate improvements:
+Tests to validate future improvements:
 
-* ✅ **Vertex-only miss test**: Face-face plate collision (FIXED with edge/bary sampling)
-* ⚠️ **Symmetric detection**: Two meshes with DistanceMaps, grazing contact (TODO: implement symmetric testing)
-* ⚠️ **Persistence test**: Rolling sphere, track contact lifetime and impulse warm-starting (TODO: implement persistence)
-* ✅ **Multi-contact stability**: Chair on plane (4 legs), verify no rocking (FIXED with manifold)
-* ⚠️ **CCD test**: Fast-moving sphere vs thin wall, verify no tunneling (TODO: implement CCD guardrail)
-* 📊 **Resolution sweep**: spacing = 0.5%, 1%, 2% of bbox diagonal; measure penetration error vs. spacing
-* 📊 **Performance benchmark**: GJK/EPA vs DistanceMap collision time for various mesh complexities
+* **Symmetric detection**: Two meshes with DistanceMaps, grazing contact scenarios
+* **Persistence test**: Rolling sphere, track contact lifetime and impulse warm-starting effectiveness
+* **CCD test**: Fast-moving sphere vs thin wall, verify no tunneling at high velocities
+* **Resolution sweep**: spacing = 0.5%, 1%, 2% of bbox diagonal; measure penetration error vs. spacing
+* **Performance benchmark**: GJK/EPA vs DistanceMap collision time for various mesh complexities
 
 ---
 
@@ -335,18 +302,16 @@ Recommended tests to validate improvements:
 
 ---
 
-## Conclusion
+## Summary
 
-The DistanceMap system has matured significantly with the **multi-contact manifold implementation** (commit 8745056), addressing the primary stability issues from single-point contacts. The system now provides:
+This roadmap focuses on three main enhancement areas:
 
-* ✅ Comprehensive collision detection (vertex + edge + face sampling)
-* ✅ Stable multi-contact manifolds with intelligent clustering
-* ✅ Proper coordinate transformation handling
-* ✅ Checkpoint/restart support
+1. **Collision Coverage** (High Priority): Symmetric testing to eliminate detection gaps when both meshes have DistanceMaps
+2. **Solver Integration** (Medium Priority): Contact persistence and warm-starting for improved stability and convergence
+3. **Advanced Scenarios** (Low Priority): CCD guardrails for high-velocity impacts, memory optimizations for large-scale simulations
 
-**Key remaining work:**
-* **Symmetric testing** for bidirectional DistanceMap collision (highest priority)
-* **Contact persistence** for temporal coherence and warm-starting
-* **CCD guardrails** for high-velocity robustness
-
-The system is production-ready for most scenarios; remaining improvements target advanced use cases (very fast motion, very complex contact scenarios, memory-constrained deployments).
+The improvements target advanced use cases including:
+- High-speed collisions and impacts
+- Complex multi-body contact scenarios
+- Memory-constrained or large-scale deployments
+- Scenarios requiring maximum temporal coherence and stability

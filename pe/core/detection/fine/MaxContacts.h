@@ -4070,15 +4070,15 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          
          // Collect all penetrating candidates (negative distance = penetration)
          if (distance < contactThreshold) {
-            // Validate against exact signed distance to avoid false negatives from coarse SDF interpolation
-            const real validationSlack = std::max(distMap->getSpacing() * real(0.05), contactThreshold);
-            real exactSignedDistance = referenceMesh->signedDistance(localPoint);
-            if( exactSignedDistance > -validationSlack ) {
-               pe_LOG_DEBUG_SECTION( log ) {
+            pe_LOG_DEBUG_SECTION( log ) {
+               // Validate against exact signed distance to avoid false negatives from coarse SDF interpolation
+               const real validationSlack = std::max(distMap->getSpacing() * real(0.05), contactThreshold);
+               real exactSignedDistance = referenceMesh->signedDistance(localPoint);
+               if( exactSignedDistance > -validationSlack ) {
                   log << "   rejected by exact signed distance check: exactSignedDistance="
                       << exactSignedDistance << " slack=" << validationSlack << "\n";
+                  return; // Skip spurious penetration reports
                }
-               return; // Skip spurious penetration reports
             }
 
             // Get normal and contact point from DistanceMap (in local coordinates)
@@ -4345,9 +4345,6 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
    // Configuration: Enable/disable clustering for DistanceMap plane collision
    #define PE_DISTANCEMAP_PLANE_CLUSTERING 0  // Set to 1 to enable clustering, 0 to disable
 
-   pe_LOG_DEBUG_SECTION( log ) {
-      log << "At least we inside collidePlaneTMeshWithDistanceMap \n";
-   }
 #ifdef PE_USE_CGAL
    // Check if mesh has DistanceMap acceleration
    if (!mesh->hasDistanceMap()) {

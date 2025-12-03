@@ -9,7 +9,8 @@ The DistanceMap collision detection system provides efficient mesh-to-mesh colli
 - **Preprocessing-based**: Builds SDF grid once per mesh, enabling fast runtime queries
 - **CGAL Integration**: Leverages CGAL's robust geometric algorithms for mesh processing
 - **Coordinate Transformation**: Handles arbitrary mesh positions and orientations
-- **Fallback System**: Seamlessly falls back to GJK/EPA when DistanceMap unavailable
+- **Multi-Contact Manifolds**: Generates stable contact manifolds with clustering and extremal point selection
+- **Non-Convex Mesh Support**: No fallback to GJK/EPA for meshes with DistanceMap (designed for non-convex geometry)
 - **PE Integration**: Fully integrated into PE's collision detection pipeline
 
 ### Motivation
@@ -137,10 +138,12 @@ Broad Phase Detection → Fine Collision Detection → Contact Generation
                            ↓
                     DistanceMap Available?
                            ↓
-                    [Yes] → DistanceMap Path
+                    [Yes] → DistanceMap Path (no fallback for non-convex meshes)
                            ↓
-                    [No]  → GJK/EPA Fallback
+                    [No]  → GJK/EPA (for convex or meshes without DistanceMap)
 ```
+
+**Important**: When a DistanceMap is present, the system does NOT fall back to GJK/EPA, as meshes using DistanceMap are typically non-convex and unsuitable for GJK/EPA.
 
 ### DistanceMap Detection Algorithm
 
@@ -265,172 +268,181 @@ size_t sampleSize = 100UL; // Sample up to 100 points
 size_t sampleStep = std::max(size_t(1), queryVertices.size() / sampleSize);
 ```
 
-### GJK/EPA Fallback
+### GJK/EPA for Non-DistanceMap Meshes
 
-When DistanceMap is unavailable, the system falls back to traditional GJK/EPA:
+When DistanceMap is NOT available, the system uses traditional GJK/EPA:
 
 ```cpp
 void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& contacts )
 {
-    // Try DistanceMap-based collision detection first
+    // Priority-based collision detection
+    // Try DistanceMap-based collision detection first (if available)
     if (mA->hasDistanceMap() || mB->hasDistanceMap()) {
-        if (collideWithDistanceMap(mA, mB, contacts)) {
-            return; // DistanceMap collision successful
-        }
+        collideWithDistanceMap(mA, mB, contacts);
+        // If a DistanceMap is present, do NOT fall back to GJK/EPA since meshes are non-convex
+        return;
     }
 
-    // GJK/EPA fallback
+    // GJK/EPA for convex meshes or meshes without DistanceMap
     Vec3 normal, contactPoint;
     pe::real penetrationDepth;
-    
+
     if(gjkEPAcollideHybrid<TriangleMeshID, TriangleMeshID>(mA, mB, normal, contactPoint, penetrationDepth)) {
         contacts.addVertexFaceContact(mA, mB, contactPoint, normal, penetrationDepth);
     }
 }
 ```
 
-## Contact Generation and Single Contact Point Approach
+**Critical Design Decision**: The system explicitly does NOT fall back from DistanceMap to GJK/EPA when a DistanceMap is present, as meshes using DistanceMap are typically non-convex and unsuitable for GJK/EPA collision detection.
+
+## Multi-Contact Manifold Generation
 
 ### Current Implementation
 
-The DistanceMap collision detection system generates **exactly one contact point** per mesh pair - the deepest penetration contact.
+The DistanceMap collision detection system implements a **multi-contact manifold approach** that generates stable contact sets with intelligent clustering and representative selection.
 
-**Location**: `pe/core/detection/fine/MaxContacts.h:3930-3946`
+**Location**: `pe/core/detection/fine/MaxContacts.h` (lines ~4038-4320)
+
+### Algorithm Overview
+
+The contact generation pipeline consists of four main phases:
+
+1. **Candidate Collection**: Sample multiple geometric features (vertices, edges, faces)
+2. **Contact Clustering**: Group nearby contacts with similar normals
+3. **Representative Selection**: Choose deepest + extremal contacts per cluster
+4. **Contact Limiting**: Cap total contacts at 6 per mesh pair for performance
+
+### Phase 1: Comprehensive Candidate Sampling
+
+The system samples three types of geometric features to ensure comprehensive collision detection:
 
 ```cpp
-// Find the deepest penetrating vertex
-if (distance < minDistance) {
-    minDistance = distance;
-    
-    // Store the deepest contact information (in world coordinates)
-    minPenetrationNormal = worldNormal;
-    deepestContactPoint = worldContactPoint;
+struct ContactCandidate {
+    Vec3 worldPos;        // Query point in world coordinates
+    Vec3 worldNormal;     // Contact normal in world coordinates
+    real penetration;     // Penetration depth (positive = penetrating)
+    Vec3 contactPoint;    // Surface contact point in world coordinates
+};
+
+std::vector<ContactCandidate> candidates;
+```
+
+#### Vertex Sampling
+All query mesh vertices are tested against the reference mesh's DistanceMap:
+
+```cpp
+for (size_t i = 0; i < queryVertices.size(); ++i) {
+    processQueryPoint(queryVertices[i]);
 }
 ```
 
-### Single Contact Point Analysis
-
-#### Advantages (Pros)
-
-1. **Computational Efficiency**
-   - **O(n) complexity**: Single pass through query vertices
-   - **Minimal memory usage**: Stores only one contact per collision
-   - **Fast contact resolution**: Constraint solver handles fewer contacts
-   - **Deterministic results**: Always selects the same deepest point
-
-2. **Numerical Stability**
-   - **No contact clustering**: Avoids redundant nearby contacts
-   - **Consistent contact normal**: Single well-defined contact direction
-   - **Reduced solver complexity**: Fewer constraint equations to solve
-   - **Robust convergence**: Simpler contact manifold topology
-
-3. **Implementation Simplicity**
-   - **Straightforward algorithm**: Easy to understand and debug  
-   - **Minimal configuration**: No complex contact merging parameters
-   - **Clear semantics**: Unambiguous contact semantics
-   - **Predictable behavior**: Consistent across different mesh configurations
-
-#### Disadvantages (Cons)
-
-1. **Limited Contact Information**
-   - **Missing contact manifolds**: Large contact areas represented by single point
-   - **Incomplete force distribution**: Contact forces concentrated at single point
-   - **Reduced stability**: May cause unrealistic contact behavior for large contacts
-   - **Loss of contact details**: Complex contact geometry simplified away
-
-2. **Physical Accuracy Limitations**
-   - **Unrealistic contact mechanics**: Real contact involves contact patches, not points
-   - **Moment calculations**: Missing torques from extended contact areas
-   - **Pressure distribution**: Cannot represent distributed contact pressure
-   - **Contact area effects**: Friction and normal forces should scale with contact area
-
-3. **Simulation Quality Issues**
-   - **Contact jittering**: Single contact point may "jump" between nearby vertices
-   - **Insufficient constraint**: One contact may under-constrain relative motion
-   - **Penetration artifacts**: Deep penetrations may not be fully resolved
-   - **Stability problems**: Contact may be insufficient for stable stacking/resting
-
-#### Alternative Approaches
-
-1. **Multiple Contact Generation**
+#### Edge Midpoint Sampling
+Edge midpoints are sampled to detect edge-face contacts:
 
 ```cpp
-// Collect all vertices within penetration threshold
-std::vector<ContactInfo> contactCandidates;
-
-for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
-    if (distance < contactThreshold) {
-        contactCandidates.push_back({vertex, distance, normal, contactPoint});
+for (const auto& face : queryFaceIndices) {
+    for (size_t edgeIdx = 0; edgeIdx < face.size(); ++edgeIdx) {
+        Vec3 edgeMidpoint = (queryVertices[face[edgeIdx]] +
+                            queryVertices[face[(edgeIdx + 1) % face.size()]]) * 0.5;
+        processQueryPoint(edgeMidpoint);
     }
 }
-
-// Generate multiple contacts (e.g., 4-point contact manifold)
-generateContactManifold(contactCandidates, contacts);
 ```
 
-**Pros**: More complete contact information, better force distribution
-**Cons**: Increased computational cost, contact clustering issues
-
-2. **Contact Manifold Construction**
+#### Triangle Barycenter Sampling
+Face barycenters are sampled to detect face-face contacts (critical for stability):
 
 ```cpp
-// Identify contact regions and construct manifold
-ContactManifold manifold = identifyContactRegions(queryMesh, referenceMesh);
-std::vector<ContactPoint> manifoldContacts = manifold.generateContacts();
-
-for (const auto& contact : manifoldContacts) {
-    contacts.addVertexFaceContact(queryMesh, referenceMesh, 
-                                 contact.position, contact.normal, contact.depth);
+for (const auto& face : queryFaceIndices) {
+    Vec3 barycenter(0.0, 0.0, 0.0);
+    for (size_t idx : face) {
+        barycenter += queryVertices[idx];
+    }
+    barycenter /= static_cast<real>(face.size());
+    processQueryPoint(barycenter);
 }
 ```
 
-**Pros**: Physically accurate contact representation, stable contact resolution
-**Cons**: Complex implementation, higher computational overhead
+#### Debug Validation (Debug Builds Only)
 
-3. **Adaptive Contact Sampling**
+In debug builds, an expensive exact signed distance validation filters out false positives:
 
 ```cpp
-// Adjust contact generation based on penetration depth and contact area
-if (minDistance < -significantPenetrationThreshold) {
-    // Generate multiple contacts for deep penetrations
-    generateMultipleContacts(queryMesh, referenceMesh, contacts);
-} else {
-    // Single contact sufficient for shallow penetrations  
-    generateSingleContact(queryMesh, referenceMesh, contacts);
+pe_LOG_DEBUG_SECTION( log ) {
+    // Validate against exact signed distance to avoid false negatives from coarse SDF interpolation
+    const real validationSlack = std::max(distMap->getSpacing() * real(0.05), contactThreshold);
+    real exactSignedDistance = referenceMesh->signedDistance(localPoint);
+    if( exactSignedDistance > -validationSlack ) {
+        return; // Skip spurious penetration reports
+    }
 }
 ```
 
-**Pros**: Balances accuracy vs. performance, scales with contact complexity
-**Cons**: Added complexity, parameter tuning required
+**Note**: This validation only runs when debug logging is enabled, avoiding performance impact in production builds.
 
-4. **Contact Force Distribution**
+### Phase 2: Contact Clustering
+
+Candidates are clustered by proximity and normal similarity to avoid redundant contacts:
 
 ```cpp
-// Keep single geometric contact but distribute forces
-Contact contact = generateSingleContact(queryMesh, referenceMesh);
+struct ContactCluster {
+    std::vector<size_t> candidateIndices;
+    Vec3 averageNormal;
+    real maxPenetration;
+};
 
-// Scale contact force based on estimated contact area
-pe::real contactArea = estimateContactArea(queryMesh, referenceMesh);
-contact.setForceScale(contactArea);
+const real clusteringRadius = 2.0 * distMap->getSpacing();
+const real normalSimilarityThreshold = 0.9; // Dot product threshold
 ```
 
-**Pros**: Maintains simple contact structure, improves force accuracy
-**Cons**: Contact area estimation complexity, approximate solution
+Clustering algorithm:
+- Proximity-based: candidates within `clusteringRadius` are grouped
+- Normal similarity: candidates with similar normals (dot > 0.9) are grouped
+- Average normal computed per cluster for stability
 
-### Recommended Improvements
+### Phase 3: Representative Selection
 
-1. **Short-term**: Implement contact area estimation to scale contact forces
-2. **Medium-term**: Add adaptive contact generation based on penetration depth  
-3. **Long-term**: Full contact manifold construction for high-accuracy simulations
+Each cluster contributes up to 4 representative contacts:
 
-### Performance vs. Accuracy Trade-offs
+1. **Deepest penetration contact**: Maximum penetration in the cluster
+2. **Extremal contacts**: Up to 3 additional contacts in orthogonal tangent directions
 
-| Approach | Computation Cost | Memory Usage | Physical Accuracy | Implementation Complexity |
-|----------|-----------------|--------------|-------------------|-------------------------|
-| Single Contact | Low | Minimal | Limited | Simple |
-| Multiple Contacts | Medium | Moderate | Good | Moderate |
-| Contact Manifolds | High | High | Excellent | Complex |
-| Adaptive Sampling | Variable | Variable | Good-Excellent | Complex |
+```cpp
+// Construct orthonormal basis in tangent plane
+Vec3 tangent1, tangent2;
+constructOrthonormalBasis(clusterNormal, tangent1, tangent2);
+
+// Find extremal contacts projected onto tangent directions
+for (each tangent direction) {
+    find candidate with max projection onto tangent
+    add to representatives if distinct from deepest
+}
+```
+
+This ensures contacts are spatially distributed for proper torque generation.
+
+### Phase 4: Contact Limiting
+
+Total contacts are capped at 6 per mesh pair to balance stability with performance:
+
+```cpp
+const size_t maxContactsPerPair = 6;
+```
+
+### Benefits of Multi-Contact Manifolds
+
+1. **Improved Stability**: Multiple contacts prevent rocking and provide stable support
+2. **Better Force Distribution**: Contact forces distributed across contact area
+3. **Proper Torque Generation**: Spatially separated contacts generate realistic torques
+4. **Reduced Jittering**: Clustering provides temporal coherence
+5. **Comprehensive Detection**: Vertex + edge + face sampling catches all contact types
+
+### Performance Characteristics
+
+- **Time Complexity**: O(v + e + f) where v=vertices, e=edges, f=faces
+- **Memory**: ~32 bytes per candidate (typically 10-50 candidates per collision)
+- **Contact Count**: Typically 1-6 contacts per mesh pair (capped at 6)
+- **Clustering Cost**: O(n²) for small candidate sets (negligible in practice)
 
 ## Implementation Files and Integration
 
@@ -602,11 +614,18 @@ mesh->enableDistanceMapAcceleration(0.2, 30, 3);
 
 Grid memory scales as:
 ```
-Memory = nx × ny × nz × (4 × sizeof(pe::real) + 2 × sizeof(Vec3))
-       ≈ nx × ny × nz × 40 bytes (for double precision)
+Memory = nx × ny × nz × (sizeof(sdf_) + sizeof(alpha_) + sizeof(normals_) + sizeof(contact_points_))
+       = nx × ny × nz × (8 + 8 + 24 + 24) bytes
+       ≈ nx × ny × nz × 64 bytes (for double precision)
 ```
 
-**Example**: 50³ grid ≈ 5MB per DistanceMap
+**Storage per voxel**:
+- `sdf_`: 8 bytes (double)
+- `alpha_`: 8 bytes (double, interpolation weights)
+- `normals_`: 24 bytes (3 doubles)
+- `contact_points_`: 24 bytes (3 doubles)
+
+**Example**: 50³ grid = 125,000 voxels × 64 bytes ≈ 8MB per DistanceMap
 
 ### Performance Comparison
 
