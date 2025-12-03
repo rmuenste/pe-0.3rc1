@@ -642,10 +642,97 @@ Memory = nx × ny × nz × (sizeof(sdf_) + sizeof(alpha_) + sizeof(normals_) + s
 3. **Multiple Meshes**: Each mesh can have independent DistanceMap
 4. **Cache Efficiency**: Grid structure provides good spatial locality
 
+## Practical Considerations and Best Practices
+
+### Spacing Selection and Contact Quality
+
+The DistanceMap `spacing` parameter critically affects both accuracy and contact clustering quality. Proper spacing selection prevents pathological clustering behavior.
+
+#### Single-Linkage Clustering Pathology
+
+The contact clustering algorithm uses single-linkage clustering with proximity and normal similarity criteria:
+
+```cpp
+clusteringRadius = 2.0 * distMap->getSpacing()
+normalSimilarityThreshold = 0.9  // dot product
+```
+
+**Pathological Case Example:**
+```
+Scenario: Three contact candidates on a surface with small curvature
+
+Seed i:  position (0.0, 0.0, 0.0), normal (1.00, 0.00, 0.0)
+Point j: position (1.5, 0.0, 0.0), normal (0.95, 0.31, 0.0)
+Point k: position (1.5, 0.0, 0.0), normal (0.95, -0.31, 0.0)
+
+Individual similarity to seed:
+  dot(i, j) = 0.95 > 0.9 ✓  distance(i, j) = 1.5 ✓
+  dot(i, k) = 0.95 > 0.9 ✓  distance(i, k) = 1.5 ✓
+
+Pairwise similarity:
+  dot(j, k) = 0.95² - 0.31² ≈ 0.806 < 0.9 ✗
+
+Result: j and k clustered together despite being dissimilar
+```
+
+#### Mitigation Through Spacing
+
+The clustering radius (`2.0 × spacing`) is intentionally tight to prevent this issue:
+
+- **Typical spacing**: 1-2% of mesh bounding box diagonal
+- **Resulting radius**: 2-4% of bounding box diagonal
+- **Effect**: Candidates within the radius lie on small surface patches with naturally limited normal variation
+
+**Example with proper spacing:**
+- Mesh bbox diagonal: 1.0m
+- Spacing: 0.01m (1%)
+- Clustering radius: 0.02m (2cm)
+
+Within a 2cm radius, surface normals on typical meshes vary minimally, making the pathological case extremely rare in practice.
+
+#### Spacing Guidelines
+
+1. **Default recommendation**: `spacing = 0.01 × bbox_diagonal` (1%)
+   - Good balance of accuracy, memory, and contact quality
+   - Clustering radius = 2% of diagonal (tight enough to prevent pathology)
+
+2. **High-accuracy scenarios**: `spacing = 0.005 × bbox_diagonal` (0.5%)
+   - Better SDF interpolation
+   - Even tighter clustering (1% radius)
+   - 8× memory increase
+
+3. **Memory-constrained**: `spacing = 0.02 × bbox_diagonal` (2%)
+   - 8× memory reduction
+   - Clustering radius = 4% (monitor for quality issues on high-curvature surfaces)
+
+#### Detecting Poor Spacing
+
+Signs of too-coarse spacing:
+- Contact normals on flat surfaces vary significantly between frames
+- Physically distinct contact regions (e.g., box corner hitting 3 faces) produce single cluster
+- Penetration resolution is sluggish or oscillatory
+
+**Diagnostic**: Enable debug logging and examine cluster statistics:
+```cpp
+pe_LOG_DEBUG_SECTION(log) {
+  log << "Cluster " << i << ":\n";
+  log << "  Contact points: " << cluster.candidateIndices.size() << "\n";
+  log << "  Average normal: " << cluster.averageNormal << "\n";
+}
+```
+
+Look for:
+- Single large clusters (>10 candidates) when expecting multiple contact regions
+- Average normals that don't align with mesh geometry
+
 ## Conclusion
 
-The DistanceMap mesh-to-mesh collision detection system provides an efficient acceleration structure for collision detection between triangle meshes. While the current single contact point approach trades some physical accuracy for computational efficiency, it offers robust and deterministic collision detection suitable for many physics simulation scenarios.
+The DistanceMap mesh-to-mesh collision detection system provides an efficient acceleration structure for collision detection between triangle meshes. The multi-contact manifold system with intelligent clustering generates physically meaningful contact sets that capture the geometric structure of complex collisions.
 
-The system's integration with PE's collision detection pipeline provides seamless fallback to GJK/EPA methods, ensuring compatibility across all mesh configurations while providing acceleration when DistanceMaps are available.
+Key capabilities:
+- **Non-convex mesh support**: Designed specifically for meshes unsuitable for GJK/EPA
+- **Multi-contact manifolds**: Up to 6 contacts per mesh pair with clustering-based distribution
+- **Comprehensive sampling**: Vertex, edge, and face sampling ensures no contact misses
+- **Efficient queries**: O(1) distance lookups enable real-time collision detection
 
-Future enhancements could include multiple contact generation, contact manifold construction, and adaptive sampling strategies to improve physical accuracy while maintaining the performance benefits of the DistanceMap approach.
+The system's integration with PE's collision detection pipeline ensures correct handling of arbitrary mesh orientations through proper coordinate transformations, with no fallback to GJK/EPA for meshes with DistanceMap enabled.

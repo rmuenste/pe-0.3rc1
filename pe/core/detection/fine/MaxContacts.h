@@ -4195,11 +4195,11 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             
             // Check proximity
             real distance = (candidates[i].worldPos - candidates[j].worldPos).length();
-            // if (distance > clusteringRadius) continue;
+            if (distance > clusteringRadius) continue;
             
             // Check normal similarity
             real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
-            // if (normalDot < normalSimilarityThreshold) continue;
+            if (normalDot < normalSimilarityThreshold) continue;
             
             // Add to cluster
             cluster.candidateIndices.push_back(j);
@@ -4228,9 +4228,9 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       }
 
       // Generate final contacts from cluster representatives
-      // size_t contactsGenerated = 0;  // Already declared below
+      size_t contactsGenerated = 0;
       for (const auto& cluster : clusters) {
-         // if (contactsGenerated >= maxContactsPerPair) break;
+         if (contactsGenerated >= maxContactsPerPair) break;
          
          // Select up to 4 representatives per cluster: deepest + extremals in tangent directions
          std::vector<size_t> representatives;
@@ -4291,7 +4291,7 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          
          // Generate contacts for selected representatives
          for (size_t repIdx : representatives) {
-            // if (contactsGenerated >= maxContactsPerPair) break;
+            if (contactsGenerated >= maxContactsPerPair) break;
             
             const ContactCandidate& candidate = candidates[repIdx];
             
@@ -4300,20 +4300,20 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
             // Since DistanceMap normals point outward from referenceMesh, they already point toward queryMesh
             // No additional flipping needed - normals are now consistent
             
-            contacts.addVertexFaceContact( queryMesh, referenceMesh, 
+            contacts.addVertexFaceContact( queryMesh, referenceMesh,
                                           candidate.contactPoint, candidate.worldNormal , -candidate.penetration );
-            
-            // ++contactsGenerated;
+
+            ++contactsGenerated;
          }
       }
       
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      DistanceMap contact manifold created between triangle mesh " << mA->getID()
-             << " and triangle mesh " << mB->getID() << " (" << "X"
+             << " and triangle mesh " << mB->getID() << " (" << contactsGenerated
              << " contacts from " << candidates.size() << " candidates in " << clusters.size() << " clusters)";
       }
 
-      return true; // contactsGenerated > 0;
+      return contactsGenerated > 0;
    } catch (const std::exception& e) {
       pe_LOG_DEBUG_SECTION( log ) {
          log << "      DistanceMap collision detection failed: " << e.what();
