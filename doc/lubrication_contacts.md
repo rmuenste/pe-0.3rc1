@@ -88,6 +88,7 @@ To prevent flickering between contact regimes when gaps oscillate near threshold
 - Only sphere–sphere and sphere–plane pairs are supported.
 - No tangential lubrication yet; normal component only.
 - No partial submersion logic or deeper CFD coupling; keeps a simple analytical model.
+- Coarse detection padding: sphere AABBs are inflated by `contactThreshold + lubricationThreshold`, so lubrication pairs reach fine detection. Other shapes are not yet inflated for lubrication; coarse phase may miss pairs that are separated by more than `contactThreshold`.
 
 ## MPI Parallel Execution
 - **Fully supported**: Lubrication forces work correctly in MPI simulations
