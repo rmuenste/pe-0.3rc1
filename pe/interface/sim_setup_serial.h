@@ -691,7 +691,7 @@ inline void stepSimulationSerial() {
     // Note: world->simulationStep() calls Trigger::triggerAll() which triggers VTK output
     // VTK output frequency is controlled by adjusting visspacing in setup functions
     // (see setupDrillSerial() and setupFSIBenchSerial() for examples)
-    //world->simulationStep(substepSize);
+    world->simulationStep(substepSize);
   }
 
   // Restore original timestep size
