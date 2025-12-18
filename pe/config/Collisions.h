@@ -84,7 +84,7 @@
  *   - pe::response::OpenCLSolver
  */
 #define pe_CONSTRAINT_SOLVER  pe::response::HardContactLubricated
-#define PE_LUBRICATION_CONTACTS 1
+//#define PE_LUBRICATION_CONTACTS 1
 //*************************************************************************************************
 
 // Optional: enable lubrication-contact generation in fine detection when using HardContactLubricated
