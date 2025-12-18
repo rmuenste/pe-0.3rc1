@@ -64,6 +64,7 @@ SimulationConfig::SimulationConfig()
     , checkpoint_path_("checkpoints/")
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
+    , benchStartPosition_(1.0, 0.01, 0.1275)
     , resume_(false)
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
@@ -193,6 +194,16 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("benchRadius_"))
         config.setBenchRadius(j["benchRadius_"].get<real>());
+
+    // Set benchmark start position vector
+    if (j.contains("benchStartPosition_")) {
+        if (j["benchStartPosition_"].is_array() && j["benchStartPosition_"].size() == 3) {
+            Vec3 benchStartPosition(j["benchStartPosition_"][0].get<real>(),
+                                   j["benchStartPosition_"][1].get<real>(),
+                                   j["benchStartPosition_"][2].get<real>());
+            config.setBenchStartPosition(benchStartPosition);
+        }
+    }
 
     if (j.contains("packingMethod_"))
         config.setPackingMethod(parsePackingMethod(j["packingMethod_"].get<std::string>()));

@@ -179,6 +179,8 @@ public:
     void setVolumeFraction(real value) { volumeFraction_ = value; }
     real getBenchRadius() const { return benchRadius_; }
     void setBenchRadius(real value) { benchRadius_ = value; }
+    const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
+    void setBenchStartPosition(const Vec3& value) { benchStartPosition_ = value; }
     //@}
     //**************************************************************************************
 
@@ -247,6 +249,7 @@ private:
     // Simulation parameters
     real volumeFraction_;        //!< Volume fraction for particle packing
     real benchRadius_;           //!< Radius of the benchmark geometry
+    Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
 
     // Packing parameters
     PackingMethod packingMethod_; //!< Particle packing method

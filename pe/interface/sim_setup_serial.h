@@ -160,23 +160,30 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   // The entire simulation domain is owned by this process
   // Domain boundaries are handled by the CFD code
   // Create ground plane (global, owned by this domain)
-  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
-
+  //
+  //
+  //
+  // Setup of the ground plane
   int idx = 0;
+  PlaneID plane = createPlane( idx++, 0.0, 0.0, 1.0, -0.0, granite );
+  // +y
+  createPlane( idx++, 0.0, 1.0, 0.0,  0.0, granite );
+  // -y
+  createPlane( idx++, 0.0,-1.0, 0.0,  -0.02, granite );
+
   //==============================================================================================
   // Bench Configuration
   //==============================================================================================
   real radBench = config.getBenchRadius();
   real rhoParticle( config.getParticleDensity() );
-  Vec3 position(-0.0, -0.0, 0.1275);
-  std::string fileName = std::string("span2_scaled.obj");
+  Vec3 position = config.getBenchStartPosition();
+  std::string fileName = std::string("span_cm.obj");
 
   // Set default timestep
   TimeStep::stepsize(config.getStepsize());
   MaterialID chipMat = createMaterial("chip"    , rhoParticle , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
 
-  Vec3 chipPos = position;  // Keep hardcoded - no config function available
+  Vec3 chipPos = position;
   TriangleMeshID chip = createTriangleMesh(++idx, chipPos, fileName, chipMat, false, true);
 
 #ifdef PE_USE_CGAL
@@ -189,6 +196,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   }
 #else
   const bool distanceMapEnabled = false;
+  std::cout << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
 #endif
 
   if (isRepresentative) {
@@ -659,7 +667,7 @@ inline void stepSimulationSerial() {
     // Note: world->simulationStep() calls Trigger::triggerAll() which triggers VTK output
     // VTK output frequency is controlled by adjusting visspacing in setup functions
     // (see setupDrillSerial() and setupFSIBenchSerial() for examples)
-    world->simulationStep(substepSize);
+    //world->simulationStep(substepSize);
   }
 
   // Restore original timestep size
