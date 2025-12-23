@@ -290,6 +290,31 @@ extern "C" void commf2c_drill_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
 //=================================================================================================
 
 
+//=================================================================================================
+extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{
+  int remRank = *remoteRank;
+
+  if(remRank != 0) {
+    int rank, size;
+
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0);
+    MPI_Comm_rank (CcommEx0, &rank);
+    MPI_Comm_size (CcommEx0, &size);
+
+    if (rank == 1) {
+      printf( "%d> C) Configuration ATC with %d processes.\n", remRank, size );
+    }
+    if( CcommEx0 == MPI_COMM_NULL ) {
+      printf( "%d> C)Error converting fortran communicator\n", rank);
+       return;
+    }
+    setupATC(CcommEx0);
+  }
+}
+//=================================================================================================
+
+
 #endif
 
 #ifdef PE_SERIAL_MODE
@@ -356,6 +381,11 @@ extern "C" void commf2c_lubrication_lab_(int *Fcomm, int *FcommEx0, int *remoteR
 extern "C" void commf2c_drill_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Drill setup
   pe::setupDrillSerial(*remoteRank);
+}
+
+extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: ATC setup
+  pe::setupATCSerial(*remoteRank);
 }
 
 #endif  // PE_SERIAL_MODE

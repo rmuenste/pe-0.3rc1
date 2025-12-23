@@ -272,6 +272,7 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_archimedes_empty.h>
 #include <pe/interface/setup_span.h>
 #include <pe/interface/setup_drill.h>
+#include <pe/interface/setup_atc.h>
 //
 //=================================================================================================
 //

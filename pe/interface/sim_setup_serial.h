@@ -266,6 +266,40 @@ inline void setupArchimedesSerial(int cfd_rank) {
 }
 
 /**
+ * @brief ATC (Application Test Case) setup for serial mode
+ *
+ * Generic setup for ATC application. This is a template setup that can be
+ * customized for specific simulation needs.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupATCSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
+
+  WorldID world = theWorld();
+
+  // ATC simulation setup
+  world->setGravity(0.0, 0.0, -9.81);
+  world->setDamping(1.0);
+
+  // Fluid properties (default values - customize as needed)
+  real simViscosity(1.0e-3);
+  real simRho(1000.0);
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+
+  TimeStep::stepsize(0.001);
+
+  // TODO: Add custom rigid body setup here
+  // Example:
+  // MaterialID myMaterial = createMaterial("ATCMaterial", density, cor, csf, cdf, poisson, young, stiffness, dampingN, dampingT);
+  // SphereID sphere = createSphere(id, position, radius, myMaterial, global);
+}
+
+/**
  * @brief Kroupa setup for serial mode
  *
  * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
