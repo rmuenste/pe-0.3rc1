@@ -13,6 +13,7 @@ add_subdirectory(usage_demo)
 add_subdirectory(simple_demo)
 add_subdirectory(basic_lubrication)
 add_subdirectory(lubrication_demo)
+add_subdirectory(capsule_spin)
 
 # CGAL Examples
 if( CGAL )
