@@ -52,8 +52,8 @@ int main( int argc, char* argv[] )
 {
 #ifdef PE_USE_CGAL
    // Constants and variables
-   const unsigned int timesteps( 120 );
-   const real dt( 0.001 );
+   const unsigned int timesteps( 3000 );
+   const real dt( 0.0005 );
    const real rpm( 60.0 );
    const real omega( ( rpm / 60.0 ) * 2.0 * M_PI );
          unsigned int id( 0 );
@@ -76,7 +76,7 @@ int main( int argc, char* argv[] )
 
    try {
       // Try to load from file if available, otherwise create procedurally
-      mesh1 = createTriangleMesh( id++, Vec3(0.0, 0.0, 0.0), "cylinder.obj", meshMaterial, false, true );
+      mesh1 = createTriangleMesh( id++, Vec3(0.0, 0.0, 0.0), "four_leg_scaled.obj", meshMaterial, false, true );
    } catch (...) {
       std::cout << "Note: cylinder.obj not found, attempting to use cube.obj" << std::endl;
       try {
@@ -101,10 +101,10 @@ int main( int argc, char* argv[] )
    TriangleMeshID mesh2 = nullptr;
 
    try {
-      mesh2 = createTriangleMesh( id++, Vec3(0.7, 0.7, 0.0), "cylinder.obj", meshMaterial, false, true );
+      mesh2 = createTriangleMesh( id++, Vec3(0.0275, 0.0125, 0.0), "four_leg_scaled.obj", meshMaterial, false, true );
    } catch (...) {
       try {
-         mesh2 = createTriangleMesh( id++, Vec3(0.7, 0.7, 0.0), "../trimeshdop_demo/cube.obj", meshMaterial, false, true );
+         mesh2 = createTriangleMesh( id++, Vec3(0.0275, 0.0125, 0.0), "../trimeshdop_demo/cube.obj", meshMaterial, false, true );
       } catch (...) {
          std::cerr << "ERROR: Could not load mesh file for mesh 2." << std::endl;
          return 1;
@@ -114,7 +114,7 @@ int main( int argc, char* argv[] )
    mesh2->setTranslationFixed( true );
 
    // Enable DistanceMap acceleration
-   mesh2->enableDistanceMapAcceleration(50, 5);
+   mesh2->enableDistanceMapAcceleration(128, 5);
    std::cout << "Mesh 2 created with " << mesh2->getBFVertices().size() << " vertices" << std::endl;
    std::cout << "DistanceMap enabled: " << (mesh2->hasDistanceMap() ? "YES" : "NO") << std::endl;
 
