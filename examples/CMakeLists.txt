@@ -19,6 +19,7 @@ add_subdirectory(capsule_spin)
 if( CGAL )
     add_subdirectory(cgal_examples)  # Example showing CGAL oriented bounding box functionality
     add_subdirectory(convex_hull)  # Example showing CGAL convex hull computation for triangle meshes
+    add_subdirectory(mesh_spin)  # Example showing mesh rotation with DistanceMap collision detection
 endif( CGAL )
 
 # MPI Examples

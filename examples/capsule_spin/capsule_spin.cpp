@@ -25,6 +25,8 @@
 
 #include <iostream>
 #include <pe/core.h>
+#include <pe/vtk.h>
+#include <pe/util.h>
 
 using namespace pe;
 
@@ -44,20 +46,28 @@ using namespace pe;
 int main( int argc, char* argv[] )
 {
    // Constants and variables
-   const unsigned int timesteps( 300 );
-   const real dt( 0.01 );
+   const unsigned int timesteps( 120 );
+   const real dt( 0.001 );
    const real rpm( 60.0 );
    const real omega( ( rpm / 60.0 ) * 2.0 * M_PI );
          unsigned int id( 0 );
+   const unsigned int visspacing(   10 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
 
    // Simulation world setup
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, 0.0 );
 
    // Capsule centered at the origin
-   CapsuleID capsule = createCapsule( id++, 0.0, 0.0, 0.0, 0.2, 1.0, granite );
+   CapsuleID capsule = createCapsule( id++, 0.0, 0.0, 0.0, 0.2, 1.0, iron );
+   capsule->setFixed( true );
    capsule->setLinearVel( 0.0, 0.0, 0.0 );
    capsule->setAngularVel( 0.0, 0.0, omega );
+
+   CapsuleID capsule2 = createCapsule( id++, 0.7, 0.7, 0.0, 0.2, 1.0, iron );
+   capsule2->setTranslationFixed( true );
+
+   // Setup of the VTK visualization
+   vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
 
    std::cout << "\n--" << pe_BROWN << "CAPSULE SPIN" << pe_OLDCOLOR
              << "-------------------------------------------------------------" << std::endl;
@@ -66,7 +76,13 @@ int main( int argc, char* argv[] )
 
    // Simulation loop
    for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
-      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
+      std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   \n";
+      std::cout << "Center: " << capsule->getPosition()
+                << " | Orientation: " << capsule->getQuaternion() << "\n"
+                << " | Angular velocity: " << capsule->getAngularVel() << std::endl;
+      std::cout << "Center2: " << capsule2->getPosition()
+                << " | Orientation2: " << capsule2->getQuaternion() << "\n"
+                << " | Angular velocity2: " << capsule2->getAngularVel() << std::endl;
       world->simulationStep( dt );
    }
 

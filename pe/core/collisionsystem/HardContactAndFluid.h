@@ -1789,7 +1789,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          // If the distance is negative then penetration is present. This is an error and should be corrected. Correcting the whole error is not recommended since due to the linearization the errors cannot completely fixed anyway and the error reduction will introduce artificial restitution. However, if the distance is positive then it is not about error correction but the distance that can still be overcome without penetration and thus no error correction parameter should be applied.
          if( dist_[j] < 0 ) {
             maximumPenetration_ = std::max( maximumPenetration_, -dist_[j] );
-            dist_[j] *= erp_;
+
+            // Check if both bodies have zero translational degrees of freedom
+            // When neither body can translate, Baumgarte stabilization is physically inappropriate
+            // as it creates artificial rotational energy instead of correcting penetration
+            bool bothTranslationLocked = (b1->getInvMass() == real(0) && b2->getInvMass() == real(0));
+
+            if( bothTranslationLocked ) {
+               // Disable Baumgarte stabilization - penetration cannot be corrected translationally
+               dist_[j] = real(0);
+            } else {
+               // Normal case - apply error reduction parameter
+               dist_[j] *= erp_;
+            }
          }
 
          mu_[j]       = c->getFriction();
@@ -1799,6 +1811,18 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          diag[4]     += b1->getInvMass() + b2->getInvMass();
          diag[8]     += b1->getInvMass() + b2->getInvMass();
          diag         = trans( contactframe ) * diag * contactframe;
+
+         // DEBUG: Print effective mass diagnostics for zero-translation-DOF contacts
+         bool bothTranslationLocked = (b1->getInvMass() == real(0) && b2->getInvMass() == real(0));
+         if( bothTranslationLocked ) {
+            std::cout << "Contact " << j << " - Both bodies translation-locked:\n";
+            std::cout << "  Effective mass diag[0] (normal):    " << diag[0] << "\n";
+            std::cout << "  Effective mass diag[4] (tangent-1): " << diag[4] << "\n";
+            std::cout << "  Effective mass diag[8] (tangent-2): " << diag[8] << "\n";
+            std::cout << "  Inverse eff mass (normal): " << (real(1) / diag[0]) << "\n";
+            std::cout << "  invMass1: " << b1->getInvMass() << ", invMass2: " << b2->getInvMass() << "\n";
+            std::cout << "  dist (after Baumgarte): " << dist_[j] << "\n";
+         }
 
          // Diagonal block is know to be positive-definite and thus inverse always exists.
          diag_nto_[j] = diag;
@@ -2030,6 +2054,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          }
       }
 
+      // DEBUG: Track convergence for translation-locked contacts
+      if( numContactsMasked > 0 ) {
+         bool anyTranslationLocked = false;
+         for( size_t i = 0; i < numContactsMasked; ++i ) {
+            if( body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0) ) {
+               anyTranslationLocked = true;
+               break;
+            }
+         }
+         if( anyTranslationLocked && (it % 10 == 0 || it == maxIterations_ - 1) ) {
+            std::cout << "Iteration " << it << ": delta_max = " << delta_max << "\n";
+         }
+      }
+
       // Compute maximum impulse variation.
       // TODO:
       // - velocity variation would be better.
@@ -2166,8 +2204,15 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
       // The constraint in normal direction is actually a positional constraint but instead of g_n we use g_n/dt equivalently and call it gdot_n
       gdot_nto[0] += ( /* + trans( n_[i] ) * ( body1_[i]->getPosition() + r1_[i] ) - ( body2_[i]->getPosition() + r2_[i] ) */ + dist_[i] ) * dtinv;
 
+      // DEBUG: Track solver behavior for translation-locked contacts
+      bool bothTranslationLocked = (body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0));
+
       if( gdot_nto[0] >= 0 ) {
          // Contact is separating if no contact reaction is present at contact i.
+
+         if( bothTranslationLocked && iteration_ == 0 ) {
+            std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
+         }
 
          delta_max = std::max( delta_max, std::max( std::abs( p_[i][0] ), std::max( std::abs( p_[i][1] ), std::abs( p_[i][2] ) ) ) );
          p_[i] = Vec3();
@@ -2181,6 +2226,14 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
          Vec3 p_wf( n_[i] * ( -diag_n_inv_[i] * gdot_nto[0] ) );
          Vec3 dp( p_[i] - p_wf );
          delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
+
+         if( bothTranslationLocked && iteration_ == 0 ) {
+            std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
+            std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
+            std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
+            std::cout << "    Impulse (world): " << p_wf << "\n";
+            std::cout << "    Delta impulse: " << dp.length() << "\n";
+         }
 
          p_[i] = p_wf;
 
@@ -2260,8 +2313,24 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
       // The constraint in normal direction is actually a positional constraint but instead of g_n we use g_n/dt equivalently and call it gdot_n
       gdot_nto[0] += ( /* + trans( n_[i] ) * ( body1_[i]->getPosition() + r1_[i] ) - ( body2_[i]->getPosition() + r2_[i] ) */ + dist_[i] ) * dtinv;
 
+      // DEBUG: Track solver behavior for translation-locked contacts
+      bool bothTranslationLocked = (body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0));
+
+      // Detect kinematic bodies (bodies with prescribed motion that act as motors/actuators)
+      // A kinematic body is translation-locked but has non-zero angular velocity
+      const real angVelThreshold = real(1e-8);
+      bool isKinematic1 = (body1_[i]->getInvMass() == real(0) &&
+                          w_[body1_[i]->index_].sqrLength() > angVelThreshold);
+      bool isKinematic2 = (body2_[i]->getInvMass() == real(0) &&
+                          w_[body2_[i]->index_].sqrLength() > angVelThreshold);
+      bool hasKinematicBody = isKinematic1 || isKinematic2;
+
       if( gdot_nto[0] >= 0 ) {
          // Contact is separating if no contact reaction is present at contact i.
+
+         if( bothTranslationLocked && iteration_ == 0 ) {
+            std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
+         }
 
          delta_max = std::max( delta_max, std::max( std::abs( p_[i][0] ), std::max( std::abs( p_[i][1] ), std::abs( p_[i][2] ) ) ) );
          p_[i] = Vec3();
@@ -2270,6 +2339,11 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
       }
       else {
          // Contact is persisting (either static or dynamic).
+
+         // For kinematic bodies, skip static friction attempt and use dynamic friction only
+         // This prevents the solver from trying to achieve zero relative velocity, which would
+         // violate the prescribed motion of the kinematic body
+         bool forceDynamic = hasKinematicBody;
 
          // Calculate the impulse necessary for a static contact expressed as components in the contact frame.
          Vec3 p_cf( -( diag_nto_inv_[i] * gdot_nto ) );
@@ -2282,7 +2356,7 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
 
          real flimit( mu_[i] * p_cf[0] );
          real fsq( p_cf[1] * p_cf[1] + p_cf[2] * p_cf[2] );
-         if( fsq > flimit * flimit || p_cf[0] < 0 ) {
+         if( fsq > flimit * flimit || p_cf[0] < 0 || forceDynamic ) {
             // Contact cannot be static so it must be dynamic.
             // => Complementarity condition on normal reaction now turns into an equation since we know that the normal reaction is definitely not zero.
 
@@ -2335,6 +2409,26 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
          Vec3 p_wf( contactframe * p_cf );
          Vec3 dp( p_[i] - p_wf );
          delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
+
+         if( bothTranslationLocked && iteration_ == 0 ) {
+            std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
+            std::cout << "    Kinematic body: " << (hasKinematicBody ? "YES" : "NO") << "\n";
+            if( hasKinematicBody ) {
+               std::cout << "      Body1 kinematic: " << isKinematic1 << ", ω1 = " << w_[body1_[i]->index_] << "\n";
+               std::cout << "      Body2 kinematic: " << isKinematic2 << ", ω2 = " << w_[body2_[i]->index_] << "\n";
+               std::cout << "      Using dynamic friction (sliding contact)\n";
+            }
+
+             
+            std::cout << "    R1: " << r1_[i] << "\n";
+            std::cout << "    R2: " << r2_[i] << "\n";
+            std::cout << "    R1/R2: " << r1_[i].length()/r2_[i].length() << "\n";
+            std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
+            std::cout << "    Impulse (contact frame): " << p_cf << "\n";
+            std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
+            std::cout << "    Impulse (world): " << p_wf << "\n";
+            std::cout << "    Delta impulse: " << dp.length() << "\n";
+         }
 
          p_[i] = p_wf;
 
