@@ -258,6 +258,26 @@ public:
 
     bool isValid() const { return !sdf_.empty(); }
 
+    // Invert distance map for domain boundary representation
+    void invertForDomainBoundary() {
+        // Flip distance signs: inside domain (fluid) becomes positive, outside becomes negative
+        for (size_t i = 0; i < sdf_.size(); ++i) {
+            sdf_[i] = -sdf_[i];
+        }
+
+        // Flip normal directions: normals point inward into valid domain
+        for (size_t i = 0; i < normals_.size(); ++i) {
+            normals_[i] = -normals_[i];
+        }
+
+        // Flip alpha values: 1 = inside domain, 0 = outside domain
+        for (size_t i = 0; i < alpha_.size(); ++i) {
+            alpha_[i] = 1 - alpha_[i];
+        }
+
+        // Contact points remain unchanged (they are surface locations)
+    }
+
     // Grid accessors
     int getNx() const { return nx_; }
     int getNy() const { return ny_; }
@@ -479,6 +499,7 @@ pe::real DistanceMap::interpolateDistance(pe::real x, pe::real y, pe::real z) co
 pe::Vec3 DistanceMap::interpolateNormal(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateNormal(x, y, z); }
 pe::Vec3 DistanceMap::interpolateContactPoint(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateContactPoint(x, y, z); }
 pe::real DistanceMap::interpolateAlpha(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateAlpha(x, y, z); }
+void DistanceMap::invertForDomainBoundary() { _pimpl->invertForDomainBoundary(); }
 int DistanceMap::getNx() const { return _pimpl->getNx(); }
 int DistanceMap::getNy() const { return _pimpl->getNy(); }
 int DistanceMap::getNz() const { return _pimpl->getNz(); }

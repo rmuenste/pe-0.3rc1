@@ -239,6 +239,7 @@ public:
    void disableDistanceMapAcceleration();
    bool hasDistanceMap() const;
    const DistanceMap* getDistanceMap() const;
+   DistanceMap* getDistanceMap();
 
    virtual inline Vec3 support                ( const Vec3& d ) const;
    virtual inline Vec3 supportContactThreshold( const Vec3& d ) const;

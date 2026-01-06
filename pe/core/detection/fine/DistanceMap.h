@@ -145,6 +145,22 @@ public:
      */
     pe::real interpolateAlpha(pe::real x, pe::real y, pe::real z) const;
 
+    /**
+     * @brief Invert the DistanceMap for domain boundary representation
+     *
+     * This method transforms a standard solid object DistanceMap into a domain boundary
+     * DistanceMap by inverting:
+     * - Distance signs (fluid region becomes positive, outside becomes negative)
+     * - Normal directions (point inward into valid domain for collision response)
+     * - Alpha values (1.0 = inside domain, 0.0 = outside domain)
+     *
+     * Contact points remain unchanged as they represent surface locations.
+     *
+     * Use case: Representing simulation domain boundaries where particles should
+     * be kept inside the domain (e.g., helix channel boundaries in extrusion).
+     */
+    void invertForDomainBoundary();
+
     // Grid access methods
     int getNx() const;
     int getNy() const;

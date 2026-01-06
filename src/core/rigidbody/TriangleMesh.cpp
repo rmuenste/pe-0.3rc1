@@ -3424,6 +3424,25 @@ const DistanceMap* TriangleMesh::getDistanceMap() const
 //*************************************************************************************************
 
 
+//*************************************************************************************************
+/*!\brief Gets the DistanceMap instance (non-const version).
+ *
+ * \return Pointer to the DistanceMap, or nullptr if not available.
+ *
+ * This non-const version allows modification of the DistanceMap, which is useful for
+ * operations like invertForDomainBoundary() that transform the distance field.
+ */
+DistanceMap* TriangleMesh::getDistanceMap()
+{
+#ifdef PE_USE_CGAL
+   return distanceMap_.get();
+#else
+   return nullptr;
+#endif
+}
+//*************************************************************************************************
+
+
 
 
 //=================================================================================================

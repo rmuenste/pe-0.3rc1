@@ -315,6 +315,28 @@ extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
 //=================================================================================================
 
 
+//=================================================================================================
+extern "C" void commf2c_rotation_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: commf2c_rotation_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The Rotation simulation is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
+  fprintf(stderr, "  1. cd build\n");
+  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
+  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
+  fprintf(stderr, "  4. make -j8\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "PE Serial Mode is optimized for large particles that span multiple domains.\n");
+  fprintf(stderr, "========================================================================\n");
+  exit(1);
+}
+//=================================================================================================
+
+
 #endif
 
 #ifdef PE_SERIAL_MODE
@@ -386,6 +408,11 @@ extern "C" void commf2c_drill_(int *Fcomm, int *FcommEx0, int *remoteRank) {
 extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: ATC setup
   pe::setupATCSerial(*remoteRank);
+}
+
+extern "C" void commf2c_rotation_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Rotation setup
+  pe::setupRotationSerial(*remoteRank);
 }
 
 #endif  // PE_SERIAL_MODE
