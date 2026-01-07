@@ -1814,15 +1814,15 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
          // DEBUG: Print effective mass diagnostics for zero-translation-DOF contacts
          bool bothTranslationLocked = (b1->getInvMass() == real(0) && b2->getInvMass() == real(0));
-         if( bothTranslationLocked ) {
-            std::cout << "Contact " << j << " - Both bodies translation-locked:\n";
-            std::cout << "  Effective mass diag[0] (normal):    " << diag[0] << "\n";
-            std::cout << "  Effective mass diag[4] (tangent-1): " << diag[4] << "\n";
-            std::cout << "  Effective mass diag[8] (tangent-2): " << diag[8] << "\n";
-            std::cout << "  Inverse eff mass (normal): " << (real(1) / diag[0]) << "\n";
-            std::cout << "  invMass1: " << b1->getInvMass() << ", invMass2: " << b2->getInvMass() << "\n";
-            std::cout << "  dist (after Baumgarte): " << dist_[j] << "\n";
-         }
+//          if( bothTranslationLocked ) {
+//             std::cout << "Contact " << j << " - Both bodies translation-locked:\n";
+//             std::cout << "  Effective mass diag[0] (normal):    " << diag[0] << "\n";
+//             std::cout << "  Effective mass diag[4] (tangent-1): " << diag[4] << "\n";
+//             std::cout << "  Effective mass diag[8] (tangent-2): " << diag[8] << "\n";
+//             std::cout << "  Inverse eff mass (normal): " << (real(1) / diag[0]) << "\n";
+//             std::cout << "  invMass1: " << b1->getInvMass() << ", invMass2: " << b2->getInvMass() << "\n";
+//             std::cout << "  dist (after Baumgarte): " << dist_[j] << "\n";
+//          }
 
          // Diagonal block is know to be positive-definite and thus inverse always exists.
          diag_nto_[j] = diag;
@@ -2063,9 +2063,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
                break;
             }
          }
-         if( anyTranslationLocked && (it % 10 == 0 || it == maxIterations_ - 1) ) {
-            std::cout << "Iteration " << it << ": delta_max = " << delta_max << "\n";
-         }
+//          if( anyTranslationLocked && (it % 10 == 0 || it == maxIterations_ - 1) ) {
+//             std::cout << "Iteration " << it << ": delta_max = " << delta_max << "\n";
+//          }
       }
 
       // Compute maximum impulse variation.
@@ -2210,9 +2210,9 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
       if( gdot_nto[0] >= 0 ) {
          // Contact is separating if no contact reaction is present at contact i.
 
-         if( bothTranslationLocked && iteration_ == 0 ) {
-            std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
-         }
+//          if( bothTranslationLocked && iteration_ == 0 ) {
+//             std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
+//          }
 
          delta_max = std::max( delta_max, std::max( std::abs( p_[i][0] ), std::max( std::abs( p_[i][1] ), std::abs( p_[i][2] ) ) ) );
          p_[i] = Vec3();
@@ -2227,13 +2227,13 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
          Vec3 dp( p_[i] - p_wf );
          delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
 
-         if( bothTranslationLocked && iteration_ == 0 ) {
-            std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
-            std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
-            std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
-            std::cout << "    Impulse (world): " << p_wf << "\n";
-            std::cout << "    Delta impulse: " << dp.length() << "\n";
-         }
+//          if( bothTranslationLocked && iteration_ == 0 ) {
+//             std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
+//             std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
+//             std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
+//             std::cout << "    Impulse (world): " << p_wf << "\n";
+//             std::cout << "    Delta impulse: " << dp.length() << "\n";
+//          }
 
          p_[i] = p_wf;
 
@@ -2328,9 +2328,9 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
       if( gdot_nto[0] >= 0 ) {
          // Contact is separating if no contact reaction is present at contact i.
 
-         if( bothTranslationLocked && iteration_ == 0 ) {
-            std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
-         }
+//          if( bothTranslationLocked && iteration_ == 0 ) {
+//             std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
+//          }
 
          delta_max = std::max( delta_max, std::max( std::abs( p_[i][0] ), std::max( std::abs( p_[i][1] ), std::abs( p_[i][2] ) ) ) );
          p_[i] = Vec3();
@@ -2410,25 +2410,25 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
          Vec3 dp( p_[i] - p_wf );
          delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
 
-         if( bothTranslationLocked && iteration_ == 0 ) {
-            std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
-            std::cout << "    Kinematic body: " << (hasKinematicBody ? "YES" : "NO") << "\n";
-            if( hasKinematicBody ) {
-               std::cout << "      Body1 kinematic: " << isKinematic1 << ", ω1 = " << w_[body1_[i]->index_] << "\n";
-               std::cout << "      Body2 kinematic: " << isKinematic2 << ", ω2 = " << w_[body2_[i]->index_] << "\n";
-               std::cout << "      Using dynamic friction (sliding contact)\n";
-            }
+//          if( bothTranslationLocked && iteration_ == 0 ) {
+//             std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
+//             std::cout << "    Kinematic body: " << (hasKinematicBody ? "YES" : "NO") << "\n";
+//             if( hasKinematicBody ) {
+//                std::cout << "      Body1 kinematic: " << isKinematic1 << ", ω1 = " << w_[body1_[i]->index_] << "\n";
+//                std::cout << "      Body2 kinematic: " << isKinematic2 << ", ω2 = " << w_[body2_[i]->index_] << "\n";
+//                std::cout << "      Using dynamic friction (sliding contact)\n";
+//             }
 
-             
-            std::cout << "    R1: " << r1_[i] << "\n";
-            std::cout << "    R2: " << r2_[i] << "\n";
-            std::cout << "    R1/R2: " << r1_[i].length()/r2_[i].length() << "\n";
-            std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
-            std::cout << "    Impulse (contact frame): " << p_cf << "\n";
-            std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
-            std::cout << "    Impulse (world): " << p_wf << "\n";
-            std::cout << "    Delta impulse: " << dp.length() << "\n";
-         }
+//              
+//             std::cout << "    R1: " << r1_[i] << "\n";
+//             std::cout << "    R2: " << r2_[i] << "\n";
+//             std::cout << "    R1/R2: " << r1_[i].length()/r2_[i].length() << "\n";
+//             std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
+//             std::cout << "    Impulse (contact frame): " << p_cf << "\n";
+//             std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
+//             std::cout << "    Impulse (world): " << p_wf << "\n";
+//             std::cout << "    Delta impulse: " << dp.length() << "\n";
+//          }
 
          p_[i] = p_wf;
 
