@@ -14,6 +14,27 @@
 
 namespace pe {
 
+// Apply lubrication/contact hysteresis parameters only if the active collision system
+// exposes the corresponding setters (e.g., HardContactLubricated). This avoids build
+// failures for solvers that don't implement these knobs.
+template <typename CollisionSystemT>
+inline auto applyOptionalLubricationParams(CollisionSystemT& cs, const SimulationConfig& config)
+    -> decltype(cs.setContactHysteresisDelta(real{}),
+                cs.setLubricationHysteresisDelta(real{}),
+                cs.setAlphaImpulseCap(real{}),
+                cs.setMinEpsLub(real{}),
+                void()) {
+  cs.setContactHysteresisDelta(config.getContactHysteresisDelta());
+  cs.setLubricationHysteresisDelta(config.getLubricationHysteresisDelta());
+  cs.setAlphaImpulseCap(config.getAlphaImpulseCap());
+  cs.setMinEpsLub(config.getMinEpsLub());
+}
+
+template <typename CollisionSystemT>
+inline void applyOptionalLubricationParams(CollisionSystemT&, const SimulationConfig&) {
+  // Constraint solver does not expose lubrication/hysteresis controls
+}
+
 /**
  * @brief Serial mode simulation setup
  *
@@ -36,10 +57,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   WorldID world = theWorld();
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
-  cs->setContactHysteresisDelta( config.getContactHysteresisDelta() );
-  cs->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
-  cs->setAlphaImpulseCap( config.getAlphaImpulseCap() );
-  cs->setMinEpsLub( config.getMinEpsLub() );
+  applyOptionalLubricationParams(*cs, config);
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
@@ -129,10 +147,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   WorldID world = theWorld();
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
-  cs->setContactHysteresisDelta( config.getContactHysteresisDelta() );
-  cs->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
-  cs->setAlphaImpulseCap( config.getAlphaImpulseCap() );
-  cs->setMinEpsLub( config.getMinEpsLub() );
+  applyOptionalLubricationParams(*cs, config);
 
   //==============================================================================================
   // Simulation Input Parameters 
@@ -287,10 +302,7 @@ inline void setupATCSerial(int cfd_rank) {
 
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
-  cs->setContactHysteresisDelta( config.getContactHysteresisDelta() );
-  cs->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
-  cs->setAlphaImpulseCap( config.getAlphaImpulseCap() );
-  cs->setMinEpsLub( config.getMinEpsLub() );
+  applyOptionalLubricationParams(*cs, config);
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
@@ -527,10 +539,7 @@ inline void setupLubricationLabSerial(int cfd_rank) {
   WorldID world = theWorld();
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
-  cs->setContactHysteresisDelta( config.getContactHysteresisDelta() );
-  cs->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
-  cs->setAlphaImpulseCap( config.getAlphaImpulseCap() );
-  cs->setMinEpsLub( config.getMinEpsLub() );
+  applyOptionalLubricationParams(*cs, config);
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
@@ -606,10 +615,7 @@ inline void setupDrillSerial(int cfd_rank) {
   WorldID world = theWorld();
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
-  cs->setContactHysteresisDelta( config.getContactHysteresisDelta() );
-  cs->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
-  cs->setAlphaImpulseCap( config.getAlphaImpulseCap() );
-  cs->setMinEpsLub( config.getMinEpsLub() );
+  applyOptionalLubricationParams(*cs, config);
 
   //==============================================================================================
   // Simulation Input Parameters
@@ -775,10 +781,7 @@ inline void setupRotationSerial(int cfd_rank) {
 
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
-  cs->setContactHysteresisDelta( config.getContactHysteresisDelta() );
-  cs->setLubricationHysteresisDelta( config.getLubricationHysteresisDelta() );
-  cs->setAlphaImpulseCap( config.getAlphaImpulseCap() );
-  cs->setMinEpsLub( config.getMinEpsLub() );
+  applyOptionalLubricationParams(*cs, config);
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
