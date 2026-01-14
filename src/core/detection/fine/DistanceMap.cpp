@@ -307,6 +307,7 @@ public:
     pe::Vec3 interpolateContactPoint(pe::real, pe::real, pe::real) const { std::cerr << "Warning: DistanceMap used without CGAL support." << std::endl; return pe::Vec3(0,0,0); }
     pe::real interpolateAlpha(pe::real, pe::real, pe::real) const { std::cerr << "Warning: DistanceMap used without CGAL support." << std::endl; return 0.0; }
     bool isValid() const { return false; }
+    void invertForDomainBoundary() {};
     int getNx() const { return 0; }
     int getNy() const { return 0; }
     int getNz() const { return 0; }
