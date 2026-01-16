@@ -1,3 +1,4 @@
+#define PE_SERIAL_MODE
 #ifdef PE_SERIAL_MODE
 
 #include <pe/core.h>
