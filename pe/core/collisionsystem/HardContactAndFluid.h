@@ -230,6 +230,7 @@ public:
    inline void            setMinEps( real minEps ){};
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
+   inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
    //@}
    //**********************************************************************************************
 
@@ -296,6 +297,7 @@ private:
    inline void clear();
    inline void clearContacts();
           bool checkUpdateFlags();
+   inline real getCharacteristicLength( ConstBodyID body ) const;
    //@}
    //**********************************************************************************************
 
@@ -314,6 +316,8 @@ private:
    JS jointstorage_;          //!< The joint storage.
 
    real erp_;                 //!< The error reduction parameter (0 <= erp_ <= 1).
+   bool useAdaptiveBaumgarteCapping_;  //!< Enable adaptive velocity capping to prevent explosions
+   real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
    size_t iteration_;
    size_t maxSubIterations_;  //!< Maximum number of iterations of iterative solvers in the one-contact problem.
@@ -432,6 +436,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::CollisionSystem()
    , attachablestorage_()
    , jointstorage_     ()
    , erp_              ( 0.7 )
+   , useAdaptiveBaumgarteCapping_  ( false )  // OFF by default - opt-in feature
+   , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
    , maxSubIterations_ ( 20 )
@@ -898,6 +904,62 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::setErr
    pe_INTERNAL_ASSERT( erp >= 0 && erp <= 1, "Error reduction parameter out of range." );
 
    erp_ = erp;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enable/disable adaptive Baumgarte stabilization capping.
+ *
+ * \param enable Whether to enable adaptive capping.
+ * \param aggressiveness Controls correction rate (higher = gentler). Default: 50.0
+ * \return void
+ *
+ * When enabled, this caps the Baumgarte correction velocity based on object size to prevent
+ * "explosions" from deep penetrations. Trade-off: slower penetration resolution.
+ *
+ * Recommended for: Small timesteps with shallow penetrations
+ * Not recommended for: Large timesteps causing deep penetrations
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::setAdaptiveBaumgarteCapping( bool enable, real aggressiveness )
+{
+   pe_INTERNAL_ASSERT( aggressiveness > 0, "Correction aggressiveness must be positive." );
+
+   useAdaptiveBaumgarteCapping_ = enable;
+   correctionAggressiveness_ = aggressiveness;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the characteristic length of a rigid body.
+ *
+ * \param body The body to compute the characteristic length for.
+ * \return The maximum extent of the body's AABB.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::getCharacteristicLength( ConstBodyID body ) const
+{
+   const auto& aabb = body->getAABB();
+   real extentX = aabb[3] - aabb[0];
+   real extentY = aabb[4] - aabb[1];
+   real extentZ = aabb[5] - aabb[2];
+   return std::max(extentX, std::max(extentY, extentZ));
 }
 //*************************************************************************************************
 
@@ -1801,6 +1863,23 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             } else {
                // Normal case - apply error reduction parameter
                dist_[j] *= erp_;
+
+               // OPTIONAL: Adaptive Baumgarte capping (only if enabled)
+               if( useAdaptiveBaumgarteCapping_ ) {
+                  // Limit correction velocity based on object size to prevent explosions
+                  real charLength = std::min(
+                      getCharacteristicLength(b1),
+                      getCharacteristicLength(b2)
+                  );
+                  real maxCorrectionVelocity = (charLength * dtinv) / correctionAggressiveness_;
+
+                  // Clamp: dist_[j] * dtinv should not exceed maxCorrectionVelocity
+                  // Since dist_[j] < 0 for penetration: check dist_[j] * dtinv < -maxCorrectionVelocity
+                  real correctionVelocity = dist_[j] * dtinv;
+                  if( correctionVelocity < -maxCorrectionVelocity ) {
+                      dist_[j] = -maxCorrectionVelocity / dtinv;
+                  }
+               }
             }
          }
 
