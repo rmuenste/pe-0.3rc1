@@ -320,17 +320,36 @@ inline void setupATCSerial(int cfd_rank) {
   TimeStep::stepsize(config.getStepsize());
 
   //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
+                                               false);
+  }
+
+  // TODO: Add additional rigid bodies here
+  // Example:
+  // MaterialID myMaterial = createMaterial("ATCMaterial", density, cor, csf, cdf, poisson, young, stiffness, dampingN, dampingT);
+  // SphereID sphere = createSphere(idx++, position, radius, myMaterial, global);
+  int idx = 0;
+
+  //==============================================================================================
   // Domain Boundary Configuration
   //==============================================================================================
-  int idx = 0;
-  std::string boundaryFileName = std::string("atc_boundary.obj");
+  std::string boundaryFileName = std::string("atc_boundary_param_zero.obj");
   Vec3 boundaryPos(0.0, 0.0, 0.0);  // Boundary mesh in reference position
   MaterialID boundaryMat = createMaterial("boundary", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
   // Create boundary mesh as fixed global object
   TriangleMeshID boundaryMesh = createTriangleMesh(idx++, boundaryPos, boundaryFileName, boundaryMat, false, true);
   boundaryMesh->setFixed(true);
-  boundaryMesh->setPosition(Vec3(0.000169, -2.256, 0.087286));
+  //boundaryMesh->setPosition(Vec3(0.000169, -2.256, 0.087286));
+  boundaryMesh->setPosition(Vec3(0.000006, -2.25096, 0.08719));
 
 #ifdef PE_USE_CGAL
   // Enable DistanceMap acceleration for domain boundary
@@ -345,6 +364,7 @@ inline void setupATCSerial(int cfd_rank) {
     std::cerr << "WARNING: DistanceMap acceleration failed to initialize for boundary" << std::endl;
   }
 
+  boundaryMesh->getDistanceMap()->invertForDomainBoundary();
   if (boundaryDistanceMapEnabled && isRepresentative) {
     // Invert the DistanceMap for domain boundary representation
     // This transforms: inside mesh -> inside fluid domain (positive distance)
@@ -387,11 +407,17 @@ inline void setupATCSerial(int cfd_rank) {
               << " Gravity                                 = " << world->getGravity() << "\n"
               << "--------------------------------------------------------------------------------\n" << std::endl;
   }
+  Vec3 positionAdjust = Vec3(0.000006, -2.25096, 0.08719);
+  real radBench = config.getBenchRadius();
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-1.5878, 0.47876, 0.0);
 
-  // TODO: Add additional rigid bodies here
-  // Example:
-  // MaterialID myMaterial = createMaterial("ATCMaterial", density, cor, csf, cdf, poisson, young, stiffness, dampingN, dampingT);
-  // SphereID sphere = createSphere(idx++, position, radius, myMaterial, global);
+  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  SphereID sphere = createSphere(idx, position + positionAdjust, radBench, myMaterial, true);
+  ++idx;
+  SphereID sphere2 = createSphere(idx, Vec3(0,-2.5, 0.1), radBench, myMaterial, true);
+  ++idx;
+
 }
 
 /**
