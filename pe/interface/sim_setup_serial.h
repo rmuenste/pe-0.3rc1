@@ -997,10 +997,11 @@ inline void stepSimulationSerial() {
     }
 
 #ifdef PE_USE_CGAL
-    // Check if any particles have escaped the domain
+    // Check if any particles have escaped the domain and reinsert them
     if (boundaryMesh && boundaryMesh->hasDistanceMap()) {
       const DistanceMap* dm = boundaryMesh->getDistanceMap();
       int escapedCount = 0;
+      int reinsertedCount = 0;
 
       for (auto it = theCollisionSystem()->getBodyStorage().begin();
            it != theCollisionSystem()->getBodyStorage().end(); ++it) {
@@ -1008,7 +1009,9 @@ inline void stepSimulationSerial() {
 
         // Check spheres only
         if (body->getType() == sphereType) {
+          SphereID sphere = static_body_cast<Sphere>(body);
           Vec3 posWorld = body->getPosition();
+          real sphereRadius = sphere->getRadius();
 
           // Transform from world space to mesh local space
           Vec3 posLocal = boundaryMesh->pointFromWFtoBF(posWorld);
@@ -1023,12 +1026,41 @@ inline void stepSimulationSerial() {
                       << " has escaped the domain at world position ("
                       << posWorld[0] << ", " << posWorld[1] << ", " << posWorld[2]
                       << ") distance = " << distance << std::endl;
+
+            // Safe reinsert mechanism
+            // Get the normal at the escaped position (in local coordinates)
+            Vec3 normalLocal = dm->normal(posLocal);
+
+            // For inverted distance map, normal points inward to domain
+            // Calculate safe distance: sphere radius + small safety margin
+            real safeDistance = sphereRadius + 0.01;  // 0.01 safety margin
+
+            // Calculate new safe position in local coordinates
+            // Move along normal to reach safe distance inside domain
+            Vec3 newPosLocal = posLocal + normalLocal * (safeDistance - distance);
+
+            // Transform back to world coordinates
+            Vec3 newPosWorld = boundaryMesh->pointFromBFtoWF(newPosLocal);
+
+            // Set new position
+            body->setPosition(newPosWorld);
+
+            // Reset velocities to zero to prevent immediate re-escape
+            body->setLinearVel(Vec3(0.0, 0.0, 0.0));
+            body->setAngularVel(Vec3(0.0, 0.0, 0.0));
+
+            reinsertedCount++;
+            std::cout << "  -> Reinserted particle " << body->getSystemID()
+                      << " to world position ("
+                      << newPosWorld[0] << ", " << newPosWorld[1] << ", " << newPosWorld[2]
+                      << "), new distance = " << safeDistance << std::endl;
           }
         }
       }
 
       if (escapedCount > 0) {
-        std::cout << "TOTAL ESCAPED PARTICLES: " << escapedCount
+        std::cout << "ESCAPED PARTICLES: " << escapedCount
+                  << ", REINSERTED: " << reinsertedCount
                   << " at timestep " << timestep << std::endl;
       }
     }
