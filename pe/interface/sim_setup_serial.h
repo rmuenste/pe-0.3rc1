@@ -1057,18 +1057,49 @@ inline void stepSimulationSerial() {
             // Transform back to world coordinates
             Vec3 newPosWorld = boundaryMesh->pointFromBFtoWF(newPosLocal);
 
-            // Set new position
-            body->setPosition(newPosWorld);
+            // Check if new position would overlap with other particles
+            bool wouldOverlap = false;
+            for (auto it2 = theCollisionSystem()->getBodyStorage().begin();
+                 it2 != theCollisionSystem()->getBodyStorage().end(); ++it2) {
+              BodyID otherBody = *it2;
 
-            // Reset velocities to zero to prevent immediate re-escape
-            body->setLinearVel(Vec3(0.0, 0.0, 0.0));
-            body->setAngularVel(Vec3(0.0, 0.0, 0.0));
+              // Skip self and non-spheres
+              if (otherBody == body || otherBody->getType() != sphereType) continue;
 
-            reinsertedCount++;
-            std::cout << "  -> Reinserted particle " << body->getSystemID()
-                      << " to world position ("
-                      << newPosWorld[0] << ", " << newPosWorld[1] << ", " << newPosWorld[2]
-                      << "), new distance = " << safeDistance << std::endl;
+              SphereID otherSphere = static_body_cast<Sphere>(otherBody);
+              Vec3 otherPos = otherBody->getPosition();
+              real otherRadius = otherSphere->getRadius();
+
+              // Check if spheres would overlap (with small safety margin)
+              real centerDist = (newPosWorld - otherPos).length();
+              real minDist = sphereRadius + otherRadius + 0.02;  // 0.02 safety margin
+
+              if (centerDist < minDist) {
+                wouldOverlap = true;
+                std::cout << "  -> Cannot reinsert: would overlap with particle "
+                          << otherBody->getSystemID() << " (distance = " << centerDist
+                          << ", required = " << minDist << ")" << std::endl;
+                break;
+              }
+            }
+
+            if (!wouldOverlap) {
+              // Safe to reinsert
+              body->setPosition(newPosWorld);
+
+              // Reset velocities to zero to prevent immediate re-escape
+              body->setLinearVel(Vec3(0.0, 0.0, 0.0));
+              body->setAngularVel(Vec3(0.0, 0.0, 0.0));
+
+              reinsertedCount++;
+              std::cout << "  -> Reinserted particle " << body->getSystemID()
+                        << " to world position ("
+                        << newPosWorld[0] << ", " << newPosWorld[1] << ", " << newPosWorld[2]
+                        << "), new distance = " << safeDistance << std::endl;
+            } else {
+              std::cout << "  -> Particle " << body->getSystemID()
+                        << " remains escaped (no safe reinsertion point found)" << std::endl;
+            }
           }
         }
       }
