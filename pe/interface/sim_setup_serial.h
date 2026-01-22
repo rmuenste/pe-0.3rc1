@@ -398,7 +398,27 @@ inline void setupATCSerial(int cfd_rank) {
     std::cout << "WARNING: DistanceMap not available (PE_USE_CGAL not defined)" << std::endl;
   }
 #endif
- std::vector<Vec3> edges = readVectorsFromFile("sorted_vertices_by_x_world.txt");
+  //==============================================================================================
+  // Particle Generation along Centerline
+  //==============================================================================================
+  std::vector<Vec3> edges = readVectorsFromFile("sorted_vertices_by_x_world.txt");
+  real sphereRad = 0.0183;  // Sphere radius for centerline particles
+  real rhoParticle( config.getParticleDensity() );
+  MaterialID particleMaterial = createMaterial("particleMaterial", rhoParticle, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+
+  // Generate sphere positions along the centerline
+  std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad);
+
+  // Create spheres at generated positions (serial mode: no domain ownership check needed)
+  int particlesCreated = 0;
+  for (auto spherePos: spherePositions) {
+    createSphere(idx++, spherePos, sphereRad, particleMaterial);
+    particlesCreated++;
+  }
+
+  // Volume fraction computation
+  real domainVol = 0.604;
+  real partVol = 4. / 3. * M_PI * std::pow(sphereRad, 3);
 
   if (isRepresentative) {
     std::cout << "\n--" << "ATC SETUP"
@@ -407,18 +427,13 @@ inline void setupATCSerial(int cfd_rank) {
               << " Fluid viscosity                         = " << simViscosity << "\n"
               << " Fluid density                           = " << simRho << "\n"
               << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << " Particle radius                         = " << sphereRad << "\n"
+              << " Particle volume                         = " << partVol << "\n"
+              << " Domain volume                           = " << domainVol << "\n"
+              << " Volume fraction[%]                      = " << (particlesCreated * partVol) / domainVol * 100.0 << "\n"
               << "--------------------------------------------------------------------------------\n" << std::endl;
   }
-  Vec3 positionAdjust = Vec3(0.000006, -2.25096, 0.08719);
-  real radBench = config.getBenchRadius();
-  real rhoParticle( config.getParticleDensity() );
-  Vec3 position(-1.5878, 0.47876, 0.0);
-
-  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  SphereID sphere = createSphere(idx, position + positionAdjust, radBench, myMaterial, true);
-  ++idx;
-  SphereID sphere2 = createSphere(idx, Vec3(0,-2.5, 0.1), radBench, myMaterial, true);
-  ++idx;
 
 }
 
