@@ -1,5 +1,6 @@
 
 #include <pe/interface/decompose.h>
+#include <pe/interface/geometry_utils.h>
 #include <pe/config/SimulationConfig.h>
 #include <random>
 #include <algorithm>
@@ -173,156 +174,11 @@ void makePlanesAndCreateHalfSpaces(std::vector<HalfSpace> &halfSpaces)
 //*************************************************************************************************
 
 
-//*************************************************************************************************
-std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
-    std::vector<Vec3> vectors;
-    std::ifstream file(fileName);
-    
-    // Check if the file was successfully opened
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open file " << fileName << std::endl;
-        return vectors; // Return an empty vector in case of error
-    }
-    
-    std::string line;
-    
-    // Read the file line by line
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);  // Create a string stream from the line
-        float x, y, z;
-        
-        // Parse the line for three float values
-        if (ss >> x >> y >> z) {
-            // Create a Vec3 object and add it to the vector
-            vectors.emplace_back(x, y, z);
-        }
-    }
-    
-    file.close();  // Close the file
-    return vectors;
-}
-//*************************************************************************************************
 
 // Radius of each sphere
-real sphereRad = 0.0182;   // d_p = 364 microns 
+real sphereRad = 0.0182;   // d_p = 364 microns
 //real sphereRad = 0.01;   // Radius of each sphere
 //real sphereRad = 0.015;  // Radius of each sphere
-//*************************************************************************************************
-std::vector<Vec3> generatePointsAlongCenterline(std::vector<Vec3> &vecOfEdges) {
-
-    // Step 1: Measure the total length of the curve
-    double curve_length = 0.0;
-    std::vector<double> edge_lengths;
-    std::vector<Vec3> wayPoints;
-    int num_rings = 4;
-
-    // User-defined parameters
-    real sphereRadius = sphereRad;  // Radius of each sphere
-    real dt = 1. * sphereRad;           // Distance from the sphere surface to the circle center
-    int num_steps = 20;      // Number of divisions along the curve
-    std::vector<Vec3> sphere_positions;
-
-    size_t num_edges = vecOfEdges.size() - 1;
-
-    for (size_t i = 0; i < num_edges; ++i) {
-        Vec3 v1 = vecOfEdges[i];
-        Vec3 v2 = vecOfEdges[i + 1];
-        double edge_length = (v2 - v1).length();
-        edge_lengths.push_back(edge_length);
-        curve_length += edge_length;
-    }
-
-    //std::cout << "Curve length: " << curve_length << std::endl;
-
-    // Step 2: Set ds (step size)
-    double ds = curve_length / real(num_steps);
-
-    // Step 3: Compute cumulative lengths to help find the edge containing each step
-    std::vector<double> cumulative_lengths;
-    cumulative_lengths.push_back(0.0);  // Starting point
-
-    for (size_t i = 0; i < edge_lengths.size(); ++i) {
-        cumulative_lengths.push_back(cumulative_lengths.back() + edge_lengths[i]);
-    }
-
-    // Step 4: Traverse the curve in increments of ds
-    for (double s = ds + 0.2 * ds; s <= curve_length-ds; s += ds) {
-        // Find the edge that contains the current distance s
-        size_t edge_index = 0;
-        while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {
-            ++edge_index;
-        }
-
-        if (edge_index >= num_edges) {
-            break;  // Reached the end of the curve
-        }
-
-        // Compute the parameter t along the current edge
-        double edge_start = cumulative_lengths[edge_index];
-        double edge_end = cumulative_lengths[edge_index + 1];
-        double t = (s - edge_start) / (edge_end - edge_start);
-
-        // Calculate the point along the edge at distance s
-        Vec3 v1 = vecOfEdges[edge_index];
-        Vec3 v2 = vecOfEdges[edge_index + 1];
-        Vec3 point_on_edge = v1 + (v2 - v1) * t;
-
-        // Step 5: Take a user-defined action at the point
-        wayPoints.push_back(point_on_edge);
-
-        //-------------------- User Action Start --------------------
-        // Generate a ring of spheres around the current edge at point_on_edge
-        Vec3 edge_direction = v2 - v1;
-        Vec3 someVector(1.0, 0., 0.);
-        if ( std::abs( trans(edge_direction) * someVector ) > 0.999) 
-          someVector = Vec3(0.0, 1.0, 0.0);
-
-        // Compute orthogonal vectors u and v in the plane perpendicular to edge_direction
-        Vec3 u = (edge_direction % someVector).getNormalized();
-        Vec3 v = (edge_direction % u).getNormalized();
-
-        for (int j(0); j < num_rings; ++j) {
-
-          // Compute circle radius
-          real circle_radius = sphereRadius + dt + j * (2. * sphereRadius + dt);
-
-          real circumference = 2. * M_PI * circle_radius;
-          
-          //std::cout << "circumference = " << circumference << std::endl;
-          // Compute maximum number of spheres without overlap
-          int max_spheres = int(circumference / (2. * sphereRadius)) - 1;
-
-          if (max_spheres < 1)
-             max_spheres = 1;
-
-          //std::cout << "max_spheres = " << max_spheres << std::endl;
-
-          // Compute exact angle step
-          real theta_step = 2. * M_PI / max_spheres;
-
-          // Place spheres around the circle
-          for(int i(0); i < max_spheres; ++i) {
-             real theta = i * theta_step;
-             Vec3 sphere_offset = (std::cos(theta) * u + std::sin(theta) * v) * circle_radius;
-             sphere_positions.push_back(Vec3(point_on_edge + sphere_offset));
-          }
-
-        }
-
-
-    }
-
-    real minDist = std::numeric_limits<real>::max();
-    for (size_t i = 1; i < wayPoints.size(); ++i) {
-        real dist = (wayPoints[i-1] - wayPoints[i]).length();
-        if (minDist > dist) minDist = dist;
-        //std::cout << "Distance between [" << i-1 << ", " << i << "] = " << (wayPoints[i-1] - wayPoints[i]).length() << std::endl;
-    }
-    //std::cout << "Minimal distance: " << minDist  << " => minRadius = " << minDist * 0.5 << std::endl;
-
-    return sphere_positions;
-
-}
 
 // Setup for the Archimedes case
 //===================================================================================
@@ -503,7 +359,7 @@ void setupArchimedes(MPI_Comm ex0)
      {
 
        std::vector<Vec3> edges = readVectorsFromFile("vertices.txt");
-       std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges);
+       std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad);
        for (auto spherePos: spherePositions) {
          if (world->ownsPoint(spherePos))
          {

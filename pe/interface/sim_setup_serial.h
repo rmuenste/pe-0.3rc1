@@ -11,6 +11,7 @@
 #include <pe/vtk/DistanceMapWriter.h>
 #include <pe/util/logging/Logger.h>
 #include <pe/config/SimulationConfig.h>
+#include <pe/interface/geometry_utils.h>
 #include <string>
 
 namespace pe {
@@ -397,6 +398,7 @@ inline void setupATCSerial(int cfd_rank) {
     std::cout << "WARNING: DistanceMap not available (PE_USE_CGAL not defined)" << std::endl;
   }
 #endif
+ std::vector<Vec3> edges = readVectorsFromFile("sorted_vertices_by_x_world.txt");
 
   if (isRepresentative) {
     std::cout << "\n--" << "ATC SETUP"
