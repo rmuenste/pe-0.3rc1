@@ -396,7 +396,7 @@ inline void setupATCSerial(int cfd_rank) {
     std::cout << "Inverted DistanceMap written to: atc_boundary_distancemap.vti\n" << std::endl;
 
     // Sanity check: Test a point that should be outside the domain
-    Vec3 testPointWorld(100.0, 0.0, 0.0);  // Clearly outside
+    Vec3 testPointWorld(-0.4, -2.0, 0.19);  // Outside domain, within grid bounds
     Vec3 testPointLocal = boundaryMesh->pointFromWFtoBF(testPointWorld);
     real testDistance = boundaryDM->interpolateDistance(testPointLocal[0], testPointLocal[1], testPointLocal[2]);
 
@@ -406,7 +406,8 @@ inline void setupATCSerial(int cfd_rank) {
               << " Test point (local): (" << testPointLocal[0] << ", " << testPointLocal[1] << ", " << testPointLocal[2] << ")\n"
               << " Signed distance: " << testDistance << "\n"
               << " Expected: negative (outside domain)\n"
-              << " Result: " << (testDistance < 0.0 ? "PASS - point correctly identified as OUTSIDE" : "FAIL - point incorrectly identified as INSIDE") << "\n"
+              << " Result: " << (testDistance < 0.0 ? "PASS - point correctly identified as OUTSIDE" :
+                                (testDistance > 1e5 ? "OUT OF GRID BOUNDS" : "FAIL - point incorrectly identified as INSIDE")) << "\n"
               << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 #else
