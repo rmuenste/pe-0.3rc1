@@ -999,6 +999,7 @@ inline void stepSimulationSerial() {
 #ifdef PE_USE_CGAL
     // Check if any particles have escaped the domain
     if (boundaryMesh && boundaryMesh->hasDistanceMap()) {
+      const DistanceMap* dm = boundaryMesh->getDistanceMap();
       int escapedCount = 0;
 
       for (auto it = theCollisionSystem()->getBodyStorage().begin();
@@ -1007,17 +1008,21 @@ inline void stepSimulationSerial() {
 
         // Check spheres only
         if (body->getType() == sphereType) {
-          Vec3 pos = body->getPosition();
+          Vec3 posWorld = body->getPosition();
 
-          // Use containsPoint which handles coordinate transformations automatically
-          // For inverted distance map: containsPoint returns true if inside domain
-          bool insideDomain = boundaryMesh->containsPoint(pos);
+          // Transform from world space to mesh local space
+          Vec3 posLocal = boundaryMesh->pointFromWFtoBF(posWorld);
 
-          if (!insideDomain) {
+          // Query inverted distance map in local coordinates
+          // After inversion: positive = inside domain, negative = outside domain
+          real distance = dm->signedDistance(posLocal);
+
+          if (distance < 0.0) {
             escapedCount++;
             std::cout << "WARNING: Particle " << body->getSystemID()
-                      << " has escaped the domain at position ("
-                      << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
+                      << " has escaped the domain at world position ("
+                      << posWorld[0] << ", " << posWorld[1] << ", " << posWorld[2]
+                      << ") distance = " << distance << std::endl;
           }
         }
       }
