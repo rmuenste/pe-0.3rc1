@@ -22,7 +22,7 @@ namespace pe {
  * @param fileName Path to the input file
  * @return Vector of Vec3 objects read from the file (empty on error)
  */
-std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
+inline std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
     std::vector<Vec3> vectors;
     std::ifstream file(fileName);
 
@@ -67,7 +67,7 @@ std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
  * @param num_steps Number of divisions along the curve (default: 20)
  * @return Vector of Vec3 positions where spheres should be placed
  */
-std::vector<Vec3> generatePointsAlongCenterline(
+inline std::vector<Vec3> generatePointsAlongCenterline(
     std::vector<Vec3> &vecOfEdges,
     real sphereRadius,
     real dt = -1.0,  // Default: will be set to 1.0 * sphereRadius if < 0
