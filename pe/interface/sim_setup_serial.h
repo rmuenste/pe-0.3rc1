@@ -306,6 +306,9 @@ inline void setupATCSerial(int cfd_rank) {
   CollisionSystemID cs = theCollisionSystem();
   applyOptionalLubricationParams(*cs, config);
 
+  // Enable adaptive Baumgarte capping for contact stabilization
+  theCollisionSystem()->setAdaptiveBaumgarteCapping(true, 50.0);
+
   // Set gravity from configuration
   world->setGravity( config.getGravity() );
   world->setDamping(1.0);
@@ -973,6 +976,60 @@ inline void stepSimulationSerial() {
   // Restore original timestep size
   TimeStep::stepsize(fullStepSize);
 
+  //==============================================================================================
+  // Domain Escape Detection (once per main timestep)
+  //==============================================================================================
+  if (isRepresentative) {
+    // Find the boundary mesh with inverted distance map
+    TriangleMeshID boundaryMesh = nullptr;
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      BodyID body = *it;
+      if (body->getType() == triangleMeshType) {
+        TriangleMeshID mesh = static_body_cast<TriangleMesh>(body);
+#ifdef PE_USE_CGAL
+        if (mesh->hasDistanceMap()) {
+          boundaryMesh = mesh;
+          break;
+        }
+#endif
+      }
+    }
+
+#ifdef PE_USE_CGAL
+    // Check if any particles have escaped the domain
+    if (boundaryMesh && boundaryMesh->hasDistanceMap()) {
+      int escapedCount = 0;
+
+      for (auto it = theCollisionSystem()->getBodyStorage().begin();
+           it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+        BodyID body = *it;
+
+        // Check spheres only
+        if (body->getType() == sphereType) {
+          Vec3 pos = body->getPosition();
+
+          // Use containsPoint which handles coordinate transformations automatically
+          // For inverted distance map: containsPoint returns true if inside domain
+          bool insideDomain = boundaryMesh->containsPoint(pos);
+
+          if (!insideDomain) {
+            escapedCount++;
+            std::cout << "WARNING: Particle " << body->getSystemID()
+                      << " has escaped the domain at position ("
+                      << pos[0] << ", " << pos[1] << ", " << pos[2] << ")" << std::endl;
+          }
+        }
+      }
+
+      if (escapedCount > 0) {
+        std::cout << "TOTAL ESCAPED PARTICLES: " << escapedCount
+                  << " at timestep " << timestep << std::endl;
+      }
+    }
+#endif
+  }
+
   // Particle diagnostics output (once per main timestep only)
   if (isRepresentative) {
     unsigned int i(0);
@@ -987,8 +1044,9 @@ inline void stepSimulationSerial() {
 
         const Vec3 vel = body->getLinearVel();
         const Vec3 ang = body->getAngularVel();
+#ifdef PE_SERIAL_VERBOSE_PARTICLE_OUTPUT
         std::cout << "==Single Particle Data========================================================" << std::endl;
-        
+
         std::cout << "Position: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
                                      body->getPosition()[0] << " " <<
                                      body->getPosition()[1] << " " <<
@@ -1002,6 +1060,7 @@ inline void stepSimulationSerial() {
                                      body->getAngularVel()[1] << " " <<
                                      body->getAngularVel()[2] << std::endl;
        std::cout << "We are using " << substeps << " substeps per CFD step." << std::endl;
+#endif
       }
     }
   }
