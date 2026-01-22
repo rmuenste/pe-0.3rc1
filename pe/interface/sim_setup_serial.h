@@ -394,6 +394,20 @@ inline void setupATCSerial(int cfd_rank) {
     // Write inverted DistanceMap to VTK for visual inspection
     vtk::DistanceMapWriter::writeVTI("atc_boundary_distancemap.vti", *boundaryDM);
     std::cout << "Inverted DistanceMap written to: atc_boundary_distancemap.vti\n" << std::endl;
+
+    // Sanity check: Test a point that should be outside the domain
+    Vec3 testPointWorld(100.0, 0.0, 0.0);  // Clearly outside
+    Vec3 testPointLocal = boundaryMesh->pointFromWFtoBF(testPointWorld);
+    real testDistance = boundaryDM->interpolateDistance(testPointLocal[0], testPointLocal[1], testPointLocal[2]);
+
+    std::cout << "\n--" << "ESCAPE DETECTION SANITY CHECK"
+              << "--------------------------------------------------------------\n"
+              << " Test point (world): (" << testPointWorld[0] << ", " << testPointWorld[1] << ", " << testPointWorld[2] << ")\n"
+              << " Test point (local): (" << testPointLocal[0] << ", " << testPointLocal[1] << ", " << testPointLocal[2] << ")\n"
+              << " Signed distance: " << testDistance << "\n"
+              << " Expected: negative (outside domain)\n"
+              << " Result: " << (testDistance < 0.0 ? "PASS - point correctly identified as OUTSIDE" : "FAIL - point incorrectly identified as INSIDE") << "\n"
+              << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 #else
   const bool boundaryDistanceMapEnabled = false;
@@ -1018,7 +1032,7 @@ inline void stepSimulationSerial() {
 
           // Query inverted distance map in local coordinates
           // After inversion: positive = inside domain, negative = outside domain
-          real distance = dm->signedDistance(posLocal);
+          real distance = dm->interpolateDistance(posLocal[0], posLocal[1], posLocal[2]);
 
           if (distance < 0.0) {
             escapedCount++;
@@ -1029,7 +1043,7 @@ inline void stepSimulationSerial() {
 
             // Safe reinsert mechanism
             // Get the normal at the escaped position (in local coordinates)
-            Vec3 normalLocal = dm->normal(posLocal);
+            Vec3 normalLocal = dm->interpolateNormal(posLocal[0], posLocal[1], posLocal[2]);
 
             // For inverted distance map, normal points inward to domain
             // Calculate safe distance: sphere radius + small safety margin
