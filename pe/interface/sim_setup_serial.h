@@ -956,6 +956,15 @@ inline void stepSimulationSerial() {
 
   static int timestep = 0;
 
+  // Queue for particles that were destroyed and are waiting for reinsertion
+  struct QueuedParticle {
+    real radius;
+    MaterialID material;  // Reuse the original material from setupATCSerial
+
+    QueuedParticle(real r, MaterialID mat) : radius(r), material(mat) {}
+  };
+  static std::vector<QueuedParticle> particleQueue;
+
   // Substepping configuration
   int substeps = config.getSubsteps();
   real fullStepSize = config.getStepsize();
@@ -992,126 +1001,182 @@ inline void stepSimulationSerial() {
   TimeStep::stepsize(fullStepSize);
 
   //==============================================================================================
-  // Domain Escape Detection (once per main timestep)
+  // Domain Escape Detection and Particle Reinsertion (once per main timestep)
+  // IMPORTANT: All instances must perform this to keep particle states in sync
   //==============================================================================================
-  if (isRepresentative) {
-    // Find the boundary mesh with inverted distance map
-    TriangleMeshID boundaryMesh = nullptr;
+  // Find the boundary mesh with inverted distance map
+  TriangleMeshID boundaryMesh = nullptr;
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+    if (body->getType() == triangleMeshType) {
+      TriangleMeshID mesh = static_body_cast<TriangleMesh>(body);
+#ifdef PE_USE_CGAL
+      if (mesh->hasDistanceMap()) {
+        boundaryMesh = mesh;
+        break;
+      }
+#endif
+    }
+  }
+
+#ifdef PE_USE_CGAL
+  if (boundaryMesh && boundaryMesh->hasDistanceMap()) {
+    const DistanceMap* dm = boundaryMesh->getDistanceMap();
+
+    // Define three fixed safe reinsertion positions (inside domain, no distance check needed)
+    const std::vector<Vec3> safePositions = {
+      Vec3(-0.5, -2.65, 0.0),
+      Vec3(-0.5, -2.5, 0.0),
+      Vec3(0.0, -2.5, 0.0)
+    };
+
+    // Helper function to check if a position would cause overlap with existing particles
+    auto checkOverlap = [&](const Vec3& testPos, real testRadius) -> bool {
+      for (auto it = theCollisionSystem()->getBodyStorage().begin();
+           it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+        BodyID otherBody = *it;
+        if (otherBody->getType() != sphereType) continue;
+
+        SphereID otherSphere = static_body_cast<Sphere>(otherBody);
+        Vec3 otherPos = otherBody->getPosition();
+        real otherRadius = otherSphere->getRadius();
+
+        real centerDist = (testPos - otherPos).length();
+        real minDist = testRadius + otherRadius + 0.02;  // 0.02 safety margin
+
+        if (centerDist < minDist) {
+          return true;  // Would overlap
+        }
+      }
+      return false;  // No overlap
+    };
+
+    int reinsertedFromQueue = 0;
+    int escapedCount = 0;
+    int reinsertedEscaped = 0;
+    int destroyedCount = 0;
+
+    //==========================================================================================
+    // Step 1: Try to reinsert particles from the queue
+    //==========================================================================================
+    size_t initialQueueSize = particleQueue.size();
+    for (size_t i = 0; i < initialQueueSize && !safePositions.empty(); ) {
+      QueuedParticle& qp = particleQueue[i];
+      bool inserted = false;
+
+      // Try each safe position
+      for (const Vec3& safePos : safePositions) {
+        if (!checkOverlap(safePos, qp.radius)) {
+          // Position is free, create new sphere with original material
+          size_t newID = world->size();  // Use next available ID
+          SphereID newSphere = createSphere(newID, safePos, qp.radius, qp.material);
+          newSphere->setLinearVel(Vec3(0.0, 0.0, 0.0));
+          newSphere->setAngularVel(Vec3(0.0, 0.0, 0.0));
+
+          reinsertedFromQueue++;
+          particleQueue.erase(particleQueue.begin() + i);
+          inserted = true;
+
+          if (isRepresentative) {
+            std::cout << "  -> Reinserted queued particle at position ("
+                      << safePos[0] << ", " << safePos[1] << ", " << safePos[2] << ")" << std::endl;
+          }
+          break;  // Move to next queued particle
+        }
+      }
+
+      if (!inserted) {
+        ++i;  // Try this particle again next timestep
+      }
+    }
+
+    //==========================================================================================
+    // Step 2: Check for escaped particles and handle them
+    //==========================================================================================
+    // Collect escaped particles first to avoid iterator invalidation during destruction
+    std::vector<BodyID> escapedParticles;
+
     for (auto it = theCollisionSystem()->getBodyStorage().begin();
          it != theCollisionSystem()->getBodyStorage().end(); ++it) {
       BodyID body = *it;
-      if (body->getType() == triangleMeshType) {
-        TriangleMeshID mesh = static_body_cast<TriangleMesh>(body);
-#ifdef PE_USE_CGAL
-        if (mesh->hasDistanceMap()) {
-          boundaryMesh = mesh;
+
+      if (body->getType() == sphereType) {
+        Vec3 posWorld = body->getPosition();
+        Vec3 posLocal = boundaryMesh->pointFromWFtoBF(posWorld);
+        real distance = dm->interpolateDistance(posLocal[0], posLocal[1], posLocal[2]);
+
+        if (distance < 0.0) {
+          escapedParticles.push_back(body);
+        }
+      }
+    }
+
+    escapedCount = escapedParticles.size();
+
+    // Handle each escaped particle
+    for (BodyID body : escapedParticles) {
+      SphereID sphere = static_body_cast<Sphere>(body);
+      Vec3 posWorld = body->getPosition();
+      real sphereRadius = sphere->getRadius();
+
+      if (isRepresentative) {
+        std::cout << "WARNING: Particle " << body->getSystemID()
+                  << " has escaped the domain at world position ("
+                  << posWorld[0] << ", " << posWorld[1] << ", " << posWorld[2] << ")" << std::endl;
+      }
+
+      // Try to reinsert at one of the three safe positions
+      bool reinserted = false;
+      for (const Vec3& safePos : safePositions) {
+        if (!checkOverlap(safePos, sphereRadius)) {
+          // Position is free, reinsert here
+          body->setPosition(safePos);
+          body->setLinearVel(Vec3(0.0, 0.0, 0.0));
+          body->setAngularVel(Vec3(0.0, 0.0, 0.0));
+
+          reinsertedEscaped++;
+          reinserted = true;
+
+          if (isRepresentative) {
+            std::cout << "  -> Reinserted particle " << body->getSystemID()
+                      << " at safe position (" << safePos[0] << ", "
+                      << safePos[1] << ", " << safePos[2] << ")" << std::endl;
+          }
           break;
         }
-#endif
       }
-    }
 
-#ifdef PE_USE_CGAL
-    // Check if any particles have escaped the domain and reinsert them
-    if (boundaryMesh && boundaryMesh->hasDistanceMap()) {
-      const DistanceMap* dm = boundaryMesh->getDistanceMap();
-      int escapedCount = 0;
-      int reinsertedCount = 0;
-
-      for (auto it = theCollisionSystem()->getBodyStorage().begin();
-           it != theCollisionSystem()->getBodyStorage().end(); ++it) {
-        BodyID body = *it;
-
-        // Check spheres only
-        if (body->getType() == sphereType) {
-          SphereID sphere = static_body_cast<Sphere>(body);
-          Vec3 posWorld = body->getPosition();
-          real sphereRadius = sphere->getRadius();
-
-          // Transform from world space to mesh local space
-          Vec3 posLocal = boundaryMesh->pointFromWFtoBF(posWorld);
-
-          // Query inverted distance map in local coordinates
-          // After inversion: positive = inside domain, negative = outside domain
-          real distance = dm->interpolateDistance(posLocal[0], posLocal[1], posLocal[2]);
-
-          if (distance < 0.0) {
-            escapedCount++;
-            std::cout << "WARNING: Particle " << body->getSystemID()
-                      << " has escaped the domain at world position ("
-                      << posWorld[0] << ", " << posWorld[1] << ", " << posWorld[2]
-                      << ") distance = " << distance << std::endl;
-
-            // Safe reinsert mechanism
-            // Get the normal at the escaped position (in local coordinates)
-            Vec3 normalLocal = dm->interpolateNormal(posLocal[0], posLocal[1], posLocal[2]);
-
-            // For inverted distance map, normal points inward to domain
-            // Calculate safe distance: sphere radius + small safety margin
-            real safeDistance = sphereRadius + 0.01;  // 0.01 safety margin
-
-            // Calculate new safe position in local coordinates
-            // Move along normal to reach safe distance inside domain
-            Vec3 newPosLocal = posLocal + normalLocal * (safeDistance - distance);
-
-            // Transform back to world coordinates
-            Vec3 newPosWorld = boundaryMesh->pointFromBFtoWF(newPosLocal);
-
-            // Check if new position would overlap with other particles
-            bool wouldOverlap = false;
-            for (auto it2 = theCollisionSystem()->getBodyStorage().begin();
-                 it2 != theCollisionSystem()->getBodyStorage().end(); ++it2) {
-              BodyID otherBody = *it2;
-
-              // Skip self and non-spheres
-              if (otherBody == body || otherBody->getType() != sphereType) continue;
-
-              SphereID otherSphere = static_body_cast<Sphere>(otherBody);
-              Vec3 otherPos = otherBody->getPosition();
-              real otherRadius = otherSphere->getRadius();
-
-              // Check if spheres would overlap (with small safety margin)
-              real centerDist = (newPosWorld - otherPos).length();
-              real minDist = sphereRadius + otherRadius + 0.02;  // 0.02 safety margin
-
-              if (centerDist < minDist) {
-                wouldOverlap = true;
-                std::cout << "  -> Cannot reinsert: would overlap with particle "
-                          << otherBody->getSystemID() << " (distance = " << centerDist
-                          << ", required = " << minDist << ")" << std::endl;
-                break;
-              }
-            }
-
-            if (!wouldOverlap) {
-              // Safe to reinsert
-              body->setPosition(newPosWorld);
-
-              // Reset velocities to zero to prevent immediate re-escape
-              body->setLinearVel(Vec3(0.0, 0.0, 0.0));
-              body->setAngularVel(Vec3(0.0, 0.0, 0.0));
-
-              reinsertedCount++;
-              std::cout << "  -> Reinserted particle " << body->getSystemID()
-                        << " to world position ("
-                        << newPosWorld[0] << ", " << newPosWorld[1] << ", " << newPosWorld[2]
-                        << "), new distance = " << safeDistance << std::endl;
-            } else {
-              std::cout << "  -> Particle " << body->getSystemID()
-                        << " remains escaped (no safe reinsertion point found)" << std::endl;
-            }
-          }
+      // If all positions are occupied, destroy the particle and queue it
+      if (!reinserted) {
+        if (isRepresentative) {
+          std::cout << "  -> All safe positions occupied, destroying particle "
+                    << body->getSystemID() << " and adding to queue" << std::endl;
         }
-      }
 
-      if (escapedCount > 0) {
-        std::cout << "ESCAPED PARTICLES: " << escapedCount
-                  << ", REINSERTED: " << reinsertedCount
-                  << " at timestep " << timestep << std::endl;
+        // Extract particle properties before destruction
+        MaterialID mat = body->getMaterial();
+
+        // Add to queue for later reinsertion (reuse original material)
+        particleQueue.emplace_back(sphereRadius, mat);
+
+        // Destroy the particle
+        world->destroy(body);
+        destroyedCount++;
       }
     }
-#endif
+
+    // Report statistics
+    if ((escapedCount > 0 || reinsertedFromQueue > 0 || particleQueue.size() > 0) && isRepresentative) {
+      std::cout << "PARTICLE MANAGEMENT at timestep " << timestep << ":\n"
+                << "  Escaped: " << escapedCount << "\n"
+                << "  Reinserted (escaped): " << reinsertedEscaped << "\n"
+                << "  Reinserted (queued): " << reinsertedFromQueue << "\n"
+                << "  Destroyed: " << destroyedCount << "\n"
+                << "  Queue size: " << particleQueue.size() << std::endl;
+    }
   }
+#endif
 
   // Particle diagnostics output (once per main timestep only)
   if (isRepresentative) {
