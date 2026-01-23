@@ -1155,14 +1155,24 @@ inline void stepSimulationSerial() {
         }
 
         // Extract particle properties before destruction
-        MaterialID mat = body->getMaterial();
+        MaterialID mat = sphere->getMaterial();
 
         // Add to queue for later reinsertion (reuse original material)
         particleQueue.emplace_back(sphereRadius, mat);
 
-        // Destroy the particle
-        world->destroy(body);
-        destroyedCount++;
+        // Find the iterator for this body to destroy it
+        World::Iterator destroyIt = world->begin();
+        for (; destroyIt != world->end(); ++destroyIt) {
+          if (*destroyIt == body) {
+            break;
+          }
+        }
+
+        // Destroy the particle using the iterator
+        if (destroyIt != world->end()) {
+          world->destroy(destroyIt);
+          destroyedCount++;
+        }
       }
     }
 
