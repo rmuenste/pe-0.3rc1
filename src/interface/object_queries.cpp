@@ -486,6 +486,63 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
 
 //=================================================================================================
 /*
+ *!\brief Accelerated point-inside-particles check using HashGrid spatial hashing.
+ *
+ * \param vidx Vertex index (for debugging/identification).
+ * \param inpr Output: particle index byte[0]+1 if inside, 0 otherwise.
+ * \param pos 3D point coordinates [x, y, z].
+ * \param bytes Output: 8-byte system ID array.
+ * \return true if point is inside a particle, false otherwise.
+ *
+ * Uses spatial hashing to reduce complexity from O(N_particles) to O(1) average case.
+ * Only bodies in nearby grid cells are checked instead of iterating through all bodies.
+ */
+bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short int bytes[8]) {
+
+  // Get candidate bodies from HashGrid (only nearby cells)
+  std::vector<BodyID> candidates;
+  theCollisionSystem()->getCoarseDetector().getBodiesNearPoint(
+      static_cast<real>(pos[0]),
+      static_cast<real>(pos[1]),
+      static_cast<real>(pos[2]),
+      candidates);
+
+  // Check only candidate bodies (removes duplicates implicitly since we return on first match)
+  for (std::vector<BodyID>::iterator it = candidates.begin(); it != candidates.end(); ++it) {
+    BodyID body = *it;
+    bool inside = false;
+
+    if (body->getType() == sphereType) {
+      inside = static_cast<Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    }
+    else if (body->getType() == capsuleType) {
+      inside = static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    }
+    else if (body->getType() == ellipsoidType) {
+      inside = static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    }
+    else if (body->getType() == cylinderType && !body->isFixed()) {
+      inside = static_cast<Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    }
+    else if (body->getType() == triangleMeshType && !body->isFixed()) {
+      inside = static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    }
+
+    if (inside) {
+      uint64toByteArray(body->getSystemID(), bytes);
+      *inpr = bytes[0] + 1;
+      return true;
+    }
+  }
+
+  *inpr = 0;
+  return false;
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
  *!\brief The function checks if an id corresponds to a remote particle on the local domain
  * \param fbmid The id used in the fbm context
  * \param id An index from 0,..,numRemParticles-1 that we map & compare with fbmid

@@ -30,12 +30,32 @@ extern "C" bool pointInsideRemObject(int idx, double pos[3]) {
 //=================================================================================================
 /*
  *!\brief The function returns true if the point is inside the object else false
- * \param vidx The index of the in the cfd grid 
+ * \param vidx The index of the in the cfd grid
  * \param idx The index of the object to check against
  * \param pos The coordinates of the point
+ *
+ * Uses accelerated HashGrid-based spatial hashing by default (USE_ACCELERATED_POINT_QUERY).
+ * Define USE_ACCELERATED_POINT_QUERY=0 to fall back to the original O(N) linear search.
  */
 extern "C" bool checkAllParticles(int vidx, int *inpr, double pos[3], short int bytes[8]) {
+#if !defined(USE_ACCELERATED_POINT_QUERY) || USE_ACCELERATED_POINT_QUERY
+  return pointInsideParticlesAccelerated(vidx, inpr, pos, bytes);
+#else
   return pointInsideParticles(vidx, inpr, pos, bytes);
+#endif
+}
+//=================================================================================================
+
+//=================================================================================================
+/*
+ *!\brief Explicit accelerated point query (always uses HashGrid optimization)
+ * \param vidx The index of the in the cfd grid
+ * \param inpr Output: particle index if inside, 0 otherwise
+ * \param pos The coordinates of the point
+ * \param bytes Output: 8-byte system ID array
+ */
+extern "C" bool checkAllParticlesAccelerated(int vidx, int *inpr, double pos[3], short int bytes[8]) {
+  return pointInsideParticlesAccelerated(vidx, inpr, pos, bytes);
 }
 //=================================================================================================
 

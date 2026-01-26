@@ -62,12 +62,24 @@ void getParticlesIndexMap(int *idxMap);
 void getRemoteParticlesIndexMap(int *idxMap); 
 
 /*
- *!\brief The function checks if the point pos in inside the particles 
- * \param vidx The index of the in the cfd grid 
- * \param inpr An output parameter that is set to the idx of that particle that contains pos 
+ *!\brief The function checks if the point pos in inside the particles
+ * \param vidx The index of the in the cfd grid
+ * \param inpr An output parameter that is set to the idx of that particle that contains pos
  * \param pos An array that cointans the 3d point
  */
-bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]); 
+bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]);
+
+/*
+ *!\brief Accelerated point-inside-particles check using HashGrid spatial hashing
+ * \param vidx Vertex index (for debugging/identification)
+ * \param inpr Output: particle index byte[0]+1 if inside, 0 otherwise
+ * \param pos 3D point coordinates [x, y, z]
+ * \param bytes Output: 8-byte system ID array
+ * \return true if point is inside a particle, false otherwise
+ *
+ * Uses spatial hashing to reduce complexity from O(N_particles) to O(1) average.
+ */
+bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short int bytes[8]);
 
 
 /*

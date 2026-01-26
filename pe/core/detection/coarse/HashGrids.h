@@ -206,7 +206,85 @@ private:
       //@}
       //*******************************************************************************************
 
+      //**Point query functions*********************************************************************
+      /*!\name Point query functions */
+      //@{
+      /*!\brief Get bodies near a point (cell + 26 neighbors).
+       *
+       * \param x The x-coordinate of the query point.
+       * \param y The y-coordinate of the query point.
+       * \param z The z-coordinate of the query point.
+       * \param bodies Output container for bodies found in nearby cells.
+       *
+       * This function queries the cell containing the given point and all 26 neighboring
+       * cells, collecting all bodies stored in these cells into the output container.
+       */
+      template< typename Container >
+      void getBodiesNearPoint( real x, real y, real z, Container& bodies ) const
+      {
+         size_t h = hashPoint( x, y, z );
+         Cell* cell = cell_ + h;
+
+         // Check all 27 cells (self + 26 neighbors)
+         for( unsigned int i = 0; i < 27; ++i ) {
+            Cell* nbCell = cell + cell->neighborOffset_[i];
+            BodyVector* nbBodies = nbCell->bodies_;
+
+            if( nbBodies != NULL ) {
+               for( typename BodyVector::const_iterator b = nbBodies->begin();
+                    b < nbBodies->end(); ++b ) {
+                  bodies.push_back( *b );
+               }
+            }
+         }
+      }
+      //@}
+      //*******************************************************************************************
+
     private:
+      //**Private utility functions****************************************************************
+      /*!\name Private utility functions */
+      //@{
+      /*!\brief Hash a point to get its cell index.
+       *
+       * \param x The x-coordinate of the point.
+       * \param y The y-coordinate of the point.
+       * \param z The z-coordinate of the point.
+       * \return The hash value (cell index) for the given point.
+       */
+      size_t hashPoint( real x, real y, real z ) const
+      {
+         size_t xHash, yHash, zHash;
+
+         if( x < 0 ) {
+            real i = ( -x ) * inverseCellSpan_;
+            xHash = xCellCount_ - 1 - ( static_cast<size_t>( i ) & xHashMask_ );
+         } else {
+            real i = x * inverseCellSpan_;
+            xHash = static_cast<size_t>( i ) & xHashMask_;
+         }
+
+         if( y < 0 ) {
+            real i = ( -y ) * inverseCellSpan_;
+            yHash = yCellCount_ - 1 - ( static_cast<size_t>( i ) & yHashMask_ );
+         } else {
+            real i = y * inverseCellSpan_;
+            yHash = static_cast<size_t>( i ) & yHashMask_;
+         }
+
+         if( z < 0 ) {
+            real i = ( -z ) * inverseCellSpan_;
+            zHash = zCellCount_ - 1 - ( static_cast<size_t>( i ) & zHashMask_ );
+         } else {
+            real i = z * inverseCellSpan_;
+            zHash = static_cast<size_t>( i ) & zHashMask_;
+         }
+
+         return xHash + yHash * xCellCount_ + zHash * xyCellCount_;
+      }
+      //@}
+      //*******************************************************************************************
+
       //**Utility functions************************************************************************
       /*!\name Utility functions */
       //@{
@@ -297,6 +375,61 @@ public:
    //@{
    template< typename Contacts > void findContacts( Contacts& contacts );
                                  void clear       ();
+   //@}
+   //**********************************************************************************************
+
+   //**Point query functions***************************************************************************
+   /*!\name Point query functions */
+   //@{
+   /*!\brief Get bodies near a point using spatial hashing.
+    *
+    * \param x The x-coordinate of the query point.
+    * \param y The y-coordinate of the query point.
+    * \param z The z-coordinate of the query point.
+    * \param bodies Output container for bodies found in nearby cells.
+    *
+    * This function queries all grids in the hierarchy for bodies near the given point.
+    * For each grid, it checks the cell containing the point and all 26 neighboring cells.
+    * Bodies in `nonGridBodies_` (infinite-sized objects like planes) are also included.
+    *
+    * When the grid is not yet active (few bodies), falls back to returning all bodies
+    * from `nonGridBodies_`.
+    */
+   template< typename Container >
+   void getBodiesNearPoint( real x, real y, real z, Container& bodies ) const
+   {
+      // If grid is not active, return all bodies from nonGridBodies_
+      if( !gridActive_ ) {
+         for( typename BodyVector::const_iterator b = nonGridBodies_.begin();
+              b < nonGridBodies_.end(); ++b )
+         {
+            bodies.push_back( *b );
+         }
+         return;
+      }
+
+      // Query all grids in hierarchy (bodies may be in any grid based on size)
+      for( typename GridList::const_iterator grid = gridList_.begin();
+           grid != gridList_.end(); ++grid )
+      {
+         (*grid)->getBodiesNearPoint( x, y, z, bodies );
+      }
+
+      // Also include non-grid bodies (infinite-sized objects like planes)
+      for( typename BodyVector::const_iterator b = nonGridBodies_.begin();
+           b < nonGridBodies_.end(); ++b )
+      {
+         bodies.push_back( *b );
+      }
+   }
+
+   /*!\brief Check if the hierarchical hash grid is currently active.
+    *
+    * \return true if the grid-based acceleration is active, false if using linear search.
+    *
+    * The grid is activated once the number of bodies exceeds the gridActivationThreshold.
+    */
+   bool isGridActive() const { return gridActive_; }
    //@}
    //**********************************************************************************************
 

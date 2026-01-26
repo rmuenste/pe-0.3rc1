@@ -54,6 +54,18 @@ set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support." 
 # Option to enable/disable JSON support
 option(USE_JSON "Use nlohmann/json library" ON)
 
+# Option to enable/disable accelerated point query using HashGrid spatial hashing
+option(USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: ON)" ON)
+
+# Add compile definition for accelerated point query
+if(USE_ACCELERATED_POINT_QUERY)
+  add_compile_definitions(USE_ACCELERATED_POINT_QUERY=1)
+  message(STATUS "Accelerated point query (HashGrid spatial hashing) is ENABLED")
+else()
+  add_compile_definitions(USE_ACCELERATED_POINT_QUERY=0)
+  message(STATUS "Accelerated point query is DISABLED (using linear O(N) search)")
+endif()
+
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 
 # Guide selection of boost libraries by FindBoost.cmake
