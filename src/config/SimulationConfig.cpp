@@ -76,6 +76,8 @@ SimulationConfig::SimulationConfig()
     , contactHysteresisDelta_(1e-9)
     , alphaImpulseCap_(1.0)
     , minEpsLub_(1e-8)
+    , centerlineVertices_()
+    , totalCenterlineLength_(0.0)
 {
 }
 //=================================================================================================

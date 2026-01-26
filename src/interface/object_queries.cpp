@@ -7,6 +7,8 @@
 #include <map>
 #include <pe/vtk/UtilityWriters.h>
 #include <pe/core/detection/fine/DistanceMap.h>
+#include <pe/util/logging/Logger.h>
+#include <pe/core/TimeStep.h>
 
 //#define ONLY_ROTATION 
 using namespace pe;
@@ -1177,15 +1179,78 @@ void setPartStruct(particleData_t *particle) {
   }
 
   Vec3 f(
-    particle->force[0], 
+    particle->force[0],
     particle->force[1],
     particle->force[2]
   );
 
+  // UNIT CONVERSION: Convert from CGS (dyne) to SI (Newton) if needed
+  // If CFD sends forces in dyne, uncomment the next line:
+  // f *= 1.0e-5;  // 1 dyne = 1e-5 Newton
+
+  // DIAGNOSTIC: Log forces for stuck particles OR when forces are exceptionally high
+  Vec3 velocity = body->getLinearVel();
+  real velMag = velocity.length();
+  real fluidForceMag = f.length();
+  Vec3 existingForce = body->getForce();
+  real existingForceMag = existingForce.length();
+  real totalForceMag = (existingForce + f).length();
+
+  // Trigger diagnostic if:
+  // 1. Particle is stuck, OR
+  // 2. Velocity is already high (> 10.0), OR
+  // 3. Total force is exceptionally large (> 50.0)
+  bool shouldLog = body->isStuck_ || (velMag > 10.0) || (totalForceMag > 50.0);
+
+  if (shouldLog) {
+    pe_LOG_INFO_SECTION( log ) {
+      log << "FORCE DIAGNOSTIC at setPartStruct interface:\n";
+      log << "  Particle (ID=" << id << ")\n";
+      log << "  Trigger: ";
+      if (body->isStuck_) log << "[STUCK] ";
+      if (velMag > 10.0) log << "[HIGH VELOCITY=" << velMag << "] ";
+      if (totalForceMag > 50.0) log << "[HIGH FORCE=" << totalForceMag << "] ";
+      log << "\n";
+
+      log << "  Incoming FLUID force from CFD: (" << f[0] << ", " << f[1] << ", " << f[2] << ")\n";
+      log << "  Incoming FLUID force magnitude: " << fluidForceMag << "\n";
+      log << "  Existing PE force (contact+gravity): (" << existingForce[0] << ", "
+          << existingForce[1] << ", " << existingForce[2] << ")\n";
+      log << "  Existing PE force magnitude: " << existingForceMag << "\n";
+      log << "  Current velocity: (" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << ")\n";
+      log << "  Current velocity magnitude: " << velMag << "\n";
+
+      // Identify force source
+      if (fluidForceMag > existingForceMag * 2.0) {
+        log << "  >>> DIAGNOSIS: FLUID FORCE is dominant (CFD drag is "
+            << (fluidForceMag / std::max(existingForceMag, 1e-10)) << "x larger)\n";
+      } else if (existingForceMag > fluidForceMag * 2.0) {
+        log << "  >>> DIAGNOSIS: CONTACT FORCE is dominant (PE contacts are "
+            << (existingForceMag / std::max(fluidForceMag, 1e-10)) << "x larger)\n";
+      } else {
+        log << "  >>> DIAGNOSIS: Forces are comparable in magnitude\n";
+      }
+
+      // Expected acceleration and velocity change
+      real mass = body->getMass();
+      real expectedAccel = totalForceMag / mass;
+      real dt = TimeStep::size();
+      real expectedDeltaV = expectedAccel * dt;
+
+      log << "  Expected velocity change this step: " << expectedDeltaV
+          << " (total force mag: " << totalForceMag << ", dt: " << dt << ")\n";
+      log << "  Predicted next velocity magnitude: " << (velMag + expectedDeltaV) << "\n";
+
+      if ((velMag + expectedDeltaV) > 2.5) {
+        log << "  >>> WARNING: Velocity will likely be LIMITED next timestep\n";
+      }
+    }
+  }
+
   body->setForce(1.0 * f);
 
   Vec3 t(
-    particle->torque[0], 
+    particle->torque[0],
     particle->torque[1],
     particle->torque[2]
   );

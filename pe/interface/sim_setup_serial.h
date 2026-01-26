@@ -13,8 +13,117 @@
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/geometry_utils.h>
 #include <string>
+#include <deque>
+#include <map>
 
 namespace pe {
+
+//=================================================================================================
+// Centerline position calculation utilities
+// Note: Centerline data is stored in SimulationConfig singleton, not as static globals
+//=================================================================================================
+
+/**
+ * @brief Result structure for centerline position calculations
+ */
+struct CenterlinePosition {
+  Vec3 closestPoint;         // Closest point on centerline to particle
+  real radialDistance;       // Euclidean distance from particle to closest point
+  real lengthAlongCurve;     // Cumulative length from start to closest point
+  real percentageAlongCurve; // Percentage along centerline (0-100%)
+  int segmentIndex;          // Which edge contains the closest point
+};
+
+/**
+ * @brief Calculate total length of a piecewise linear centerline
+ * @param centerline Vector of vertices defining the centerline
+ * @return Total length of the centerline
+ */
+inline real calculateTotalCenterlineLength(const std::vector<Vec3>& centerline) {
+  real totalLength = 0.0;
+  for (size_t i = 0; i < centerline.size() - 1; ++i) {
+    totalLength += (centerline[i + 1] - centerline[i]).length();
+  }
+  return totalLength;
+}
+
+/**
+ * @brief Find closest point on centerline to a given particle position
+ *
+ * For each line segment in the centerline, this function:
+ * 1. Projects the particle position onto the infinite line containing the segment
+ * 2. Clamps the projection to the segment endpoints
+ * 3. Computes the distance from particle to the clamped point
+ * 4. Tracks the segment with minimum distance
+ *
+ * @param particlePos Position of the particle in world coordinates
+ * @param centerline Vector of vertices defining the centerline
+ * @param totalLength Precomputed total length of the centerline
+ * @return CenterlinePosition structure with geometric diagnostics
+ */
+inline CenterlinePosition calculateCenterlinePosition(
+    const Vec3& particlePos,
+    const std::vector<Vec3>& centerline,
+    real totalLength) {
+
+  // Handle empty or degenerate centerline
+  if (centerline.size() < 2) {
+    return CenterlinePosition{Vec3(0,0,0), 0.0, 0.0, 0.0, -1};
+  }
+
+  real minDistance = std::numeric_limits<real>::max();
+  Vec3 closestPoint;
+  real lengthAlongCurve = 0.0;
+  real cumulativeLength = 0.0;
+  int closestSegmentIndex = -1;
+
+  // Iterate over each line segment in the centerline
+  for (size_t i = 0; i < centerline.size() - 1; ++i) {
+    const Vec3& v0 = centerline[i];
+    const Vec3& v1 = centerline[i + 1];
+    Vec3 edgeVec = v1 - v0;
+    real edgeLength = edgeVec.length();
+
+    // Skip degenerate segments
+    if (edgeLength < 1e-10) {
+      continue;
+    }
+
+    // Project particle onto infinite line containing edge
+    // t = (AP · AB) / |AB|^2 where A=v0, B=v1, P=particlePos
+    Vec3 toParticle = particlePos - v0;
+    real t = trans(toParticle) * edgeVec / (edgeLength * edgeLength);
+
+    // Clamp t to [0, 1] to constrain point to line segment
+    t = std::max(real(0), std::min(real(1), t));
+
+    // Closest point on this segment
+    Vec3 pointOnSegment = v0 + edgeVec * t;
+    real distance = (particlePos - pointOnSegment).length();
+
+    // Update if this is the closest segment so far
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestPoint = pointOnSegment;
+      lengthAlongCurve = cumulativeLength + (t * edgeLength);
+      closestSegmentIndex = static_cast<int>(i);
+    }
+
+    cumulativeLength += edgeLength;
+  }
+
+  // Calculate percentage along centerline
+  real percentageAlongCurve = (totalLength > 0.0) ?
+                               (lengthAlongCurve / totalLength) * 100.0 : 0.0;
+
+  return CenterlinePosition{
+    closestPoint,
+    minDistance,
+    lengthAlongCurve,
+    percentageAlongCurve,
+    closestSegmentIndex
+  };
+}
 
 // Apply lubrication/contact hysteresis parameters only if the active collision system
 // exposes the corresponding setters (e.g., HardContactLubricated). This avoids build
@@ -420,6 +529,18 @@ inline void setupATCSerial(int cfd_rank) {
   // Particle Generation along Centerline
   //==============================================================================================
   std::vector<Vec3> edges = readVectorsFromFile("sorted_vertices_by_x_world.txt");
+
+  // Store centerline in SimulationConfig singleton for stuck particle diagnostics
+  config.setCenterlineVertices(edges);
+  config.setTotalCenterlineLength(calculateTotalCenterlineLength(edges));
+
+  if (isRepresentative) {
+    pe_LOG_INFO_SECTION( log ) {
+      log << "Centerline loaded: " << config.getCenterlineVertices().size() << " vertices, "
+          << "total length = " << config.getTotalCenterlineLength() << "\n";
+    }
+  }
+
   real sphereRad = 0.0183;  // Sphere radius for centerline particles
   real rhoParticle( config.getParticleDensity() );
   MaterialID particleMaterial = createMaterial("particleMaterial", rhoParticle, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
@@ -956,6 +1077,14 @@ inline void stepSimulationSerial() {
 
   static int timestep = 0;
 
+  // Test log message to verify logging is working
+  if (timestep == 0) {
+    pe_LOG_INFO_SECTION( log ) {
+      log << "PE Logging initialized for CFD rank " << config.getCfdRank() << "\n";
+      log << "This log file should be named: pe" << config.getCfdRank() << ".log\n";
+    }
+  }
+
   // Queue for particles that were destroyed and are waiting for reinsertion
   struct QueuedParticle {
     real radius;
@@ -964,6 +1093,14 @@ inline void stepSimulationSerial() {
     QueuedParticle(real r, MaterialID mat) : radius(r), material(mat) {}
   };
   static std::vector<QueuedParticle> particleQueue;
+
+  // Stuck particle detection data structures
+  struct ParticlePositionHistory {
+    std::map<size_t, Vec3> positions;  // particleID -> position
+  };
+  static std::deque<ParticlePositionHistory> positionHistory;
+  static const int STUCK_DETECTION_WINDOW = 50;
+  static const real STUCK_THRESHOLD = 0.01;
 
   // Substepping configuration
   int substeps = config.getSubsteps();
@@ -980,9 +1117,51 @@ inline void stepSimulationSerial() {
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
 
+    // DIAGNOSTIC: Track velocity changes from fluid force application
+    Vec3 v_before = body->getLinearVel();
+    Vec3 force = body->getForce();
+    real forceMag = force.length();
+    real mass = body->getMass();
+
     // Apply fluid forces using the library function with full main timestep
     // This applies forces to velocities and resets forces if forceReset is enabled
     body->applyFluidForces(fullStepSize);
+
+    Vec3 v_after = body->getLinearVel();
+    Vec3 deltaV = v_after - v_before;
+    real deltaVMag = deltaV.length();
+
+    // Log if stuck OR if force/velocity change is large
+    if (body->isStuck_ || forceMag > 50.0 || deltaVMag > 5.0 || v_after.length() > 10.0) {
+      pe_LOG_INFO_SECTION( log ) {
+        log << "FLUID FORCE APPLICATION at timestep " << timestep << ":\n";
+        log << "  Particle (ID=" << body->getSystemID() << ")\n";
+        log << "  Trigger: ";
+        if (body->isStuck_) log << "[STUCK] ";
+        if (forceMag > 50.0) log << "[HIGH FORCE=" << forceMag << "] ";
+        if (deltaVMag > 5.0) log << "[LARGE DELTA_V=" << deltaVMag << "] ";
+        if (v_after.length() > 10.0) log << "[HIGH VELOCITY=" << v_after.length() << "] ";
+        log << "\n";
+        log << "  Applied force: (" << force[0] << ", " << force[1] << ", " << force[2] << ")\n";
+        log << "  Force magnitude: " << forceMag << "\n";
+        log << "  Mass: " << mass << ", invMass: " << body->getInvMass() << "\n";
+        log << "  dt: " << fullStepSize << "\n";
+        log << "  Velocity change (Δv = F/m * dt): (" << deltaV[0] << ", " << deltaV[1] << ", " << deltaV[2] << ")\n";
+        log << "  Velocity change magnitude: " << deltaVMag << "\n";
+        log << "  Velocity before: (" << v_before[0] << ", " << v_before[1] << ", " << v_before[2]
+            << ") mag=" << v_before.length() << "\n";
+        log << "  Velocity after: (" << v_after[0] << ", " << v_after[1] << ", " << v_after[2]
+            << ") mag=" << v_after.length() << "\n";
+
+        if (forceMag > 50.0) {
+          log << "  >>> DIAGNOSIS: Extremely high fluid force from CFD!\n";
+          log << "  >>> Expected Δv = (1/" << mass << ") * " << fullStepSize << " * " << forceMag << " = " << (forceMag * fullStepSize / mass) << "\n";
+        }
+        if (deltaVMag > 5.0) {
+          log << "  >>> WARNING: Single timestep velocity change > 5.0 - particle will likely be stuck!\n";
+        }
+      }
+    }
   }
 
   // Set global timestep to substep size for physics integration
@@ -1187,6 +1366,219 @@ inline void stepSimulationSerial() {
     }
   }
 #endif
+
+  //==============================================================================================
+  // Stuck Particle Detection (once per main timestep)
+  //==============================================================================================
+  // Record current positions of all sphere particles
+  ParticlePositionHistory currentHistory;
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+    if (body->getType() == sphereType) {
+      currentHistory.positions[body->getSystemID()] = body->getPosition();
+    }
+  }
+
+  // Add to position history and maintain window size
+  positionHistory.push_back(currentHistory);
+  if (positionHistory.size() > STUCK_DETECTION_WINDOW) {
+    positionHistory.pop_front();
+  }
+
+  // Check for stuck particles (only if we have enough history)
+  if (positionHistory.size() >= STUCK_DETECTION_WINDOW && isRepresentative) {
+    const ParticlePositionHistory& oldHistory = positionHistory.front();
+
+    for (const auto& currentEntry : currentHistory.positions) {
+      size_t particleID = currentEntry.first;
+      const Vec3& currentPos = currentEntry.second;
+
+      // Check if this particle existed 50 timesteps ago
+      auto oldIt = oldHistory.positions.find(particleID);
+      if (oldIt != oldHistory.positions.end()) {
+        const Vec3& oldPos = oldIt->second;
+        real displacement = (currentPos - oldPos).length();
+
+        if (displacement < STUCK_THRESHOLD) {
+          // Find and mark the body as stuck
+          for (auto it = theCollisionSystem()->getBodyStorage().begin();
+               it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+            BodyID body = *it;
+            if (body->getSystemID() == particleID) {
+              body->isStuck_ = true;  // Mark as stuck
+
+              // Calculate centerline position for diagnostic output
+              // Retrieve centerline data from SimulationConfig singleton
+              CenterlinePosition clPos = calculateCenterlinePosition(
+                  currentPos, config.getCenterlineVertices(), config.getTotalCenterlineLength());
+
+              // Use PE logging instead of cout
+              pe_LOG_INFO_SECTION( log ) {
+                log << "STUCK PARTICLE DIAGNOSTIC at timestep " << timestep << ":\n";
+                log << "  Particle (ID=" << particleID << ") STUCK: displacement = "
+                    << displacement << " over " << STUCK_DETECTION_WINDOW << " timesteps\n";
+                log << "    Position " << STUCK_DETECTION_WINDOW << " steps ago: ("
+                    << oldPos[0] << ", " << oldPos[1] << ", " << oldPos[2] << ")\n";
+                log << "    Current position: ("
+                    << currentPos[0] << ", " << currentPos[1] << ", " << currentPos[2] << ")\n";
+
+                // Centerline diagnostics
+                log << "  Centerline position:\n";
+                log << "    Length along centerline: " << clPos.lengthAlongCurve
+                    << " / " << config.getTotalCenterlineLength() << "\n";
+                log << "    Percentage along centerline: "
+                    << clPos.percentageAlongCurve << "%\n";
+                log << "    Radial distance from centerline: "
+                    << clPos.radialDistance << "\n";
+
+                // Check proximity to wall (tube radius ≈ 0.25)
+                real tubeRadius = 0.25;
+                real wallProximity = tubeRadius - clPos.radialDistance;
+                log << "    Distance from tube wall: " << wallProximity;
+                if (wallProximity < 0.05) {
+                  log << " [NEAR WALL]";
+                }
+                log << "\n";
+
+                // Check if in first 25% of centerline
+                if (clPos.percentageAlongCurve < 25.0) {
+                  log << "    [IN FIRST 25% OF CENTERLINE]\n";
+                }
+
+                // Velocity diagnostics (force diagnostics are in object_queries.cpp)
+                log << "  Velocity information:\n";
+                Vec3 velocity = body->getLinearVel();
+                real velMagnitude = velocity.length();
+                log << "    Current velocity: (" << velocity[0] << ", " << velocity[1] << ", " << velocity[2] << ")\n";
+                log << "    Velocity magnitude: " << velMagnitude << "\n";
+
+                // Contact diagnostics
+                int contactCount = 0;
+                int boundaryContacts = 0;
+                int particleContacts = 0;
+                real maxPenetration = 0.0;
+                for (auto contactIt = body->beginContacts(); contactIt != body->endContacts(); ++contactIt) {
+                  contactCount++;
+                  real penetration = -contactIt->getDistance();  // Negative distance = penetration
+                  if (penetration > maxPenetration) {
+                    maxPenetration = penetration;
+                  }
+
+                  // Identify contact partner
+                  BodyID otherBody = (contactIt->getBody1() == body) ? contactIt->getBody2() : contactIt->getBody1();
+                  if (otherBody->getType() == triangleMeshType) {
+                    boundaryContacts++;
+                  } else if (otherBody->getType() == sphereType) {
+                    particleContacts++;
+                  }
+                }
+
+                log << "  Contact information:\n";
+                log << "    Total active contacts: " << contactCount << "\n";
+                log << "    Contacts with boundary: " << boundaryContacts << "\n";
+                log << "    Contacts with particles: " << particleContacts << "\n";
+                if (contactCount > 0) {
+                  log << "    Maximum penetration depth: " << maxPenetration << "\n";
+                  if (maxPenetration > 1e-5) {
+                    log << "    WARNING: Significant penetration detected!\n";
+                  }
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Reset flags for particles that are no longer stuck
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      BodyID body = *it;
+      if (body->getType() == sphereType && body->isStuck_) {
+        size_t bodyID = body->getSystemID();
+
+        // Check if this particle is still in the stuck list
+        bool stillStuck = false;
+        for (const auto& currentEntry : currentHistory.positions) {
+          if (currentEntry.first == bodyID) {
+            auto oldIt = oldHistory.positions.find(bodyID);
+            if (oldIt != oldHistory.positions.end()) {
+              real displacement = (currentEntry.second - oldIt->second).length();
+              if (displacement < STUCK_THRESHOLD) {
+                stillStuck = true;
+                break;
+              }
+            }
+            break;
+          }
+        }
+
+        if (!stillStuck) {
+          body->isStuck_ = false;  // Clear flag
+        }
+      }
+    }
+
+    // Count and output stuck particle statistics
+    size_t stuckCount = 0;
+    size_t totalCount = 0;
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      BodyID body = *it;
+      if (body->getType() == sphereType) {
+        totalCount++;
+        if (body->isStuck_) {
+          stuckCount++;
+        }
+      }
+    }
+
+    if (stuckCount > 0) {
+      real stuckPercentage = (totalCount > 0) ? (static_cast<real>(stuckCount) / static_cast<real>(totalCount)) * 100.0 : 0.0;
+
+      // Collect centerline statistics for stuck particles
+      int nearWallCount = 0;     // radial distance > 0.20 (within 0.05 of wall)
+      int earlyRegionCount = 0;  // first 25% of centerline
+      real avgRadialDistance = 0.0;
+      real avgPercentage = 0.0;
+
+      for (auto it = theCollisionSystem()->getBodyStorage().begin();
+           it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+        BodyID body = *it;
+        if (body->getType() == sphereType && body->isStuck_) {
+          CenterlinePosition clPos = calculateCenterlinePosition(
+              body->getPosition(), config.getCenterlineVertices(), config.getTotalCenterlineLength());
+
+          avgRadialDistance += clPos.radialDistance;
+          avgPercentage += clPos.percentageAlongCurve;
+
+          if (clPos.radialDistance > 0.20) nearWallCount++;
+          if (clPos.percentageAlongCurve < 25.0) earlyRegionCount++;
+        }
+      }
+
+      if (stuckCount > 0) {
+        avgRadialDistance /= stuckCount;
+        avgPercentage /= stuckCount;
+      }
+
+      pe_LOG_INFO_SECTION( log ) {
+        log << "STUCK PARTICLE SUMMARY at timestep " << timestep << ":\n";
+        log << "  Total sphere particles: " << totalCount << "\n";
+        log << "  Stuck particles: " << stuckCount << " (" << stuckPercentage << "%)\n";
+        log << "  Centerline distribution:\n";
+        log << "    Avg percentage along centerline: " << avgPercentage << "%\n";
+        log << "    In first 25% of centerline: " << earlyRegionCount
+            << " (" << (earlyRegionCount * 100.0 / stuckCount) << "%)\n";
+        log << "  Radial distribution:\n";
+        log << "    Avg radial distance: " << avgRadialDistance << "\n";
+        log << "    Near wall (r > 0.20): " << nearWallCount
+            << " (" << (nearWallCount * 100.0 / stuckCount) << "%)\n";
+      }
+    }
+  }
 
   // Particle diagnostics output (once per main timestep only)
   if (isRepresentative) {

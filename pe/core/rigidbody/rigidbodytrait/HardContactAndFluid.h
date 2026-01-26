@@ -78,6 +78,7 @@ public:
    size_t index_;
    Vec3 oldForce_;
    Vec3 oldTorque_;
+   bool isStuck_ = false;  // Flag for stuck particle diagnostics
 };
 //*************************************************************************************************
 

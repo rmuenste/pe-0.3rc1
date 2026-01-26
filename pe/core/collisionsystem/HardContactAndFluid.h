@@ -1857,14 +1857,30 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             // as it creates artificial rotational energy instead of correcting penetration
             bool bothTranslationLocked = (b1->getInvMass() == real(0) && b2->getInvMass() == real(0));
 
+            // DIAGNOSTIC: Check if stuck particles are involved
+            bool hasStuckParticle = (b1->isStuck_ || b2->isStuck_);
+            real penetrationDepth = -dist_[j];
+
             if( bothTranslationLocked ) {
                // Disable Baumgarte stabilization - penetration cannot be corrected translationally
                dist_[j] = real(0);
+
+               if (hasStuckParticle) {
+                  pe_LOG_INFO_SECTION( log ) {
+                     log << "STUCK PARTICLE CONTACT at contact " << j << ":\n";
+                     if (b1->isStuck_) log << "  Body 1 (ID=" << b1->getSystemID() << ") is stuck\n";
+                     if (b2->isStuck_) log << "  Body 2 (ID=" << b2->getSystemID() << ") is stuck\n";
+                     log << "  Penetration depth: " << penetrationDepth << "\n";
+                     log << "  Baumgarte stabilization: DISABLED (both translation-locked)\n";
+                  }
+               }
             } else {
                // Normal case - apply error reduction parameter
+               real originalDist = dist_[j];
                dist_[j] *= erp_;
 
                // OPTIONAL: Adaptive Baumgarte capping (only if enabled)
+               bool capped = false;
                if( useAdaptiveBaumgarteCapping_ ) {
                   // Limit correction velocity based on object size to prevent explosions
                   real charLength = std::min(
@@ -1878,6 +1894,46 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
                   real correctionVelocity = dist_[j] * dtinv;
                   if( correctionVelocity < -maxCorrectionVelocity ) {
                       dist_[j] = -maxCorrectionVelocity / dtinv;
+                      capped = true;
+                  }
+               }
+
+               // DIAGNOSTIC: Output for stuck particles
+               if (hasStuckParticle) {
+                  pe_LOG_INFO_SECTION( log ) {
+                     log << "STUCK PARTICLE CONTACT at contact " << j << ":\n";
+                     if (b1->isStuck_) log << "  Body 1 (ID=" << b1->getSystemID() << ") is stuck\n";
+                     if (b2->isStuck_) log << "  Body 2 (ID=" << b2->getSystemID() << ") is stuck\n";
+                     log << "  Penetration depth: " << penetrationDepth << "\n";
+                     log << "  Baumgarte stabilization: ENABLED (erp=" << erp_ << ")\n";
+                     log << "  Correction distance: " << originalDist << " -> " << dist_[j] << "\n";
+                     if (capped) {
+                        log << "  Adaptive capping: APPLIED\n";
+                     }
+
+                     // Check for deep penetration (>5% of radius)
+                     if (b1->getType() == sphereType) {
+                        SphereID s1 = static_body_cast<Sphere>(b1);
+                        real radius1 = s1->getRadius();
+                        real penetrationPercent = (penetrationDepth / radius1) * 100.0;
+                        log << "  Body 1 radius: " << radius1 << ", penetration: "
+                            << penetrationPercent << "% of radius";
+                        if (penetrationPercent > 5.0) {
+                           log << " [DEEP PENETRATION]";
+                        }
+                        log << "\n";
+                     }
+                     if (b2->getType() == sphereType) {
+                        SphereID s2 = static_body_cast<Sphere>(b2);
+                        real radius2 = s2->getRadius();
+                        real penetrationPercent = (penetrationDepth / radius2) * 100.0;
+                        log << "  Body 2 radius: " << radius2 << ", penetration: "
+                            << penetrationPercent << "% of radius";
+                        if (penetrationPercent > 5.0) {
+                           log << " [DEEP PENETRATION]";
+                        }
+                        log << "\n";
+                     }
                   }
                }
             }
@@ -2019,6 +2075,32 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          else {
             v_[j] = body->getLinearVel();
             w_[j] = body->getAngularVel();
+         }
+
+         // VELOCITY CHECK AND LIMITING - before collision pipeline
+         real velocityMagnitude = v_[j].length();
+         if (velocityMagnitude > 10.0 || body->isStuck_) {
+            pe_LOG_INFO_SECTION( log ) {
+               if (body->isStuck_) {
+                  log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n";
+               }
+               if (velocityMagnitude > 10.0) {
+                  log << "  HIGH VELOCITY DETECTED for Particle (ID=" << body->getSystemID() << ")\n";
+                  log << "    Velocity before limiting: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
+               } else if (body->isStuck_) {
+                  log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
+               }
+            }
+
+            // Apply velocity limiting if too high (BEFORE collision pipeline)
+            if (velocityMagnitude > 10.0) {
+               v_[j].normalize();
+               v_[j] *= 4.0;  // Clamp to safe value
+               pe_LOG_INFO_SECTION( log ) {
+                  log << "    Velocity after limiting: " << v_[j] << " (magnitude: " << v_[j].length() << ")\n";
+                  log << "    Velocity limiting: APPLIED (clamped to 2.5)\n";
+               }
+            }
          }
       }
 
@@ -4615,6 +4697,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       // Calculating the translational displacement
       body->gpos_ += v * dt;
 
+      w = Vec3(0,0,0);
       // Calculating the rotation angle
       const Vec3 phi( w * dt );
 
@@ -4633,6 +4716,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       // Storing the velocities back in the body properties
       body->v_ = v;
       body->w_ = w;
+
+      // Velocity limiting. We know the fluid speeds in the current application.
+      // Particle speeds higher than this are a numerical artifact and the limiter
+      // gets applied.
+      if(body->v_.length() > 12.0) {
+        body->v_.normalize();
+        body->v_ *= 2.5;
+      }
 
       if( body->getType() == unionType ) {
          // Updating the contained bodies

@@ -216,6 +216,16 @@ public:
     //@}
     //**************************************************************************************
 
+    //**Centerline parameters***************************************************************
+    /*!\name Centerline parameters for stuck particle diagnostics */
+    //@{
+    const std::vector<Vec3>& getCenterlineVertices() const { return centerlineVertices_; }
+    void setCenterlineVertices(const std::vector<Vec3>& vertices) { centerlineVertices_ = vertices; }
+    real getTotalCenterlineLength() const { return totalCenterlineLength_; }
+    void setTotalCenterlineLength(real length) { totalCenterlineLength_ = length; }
+    //@}
+    //**************************************************************************************
+
 private:
     //**Constructor*************************************************************************
     /*!\name Constructor */
@@ -272,6 +282,10 @@ private:
     real contactHysteresisDelta_; //!< Half-width of contact blend band
     real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
     real minEpsLub_;             //!< Regularization epsilon for lubrication gap
+
+    // Centerline data for stuck particle diagnostics
+    std::vector<Vec3> centerlineVertices_; //!< Centerline vertices for tube geometry
+    real totalCenterlineLength_;           //!< Precomputed total length of centerline
     //@}
     //**************************************************************************************
 };
