@@ -25,16 +25,25 @@ A major fix was implemented for collisions involving "Kinematic Bodies" (bodies 
 
 ## Build System
 
-The PE (Physics Engine) has two build systems:
+The PE (Physics Engine) has several build systems, with Ninja being preferred for speed:
 
-1. **CMake-based build (Recommended)**
+1. **CMake with Ninja (Recommended for Speed/CGAL)**
+   ```bash
+   mkdir build_ninja_cgal && cd build_ninja_cgal
+   cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCGAL=ON -DEXAMPLES=ON ..
+   ninja cgal
+   # Build all CGAL examples:
+   ninja cgal_box mesh_collision_test mesh_simulation mesh_distancemap_debug mesh_containspoint_test mesh_grid_test plane_mesh_test debug_coordinate_transform inverted_distancemap_simulation
+   ```
+
+2. **CMake with Make**
    ```bash
    mkdir build && cd build
    cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DLIBRARY_TYPE=STATIC ..
    make
    ```
 
-2. **Custom configure script**
+3. **Custom configure script**
    ```bash
    ./configure config-file.txt && make
    ```

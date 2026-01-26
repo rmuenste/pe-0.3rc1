@@ -77,7 +77,13 @@ To build examples that depend on CGAL (located in `examples/cgal_examples`), you
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCGAL=ON -DEXAMPLES=ON ..
 ```
 
-Then you can build a specific example target, for example `mesh_simulation`:
+Then you can build all CGAL example targets:
+
+```bash
+ninja cgal_box mesh_collision_test mesh_simulation mesh_distancemap_debug mesh_containspoint_test mesh_grid_test plane_mesh_test debug_coordinate_transform inverted_distancemap_simulation
+```
+
+Or build a specific example target, for example `mesh_simulation`:
 
 ```bash
 cmake --build . --target mesh_simulation
