@@ -541,7 +541,7 @@ inline void setupATCSerial(int cfd_rank) {
     }
   }
 
-  real sphereRad = 0.0183;  // Sphere radius for centerline particles
+  real sphereRad =  config.getBenchRadius(); //  0.0183 Sphere radius for centerline particles
   real rhoParticle( config.getParticleDensity() );
   MaterialID particleMaterial = createMaterial("particleMaterial", rhoParticle, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
 
