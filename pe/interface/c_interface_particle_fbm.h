@@ -34,8 +34,8 @@ extern "C" bool pointInsideRemObject(int idx, double pos[3]) {
  * \param idx The index of the object to check against
  * \param pos The coordinates of the point
  *
- * Uses accelerated HashGrid-based spatial hashing by default (USE_ACCELERATED_POINT_QUERY).
- * Define USE_ACCELERATED_POINT_QUERY=0 to fall back to the original O(N) linear search.
+ * Uses original O(N) linear search by default. Enable USE_ACCELERATED_POINT_QUERY=ON
+ * to use HashGrid-based spatial hashing acceleration (requires validation).
  */
 extern "C" bool checkAllParticles(int vidx, int *inpr, double pos[3], short int bytes[8]) {
 #if !defined(USE_ACCELERATED_POINT_QUERY) || USE_ACCELERATED_POINT_QUERY

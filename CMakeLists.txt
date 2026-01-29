@@ -55,7 +55,7 @@ set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support." 
 option(USE_JSON "Use nlohmann/json library" ON)
 
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
-option(USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: ON)" ON)
+option(USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: OFF)" OFF)
 
 # Add compile definition for accelerated point query
 if(USE_ACCELERATED_POINT_QUERY)
