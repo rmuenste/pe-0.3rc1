@@ -14,6 +14,7 @@ add_subdirectory(simple_demo)
 add_subdirectory(basic_lubrication)
 add_subdirectory(lubrication_demo)
 add_subdirectory(capsule_spin)
+add_subdirectory(vtk_shapes_ascii)
 
 # CGAL Examples
 if( CGAL )

@@ -62,7 +62,8 @@ namespace vtk {
  * In order to activate the VTK visualization use the following function:
 
    \code
-   pe::vtk::WriterID pe::vtk::activateWriter( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend, bool binary );
+   pe::vtk::WriterID pe::vtk::activateWriter( const std::string& filename, unsigned int spacing, unsigned int tstart,
+                                              unsigned int tend, bool binary, bool writeEmptyFiles );
    \endcode
 
  * This function activates the VTK writer and returns the handle to the active writer.
@@ -79,7 +80,8 @@ private:
    //**Constructor*********************************************************************************
    /*!\name Constructor */
    //@{
-   explicit Writer( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend, bool binary=true);
+   explicit Writer( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend,
+                    bool binary=true, bool writeEmptyFiles=false);
    //@}
    //**********************************************************************************************
 
@@ -174,6 +176,7 @@ private:
    std::string prefix_;         //!< Prefix of the file name for the POV-Ray files.
    std::string postfix_;        //!< Postfix of the file name for the POV-Ray files.
    bool binary_;                //!< write binary if true; write ascii else
+   bool writeEmptyFiles_;       //!< write empty per-shape files if true
    //bool singleFile_;            //!< write all data into a single file if true;  else
 
    Spheres spheres_;            //!< Registered spheres for the visualization.
@@ -193,7 +196,8 @@ private:
    //**Friend declarations*************************************************************************
    /*! \cond PE_INTERNAL */
    friend bool     isActive();
-   friend WriterID activateWriter( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend, bool binary);
+   friend WriterID activateWriter( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend,
+                                   bool binary, bool writeEmptyFiles);
    /*! \endcond */
    //**********************************************************************************************
 };
@@ -212,7 +216,8 @@ private:
 /*!\name VTK writer setup functions */
 //@{
 inline bool     isActive();
-       WriterID activateWriter( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend, bool binary);
+       WriterID activateWriter( const std::string& filename, unsigned int spacing, unsigned int tstart, unsigned int tend,
+                                bool binary=false, bool writeEmptyFiles=false);
 //@}
 //*************************************************************************************************
 
