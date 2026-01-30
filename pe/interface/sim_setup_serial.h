@@ -548,11 +548,13 @@ inline void setupATCSerial(int cfd_rank) {
   // Generate sphere positions along the centerline
   std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad);
 
-  // Create spheres at generated positions (serial mode: no domain ownership check needed)
   int particlesCreated = 0;
-  for (auto spherePos: spherePositions) {
-    createSphere(idx++, spherePos, sphereRad, particleMaterial);
-    particlesCreated++;
+  if (config.getPackingMethod() != SimulationConfig::PackingMethod::None) {
+    // Create spheres at generated positions (serial mode: no domain ownership check needed)
+    for (auto spherePos: spherePositions) {
+      createSphere(idx++, spherePos, sphereRad, particleMaterial);
+      particlesCreated++;
+    }
   }
 
   // Volume fraction computation
