@@ -2079,12 +2079,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
          // VELOCITY CHECK AND LIMITING - before collision pipeline
          real velocityMagnitude = v_[j].length();
-         if (velocityMagnitude > 10.0 || body->isStuck_) {
+         if (velocityMagnitude > 20.0 || body->isStuck_) {
             pe_LOG_INFO_SECTION( log ) {
                if (body->isStuck_) {
                   log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n";
                }
-               if (velocityMagnitude > 10.0) {
+               if (velocityMagnitude > 20.0) {
                   log << "  HIGH VELOCITY DETECTED for Particle (ID=" << body->getSystemID() << ")\n";
                   log << "    Velocity before limiting: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
                } else if (body->isStuck_) {
@@ -2093,9 +2093,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             }
 
             // Apply velocity limiting if too high (BEFORE collision pipeline)
-            if (velocityMagnitude > 10.0) {
+            if (velocityMagnitude > 20.0) {
                v_[j].normalize();
-               v_[j] *= 4.0;  // Clamp to safe value
+               v_[j] *= 8.0;  // Clamp to safe value
                pe_LOG_INFO_SECTION( log ) {
                   log << "    Velocity after limiting: " << v_[j] << " (magnitude: " << v_[j].length() << ")\n";
                   log << "    Velocity limiting: APPLIED (clamped to 2.5)\n";
