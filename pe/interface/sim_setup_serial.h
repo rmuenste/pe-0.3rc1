@@ -484,10 +484,10 @@ inline void setupATCSerial(int cfd_rank) {
     //                  outside mesh -> outside fluid domain (negative distance)
     //                  normals -> point inward to keep particles in domain
     //boundaryMesh->getDistanceMap()->invertForDomainBoundary();
-
     std::cout << "\n--" << "DOMAIN BOUNDARY SETUP"
               << "--------------------------------------------------------------\n"
               << " Boundary mesh file                      = " << boundaryFileName << "\n"
+              << " Boundary mesh volume                    = " << boundaryMesh->getVolume() << "\n"
               << " Distance map enabled                    = yes (INVERTED for domain boundary)\n"
               << " Distance map grid size                  = "
               << boundaryDM->getNx() << " x " << boundaryDM->getNy() << " x " << boundaryDM->getNz() << "\n"
@@ -558,7 +558,7 @@ inline void setupATCSerial(int cfd_rank) {
   }
 
   // Volume fraction computation
-  real domainVol = 0.604;
+  real domainVol = 0.78;
   real partVol = 4. / 3. * M_PI * std::pow(sphereRad, 3);
 
   if (isRepresentative) {

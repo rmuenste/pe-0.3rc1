@@ -72,7 +72,7 @@ inline std::vector<Vec3> generatePointsAlongCenterline(
     real sphereRadius,
     real dt = -1.0,  // Default: will be set to 1.0 * sphereRadius if < 0
     int num_rings = 4,
-    int num_steps = 20)
+    int num_steps = 35)
 {
     // Set default dt if not specified
     if (dt < 0.0) {
