@@ -809,8 +809,16 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	   }
 
 	   // Determining the directory and the filename for the POV-Ray visualization
-	   const path directory( filename.parent_path() );
-	   const path file     ( filename.filename()    );
+	   const std::string fullpath = filename.string();
+	   std::string directoryStr;
+	   std::string fileStr = fullpath;
+	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
+	   if( slashPos != std::string::npos ) {
+	      directoryStr = fullpath.substr(0, slashPos);
+	      fileStr = fullpath.substr(slashPos + 1);
+	   }
+	   const path directory( directoryStr );
+	   const path file     ( fileStr );
 	   std::cerr << "VTK writeSpheres dir: " << directory.string()
 	             << " file: " << file.string()
 	             << " rank: " << MPISettings::rank()
@@ -1242,8 +1250,16 @@ void Writer::writeBoxes(const boost::filesystem::path& filename) const
 	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
-      const path directory( filename.parent_path() );
-      const path file     ( filename.filename()    );
+	   const std::string fullpath = filename.string();
+	   std::string directoryStr;
+	   std::string fileStr = fullpath;
+	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
+	   if( slashPos != std::string::npos ) {
+	      directoryStr = fullpath.substr(0, slashPos);
+	      fileStr = fullpath.substr(slashPos + 1);
+	   }
+	   const path directory( directoryStr );
+	   const path file     ( fileStr );
 
       // Checking the directory and the filename
       if( !directory.empty() && !exists( directory ) )
@@ -1619,8 +1635,16 @@ void Writer::writeCapsules(const boost::filesystem::path& filename) const
 	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
-      const path directory( filename.parent_path() );
-      const path file     ( filename.filename()    );
+	   const std::string fullpath = filename.string();
+	   std::string directoryStr;
+	   std::string fileStr = fullpath;
+	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
+	   if( slashPos != std::string::npos ) {
+	      directoryStr = fullpath.substr(0, slashPos);
+	      fileStr = fullpath.substr(slashPos + 1);
+	   }
+	   const path directory( directoryStr );
+	   const path file     ( fileStr );
 
       // Checking the directory and the filename
       if( !directory.empty() && !exists( directory ) )
@@ -1714,8 +1738,16 @@ void Writer::writeMeshes(const boost::filesystem::path& filename) const
 	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
-      const path directory( filename.parent_path() );
-      const path file     ( filename.filename()    );
+	   const std::string fullpath = filename.string();
+	   std::string directoryStr;
+	   std::string fileStr = fullpath;
+	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
+	   if( slashPos != std::string::npos ) {
+	      directoryStr = fullpath.substr(0, slashPos);
+	      fileStr = fullpath.substr(slashPos + 1);
+	   }
+	   const path directory( directoryStr );
+	   const path file     ( fileStr );
 
       // Checking the directory and the filename
       if( !directory.empty() && !exists( directory ) )
