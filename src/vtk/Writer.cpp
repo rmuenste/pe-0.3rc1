@@ -795,6 +795,8 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	   using namespace boost::filesystem;
 	   using boost::lexical_cast;
 
+	   std::cerr << "VTK writeSpheres path: " << filename.string() << std::endl;
+
 	   // Checking if the function is called inside an exclusive section
 	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
 	      throw std::runtime_error( "Invalid function call inside exclusive section" );
@@ -1217,13 +1219,15 @@ void Writer::writeSphereDataAscii(std::ostream& out) const
  */
 void Writer::writeBoxes(const boost::filesystem::path& filename) const
 {
-      using namespace boost::filesystem;
-      using boost::lexical_cast;
+	   using namespace boost::filesystem;
+	   using boost::lexical_cast;
 
-      // Checking if the function is called inside an exclusive section
-      if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
-         throw std::runtime_error( "Invalid function call inside exclusive section" );
-      }
+	   std::cerr << "VTK writeBoxes path: " << filename.string() << std::endl;
+
+	   // Checking if the function is called inside an exclusive section
+	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
+	      throw std::runtime_error( "Invalid function call inside exclusive section" );
+	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
       const path directory( filename.parent_path() );
@@ -1592,13 +1596,15 @@ void Writer::writeBoxDataBinary(std::ostream& out) const {
  */
 void Writer::writeCapsules(const boost::filesystem::path& filename) const
 {
-      using namespace boost::filesystem;
-      using boost::lexical_cast;
+	   using namespace boost::filesystem;
+	   using boost::lexical_cast;
 
-      // Checking if the function is called inside an exclusive section
-      if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
-         throw std::runtime_error( "Invalid function call inside exclusive section" );
-      }
+	   std::cerr << "VTK writeCapsules path: " << filename.string() << std::endl;
+
+	   // Checking if the function is called inside an exclusive section
+	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
+	      throw std::runtime_error( "Invalid function call inside exclusive section" );
+	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
       const path directory( filename.parent_path() );
@@ -1685,13 +1691,15 @@ void Writer::writeCapsules(const boost::filesystem::path& filename) const
  */
 void Writer::writeMeshes(const boost::filesystem::path& filename) const
 {
-      using namespace boost::filesystem;
-      using boost::lexical_cast;
+	   using namespace boost::filesystem;
+	   using boost::lexical_cast;
 
-      // Checking if the function is called inside an exclusive section
-      if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
-         throw std::runtime_error( "Invalid function call inside exclusive section" );
-      }
+	   std::cerr << "VTK writeMeshes path: " << filename.string() << std::endl;
+
+	   // Checking if the function is called inside an exclusive section
+	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
+	      throw std::runtime_error( "Invalid function call inside exclusive section" );
+	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
       const path directory( filename.parent_path() );
