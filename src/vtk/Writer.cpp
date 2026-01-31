@@ -202,11 +202,22 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
    active_ = true;
 
    path p(filename_);
-   if(exists(p)) {
+   if( exists(p) ) {
+      if( !is_directory(p) ) {
+         std::ostringstream oss;
+         oss << "VTK output path exists but is not a directory: '" << p.string() << "'";
+         throw std::runtime_error( oss.str() );
+      }
       //std::cerr << "vtk::Writer::Writer(): Directory exists: "<<p<<". - Files in this directory may be overwritten!\n";
    }
-   if (!exists(p)) {
-      create_directory(p);
+   else {
+      const bool created = create_directory(p);
+      if( !created ) {
+         std::ostringstream oss;
+         oss << "Failed to create VTK output directory: '" << p.string()
+             << "'. Ensure the parent directory exists and is writable.";
+         throw std::runtime_error( oss.str() );
+      }
    }
 
    // Adding the registered visible spheres
