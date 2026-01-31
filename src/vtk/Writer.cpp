@@ -752,6 +752,12 @@ void Writer::trigger()
    // Adjusing the counters
    steps_ = 0;
 
+   std::cerr << "VTK trigger filename_: '" << filename_ << "'"
+             << " c_str: " << static_cast<const void*>(filename_.c_str())
+             << " size: " << filename_.size()
+             << " rank: " << MPISettings::rank()
+             << std::endl;
+
    if( writeEmptyFiles_ || !spheres_.isEmpty() ) {
       std::ostringstream spherefile;
       spherefile << filename_ << "/spheres" << counter_ << ".vtu";
@@ -805,6 +811,11 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	   // Determining the directory and the filename for the POV-Ray visualization
 	   const path directory( filename.parent_path() );
 	   const path file     ( filename.filename()    );
+	   std::cerr << "VTK writeSpheres dir: " << directory.string()
+	             << " file: " << file.string()
+	             << " rank: " << MPISettings::rank()
+	             << " size: " << MPISettings::size()
+	             << std::endl;
 
 	   // Checking the directory and the filename
 	   if( !directory.empty() && !exists( directory ) )
@@ -853,6 +864,7 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	      if( !exists( extended ) )
 	         create_directory( extended );
 	      extended /= file;
+	      std::cerr << "VTK writeSpheres extended path: " << extended.string() << std::endl;
 
 	      // Opening the output file
 	      std::ofstream out( extended.string().c_str(), std::ofstream::out | std::ostream::trunc );
@@ -2428,6 +2440,9 @@ WriterID activateWriter( const std::string& filename, unsigned int spacing, unsi
                          bool binary, bool writeEmptyFiles )
 {
    boost::mutex::scoped_lock lock( Writer::instanceMutex_ );
+   if( filename.empty() ) {
+      throw std::invalid_argument( "VTK writer requires a non-empty output path" );
+   }
    static WriterID dx( new Writer( filename, spacing, tstart, tend, binary, writeEmptyFiles ) );
    return dx;
 }
