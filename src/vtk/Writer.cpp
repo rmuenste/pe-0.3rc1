@@ -211,7 +211,7 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
       //std::cerr << "vtk::Writer::Writer(): Directory exists: "<<p<<". - Files in this directory may be overwritten!\n";
    }
    else {
-      const bool created = create_directory(p);
+      const bool created = create_directories(p);
       if( !created ) {
          std::ostringstream oss;
          oss << "Failed to create VTK output directory: '" << p.string()
