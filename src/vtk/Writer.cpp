@@ -752,12 +752,6 @@ void Writer::trigger()
    // Adjusing the counters
    steps_ = 0;
 
-   std::cerr << "VTK trigger filename_: '" << filename_ << "'"
-             << " c_str: " << static_cast<const void*>(filename_.c_str())
-             << " size: " << filename_.size()
-             << " rank: " << MPISettings::rank()
-             << std::endl;
-
    if( writeEmptyFiles_ || !spheres_.isEmpty() ) {
       std::ostringstream spherefile;
       spherefile << filename_ << "/spheres" << counter_ << ".vtu";
@@ -801,7 +795,6 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	   using namespace boost::filesystem;
 	   using boost::lexical_cast;
 
-	   std::cerr << "VTK writeSpheres path: " << filename.string() << std::endl;
 
 	   // Checking if the function is called inside an exclusive section
 	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
@@ -809,22 +802,8 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	   }
 
 	   // Determining the directory and the filename for the POV-Ray visualization
-	   const std::string fullpath = filename.string();
-	   std::string directoryStr;
-	   std::string fileStr = fullpath;
-	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
-	   if( slashPos != std::string::npos ) {
-	      directoryStr = fullpath.substr(0, slashPos);
-	      fileStr = fullpath.substr(slashPos + 1);
-	   }
-	   const path directory( directoryStr );
-	   const path file     ( fileStr );
-	   std::cerr << "VTK writeSpheres dir: " << directory.string()
-	             << " file: " << file.string()
-	             << " rank: " << MPISettings::rank()
-	             << " size: " << MPISettings::size()
-	             << std::endl;
-
+	   const path directory( filename.parent_path() );
+	   const path file     ( filename.filename()    );
 	   // Checking the directory and the filename
 	   if( !directory.empty() && !exists( directory ) )
 	      throw std::runtime_error( "Directory for VTK-Ray files does not exist" );
@@ -872,7 +851,6 @@ void Writer::writeSpheres(const boost::filesystem::path& filename) const
 	      if( !exists( extended ) )
 	         create_directory( extended );
 	      extended /= file;
-	      std::cerr << "VTK writeSpheres extended path: " << extended.string() << std::endl;
 
 	      // Opening the output file
 	      std::ofstream out( extended.string().c_str(), std::ofstream::out | std::ostream::trunc );
@@ -1242,7 +1220,6 @@ void Writer::writeBoxes(const boost::filesystem::path& filename) const
 	   using namespace boost::filesystem;
 	   using boost::lexical_cast;
 
-	   std::cerr << "VTK writeBoxes path: " << filename.string() << std::endl;
 
 	   // Checking if the function is called inside an exclusive section
 	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
@@ -1250,16 +1227,8 @@ void Writer::writeBoxes(const boost::filesystem::path& filename) const
 	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
-	   const std::string fullpath = filename.string();
-	   std::string directoryStr;
-	   std::string fileStr = fullpath;
-	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
-	   if( slashPos != std::string::npos ) {
-	      directoryStr = fullpath.substr(0, slashPos);
-	      fileStr = fullpath.substr(slashPos + 1);
-	   }
-	   const path directory( directoryStr );
-	   const path file     ( fileStr );
+	   const path directory( filename.parent_path() );
+	   const path file     ( filename.filename()    );
 
       // Checking the directory and the filename
       if( !directory.empty() && !exists( directory ) )
@@ -1627,7 +1596,6 @@ void Writer::writeCapsules(const boost::filesystem::path& filename) const
 	   using namespace boost::filesystem;
 	   using boost::lexical_cast;
 
-	   std::cerr << "VTK writeCapsules path: " << filename.string() << std::endl;
 
 	   // Checking if the function is called inside an exclusive section
 	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
@@ -1635,16 +1603,8 @@ void Writer::writeCapsules(const boost::filesystem::path& filename) const
 	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
-	   const std::string fullpath = filename.string();
-	   std::string directoryStr;
-	   std::string fileStr = fullpath;
-	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
-	   if( slashPos != std::string::npos ) {
-	      directoryStr = fullpath.substr(0, slashPos);
-	      fileStr = fullpath.substr(slashPos + 1);
-	   }
-	   const path directory( directoryStr );
-	   const path file     ( fileStr );
+	   const path directory( filename.parent_path() );
+	   const path file     ( filename.filename()    );
 
       // Checking the directory and the filename
       if( !directory.empty() && !exists( directory ) )
@@ -1730,7 +1690,6 @@ void Writer::writeMeshes(const boost::filesystem::path& filename) const
 	   using namespace boost::filesystem;
 	   using boost::lexical_cast;
 
-	   std::cerr << "VTK writeMeshes path: " << filename.string() << std::endl;
 
 	   // Checking if the function is called inside an exclusive section
 	   if( MPISettings::size() > 1 && ExclusiveSection::isActive() ) {
@@ -1738,16 +1697,8 @@ void Writer::writeMeshes(const boost::filesystem::path& filename) const
 	   }
 
       // Determining the directory and the filename for the POV-Ray visualization
-	   const std::string fullpath = filename.string();
-	   std::string directoryStr;
-	   std::string fileStr = fullpath;
-	   const std::string::size_type slashPos = fullpath.find_last_of("/\\");
-	   if( slashPos != std::string::npos ) {
-	      directoryStr = fullpath.substr(0, slashPos);
-	      fileStr = fullpath.substr(slashPos + 1);
-	   }
-	   const path directory( directoryStr );
-	   const path file     ( fileStr );
+	   const path directory( filename.parent_path() );
+	   const path file     ( filename.filename()    );
 
       // Checking the directory and the filename
       if( !directory.empty() && !exists( directory ) )
