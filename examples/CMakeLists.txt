@@ -15,6 +15,7 @@ add_subdirectory(basic_lubrication)
 add_subdirectory(lubrication_demo)
 add_subdirectory(capsule_spin)
 add_subdirectory(vtk_shapes_ascii)
+add_subdirectory(vtk_writer_test)  # VTK Writer verification test
 
 # CGAL Examples
 if( CGAL )
