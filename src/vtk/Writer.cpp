@@ -211,11 +211,15 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
       //std::cerr << "vtk::Writer::Writer(): Directory exists: "<<p<<". - Files in this directory may be overwritten!\n";
    }
    else {
-      const bool created = create_directories(p);
-      if( !created ) {
+      try {
+         create_directories(p);
+         // Note: create_directories returns false if directory already exists (not an error)
+         // It throws filesystem_error on actual failure
+      }
+      catch( const boost::filesystem::filesystem_error& e ) {
          std::ostringstream oss;
          oss << "Failed to create VTK output directory: '" << p.string()
-             << "'. Ensure the parent directory exists and is writable.";
+             << "'. Error: " << e.what();
          throw std::runtime_error( oss.str() );
       }
    }

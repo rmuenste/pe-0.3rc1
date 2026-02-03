@@ -109,6 +109,21 @@ Most simulations need to:
 4. Set up response/solver methods
 5. Run the time stepping loop
 
+## API References
+
+### Vector and Matrix API
+- Full documentation for `Vec3` and `Mat3` API usage can be found in `doc/Vec3_Mat3_Documentation.md`
+- Covers vector operations, matrix operations, transformations, and mathematical utilities
+
+### RigidBody Rotation Interface
+- To rotate RigidBodies, use the interface defined in `pe/core/rigidbody/RigidBody.h`
+- Available rotation methods:
+  - `rotate(axis, angle)` - Rotate around an axis by an angle
+  - `rotate(xangle, yangle, zangle)` - Rotate using Euler angles
+  - `rotate(dq)` - Rotate using a quaternion
+  - `rotateAroundOrigin(...)` - Rotate around the world origin
+  - `rotateAroundPoint(point, ...)` - Rotate around an arbitrary point
+
 ## Development Notes
 
 The PE library can be built as static (default) or shared library. The library name is "pe" and will be found in the `build/lib` directory.
