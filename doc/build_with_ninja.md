@@ -26,6 +26,10 @@ To use Ninja, you must specify the `-G Ninja` generator during the CMake configu
     ```bash
     cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
     ```
+    or
+    ```bash
+    cmake -S . -B build-ninja2 -DCMAKE_BUILD_TYPE=Release -DEXAMPLES=ON -G Ninja ..
+    ```
 
     **Configuration with Examples Enabled:**
     To build examples (like `body_removal`), you must enable the `EXAMPLES` option:
