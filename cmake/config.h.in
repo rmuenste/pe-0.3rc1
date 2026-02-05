@@ -47,5 +47,6 @@
 
 #cmakedefine01 HAVE_BLAS
 #cmakedefine01 HAVE_IRRLICHT
+#cmakedefine01 HAVE_JSON
 #cmakedefine01 HAVE_MPI
 #cmakedefine01 HAVE_OPENCL

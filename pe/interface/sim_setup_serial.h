@@ -170,9 +170,11 @@ inline void setupParticleBenchSerial(int cfd_rank) {
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
+
   WorldID world = theWorld();
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
+  const bool isRepresentative = (config.getCfdRank() == 1);
   applyOptionalLubricationParams(*cs, config);
 
   // Set gravity from configuration
@@ -208,8 +210,10 @@ inline void setupParticleBenchSerial(int cfd_rank) {
 
   MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   SphereID sphere(nullptr);
+  int particlesCreated = 0;
   sphere = createSphere(idx, position, radBench, myMaterial, true);
   ++idx;
+  particlesCreated++;
 
 
   // Set default timestep
@@ -217,6 +221,18 @@ inline void setupParticleBenchSerial(int cfd_rank) {
 
   // Note: Particles will be added by FeatFloWer via the interface functions
   // This setup just initializes the PE world for this domain
+  if (isRepresentative) {
+    std::cout << "\n--" << "Particle Sedimentation SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << " Particle radius                         = " << radBench << "\n"
+              << " Particle radius2                        = " << config.getBenchRadius() << "\n"
+              << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
 }
 
 /**

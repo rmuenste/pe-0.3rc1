@@ -255,6 +255,13 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
         }
     }
 
+#else
+    // JSON support is not available - throw error instead of silently ignoring
+    throw std::runtime_error(
+        "SimulationConfig::loadFromFile() called but PE library was built without JSON support.\n"
+        "Please rebuild with -DUSE_JSON=ON to enable JSON configuration loading.\n"
+        "Attempted to load: " + fileName
+    );
 #endif
 }
 //=================================================================================================

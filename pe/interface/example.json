@@ -14,5 +14,10 @@
     "lubricationHysteresisDelta_": 0.001,
     "contactHysteresisDelta_": 1e-9,
     "alphaImpulseCap_": 1.0,
-    "minEpsLub_": 1e-8
+    "minEpsLub_": 1e-8,
+    "benchRadius_": 0.0075,
+    "particleDensity_": 1120.0,
+    "fluidViscosity_": 0.058,
+    "fluidDensity_": 960.0,
+    "gravity_": [0.0, 0.0, -9.81]
 }

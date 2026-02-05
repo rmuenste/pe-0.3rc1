@@ -406,15 +406,19 @@ if(USE_JSON)
     # Get the source directory for the downloaded library
     FetchContent_GetProperties(json SOURCE_DIR json_SOURCE_DIR)
     
+    # Set HAVE_JSON variable for config.h template
+    set(HAVE_JSON ON)
+
     # Add compile definition to indicate JSON is available
     add_compile_definitions(HAVE_JSON)
-    
+
     # Add the JSON include directory explicitly
     list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${json_SOURCE_DIR}/include)
-    
+
     message(STATUS "nlohmann/json will be downloaded to: ${FETCHCONTENT_BASE_DIR}")
     message(STATUS "nlohmann/json include directory: ${json_SOURCE_DIR}/include")
 else()
+    set(HAVE_JSON OFF)
     message(STATUS "nlohmann/json will NOT be used")
 endif()
 
