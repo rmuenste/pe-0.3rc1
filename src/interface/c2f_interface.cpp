@@ -415,4 +415,9 @@ extern "C" void commf2c_rotation_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   pe::setupRotationSerial(*remoteRank);
 }
 
+extern "C" void commf2c_hashgrid_test_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: HashGrid test setup
+  pe::setupHashGridTest(*remoteRank);
+}
+
 #endif  // PE_SERIAL_MODE

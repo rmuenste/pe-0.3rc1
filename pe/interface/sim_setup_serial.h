@@ -1697,6 +1697,99 @@ inline void stepSimulationSerial() {
   timestep++;
 }
 
+/**
+ * @brief HashGrid test setup for serial mode
+ *
+ * Creates 1000 spheres in a 10×10×10 grid for HashGrid acceleration testing.
+ * Minimal setup with no JSON dependency - all parameters hardcoded.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupHashGridTest(int cfd_rank) {
+  // Logger setup
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  // Get World and CollisionSystem
+  WorldID world = theWorld();
+  CollisionSystemID cs = theCollisionSystem();
+
+  // Configure world
+  world->setGravity(0.0, 0.0, -0.00);
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(1000.0);      // Water
+  world->setViscosity(1.0e-3);           // Water viscosity
+  world->setDamping(1.0);
+  world->setAutoForceReset(true);
+  
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative) {
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
+                                               false);
+  }
+
+  // Create Iron material (PE standard)
+//  MaterialID iron = createMaterial("iron",
+//    7.874,    // density kg/dm³
+//    0.5,      // coefficient of restitution
+//    0.1,      // static friction
+//    0.1,      // dynamic friction
+//    0.24,     // Poisson ratio
+//    200.0,    // Young's modulus (GPa)
+//    200.0,    // stiffness
+//    0.0,      // normal damping
+//    0.0);     // tangential damping
+
+  // Grid parameters
+  const real radius = 0.01;
+  const real spacing = 0.1;              // center-to-center
+  const int nx = 10, ny = 10, nz = 10;   // 1000 spheres total
+  const real startPos = 0.05;            // offset to center grid
+
+  // Generate 10×10×10 sphere grid
+  int idx = 0;
+  for (int iz = 0; iz < nz; ++iz) {
+    for (int iy = 0; iy < ny; ++iy) {
+      for (int ix = 0; ix < nx; ++ix) {
+        Vec3 position(
+          startPos + ix * spacing,
+          startPos + iy * spacing,
+          startPos + iz * spacing
+        );
+
+        // Create sphere (all local in serial mode)
+        SphereID sphere = createSphere(idx, position, radius, iron, true);
+        sphere->setLinearVel(0.0, 0.0, 0.0);   // Zero velocity
+        sphere->setAngularVel(0.0, 0.0, 0.0);
+        ++idx;
+      }
+    }
+  }
+
+  // Set timestep
+  TimeStep::stepsize(0.001);  // 1ms
+
+  // Diagnostic output
+  if (cfd_rank == 1) {
+    std::cout << "\n--HASHGRID TEST SETUP\n";
+    std::cout << "Domain: [0, 1]^3\n";
+    std::cout << "Spheres: " << idx << " (10x10x10 grid)\n";
+    std::cout << "Radius: " << radius << "\n";
+    std::cout << "Spacing: " << spacing << "\n";
+    std::cout << "Material: Iron (density=" << 7.874 << ")\n\n";
+  }
+}
+
 } // namespace pe
 
 #endif  // PE_SERIAL_MODE

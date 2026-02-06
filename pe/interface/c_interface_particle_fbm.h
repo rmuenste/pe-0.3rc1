@@ -46,6 +46,22 @@ extern "C" bool checkAllParticles(int vidx, int *inpr, double pos[3], short int 
 }
 //=================================================================================================
 
+
+//=================================================================================================
+/*
+ *!\brief The function returns true if the point is inside the object else false
+ * \param vidx The index of the in the cfd grid
+ * \param idx The index of the object to check against
+ * \param pos The coordinates of the point
+ *
+ * Uses original O(N) linear search by default. Enable USE_ACCELERATED_POINT_QUERY=ON
+ * to use HashGrid-based spatial hashing acceleration (requires validation).
+ */
+extern "C" bool verifyAllParticles(int vidx, int *inpr, double pos[3], short int bytes[8]) {
+  return pointInsideParticles(vidx, inpr, pos, bytes);
+}
+//=================================================================================================
+
 //=================================================================================================
 /*
  *!\brief Explicit accelerated point query (always uses HashGrid optimization)

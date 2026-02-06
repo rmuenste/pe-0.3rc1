@@ -57,6 +57,9 @@ option(USE_JSON "Use nlohmann/json library" ON)
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
 option(USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: OFF)" OFF)
 
+# Option to enable verification of HashGrid results against baseline linear search
+option(VERIFY_HASHGRID "Enable runtime verification of HashGrid results against baseline (default: OFF)" OFF)
+
 # Add compile definition for accelerated point query
 if(USE_ACCELERATED_POINT_QUERY)
   add_compile_definitions(USE_ACCELERATED_POINT_QUERY=1)
@@ -64,6 +67,18 @@ if(USE_ACCELERATED_POINT_QUERY)
 else()
   add_compile_definitions(USE_ACCELERATED_POINT_QUERY=0)
   message(STATUS "Accelerated point query is DISABLED (using linear O(N) search)")
+endif()
+
+# Add compile definition for HashGrid verification
+if(VERIFY_HASHGRID)
+  if(NOT USE_ACCELERATED_POINT_QUERY)
+    message(WARNING "VERIFY_HASHGRID is enabled but USE_ACCELERATED_POINT_QUERY is OFF. Verification requires acceleration to be enabled.")
+  endif()
+  add_compile_definitions(VERIFY_HASHGRID)
+  message(STATUS "HashGrid verification is ENABLED - will compare accelerated vs baseline for every query")
+  message(STATUS "  Note: This significantly impacts performance and should only be used for testing")
+else()
+  message(STATUS "HashGrid verification is DISABLED")
 endif()
 
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
