@@ -3,6 +3,9 @@
 
 #include <pe/core.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/rigidbody/Box.h>
+#include <pe/core/rigidbody/Capsule.h>
+#include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/rigidbody/Plane.h>
 #include <pe/core/TimeStep.h>
 #include <pe/core/CollisionSystemID.h>
@@ -1709,6 +1712,9 @@ inline void setupHashGridTest(int cfd_rank) {
   // Logger setup
   pe::logging::Logger::setCustomRank(cfd_rank);
 
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("pe_user_config.json");
+
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);
@@ -1717,11 +1723,11 @@ inline void setupHashGridTest(int cfd_rank) {
   WorldID world = theWorld();
   CollisionSystemID cs = theCollisionSystem();
 
-  // Configure world
-  world->setGravity(0.0, 0.0, -0.00);
+  // Configure world from config file
+  world->setGravity(config.getGravity());
   world->setLiquidSolid(true);
-  world->setLiquidDensity(1000.0);      // Water
-  world->setViscosity(1.0e-3);           // Water viscosity
+  world->setLiquidDensity(config.getFluidDensity());
+  world->setViscosity(config.getFluidViscosity());
   world->setDamping(1.0);
   world->setAutoForceReset(true);
   
@@ -1735,7 +1741,7 @@ inline void setupHashGridTest(int cfd_rank) {
       unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
       vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
                                                config.getTimesteps() * config.getSubsteps(),
-                                               false);
+                                               true);
   }
 
   // Create Iron material (PE standard)
@@ -1751,42 +1757,163 @@ inline void setupHashGridTest(int cfd_rank) {
 //    0.0);     // tangential damping
 
   // Grid parameters
-  const real radius = 0.01;
   const real spacing = 0.1;              // center-to-center
-  const int nx = 10, ny = 10, nz = 10;   // 1000 spheres total
+  const int nx = 10, ny = 10, nz = 10;   // 1000 objects total
   const real startPos = 0.05;            // offset to center grid
 
-  // Generate 10×10×10 sphere grid
-  int idx = 0;
-  for (int iz = 0; iz < nz; ++iz) {
-    for (int iy = 0; iy < ny; ++iy) {
-      for (int ix = 0; ix < nx; ++ix) {
-        Vec3 position(
-          startPos + ix * spacing,
-          startPos + iy * spacing,
-          startPos + iz * spacing
-        );
+  // Get packing method from config (default to Grid if not set)
+  auto packingMethod = config.getPackingMethod();
 
-        // Create sphere (all local in serial mode)
-        SphereID sphere = createSphere(idx, position, radius, iron, true);
-        sphere->setLinearVel(0.0, 0.0, 0.0);   // Zero velocity
-        sphere->setAngularVel(0.0, 0.0, 0.0);
-        ++idx;
+  int idx = 0;
+  int sphereCount = 0, boxCount = 0, capsuleCount = 0, meshCount = 0;
+
+  if (packingMethod == SimulationConfig::PackingMethod::Grid) {
+    // ==================================================================================
+    // GRID PACKING: Regular sphere grid (original behavior)
+    // ==================================================================================
+    const real radius = 0.01;
+
+    for (int iz = 0; iz < nz; ++iz) {
+      for (int iy = 0; iy < ny; ++iy) {
+        for (int ix = 0; ix < nx; ++ix) {
+          Vec3 position(
+            startPos + ix * spacing,
+            startPos + iy * spacing,
+            startPos + iz * spacing
+          );
+
+          // Create sphere (all local in serial mode)
+          SphereID sphere = createSphere(idx, position, radius, iron, true);
+          sphere->setLinearVel(0.0, 0.0, 0.0);
+          sphere->setAngularVel(0.0, 0.0, 0.0);
+          ++idx;
+          ++sphereCount;
+        }
+      }
+    }
+  }
+  else if (packingMethod == SimulationConfig::PackingMethod::MixedGrid) {
+    // ==================================================================================
+    // MIXED GRID PACKING: Mixed shapes with bounding sphere radius 0.02
+    // ==================================================================================
+
+    // All shapes fit within bounding sphere of radius 0.02
+    const real boundingRadius = 0.02;
+
+    // Sphere: radius = bounding radius
+    const real sphereRadius = boundingRadius;  // 0.02
+
+    // Box: cube fitting in bounding sphere
+    // For a cube with side length a, bounding sphere radius = a*sqrt(3)/2
+    // So: a = 2*r/sqrt(3)
+    const real boxSideLength = 2.0 * boundingRadius / std::sqrt(3.0);  // ≈0.0231
+
+    // Capsule: cylinder with hemispherical caps
+    // Capsule radius = 0.01, cylindrical length = 0.02
+    // Bounding sphere = sqrt(0.01² + 0.01²) ≈ 0.01414 < 0.02 ✓
+    const real capsuleRadius = 0.01;
+    const real capsuleLength = 0.02;  // Length of cylindrical part (excluding caps)
+
+    int shapeType = 0;  // 0=sphere, 1=box, 2=capsule (cycle through)
+
+    for (int iz = 0; iz < nz; ++iz) {
+      for (int iy = 0; iy < ny; ++iy) {
+        for (int ix = 0; ix < nx; ++ix) {
+          Vec3 position(
+            startPos + ix * spacing,
+            startPos + iy * spacing,
+            startPos + iz * spacing
+          );
+
+          if (shapeType == 0) {
+            // Create sphere
+            SphereID sphere = createSphere(idx, position, sphereRadius, iron, true);
+            sphere->setLinearVel(0.0, 0.0, 0.0);
+            sphere->setAngularVel(0.0, 0.0, 0.0);
+            ++sphereCount;
+          }
+          else if (shapeType == 1) {
+            // Create box (cube)
+            Vec3 lengths(boxSideLength, boxSideLength, boxSideLength);
+            BoxID box = createBox(idx, position, lengths, iron, true);
+            box->setLinearVel(0.0, 0.0, 0.0);
+            box->setAngularVel(0.0, 0.0, 0.0);
+            ++boxCount;
+          }
+          else {
+            // Create capsule (oriented along z-axis by default)
+            CapsuleID capsule = createCapsule(idx, position, capsuleRadius, capsuleLength, iron, true);
+            capsule->setLinearVel(0.0, 0.0, 0.0);
+            capsule->setAngularVel(0.0, 0.0, 0.0);
+            ++capsuleCount;
+          }
+
+          ++idx;
+          shapeType = (shapeType + 1) % 3;  // Cycle: 0→1→2→0→...
+        }
+      }
+    }
+  }
+  else if (packingMethod == SimulationConfig::PackingMethod::TriangleMeshGrid) {
+    // ==================================================================================
+    // TRIANGLE MESH GRID PACKING: Grid of cone meshes from cone.obj
+    // ==================================================================================
+
+    // Load cone.obj mesh - it should fit within bounding sphere of radius 0.02
+    std::string coneFileName = std::string("cone.obj");
+
+    for (int iz = 0; iz < nz; ++iz) {
+      for (int iy = 0; iy < ny; ++iy) {
+        for (int ix = 0; ix < nx; ++ix) {
+          Vec3 position(
+            startPos + ix * spacing,
+            startPos + iy * spacing,
+            startPos + iz * spacing
+          );
+
+          // Create triangle mesh cone at this position
+          // global = true (not fixed, can move with fluid forces)
+          TriangleMeshID cone = createTriangleMesh(idx, position, coneFileName, iron, false, true);
+          cone->setLinearVel(0.0, 0.0, 0.0);
+          cone->setAngularVel(0.0, 0.0, 0.0);
+          ++idx;
+          ++meshCount;
+        }
       }
     }
   }
 
-  // Set timestep
-  TimeStep::stepsize(0.001);  // 1ms
+  // Set timestep from config
+  TimeStep::stepsize(config.getStepsize());
 
   // Diagnostic output
   if (cfd_rank == 1) {
     std::cout << "\n--HASHGRID TEST SETUP\n";
+    std::cout << "Configuration file: pe_user_config.json\n";
     std::cout << "Domain: [0, 1]^3\n";
-    std::cout << "Spheres: " << idx << " (10x10x10 grid)\n";
-    std::cout << "Radius: " << radius << "\n";
+    std::cout << "Grid: " << nx << "x" << ny << "x" << nz << " = " << idx << " objects\n";
     std::cout << "Spacing: " << spacing << "\n";
-    std::cout << "Material: Iron (density=" << 7.874 << ")\n\n";
+    std::cout << "Material: Iron (density=" << 7.874 << ")\n";
+    std::cout << "Timestep: " << config.getStepsize() << " (" << config.getTimesteps() << " steps)\n";
+    std::cout << "Fluid density: " << config.getFluidDensity() << "\n";
+    std::cout << "Fluid viscosity: " << config.getFluidViscosity() << "\n";
+    std::cout << "Gravity: " << config.getGravity() << "\n";
+
+    if (packingMethod == SimulationConfig::PackingMethod::Grid) {
+      std::cout << "Packing: Grid (spheres only)\n";
+      std::cout << "  Spheres: " << sphereCount << " (radius=0.01)\n";
+    }
+    else if (packingMethod == SimulationConfig::PackingMethod::MixedGrid) {
+      std::cout << "Packing: MixedGrid (bounding radius=0.02)\n";
+      std::cout << "  Spheres: " << sphereCount << " (radius=0.02)\n";
+      std::cout << "  Boxes: " << boxCount << " (side≈0.0231)\n";
+      std::cout << "  Capsules: " << capsuleCount << " (r=0.01, l=0.02)\n";
+    }
+    else if (packingMethod == SimulationConfig::PackingMethod::TriangleMeshGrid) {
+      std::cout << "Packing: TriangleMeshGrid (bounding radius=0.02)\n";
+      std::cout << "  Triangle Meshes (cones): " << meshCount << " (from cone.obj)\n";
+    }
+    std::cout << std::endl;
   }
 }
 

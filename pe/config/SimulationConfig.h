@@ -71,9 +71,11 @@ public:
      * Defines how particles are initially arranged in the simulation domain.
      */
     enum PackingMethod {
-        Grid,      //!< Regular grid packing
-        External,  //!< Load from external file
-        None       //!< No initial packing
+        Grid,             //!< Regular grid packing (spheres only)
+        MixedGrid,        //!< Mixed shape grid packing (spheres, boxes, capsules)
+        TriangleMeshGrid, //!< Triangle mesh grid packing (cones from cone.obj)
+        External,         //!< Load from external file
+        None              //!< No initial packing
     };
     //**************************************************************************************
 
@@ -96,6 +98,8 @@ public:
     //@{
     static PackingMethod parsePackingMethod(const std::string& method) {
         if (method == "grid") return PackingMethod::Grid;
+        if (method == "mixed_grid") return PackingMethod::MixedGrid;
+        if (method == "tm_grid") return PackingMethod::TriangleMeshGrid;
         if (method == "external") return PackingMethod::External;
         if (method == "none") return PackingMethod::None;
         throw std::invalid_argument("Unknown packing method: " + method);

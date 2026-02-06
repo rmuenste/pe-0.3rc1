@@ -122,8 +122,45 @@ struct CgalFunctions
    }
    
    // Default (no CGAL) implementation for point containment operations
+   // Uses plane-based algorithm: point is inside if it's on the back side of all triangles
    static bool containsPoint(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
-      return false;  // Conservative: assume point is outside when CGAL not available
+      if (faces.empty()) {
+         return false;
+      }
+
+      // Point at origin is always inside (center of mesh)
+      if (point.sqrLength() < real(1e-12)) {
+         return true;
+      }
+
+      // Brute force algorithm: check all faces
+      // Point is inside if it's on the back side of all triangle planes
+      for (size_t faceIdx = 0; faceIdx < faces.size(); ++faceIdx) {
+         const Vector3<size_t>& face = faces[faceIdx];
+
+         // Bounds check
+         if (face[0] >= vertices.size() || face[1] >= vertices.size() || face[2] >= vertices.size()) {
+            continue;
+         }
+
+         const Vec3& A = vertices[face[0]];
+         const Vec3& B = vertices[face[1]];
+         const Vec3& C = vertices[face[2]];
+
+         // Compute triangle normal: (B - A) × (C - A)
+         const Vec3 normal = (B - A) % (C - A);
+
+         // Check if point is in front of the plane (early out)
+         // Point is in front if: (point - A) · normal > 0
+         const Vec3 toPoint = point - A;
+         if (trans(toPoint) * normal > real(0)) {
+            // Point is in front of this triangle's plane, so it's outside the mesh
+            return false;
+         }
+      }
+
+      // Point is on the back side of all triangles, so it's inside the mesh
+      return true;
    }
    
    static real signedDistance(const Vertices& vertices, const IndicesLists& faces, const Vec3& point) {
@@ -947,11 +984,13 @@ void TriangleMeshTrait<C>::enableDistanceAcceleration(size_t maxReferencePoints)
  * \return True if the point is inside the mesh, false otherwise.
  *
  * This method uses a hierarchical approach to determine point containment with optimal performance:
- * 1. DistanceMap acceleration (O(1)): When available, uses precomputed signed distance field
- *    with bounding box pre-filtering and coordinate transformation for maximum efficiency.
- * 2. CGAL ray shooting (O(k*log n)): Fallback using Jordan Curve theorem with AABB tree
+ * 1. AABB early-out: Fast O(1) bounding box check to reject points outside mesh bounds
+ * 2. DistanceMap acceleration (O(1)): When available, uses precomputed signed distance field
+ *    with coordinate transformation for maximum efficiency.
+ * 3. CGAL ray shooting (O(k*log n)): Fallback using Jordan Curve theorem with AABB tree
  *    acceleration when DistanceMap is unavailable but CGAL is present.
- * 3. Conservative fallback: Returns false when neither method is available.
+ * 4. Plane-based fallback (O(N)): When CGAL is not available, uses separating plane algorithm
+ *    that checks if point is behind all triangle faces.
  */
 template< typename C >  // Type of the configuration
 bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
@@ -974,8 +1013,15 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
       return distance < pe::real(0);  // negative distance = inside mesh
    }
 #endif
-   
+
    // ROUTE 2: CGAL ray shooting fallback (O(k*log n) - medium priority)
+   // or Plane-based fallback (O(N) - without CGAL)
+
+   // CRITICAL: Fast bounding box check in world coordinates BEFORE expensive computation
+   if (!getAABB().contains(point)) {
+      return false;  // Early exit - point is outside bounding box
+   }
+
 #ifdef PE_USE_CGAL
    using Tag = detail::HasCgalTag;
 #else
@@ -988,7 +1034,7 @@ bool TriangleMeshTrait<C>::containsPoint(const Vec3& point) const
 
    // Transform query point from world to local coordinate system
    Vec3 localPoint = pointFromWFtoBF(point);
-   
+
    // Use tag dispatch to call the appropriate implementation
    return detail::CgalFunctions<Tag>::containsPoint(vertices, faces, localPoint);
 }

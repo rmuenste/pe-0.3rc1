@@ -385,7 +385,15 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
+        uint64toByteArray(body->getSystemID(), bytes);
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
+    else if(body->getType() == boxType) {
+      if(static_cast<Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes);
         int val = bytes[0] + 1;
         *inpr = val;
         return true;
@@ -444,7 +452,15 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
+        uint64toByteArray(body->getSystemID(), bytes);
+        int val = bytes[0] + 1;
+        *inpr = val;
+        return true;
+      }
+    }
+    else if(body->getType() == boxType) {
+      if(static_cast<const Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
+        uint64toByteArray(body->getSystemID(), bytes);
         int val = bytes[0] + 1;
         *inpr = val;
         return true;
@@ -452,7 +468,7 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     }
     else if(body->getType() == ellipsoidType) {
       if(static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
+        uint64toByteArray(body->getSystemID(), bytes);
         int val = bytes[0] + 1;
         *inpr = val;
         return true;
@@ -517,6 +533,9 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
     }
     else if (body->getType() == capsuleType) {
       inside = static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+    }
+    else if (body->getType() == boxType) {
+      inside = static_cast<Box*>(body)->containsPoint(pos[0], pos[1], pos[2]);
     }
     else if (body->getType() == ellipsoidType) {
       inside = static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2]);
