@@ -274,7 +274,7 @@ void remoteParticleMapping() {
 //=================================================================================================
 /*
  *!\brief The function checks if the point pos in inside the particles 
- * \param inpr An output parameter that is set to the idx of that particle that contains pos 
+ * \param inpr An output parameter that is set to 1 if a particle contains pos, 0 otherwise
  * \param pos An array that cointans the 3d point
  */
 extern "C"
@@ -361,7 +361,7 @@ void debug_output_particles_() {
 //=================================================================================================
 /*
  *!\brief The function checks if the point pos in inside the particles (C++ end point for checkAllParticles) 
- * \param inpr An output parameter that is set to the idx of that particle that contains pos 
+ * \param inpr An output parameter that is set to 1 if a particle contains pos, 0 otherwise
  * \param pos An array that cointans the 3d point
  */
 bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]) {
@@ -378,56 +378,49 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     if(body->getType() == sphereType) {
       if(static_cast<Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes);
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == boxType) {
       if(static_cast<Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes);
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == ellipsoidType) {
       if(static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == cylinderType && !(body->isFixed())) {
       if(static_cast<Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == triangleMeshType && !(body->isFixed())) {
       if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == triangleMeshType && !(body->isFixed())) {
       if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
@@ -443,9 +436,7 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     if (body->getType() == sphereType) {
       if(static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])) {
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-
-        *inpr = val;
+        *inpr = 1;
         i++;
         return true;
       }
@@ -453,32 +444,28 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     else if(body->getType() == capsuleType) {
       if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes);
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == boxType) {
       if(static_cast<const Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes);
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == ellipsoidType) {
       if(static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes);
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
     else if(body->getType() == cylinderType && !(body->isFixed())) {
       if(static_cast<const Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
@@ -486,8 +473,7 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     //else if(body->getType() == triangleMeshType) {
       if(static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
         uint64toByteArray(body->getSystemID(), bytes); 
-        int val = bytes[0] + 1;
-        *inpr = val;
+        *inpr = 1;
         return true;
       }
     }
@@ -505,7 +491,7 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
  *!\brief Accelerated point-inside-particles check using HashGrid spatial hashing.
  *
  * \param vidx Vertex index (for debugging/identification).
- * \param inpr Output: particle index byte[0]+1 if inside, 0 otherwise.
+ * \param inpr Output: 1 if inside, 0 otherwise.
  * \param pos 3D point coordinates [x, y, z].
  * \param bytes Output: 8-byte system ID array.
  * \return true if point is inside a particle, false otherwise.
@@ -1602,7 +1588,7 @@ bool mapLocalToSystem2(int lidx, int vidx) {
 //=================================================================================================
 /*
  *!\brief The function checks if the point pos in inside the particles (C++ end point for checkAllParticles) 
- * \param inpr An output parameter that is set to the idx of that particle that contains pos 
+ * \param inpr An output parameter that is set to 1 if a particle contains pos, 0 otherwise
  * \param pos An array that cointans the 3d point
  */
 //void getPartStructByIdx(int idx, particleData_t *particle) {
@@ -1813,4 +1799,3 @@ void debugDistanceMapBoundingBoxes() {
   std::cout << "Process " << rank << ": Found " << meshCount << " TriangleMesh objects with DistanceMap acceleration." << std::endl;
   std::cout << "===============\n" << std::endl;
 }
-
