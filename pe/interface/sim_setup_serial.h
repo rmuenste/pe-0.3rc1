@@ -19,8 +19,11 @@
 #include <string>
 #include <deque>
 #include <map>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <iostream>
@@ -255,6 +258,130 @@ inline void setupParticleBenchSerial(int cfd_rank) {
               << " Total number of particles               = " << particlesCreated << "\n"
               << " Particle radius                         = " << radBench << "\n"
               << " Particle radius2                        = " << config.getBenchRadius() << "\n"
+              << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+}
+
+/**
+ * @brief Fluidization setup for serial mode
+ *
+ * Initialized as a copy of setupParticleBenchSerial so fluidization can diverge
+ * from the sedimentation benchmark setup in a dedicated entry point.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupFluidizationSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  WorldID world = theWorld();
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
+
+  world->setGravity(config.getGravity());
+
+  const real simViscosity(config.getFluidViscosity());
+  const real simRho(config.getFluidDensity());
+  const real rhoParticle(config.getParticleDensity());
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  const real xMin = 0.0;
+  const real xMax = 20.3;
+  const real yMin = 0.0;
+  const real yMax = 0.686;
+  const real zMin = 0.0;
+  const real zMax = 70.2;
+
+  const int targetParticles = 1204;
+  const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
+  const real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
+  const real spacing = spacingFactor * radParticle;
+  const real pitch = real(2.0) * radParticle + spacing;
+  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle);
+
+  const real xSpan = (xMax - xMin) - real(2.0) * radParticle;
+  const real ySpan = (yMax - yMin) - real(2.0) * radParticle;
+  const real zSpan = (zMax - zStart) - radParticle;
+
+  const int nxMax = static_cast<int>(std::floor(xSpan / pitch)) + 1;
+  const int nyMax = static_cast<int>(std::floor(ySpan / pitch)) + 1;
+  const int nzMax = static_cast<int>(std::floor(zSpan / pitch)) + 1;
+
+  if (nxMax <= 0 || nyMax <= 0 || nzMax <= 0) {
+    throw std::runtime_error("Fluidization setup failed: invalid grid dimensions for requested geometry.");
+  }
+
+  const int maxCapacity = nxMax * nyMax * nzMax;
+  if (maxCapacity < targetParticles) {
+    throw std::runtime_error("Fluidization setup failed: domain capacity smaller than 1204 particles.");
+  }
+
+  MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(777, 0.0, 0.0, 1.0, 0.0, gr, true);
+
+  MaterialID myMaterial = createMaterial("FluidizationParticles", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  theCollisionSystem()->setMinEps(5e-6 / radParticle);
+
+  int particlesCreated = 0;
+  int usedNx = 0;
+  int usedNy = 0;
+  int usedNz = 0;
+
+  int globalIndex = 0;
+  if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid) {
+    for (int iz = 0; iz < nzMax && globalIndex < targetParticles; ++iz) {
+      const real z = zStart + static_cast<real>(iz) * pitch;
+      for (int iy = 0; iy < nyMax && globalIndex < targetParticles; ++iy) {
+        const real y = (yMin + radParticle) + static_cast<real>(iy) * pitch;
+        for (int ix = 0; ix < nxMax && globalIndex < targetParticles; ++ix) {
+          const real x = (xMin + radParticle) + static_cast<real>(ix) * pitch;
+          createSphere(globalIndex, Vec3(x, y, z), radParticle, myMaterial, true);
+          ++particlesCreated;
+          ++globalIndex;
+          usedNx = std::max(usedNx, ix + 1);
+          usedNy = std::max(usedNy, iy + 1);
+          usedNz = std::max(usedNz, iz + 1);
+        }
+      }
+    }
+  }
+
+  TimeStep::stepsize(config.getStepsize());
+
+  if (isRepresentative) {
+    const real totalVol = static_cast<real>(particlesCreated) *
+      ((real(4.0) / real(3.0)) * M_PI * radParticle * radParticle * radParticle);
+    const real totalMass = totalVol * rhoParticle;
+
+    std::cout << "\n--" << "Particle Fluidization SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Column bounds [x,y,z]                   = "
+              << "[" << xMin << "," << xMax << "] x "
+              << "[" << yMin << "," << yMax << "] x "
+              << "[" << zMin << "," << zMax << "]\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << " Particle radius                         = " << radParticle << "\n"
+              << " Particle diameter                       = " << (real(2.0) * radParticle) << "\n"
+              << " Spacing factor                          = " << spacingFactor << "\n"
+              << " Gap (between surfaces)                  = " << spacing << "\n"
+              << " Center-to-center pitch                  = " << pitch << "\n"
+              << " Grid start z                            = " << zStart << "\n"
+              << " Grid extents used (nx,ny,nz)            = "
+              << usedNx << ", " << usedNy << ", " << usedNz << "\n"
+              << " Total particle mass                     = " << totalMass << "\n"
+              << " Total particle volume                   = " << totalVol << "\n"
               << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 }

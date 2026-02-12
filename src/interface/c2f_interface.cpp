@@ -38,6 +38,28 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 }
 //=================================================================================================
 
+//=================================================================================================
+extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{
+    MPI_Comm Ccomm;
+    MPI_Comm CcommEx0;
+    Ccomm = MPI_Comm_f2c(*Fcomm);
+
+    int remRank = *remoteRank;
+    int rank, size;
+    MPI_Comm_rank(Ccomm, &rank);
+    MPI_Comm_size(Ccomm, &size);
+
+    if (rank == 1) {
+      printf("%d> C) Configuration Fluidization bench with %d processes.\n", remRank, size);
+    }
+    if (remRank != 0) {
+      CcommEx0 = MPI_Comm_f2c(*FcommEx0);
+      setupFluidization(CcommEx0);
+    }
+}
+//=================================================================================================
+
 
 //=================================================================================================
 extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
@@ -353,6 +375,11 @@ extern "C" void commf2c_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Initialize PE world for this domain
   // Pass CFD rank for unique log filenames (pe<rank>.log)
   pe::setupParticleBenchSerial(*remoteRank);
+}
+
+extern "C" void commf2c_fluidization_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Fluidization setup
+  pe::setupFluidizationSerial(*remoteRank);
 }
 
 extern "C" void commf2c_dcav_(int *Fcomm, int *FcommEx0, int *remoteRank) {

@@ -16,6 +16,7 @@
     "checkpoint_path_": "checkpoints/",
     "volumeFraction_": 0.3,
     "benchRadius_": 0.0075,
+    "fluidizationSpacingFactor_": 0.1,
     "benchStartPosition_": [1.0, 0.01, 0.1275],
     "packingMethod_": "grid",
     "xyzFilePath_": "",

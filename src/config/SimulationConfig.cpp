@@ -66,6 +66,7 @@ SimulationConfig::SimulationConfig()
     , resumeCheckpointFile_("../start.1")
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
+    , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
@@ -205,6 +206,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("benchRadius_"))
         config.setBenchRadius(j["benchRadius_"].get<real>());
+
+    if (j.contains("fluidizationSpacingFactor_"))
+        config.setFluidizationSpacingFactor(j["fluidizationSpacingFactor_"].get<real>());
 
     // Set benchmark start position vector
     if (j.contains("benchStartPosition_")) {

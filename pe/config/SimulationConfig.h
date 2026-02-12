@@ -186,6 +186,8 @@ public:
     void setVolumeFraction(real value) { volumeFraction_ = value; }
     real getBenchRadius() const { return benchRadius_; }
     void setBenchRadius(real value) { benchRadius_ = value; }
+    real getFluidizationSpacingFactor() const { return fluidizationSpacingFactor_; }
+    void setFluidizationSpacingFactor(real value) { fluidizationSpacingFactor_ = value; }
     const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
     void setBenchStartPosition(const Vec3& value) { benchStartPosition_ = value; }
     //@}
@@ -275,6 +277,7 @@ private:
     // Simulation parameters
     real volumeFraction_;        //!< Volume fraction for particle packing
     real benchRadius_;           //!< Radius of the benchmark geometry
+    real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
 
     // Packing parameters
