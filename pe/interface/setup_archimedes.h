@@ -317,7 +317,12 @@ void setupArchimedes(MPI_Comm ex0)
    }
    
    // Checkpointer setup
-   checkpointer.tspacing_ = config.getPointerspacing();
+   CheckpointerID checkpointer;
+   if (config.getUseCheckpointer()) {
+     checkpointer = activateCheckpointer(config.getCheckpointPath(),
+                                          config.getPointerspacing(),
+                                          0, config.getTimesteps());
+   }
 
    // Create a custom material for the benchmark
    MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
@@ -369,7 +374,7 @@ void setupArchimedes(MPI_Comm ex0)
      }
      else
      {
-        checkpointer.read( "../start.1" );
+        if (checkpointer) checkpointer->read( "../start.1" );
      }
    }
 

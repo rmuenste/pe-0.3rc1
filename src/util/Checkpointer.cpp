@@ -3,13 +3,20 @@
 namespace pe {
 
 //*************************************************************************************************
+// Static member definitions
+//*************************************************************************************************
+bool Checkpointer::active_ = false;
+boost::mutex Checkpointer::instanceMutex_;
+
+
+//*************************************************************************************************
 void Checkpointer::read( const std::string &name ) {
    bbreader_.readFile( ( checkpointsPath_ / ( name + ".peb" ) ).string().c_str() );
 }
 //*************************************************************************************************
 
 Checkpointer::~Checkpointer() {
-}  
+}
 
 
 //*************************************************************************************************
@@ -22,21 +29,19 @@ void Checkpointer::trigger()
   }
     return;
   }
-//  else {
-//    std::cout << "Checkpoint triggered!" << std::endl;
-//  }
 
-  // Adjusing the counters
+  // Adjusting the counters
   steps_ = 0;
   std::ostringstream bodyFile;
   bodyFile << "checkpoint." << counter_;
-  setPath( "checkpoints/" );
-  size_t               mt( 0 );
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "Checkpoint:" << bodyFile.str() << std::endl;
   }
   write(bodyFile.str());
   ++counter_;
+
+  // Flush so the checkpoint is self-contained for auto-triggering
+  flush();
 }
 //*************************************************************************************************
 
@@ -62,7 +67,18 @@ void Checkpointer::write( const std::string &name ) {
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+CheckpointerID activateCheckpointer(const path& checkpointsPath,
+                                     unsigned int spacing,
+                                     unsigned int start,
+                                     unsigned int end)
+{
+   boost::mutex::scoped_lock lock( Checkpointer::instanceMutex_ );
+   static CheckpointerID cp( new Checkpointer(checkpointsPath, spacing, start, end) );
+   Checkpointer::active_ = true;
+   return cp;
+}
+//*************************************************************************************************
+
 } // namespace pe
-
-
-

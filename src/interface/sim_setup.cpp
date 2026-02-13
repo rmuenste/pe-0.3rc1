@@ -68,12 +68,18 @@ int called = 0;
 // Configuration of the MPI system
 MPISystemID mpisystem;
 
-// The Checkpointer
-Checkpointer checkpointer = Checkpointer(
-    pe::SimulationConfig::getInstance().getCheckpointPath(),
-    pe::SimulationConfig::getInstance().getPointerspacing(),
-    0,
-    pe::SimulationConfig::getInstance().getTimesteps());
+// Activate checkpointer singleton (if configured)
+struct CheckpointerInitializer_ {
+  CheckpointerInitializer_() {
+    if (pe::SimulationConfig::getInstance().getUseCheckpointer()) {
+      pe::activateCheckpointer(
+          pe::SimulationConfig::getInstance().getCheckpointPath(),
+          pe::SimulationConfig::getInstance().getPointerspacing(),
+          0,
+          pe::SimulationConfig::getInstance().getTimesteps());
+    }
+  }
+} checkpointerInit_;
 
 real degreesToRadians(real deg) {
   return deg * M_PI / 180.0;
@@ -225,13 +231,6 @@ void stepSimulation() {
   }
   
   
-  //=================================================================================================
-  // Trigger a new checkpointer write if activated
-  if (config.getUseCheckpointer()) {
-    checkpointer.trigger();
-    checkpointer.flush();
-  }
-
   timestep++;
 
   // MPI Finalization

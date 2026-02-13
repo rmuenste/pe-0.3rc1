@@ -324,7 +324,11 @@ void setupDrill(MPI_Comm ex0) {
     }
   }
   else {
-    checkpointer.read( "../start.1" );
+    if (config.getUseCheckpointer()) {
+      activateCheckpointer(config.getCheckpointPath(),
+                           config.getPointerspacing(),
+                           0, config.getTimesteps())->read( "../start.1" );
+    }
   }
 
   //=========================================================================================

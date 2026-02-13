@@ -8,12 +8,14 @@
 #include <vector>
 #include <list>
 #include <boost/numeric/conversion/cast.hpp>
+#include <boost/thread/mutex.hpp>
 #include <iostream>
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 #include <pe/core/Trigger.h>
 #include <pe/core/BodyBinaryWriter.h>
 #include <pe/core/BodyBinaryReader.h>
+#include <pe/util/CheckpointerID.h>
 
 namespace pe {
 //=================================================================================================
@@ -26,7 +28,7 @@ using boost::filesystem::path;
 
 //*************************************************************************************************
 class Checkpointer : public Trigger {
-public:
+private:
    unsigned int     tspacing_;    //!< Spacing between two visualized time steps.
    unsigned int     tstart_;      //!< First time step to be written
    unsigned int     tend_;        //!< Last time step to be written
@@ -50,15 +52,11 @@ public:
        counter_(0)
    {}
 
-   Checkpointer(const Checkpointer& other)
-     : checkpointsPath_(other.checkpointsPath_),
-       tspacing_(other.tspacing_),
-       tstart_(other.tstart_),
-       tend_(other.tend_),
-       steps_(other.steps_),
-       counter_(other.counter_)
-   {}
+   // Non-copyable (bbwriter_/bbreader_ cannot be safely copied)
+   Checkpointer(const Checkpointer&) = delete;
+   Checkpointer& operator=(const Checkpointer&) = delete;
 
+public:
    ~Checkpointer();
 
    void trigger();
@@ -91,7 +89,43 @@ private:
    /// Directory where checkpoints are saved/loaded
    path             checkpointsPath_;
 
+   static bool         active_;         //!< Active flag of the checkpointer.
+   static boost::mutex instanceMutex_;  //!< Synchronization mutex for access to the checkpointer.
+
+   //**Friend declarations*************************************************************************
+   friend bool           isCheckpointerActive();
+   friend CheckpointerID activateCheckpointer(const path& checkpointsPath,
+                                               unsigned int spacing,
+                                               unsigned int start,
+                                               unsigned int end);
 };
+//*************************************************************************************************
+
+
+//=================================================================================================
+//
+//  CHECKPOINTER SETUP FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+inline bool isCheckpointerActive();
+       CheckpointerID activateCheckpointer(const path& checkpointsPath,
+                                            unsigned int spacing,
+                                            unsigned int start,
+                                            unsigned int end);
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether the checkpointer is active or not.
+ *
+ * \return \a true if the checkpointer is active, \a false if not.
+ */
+inline bool isCheckpointerActive()
+{
+   return Checkpointer::active_;
+}
 //*************************************************************************************************
 
 } // namespace pe

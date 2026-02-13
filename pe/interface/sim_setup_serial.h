@@ -14,6 +14,7 @@
 #include <pe/vtk/DistanceMapWriter.h>
 #include <pe/util/logging/Logger.h>
 #include <pe/config/SimulationConfig.h>
+#include <pe/util/Checkpointer.h>
 #include <pe/interface/geometry_utils.h>
 #include <string>
 #include <deque>
@@ -222,6 +223,13 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   // Set default timestep
   TimeStep::stepsize(0.001);
 
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
+  }
+
   // Note: Particles will be added by FeatFloWer via the interface functions
   // This setup just initializes the PE world for this domain
   if (isRepresentative) {
@@ -317,6 +325,13 @@ inline void setupFSIBenchSerial(int cfd_rank) {
       vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
                                                config.getTimesteps() * config.getSubsteps(),
                                                false);
+  }
+
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
   }
 
   // Serial mode: no MPI, no domain decomposition
@@ -467,6 +482,13 @@ inline void setupATCSerial(int cfd_rank) {
       vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
                                                config.getTimesteps() * config.getSubsteps(),
                                                false);
+  }
+
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
   }
 
   // TODO: Add additional rigid bodies here
@@ -786,6 +808,13 @@ inline void setupLubricationLabSerial(int cfd_rank) {
   // Set default timestep
   TimeStep::stepsize(config.getStepsize());
 
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
+  }
+
   if (isRepresentative) {
     std::cout << "\n--" << "LUBRICATION LAB SETUP"
               << "--------------------------------------------------------------\n"
@@ -856,6 +885,13 @@ inline void setupDrillSerial(int cfd_rank) {
       vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
                                                config.getTimesteps() * config.getSubsteps(),
                                                false);
+  }
+
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
   }
 
   // Serial mode: no MPI, no domain decomposition
@@ -1005,6 +1041,13 @@ inline void setupRotationSerial(int cfd_rank) {
   world->setViscosity(simViscosity);
 
   TimeStep::stepsize(config.getStepsize());
+
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
+  }
 
   //==============================================================================================
   // Domain Boundary Configuration
@@ -1683,19 +1726,6 @@ inline void stepSimulationSerial() {
       }
     }
   }
-
-  // Checkpointer trigger (if enabled) - once per main timestep
-  // Note: Checkpointer is not auto-triggered via Trigger::triggerAll(),
-  // so it must be called explicitly here after the substepping loop
-  //
-  // TODO: To enable checkpointing in serial mode:
-  // 1. Create a global Checkpointer object similar to MPI mode (see sim_setup.cpp line 72-76)
-  // 2. Initialize it with config parameters in a serial mode initialization function
-  // 3. Add the following code here:
-  //    if (config.getUseCheckpointer()) {
-  //      checkpointer.trigger();
-  //      checkpointer.flush();
-  //    }
 
   timestep++;
 }
