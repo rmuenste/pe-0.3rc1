@@ -155,6 +155,11 @@ inline void applyOptionalLubricationParams(CollisionSystemT&, const SimulationCo
   // Constraint solver does not expose lubrication/hysteresis controls
 }
 
+inline unsigned int effectiveCheckpointSpacing(const SimulationConfig& config) {
+  // Trigger::triggerAll() runs per substep; scale spacing to keep main-step cadence.
+  return config.getPointerspacing() * config.getSubsteps();
+}
+
 /**
  * @brief Serial mode simulation setup
  *
@@ -224,9 +229,9 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   TimeStep::stepsize(0.001);
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
-                         config.getPointerspacing(),
+                         effectiveCheckpointSpacing(config),
                          0, config.getTimesteps());
   }
 
@@ -328,9 +333,9 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   }
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
-                         config.getPointerspacing(),
+                         effectiveCheckpointSpacing(config),
                          0, config.getTimesteps());
   }
 
@@ -485,9 +490,9 @@ inline void setupATCSerial(int cfd_rank) {
   }
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
-                         config.getPointerspacing(),
+                         effectiveCheckpointSpacing(config),
                          0, config.getTimesteps());
   }
 
@@ -809,9 +814,9 @@ inline void setupLubricationLabSerial(int cfd_rank) {
   TimeStep::stepsize(config.getStepsize());
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
-                         config.getPointerspacing(),
+                         effectiveCheckpointSpacing(config),
                          0, config.getTimesteps());
   }
 
@@ -888,9 +893,9 @@ inline void setupDrillSerial(int cfd_rank) {
   }
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
-                         config.getPointerspacing(),
+                         effectiveCheckpointSpacing(config),
                          0, config.getTimesteps());
   }
 
@@ -1043,9 +1048,9 @@ inline void setupRotationSerial(int cfd_rank) {
   TimeStep::stepsize(config.getStepsize());
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
-                         config.getPointerspacing(),
+                         effectiveCheckpointSpacing(config),
                          0, config.getTimesteps());
   }
 

@@ -68,18 +68,18 @@ int called = 0;
 // Configuration of the MPI system
 MPISystemID mpisystem;
 
-// Activate checkpointer singleton (if configured)
-struct CheckpointerInitializer_ {
-  CheckpointerInitializer_() {
-    if (pe::SimulationConfig::getInstance().getUseCheckpointer()) {
-      pe::activateCheckpointer(
-          pe::SimulationConfig::getInstance().getCheckpointPath(),
-          pe::SimulationConfig::getInstance().getPointerspacing(),
-          0,
-          pe::SimulationConfig::getInstance().getTimesteps());
-    }
+namespace {
+inline void ensureCheckpointerActivatedFromRuntimeConfig() {
+  auto& config = pe::SimulationConfig::getInstance();
+  if (config.getUseCheckpointer() && !pe::isCheckpointerActive()) {
+    pe::activateCheckpointer(
+        config.getCheckpointPath(),
+        config.getPointerspacing(),
+        0,
+        config.getTimesteps());
   }
-} checkpointerInit_;
+}
+}  // namespace
 
 real degreesToRadians(real deg) {
   return deg * M_PI / 180.0;
@@ -150,6 +150,9 @@ void groupOutput_v1(real totalV, real dt, real h, real totalA) {
 //=================================================================================================
 void stepSimulation() {
   auto& config = SimulationConfig::getInstance();
+
+  // Activate checkpointer lazily from runtime-loaded configuration.
+  ensureCheckpointerActivatedFromRuntimeConfig();
   
   static int timestep = 0;
   unsigned long particlesTotalBefore = 0;
