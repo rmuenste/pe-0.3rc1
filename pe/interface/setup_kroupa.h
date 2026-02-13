@@ -458,7 +458,7 @@ void setupKroupa(MPI_Comm ex0) {
   }
   else {
 
-    if (checkpointer) checkpointer->read( "../start.1" );
+    if (checkpointer) checkpointer->read( config.getResumeCheckpointFile() );
   }
   
   BodyID botPlane; 

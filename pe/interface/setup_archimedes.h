@@ -374,7 +374,7 @@ void setupArchimedes(MPI_Comm ex0)
      }
      else
      {
-        if (checkpointer) checkpointer->read( "../start.1" );
+        if (checkpointer) checkpointer->read( config.getResumeCheckpointFile() );
      }
    }
 
@@ -503,4 +503,3 @@ void setupArchimedes(MPI_Comm ex0)
 
    MPI_Barrier(cartcomm);
 }
-

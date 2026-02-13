@@ -31,6 +31,7 @@
 #include <pe/config/Precision.h>
 #include <pe/math/Vector3.h>
 #include <boost/filesystem.hpp>
+#include <string>
 
 
 namespace pe {
@@ -173,6 +174,8 @@ public:
     void setCheckpointPath(const boost::filesystem::path& path) { checkpoint_path_ = path; }
     bool getResume() const { return resume_; }
     void setResume(bool value) { resume_ = value; }
+    const std::string& getResumeCheckpointFile() const { return resumeCheckpointFile_; }
+    void setResumeCheckpointFile(const std::string& file) { resumeCheckpointFile_ = file; }
     //@}
     //**************************************************************************************
 
@@ -267,6 +270,7 @@ private:
     bool useCheckpointer_;       //!< Enable checkpointer output
     boost::filesystem::path checkpoint_path_; //!< Path for checkpoint files
     bool resume_;                //!< Resume from checkpoint
+    std::string resumeCheckpointFile_; //!< Checkpoint base name/path used for resume loading
 
     // Simulation parameters
     real volumeFraction_;        //!< Volume fraction for particle packing

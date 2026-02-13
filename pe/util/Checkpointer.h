@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <list>
+#include <string>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/thread/mutex.hpp>
 #include <iostream>
@@ -114,6 +115,7 @@ inline bool isCheckpointerActive();
                                             unsigned int spacing,
                                             unsigned int start,
                                             unsigned int end);
+       void readCheckpoint(const path& checkpointsPath, const std::string& name);
 //*************************************************************************************************
 
 

@@ -62,10 +62,11 @@ SimulationConfig::SimulationConfig()
     , pointerspacing_(100)
     , useCheckpointer_(true)
     , checkpoint_path_("checkpoints/")
+    , resume_(false)
+    , resumeCheckpointFile_("../start.1")
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
     , benchStartPosition_(1.0, 0.01, 0.1275)
-    , resume_(false)
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
     , particleDensity_(1.0)
@@ -189,6 +190,10 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set resume
     if (j.contains("resume_"))
         config.setResume(j["resume_"].get<bool>());
+
+    // Set the checkpoint file name/path to load for resume mode
+    if (j.contains("resumeCheckpointFile_"))
+        config.setResumeCheckpointFile(j["resumeCheckpointFile_"].get<std::string>());
 
     // Set the checkpoint path (assuming the JSON key is a string)
     if (j.contains("checkpoint_path_"))

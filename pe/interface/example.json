@@ -12,6 +12,7 @@
     "pointerspacing_": 100,
     "useCheckpointer_": false,
     "resume_": false,
+    "resumeCheckpointFile_": "../start.1",
     "checkpoint_path_": "checkpoints/",
     "volumeFraction_": 0.3,
     "benchRadius_": 0.0075,

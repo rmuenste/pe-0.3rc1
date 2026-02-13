@@ -184,6 +184,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   // Apply lubrication/contact parameters from configuration
   CollisionSystemID cs = theCollisionSystem();
   const bool isRepresentative = (config.getCfdRank() == 1);
+  const bool resume = config.getResume();
   applyOptionalLubricationParams(*cs, config);
 
   // Set gravity from configuration
@@ -205,10 +206,6 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   // The entire simulation domain is owned by this process
   // Domain boundaries are handled by the CFD code
 
-  // Create ground plane (global, owned by this domain)
-  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
-
   int idx = 0;
   //==============================================================================================
   // Bench Configuration
@@ -217,18 +214,29 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   real rhoParticle( config.getParticleDensity() );
   Vec3 position(-0.0, -0.0, 0.1275);
 
-  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  SphereID sphere(nullptr);
   int particlesCreated = 0;
-  sphere = createSphere(idx, position, radBench, myMaterial, true);
-  ++idx;
-  particlesCreated++;
-
 
   // Set default timestep
   TimeStep::stepsize(0.001);
 
-  // Activate checkpointer if configured
+  if (resume) {
+    // Resume must load on every rank in PE serial mode, because each CFD rank runs
+    // its own PE instance and later queries local particle storage.
+    readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+    particlesCreated = static_cast<int>(theCollisionSystem()->getBodyStorage().size());
+  } else {
+    // Create static benchmark scene only for fresh starts.
+    MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+    MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    SphereID sphere(nullptr);
+    sphere = createSphere(idx, position, radBench, myMaterial, true);
+    ++idx;
+    particlesCreated++;
+  }
+
+  // Activate periodic checkpoint writing on representative rank only.
+  // Resume loading above is done on all ranks via a temporary reader.
   if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
                          effectiveCheckpointSpacing(config),

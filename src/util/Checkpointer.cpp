@@ -81,4 +81,12 @@ CheckpointerID activateCheckpointer(const path& checkpointsPath,
 }
 //*************************************************************************************************
 
+//*************************************************************************************************
+void readCheckpoint(const path& checkpointsPath, const std::string& name)
+{
+   BodyBinaryReader reader;
+   reader.readFile((checkpointsPath / (name + ".peb")).string().c_str());
+}
+//*************************************************************************************************
+
 } // namespace pe
