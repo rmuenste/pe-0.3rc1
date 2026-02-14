@@ -324,8 +324,13 @@ inline void setupFluidizationSerial(int cfd_rank) {
     throw std::runtime_error("Fluidization setup failed: domain capacity smaller than 1204 particles.");
   }
 
+  int PlaneIDs = 10000;
   MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(777, 0.0, 0.0, 1.0, 0.0, gr, true);
+  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 0.0, gr, true);
+
+  createPlane( PlaneIDs++, 0.0, 1.0, 0.0,  0.0, granite );
+  // -y
+  createPlane( PlaneIDs++, 0.0,-1.0, 0.0,  -0.686, granite );
 
   MaterialID myMaterial = createMaterial("FluidizationParticles", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   theCollisionSystem()->setMinEps(5e-6 / radParticle);
