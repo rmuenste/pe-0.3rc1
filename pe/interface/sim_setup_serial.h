@@ -293,6 +293,30 @@ inline void setupFluidizationSerial(int cfd_rank) {
   world->setViscosity(simViscosity);
   world->setDamping(1.0);
 
+  // CRITICAL: Enable automatic force reset after each simulation step
+  // This prevents force accumulation when using substepping
+  world->setAutoForceReset(true);
+
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
+                                               false);
+  }
+
+  // Activate checkpointer if configured
+  if (config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
+  }
+
   const real xMin = 0.0;
   const real xMax = 20.3;
   const real yMin = 0.0;
@@ -373,6 +397,8 @@ inline void setupFluidizationSerial(int cfd_rank) {
     std::cout << "\n--" << "Particle Fluidization SETUP"
               << "--------------------------------------------------------------\n"
               << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Substepping                             = " << config.getSubsteps() << "\n"
+              << " Auto force reset                        = enabled\n"
               << " Fluid viscosity                         = " << simViscosity << "\n"
               << " Fluid density                           = " << simRho << "\n"
               << " Gravity                                 = " << world->getGravity() << "\n"
@@ -391,6 +417,8 @@ inline void setupFluidizationSerial(int cfd_rank) {
               << usedNx << ", " << usedNy << ", " << usedNz << "\n"
               << " Total particle mass                     = " << totalMass << "\n"
               << " Total particle volume                   = " << totalVol << "\n"
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
+              << " Checkpointing                           = " << (config.getUseCheckpointer() ? "enabled" : "disabled") << "\n"
               << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 }
