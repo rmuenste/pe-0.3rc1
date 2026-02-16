@@ -300,14 +300,18 @@ inline void setupFluidizationSerial(int cfd_rank) {
   const real zMin = 0.0;
   const real zMax = 70.2;
 
-  const int targetParticles = 1204;
+  const int baseTargetParticles = 1204;
+  const int targetParticles = static_cast<int>(real(0.25) * static_cast<real>(baseTargetParticles));
   const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
   const real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
   const real spacing = spacingFactor * radParticle;
   const real pitch = real(2.0) * radParticle + spacing;
-  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle);
+  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle) + real(2.0);
 
-  const real xSpan = (xMax - xMin) - real(2.0) * radParticle;
+  // Keep one particle radius clearance to the x-boundaries on both sides.
+  const real xGridMin = xMin +  1.5 * radParticle;
+  const real xGridMax = xMax - radParticle;
+  const real xSpan = xGridMax - xGridMin;
   const real ySpan = (yMax - yMin) - real(2.0) * radParticle;
   const real zSpan = (zMax - zStart) - radParticle;
 
@@ -321,7 +325,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
 
   const int maxCapacity = nxMax * nyMax * nzMax;
   if (maxCapacity < targetParticles) {
-    throw std::runtime_error("Fluidization setup failed: domain capacity smaller than 1204 particles.");
+    throw std::runtime_error("Fluidization setup failed: domain capacity smaller than requested particle count.");
   }
 
   int PlaneIDs = 10000;
@@ -347,7 +351,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
       for (int iy = 0; iy < nyMax && globalIndex < targetParticles; ++iy) {
         const real y = (yMin + radParticle) + static_cast<real>(iy) * pitch;
         for (int ix = 0; ix < nxMax && globalIndex < targetParticles; ++ix) {
-          const real x = (xMin + radParticle) + static_cast<real>(ix) * pitch;
+          const real x = xGridMin + static_cast<real>(ix) * pitch;
           createSphere(globalIndex, Vec3(x, y, z), radParticle, myMaterial, true);
           ++particlesCreated;
           ++globalIndex;

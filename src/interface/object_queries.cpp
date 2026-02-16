@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <numeric>
 #include <map>
+#include <cstdint>
 #include <pe/vtk/UtilityWriters.h>
 #include <pe/core/detection/fine/DistanceMap.h>
 #include <pe/util/logging/Logger.h>
@@ -32,6 +33,21 @@ void uint64_test(uint64_t* value) {
 std::map<int, boost::uint64_t> fbmMapRemote; // The key is the local fbmId, the value is the systemId
 
 bool outputEnabled = false; // Global switch for enabling/disabling output
+
+#ifdef VERIFY_HASHGRID
+namespace {
+struct HashGridVerifyStats {
+  std::uint64_t totalQueries = 0;
+  std::uint64_t accelHits = 0;
+  std::uint64_t baselineHits = 0;
+  std::uint64_t hitMissMismatches = 0;
+  std::uint64_t idMismatches = 0;
+  std::uint64_t mismatchPrints = 0;
+};
+
+HashGridVerifyStats g_hashGridVerifyStats;
+} // namespace
+#endif
 
 void printForceData(BodyID body) {
     if (!outputEnabled) return;
@@ -500,6 +516,8 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
  * Only bodies in nearby grid cells are checked instead of iterating through all bodies.
  */
 bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short int bytes[8]) {
+  bool accelFound = false;
+  boost::uint64_t accelSystemId = 0;
 
   // Get candidate bodies from HashGrid (only nearby cells)
   std::vector<BodyID> candidates;
@@ -534,10 +552,58 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
     }
 
     if (inside) {
-      uint64toByteArray(body->getSystemID(), bytes);
+      accelFound = true;
+      accelSystemId = body->getSystemID();
+      uint64toByteArray(accelSystemId, bytes);
       *inpr = bytes[0] + 1;
-      return true;
+      break;
     }
+  }
+
+#ifdef VERIFY_HASHGRID
+  int baselineInpr = 0;
+  short int baselineBytes[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  const bool baselineFound = pointInsideParticles(vidx, &baselineInpr, pos, baselineBytes);
+  const boost::uint64_t baselineSystemId =
+      baselineFound ? ByteArrayToUint64(baselineBytes) : 0;
+
+  g_hashGridVerifyStats.totalQueries++;
+  if (accelFound) g_hashGridVerifyStats.accelHits++;
+  if (baselineFound) g_hashGridVerifyStats.baselineHits++;
+
+  const bool hitMissMismatch = (accelFound != baselineFound);
+  const bool idMismatch = (accelFound && baselineFound && (accelSystemId != baselineSystemId));
+
+  if (hitMissMismatch) g_hashGridVerifyStats.hitMissMismatches++;
+  if (idMismatch) g_hashGridVerifyStats.idMismatches++;
+
+  if (hitMissMismatch || idMismatch) {
+    MPISystemID mpisys = theMPISystem();
+    if (g_hashGridVerifyStats.mismatchPrints < 20 || g_hashGridVerifyStats.mismatchPrints % 1000 == 0) {
+      std::cerr << "[VERIFY_HASHGRID][rank " << mpisys->getRank() << "] mismatch at vidx=" << vidx
+                << " pos=(" << pos[0] << "," << pos[1] << "," << pos[2] << ") "
+                << " accelFound=" << accelFound
+                << " baselineFound=" << baselineFound
+                << " accelID=" << accelSystemId
+                << " baselineID=" << baselineSystemId << std::endl;
+    }
+    g_hashGridVerifyStats.mismatchPrints++;
+  }
+
+  if (g_hashGridVerifyStats.totalQueries % 200000 == 0) {
+    MPISystemID mpisys = theMPISystem();
+    std::cout << "[VERIFY_HASHGRID][rank " << mpisys->getRank() << "] "
+              << "queries=" << g_hashGridVerifyStats.totalQueries
+              << " accelHits=" << g_hashGridVerifyStats.accelHits
+              << " baselineHits=" << g_hashGridVerifyStats.baselineHits
+              << " hitMissMismatches=" << g_hashGridVerifyStats.hitMissMismatches
+              << " idMismatches=" << g_hashGridVerifyStats.idMismatches
+              << std::endl;
+  }
+#endif
+
+  if (accelFound) {
+    return true;
   }
 
   *inpr = 0;
