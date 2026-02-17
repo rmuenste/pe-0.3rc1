@@ -311,7 +311,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
   }
 
   // Activate checkpointer if configured
-  if (config.getUseCheckpointer()) {
+  if (isRepresentative && config.getUseCheckpointer()) {
     activateCheckpointer(config.getCheckpointPath(),
                          config.getPointerspacing(),
                          0, config.getTimesteps());
