@@ -93,6 +93,67 @@ PE is a physics engine for rigid body dynamics simulation with the following mai
 ### External Integration
 - `pe/interface`: C/C++ interface for integration with other software
 
+## Integration with FeatFloWer CFD (PE_SERIAL_MODE)
+
+When PE is integrated with FeatFloWer (a parallel CFD solver), it operates in **PE_SERIAL_MODE**:
+
+### Architecture
+
+**FeatFloWer Side (CFD):**
+- Runs with full MPI parallelization (e.g., 63 MPI ranks for domain decomposition)
+- Each rank handles a subdomain of the flow field
+
+**PE Side (Physics Engine):**
+- Built with `MPI=OFF` (`HAVE_MPI=0` in config.h)
+- Each CFD rank runs its **own independent serial PE instance**
+- Each PE instance simulates all rigid bodies (no domain decomposition in PE)
+- Forces computed independently on each CFD domain are synchronized via CFD's MPI layer (`COMM_SUMMN`)
+
+### The Representative Concept
+
+To prevent duplicate operations (I/O, checkpointing, logging) across all CFD ranks, the **representative rank** pattern is used:
+
+```cpp
+// In pe/interface setup functions (e.g., sim_setup_serial.h, setup_atc.h)
+config.setCfdRank(cfd_rank);  // Set unique CFD rank from FeatFloWer (1, 2, 3, ..., N)
+const bool isRepresentative = (config.getCfdRank() == 1);  // Only CFD rank 1 is representative
+```
+
+**Key Points:**
+- Each CFD rank passes its unique `cfd_rank` when calling PE setup functions
+- Only **CFD rank 1** becomes the representative (`isRepresentative = true`)
+- All other ranks have `isRepresentative = false`
+- Operations that should happen only once (checkpointing, VTK output, console logging) must be guarded with `if (isRepresentative && ...)`
+
+### Common Pitfalls
+
+**Checkpoint/Logging Spam:**
+```cpp
+// ❌ WRONG - All 63 ranks will activate checkpointer
+if (config.getUseCheckpointer()) {
+  activateCheckpointer(...);  // Prints "Checkpoint:checkpoint.0" 63 times!
+}
+
+// ✅ CORRECT - Only representative rank activates checkpointer
+if (isRepresentative && config.getUseCheckpointer()) {
+  activateCheckpointer(...);  // Prints once
+}
+```
+
+**VTK Output:**
+```cpp
+// ✅ CORRECT - Only representative writes VTK files
+if (isRepresentative && config.getVtk()) {
+  activateWriter(...);
+}
+```
+
+### Force Synchronization
+
+- Each PE instance computes forces independently (operates on all particles)
+- FeatFloWer's force computation synchronizes results via MPI collective operations in the CFD layer
+- This architecture is optimal for large particles (< 20) that span multiple CFD domains
+
 ## Library Structure
 
 The library is structured as a header-only interface with implementation in source files:
