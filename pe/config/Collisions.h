@@ -78,7 +78,6 @@
  *   - pe::response::DEMSolverObsolete
  *   - pe::response::FFDSolver
  *   - pe::response::HardContactSemiImplicitTimesteppingSolvers
- *   - pe::response::HardContactAndFluidWithLubrication
  *   - pe::response::HardContactLubricated
  *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver

@@ -68,7 +68,6 @@ class Union;
 #include <pe/core/configuration/HardContactSemiImplicitTimesteppingSolvers.h>
 #include <pe/core/configuration/HardContactAndFluid.h>
 #include <pe/core/configuration/HardContactLubricated.h>
-#include <pe/core/configuration/HardContactAndFluidWithLubrication.h>
 
 
 
