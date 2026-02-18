@@ -269,39 +269,6 @@ public:
 
 
 
-//=================================================================================================
-//
-//  SPECIALIZATION FOR THE HARD CONTACT AND FLUID WITH LUBRICATION 
-//
-//=================================================================================================
-
-//*************************************************************************************************
-/*! \cond PE_INTERNAL */
-/*!\brief Specialization of the ParallelTrait class template for the hard contact solvers.
- * \ingroup mpi
- *
- * This specialization of the ParallelTrait class template provides the information that an MPI
- * parallel execution is possible for the hard contact solvers.
- */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-class ParallelTrait< C<CD,FD,BG,response::HardContactAndFluidWithLubrication> >
-{
-public:
-   //**********************************************************************************************
-   enum { value = 1 };
-   //**********************************************************************************************
-};
-
-/*! \endcond */
-//*************************************************************************************************
-
 } // namespace pe
 
 #endif

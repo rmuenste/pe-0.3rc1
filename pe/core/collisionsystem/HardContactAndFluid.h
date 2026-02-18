@@ -1949,15 +1949,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
          // DEBUG: Print effective mass diagnostics for zero-translation-DOF contacts
          bool bothTranslationLocked = (b1->getInvMass() == real(0) && b2->getInvMass() == real(0));
-//          if( bothTranslationLocked ) {
-//             std::cout << "Contact " << j << " - Both bodies translation-locked:\n";
-//             std::cout << "  Effective mass diag[0] (normal):    " << diag[0] << "\n";
-//             std::cout << "  Effective mass diag[4] (tangent-1): " << diag[4] << "\n";
-//             std::cout << "  Effective mass diag[8] (tangent-2): " << diag[8] << "\n";
-//             std::cout << "  Inverse eff mass (normal): " << (real(1) / diag[0]) << "\n";
-//             std::cout << "  invMass1: " << b1->getInvMass() << ", invMass2: " << b2->getInvMass() << "\n";
-//             std::cout << "  dist (after Baumgarte): " << dist_[j] << "\n";
-//          }
 
          // Diagonal block is know to be positive-definite and thus inverse always exists.
          diag_nto_[j] = diag;
