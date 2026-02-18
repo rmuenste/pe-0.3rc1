@@ -216,6 +216,7 @@ public:
    inline real            getMinEps()             const {return 0;};
    inline real            getMaximumLubrication() const {return 0;};
    inline real            getLubricationDist()    const {return 0;};
+   inline real            getActivationGap()      const;
    inline size_t          getNumberOfContacts()   const;
    //@}
    //**********************************************************************************************
@@ -230,6 +231,7 @@ public:
    inline void            setMinEps( real minEps ){};
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
+   inline void            setActivationGap( real gap );
    inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
    //@}
    //**********************************************************************************************
@@ -316,6 +318,7 @@ private:
    JS jointstorage_;          //!< The joint storage.
 
    real erp_;                 //!< The error reduction parameter (0 <= erp_ <= 1).
+   real activationGap_;       //!< Gap at which hard contact constraints become active.
    bool useAdaptiveBaumgarteCapping_;  //!< Enable adaptive velocity capping to prevent explosions
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
@@ -436,6 +439,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::CollisionSystem()
    , attachablestorage_()
    , jointstorage_     ()
    , erp_              ( 0.7 )
+   , activationGap_    ( 0.0 )
    , useAdaptiveBaumgarteCapping_  ( false )  // OFF by default - opt-in feature
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
@@ -782,6 +786,26 @@ inline real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::getMax
 
 
 //*************************************************************************************************
+/*!\brief Returns the activation gap used for hard-contact constraints.
+ *
+ * \return The activation gap.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::getActivationGap() const
+{
+   return activationGap_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Returns the number of contacts found by the last collision detection.
  *
  * \return The number of contacts found by the last collision detection.
@@ -904,6 +928,31 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::setErr
    pe_INTERNAL_ASSERT( erp >= 0 && erp <= 1, "Error reduction parameter out of range." );
 
    erp_ = erp;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the activation gap for hard-contact constraints.
+ *
+ * \param gap Activation gap distance (non-negative).
+ * \return void
+ *
+ * Contacts with distance d are solved with an effective gap d_eff = d - gap.
+ * This activates hard-contact constraints before geometric penetration.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::setActivationGap( real gap )
+{
+   pe_INTERNAL_ASSERT( gap >= 0, "Activation gap must be non-negative." );
+   activationGap_ = gap;
 }
 //*************************************************************************************************
 
@@ -1847,10 +1896,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          o_[j]        = n_[j] % t_[j];
          Mat3 contactframe( n_[j], t_[j], o_[j] );
 
-         dist_[j]  = c->getDistance();
+         const real rawDist = c->getDistance();
+         real correctedDist = rawDist;
          // If the distance is negative then penetration is present. This is an error and should be corrected. Correcting the whole error is not recommended since due to the linearization the errors cannot completely fixed anyway and the error reduction will introduce artificial restitution. However, if the distance is positive then it is not about error correction but the distance that can still be overcome without penetration and thus no error correction parameter should be applied.
-         if( dist_[j] < 0 ) {
-            maximumPenetration_ = std::max( maximumPenetration_, -dist_[j] );
+         if( rawDist < 0 ) {
+            maximumPenetration_ = std::max( maximumPenetration_, -rawDist );
 
             // Check if both bodies have zero translational degrees of freedom
             // When neither body can translate, Baumgarte stabilization is physically inappropriate
@@ -1859,11 +1909,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
             // DIAGNOSTIC: Check if stuck particles are involved
             bool hasStuckParticle = (b1->isStuck_ || b2->isStuck_);
-            real penetrationDepth = -dist_[j];
+            real penetrationDepth = -rawDist;
 
             if( bothTranslationLocked ) {
                // Disable Baumgarte stabilization - penetration cannot be corrected translationally
-               dist_[j] = real(0);
+               correctedDist = real(0);
 
                if (hasStuckParticle) {
                   pe_LOG_INFO_SECTION( log ) {
@@ -1876,8 +1926,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
                }
             } else {
                // Normal case - apply error reduction parameter
-               real originalDist = dist_[j];
-               dist_[j] *= erp_;
+               real originalDist = correctedDist;
+               correctedDist *= erp_;
 
                // OPTIONAL: Adaptive Baumgarte capping (only if enabled)
                bool capped = false;
@@ -1889,11 +1939,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
                   );
                   real maxCorrectionVelocity = (charLength * dtinv) / correctionAggressiveness_;
 
-                  // Clamp: dist_[j] * dtinv should not exceed maxCorrectionVelocity
-                  // Since dist_[j] < 0 for penetration: check dist_[j] * dtinv < -maxCorrectionVelocity
-                  real correctionVelocity = dist_[j] * dtinv;
+                  // Clamp: correctedDist * dtinv should not exceed maxCorrectionVelocity
+                  // Since correctedDist < 0 for penetration: check correctedDist * dtinv < -maxCorrectionVelocity
+                  real correctionVelocity = correctedDist * dtinv;
                   if( correctionVelocity < -maxCorrectionVelocity ) {
-                      dist_[j] = -maxCorrectionVelocity / dtinv;
+                      correctedDist = -maxCorrectionVelocity / dtinv;
                       capped = true;
                   }
                }
@@ -1906,7 +1956,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
                      if (b2->isStuck_) log << "  Body 2 (ID=" << b2->getSystemID() << ") is stuck\n";
                      log << "  Penetration depth: " << penetrationDepth << "\n";
                      log << "  Baumgarte stabilization: ENABLED (erp=" << erp_ << ")\n";
-                     log << "  Correction distance: " << originalDist << " -> " << dist_[j] << "\n";
+                     log << "  Correction distance: " << originalDist << " -> " << correctedDist << "\n";
                      if (capped) {
                         log << "  Adaptive capping: APPLIED\n";
                      }
@@ -1938,6 +1988,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
                }
             }
          }
+         dist_[j]  = correctedDist - activationGap_;
 
          mu_[j]       = c->getFriction();
 
@@ -4753,4 +4804,3 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
 } // namespace pe
 
 #endif
-
