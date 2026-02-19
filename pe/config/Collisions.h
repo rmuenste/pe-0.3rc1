@@ -82,9 +82,12 @@
  *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver
  */
-#define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
+// #define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
 //#define PE_LUBRICATION_CONTACTS 1
 //*************************************************************************************************
+
+// Short-range repulsive forces (Pan et al. 2002, Eq. 2.1) — pre-contact soft repulsion
+#define pe_CONSTRAINT_SOLVER  pe::response::ShortRangeRepulsion
 
 // Optional: enable lubrication-contact generation in fine detection when using HardContactLubricated
 // Uncomment the block below to propagate the flag into MaxContacts (kept disabled for diagnostic runs)

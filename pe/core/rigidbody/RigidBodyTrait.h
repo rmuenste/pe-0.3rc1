@@ -45,6 +45,7 @@ template<typename> class ProcessTrait;
 #include <pe/core/rigidbody/rigidbodytrait/HardContactSemiImplicitTimesteppingSolvers.h>
 #include <pe/core/rigidbody/rigidbodytrait/HardContactAndFluid.h>
 #include <pe/core/rigidbody/rigidbodytrait/HardContactLubricated.h>
+#include <pe/core/rigidbody/rigidbodytrait/ShortRangeRepulsion.h>
 
 
 #endif

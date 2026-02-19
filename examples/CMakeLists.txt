@@ -16,6 +16,7 @@ add_subdirectory(lubrication_demo)
 add_subdirectory(capsule_spin)
 add_subdirectory(vtk_shapes_ascii)
 add_subdirectory(vtk_writer_test)  # VTK Writer verification test
+add_subdirectory(sphere_column_serial)  # Serial sphere column with ShortRangeRepulsion solver
 
 # CGAL Examples
 if( CGAL )

@@ -814,6 +814,43 @@ inline const Vec3& ContactTrait< C<CD,FD,BG,OpenCLSolver> >::getTangentY() const
 
 
 
+//=================================================================================================
+//
+//  SPECIALIZATION FOR THE SHORT-RANGE REPULSION SOLVER
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Specialization of ContactTrait for the ShortRangeRepulsion solver.
+ *
+ * Provides no-op stubs for the lubrication flag/weight interface called by
+ * ContactVector::addLubricationContact when PE_LUBRICATION_CONTACTS is active.
+ * ShortRangeRepulsion does not use these fields — the contact distance alone drives
+ * the Pan et al. force law.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+class ContactTrait< C<CD,FD,BG,ShortRangeRepulsion> >
+{
+public:
+   explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
+                          const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
+
+   // Required stubs (called by addLubricationContact in ContactVector.h)
+   inline void setLubricationFlag() {}
+   inline void setLubricationWeight( real ) {}
+   inline bool getLubricationFlag() const { return false; }
+   inline real getLubricationWeight() const { return real(1); }
+};
+//*************************************************************************************************
+
+
 } // namespace response
 
 } // namespace pe
