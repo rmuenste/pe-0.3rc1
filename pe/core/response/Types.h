@@ -47,6 +47,7 @@ template<typename,typename,typename> class HardContactAndFluid;
 template<typename,typename,typename> class HardContactLubricated;
 template<typename,typename,typename> class OpenCLSolver;
 template<typename,typename,typename> class PolyhedralFrictionSolver;
+template<typename,typename,typename> class ShortRangeRepulsion;
 
 } // namespace response
 

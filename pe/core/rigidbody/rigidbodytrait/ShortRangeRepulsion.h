@@ -1,10 +1,7 @@
 //=================================================================================================
 /*!
- *  \file pe/core/rigidbody/rigidbodytrait/HardContactLubricated.h
- *  \brief Specialization of the RigidBodyTrait class template for the hard contact solvers with lubrication.
- *
- *  Copyright (C) 2009 Klaus Iglberger
- *                2012 Tobias Preclik
+ *  \file pe/core/rigidbody/rigidbodytrait/ShortRangeRepulsion.h
+ *  \brief Specialization of the RigidBodyTrait class template for the ShortRangeRepulsion solver.
  *
  *  This file is part of pe.
  *
@@ -21,8 +18,8 @@
  */
 //=================================================================================================
 
-#ifndef _PE_CORE_RIGIDBODY_RIGIDBODYTRAIT_HARDCONTACTLUBRICATED_H_
-#define _PE_CORE_RIGIDBODY_RIGIDBODYTRAIT_HARDCONTACTLUBRICATED_H_
+#ifndef _PE_CORE_RIGIDBODY_RIGIDBODYTRAIT_SHORTRANGEREPULSION_H_
+#define _PE_CORE_RIGIDBODY_RIGIDBODYTRAIT_SHORTRANGEREPULSION_H_
 
 
 //*************************************************************************************************
@@ -42,11 +39,11 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Specialization of the RigidBodyTrait class template for the hard contact solvers.
+/*!\brief Specialization of the RigidBodyTrait class template for the ShortRangeRepulsion solver.
 // \ingroup rigid_body
 //
-// This specialization of the RigidBodyTrait class template adapts all rigid bodies to include
-// attributes and members needed by the MPI parallel solver by inheriting from MPIRigidBodyTrait.
+// This specialization inherits from MPIRigidBodyTrait to provide the MPI ownership/shadow-copy
+// bookkeeping needed by the ShortRangeRepulsion collision system specialization.
 */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
         , typename FD                                           // Type of the fine collision detection algorithm
@@ -56,7 +53,7 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename> class                    // Template signature of the batch generation algorithm
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
-class RigidBodyTrait< C<CD,FD,BG,response::HardContactLubricated> > : public MPIRigidBodyTrait
+class RigidBodyTrait< C<CD,FD,BG,response::ShortRangeRepulsion> > : public MPIRigidBodyTrait
 {
 protected:
    //**Constructor*********************************************************************************
@@ -74,49 +71,44 @@ protected:
    //**********************************************************************************************
 
 public:
-
-   size_t index_;
-   Vec3 oldForce_;
-   Vec3 oldTorque_;
-   bool isStuck_ = false;  // Flag for stuck particle diagnostics
+   // Diagnostic flag required by the PE-FeatFloWer interface (object_queries.cpp).
+   // Always false for ShortRangeRepulsion (no stuck-particle detection in this solver).
+   bool isStuck_ = false;
 };
 //*************************************************************************************************
 
 
 //*************************************************************************************************
-/*!\brief Default implementation of the RigidBodyTrait constructor.
+/*!\brief Constructor for RigidBodyTrait<ShortRangeRepulsion>.
 //
 // \param body The body ID of this rigid body.
 */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-RigidBodyTrait< C<CD,FD,BG,response::HardContactLubricated> >::RigidBodyTrait( BodyID body )
-   : MPIRigidBodyTrait( body )  // Initialization of the parent class
-   , index_( 0 )
-   , oldForce_()
-   , oldTorque_()
+template< template<typename> class CD
+        , typename FD
+        , template<typename> class BG
+        , template< template<typename> class
+                  , typename
+                  , template<typename> class
+                  , template<typename,typename,typename> class
+                  > class C >
+RigidBodyTrait< C<CD,FD,BG,response::ShortRangeRepulsion> >::RigidBodyTrait( BodyID body )
+   : MPIRigidBodyTrait( body )
 {}
 //*************************************************************************************************
 
 
 //*************************************************************************************************
-/*!\brief Default implementation of the RigidBodyTrait destructor.
+/*!\brief Destructor for RigidBodyTrait<ShortRangeRepulsion>.
 */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-RigidBodyTrait< C<CD,FD,BG,response::HardContactLubricated> >::~RigidBodyTrait()
+template< template<typename> class CD
+        , typename FD
+        , template<typename> class BG
+        , template< template<typename> class
+                  , typename
+                  , template<typename> class
+                  , template<typename,typename,typename> class
+                  > class C >
+RigidBodyTrait< C<CD,FD,BG,response::ShortRangeRepulsion> >::~RigidBodyTrait()
 {}
 //*************************************************************************************************
 

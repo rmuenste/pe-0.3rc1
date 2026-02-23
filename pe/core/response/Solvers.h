@@ -41,5 +41,6 @@
 #include <pe/core/response/OpenCLSolver.h>
 #endif
 #include <pe/core/response/PolyhedralFrictionSolver.h>
+#include <pe/core/response/ShortRangeRepulsion.h>
 
 #endif

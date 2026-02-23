@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HCL Blend &amp; Impulse Cap Explorer</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f6fa;
+    color: #2c3e50;
+    padding: 1rem;
+  }
+  h1 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .controls {
+    background: #fff;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    overflow-y: auto;
+    max-height: calc(100vh - 4rem);
+  }
+  .controls h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #7f8c8d;
+    margin: 0.8rem 0 0.4rem;
+    border-bottom: 1px solid #ecf0f1;
+    padding-bottom: 0.2rem;
+  }
+  .controls h2:first-child { margin-top: 0; }
+  .param {
+    margin-bottom: 0.5rem;
+  }
+  .param label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 0.15rem;
+  }
+  .param .row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .param input[type=range] {
+    flex: 1;
+    min-width: 0;
+  }
+  .param input[type=number] {
+    width: 90px;
+    font-size: 0.8rem;
+    padding: 2px 4px;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    text-align: right;
+  }
+  .param .unit {
+    font-size: 0.7rem;
+    color: #95a5a6;
+    min-width: 30px;
+  }
+  .plots {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .plot-box {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    padding: 0.5rem;
+    flex: 1;
+    min-height: 300px;
+  }
+  .reset-btn {
+    display: block;
+    width: 100%;
+    margin-top: 0.8rem;
+    padding: 0.4rem;
+    background: #3498db;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .reset-btn:hover { background: #2980b9; }
+  .preset-row {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+  .preset-btn {
+    flex: 1;
+    padding: 0.35rem 0.2rem;
+    background: #ecf0f1;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .preset-btn:hover { background: #d5dbdb; }
+</style>
+</head>
+<body>
+
+<h1>HCL Blend Weights &amp; Impulse Cap Explorer</h1>
+
+<div class="layout">
+<div class="controls">
+
+  <h2>Thresholds</h2>
+  <div class="param">
+    <label>contactThreshold</label>
+    <div class="row">
+      <input type="range" id="s_ct" min="0" max="1e-6" step="1e-9" value="1e-8">
+      <input type="number" id="n_ct" step="any" value="1e-8">
+      <span class="unit">m</span>
+    </div>
+  </div>
+  <div class="param">
+    <label>lubricationThreshold</label>
+    <div class="row">
+      <input type="range" id="s_lt" min="0" max="0.02" step="1e-5" value="5.25e-3">
+      <input type="number" id="n_lt" step="any" value="5.25e-3">
+      <span class="unit">m</span>
+    </div>
+  </div>
+
+  <h2>Hysteresis (blend half-widths)</h2>
+  <div class="param">
+    <label>contactHysteresisDelta</label>
+    <div class="row">
+      <input type="range" id="s_cb" min="0" max="1e-6" step="1e-10" value="1e-9">
+      <input type="number" id="n_cb" step="any" value="1e-9">
+      <span class="unit">m</span>
+    </div>
+  </div>
+  <div class="param">
+    <label>lubricationHysteresisDelta</label>
+    <div class="row">
+      <input type="range" id="s_lb" min="0" max="1e-3" step="1e-6" value="1e-9">
+      <input type="number" id="n_lb" step="any" value="1e-9">
+      <span class="unit">m</span>
+    </div>
+  </div>
+
+  <h2>Impulse cap</h2>
+  <div class="param">
+    <label>alphaImpulseCap</label>
+    <div class="row">
+      <input type="range" id="s_alpha" min="0" max="5" step="0.01" value="1.0">
+      <input type="number" id="n_alpha" step="any" value="1.0">
+    </div>
+  </div>
+  <div class="param">
+    <label>minEpsLub</label>
+    <div class="row">
+      <input type="range" id="s_mel" min="1e-12" max="1e-4" step="1e-10" value="1e-8">
+      <input type="number" id="n_mel" step="any" value="1e-8">
+      <span class="unit">m</span>
+    </div>
+  </div>
+
+  <h2>Fluid &amp; body</h2>
+  <div class="param">
+    <label>&mu; (dynamic viscosity)</label>
+    <div class="row">
+      <input type="range" id="s_mu" min="1e-4" max="500" step="0.1" value="212">
+      <input type="number" id="n_mu" step="any" value="212">
+      <span class="unit">Pa&middot;s</span>
+    </div>
+  </div>
+  <div class="param">
+    <label>R_eff (effective radius)</label>
+    <div class="row">
+      <input type="range" id="s_reff" min="1e-4" max="0.05" step="1e-4" value="0.0075">
+      <input type="number" id="n_reff" step="any" value="0.0075">
+      <span class="unit">m</span>
+    </div>
+  </div>
+  <div class="param">
+    <label>mass1</label>
+    <div class="row">
+      <input type="range" id="s_m1" min="1e-6" max="1" step="1e-5" value="0.0019792">
+      <input type="number" id="n_m1" step="any" value="0.0019792">
+      <span class="unit">kg</span>
+    </div>
+  </div>
+  <div class="param">
+    <label>mass2 (Inf = wall)</label>
+    <div class="row">
+      <input type="range" id="s_m2" min="1e-6" max="100" step="0.01" value="100">
+      <input type="number" id="n_m2" step="any" value="Infinity">
+      <span class="unit">kg</span>
+    </div>
+  </div>
+
+  <h2>Time stepping</h2>
+  <div class="param">
+    <label>dt</label>
+    <div class="row">
+      <input type="range" id="s_dt" min="1e-6" max="0.01" step="1e-5" value="1e-3">
+      <input type="number" id="n_dt" step="any" value="1e-3">
+      <span class="unit">s</span>
+    </div>
+  </div>
+  <div class="param">
+    <label>v_rn (approach velocity)</label>
+    <div class="row">
+      <input type="range" id="s_vrn" min="-1" max="0" step="0.001" value="-0.0462489">
+      <input type="number" id="n_vrn" step="any" value="-0.0462489">
+      <span class="unit">m/s</span>
+    </div>
+  </div>
+
+  <div class="preset-row">
+    <button class="preset-btn" onclick="loadPreset('lubrication_demo')">Lubrication demo</button>
+    <button class="preset-btn" onclick="loadPreset('pan2002')">Pan et al. 2002</button>
+  </div>
+  <button class="reset-btn" onclick="loadPreset('lubrication_demo')">Reset to defaults</button>
+</div>
+
+<div class="plots">
+  <div class="plot-box" id="plot_weights"></div>
+  <div class="plot-box" id="plot_cap"></div>
+</div>
+</div>
+
+<script>
+// ── Maths (ported from plot_blend_and_cap.py) ──────────────────────────
+
+function rampUp(x, start, end) {
+  if (end <= start) return x >= start ? 1 : 0;
+  if (x <= start) return 0;
+  if (x >= end)   return 1;
+  return (x - start) / (end - start);
+}
+
+function rampDown(x, start, end) {
+  if (end <= start) return x <= start ? 1 : 0;
+  if (x <= start) return 1;
+  if (x >= end)   return 0;
+  return (end - x) / (end - start);
+}
+
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+function hardWeight(dist, threshold, blendHalf) {
+  if (blendHalf <= 0) return dist < threshold ? 1 : 0;
+  return clamp01(rampDown(dist, threshold - blendHalf, threshold + blendHalf));
+}
+
+function lubWeight(dist, threshold, lubThreshold, contactBlend, lubBlend) {
+  const entryStart = threshold - contactBlend;
+  const entryEnd   = threshold + contactBlend;
+  const exitCenter = threshold + lubThreshold;
+  const exitStart  = exitCenter - lubBlend;
+  const exitEnd    = exitCenter + lubBlend;
+  const wUp   = contactBlend > 0 ? rampUp(dist, entryStart, entryEnd)
+                                  : (dist > threshold ? 1 : 0);
+  const wDown = lubBlend > 0     ? rampDown(dist, exitStart, exitEnd)
+                                  : (dist < exitCenter ? 1 : 0);
+  return clamp01(wUp * wDown);
+}
+
+// ── Parameters & presets ───────────────────────────────────────────────
+
+const PRESETS = {
+  lubrication_demo: {
+    ct: 1e-8, lt: 5.25e-3, cb: 1e-9, lb: 1e-9,
+    alpha: 1.0, mel: 1e-8, mu: 212, reff: 0.0075,
+    m1: 0.0019792, m2: Infinity, dt: 1e-3, vrn: -0.0462489
+  },
+  pan2002: {
+    ct: 1e-8, lt: 6.858e-4, cb: 1e-9, lb: 1e-9,
+    alpha: 1.0, mel: 1e-8, mu: 1e-3, reff: 3.175e-3,
+    m1: 1.525e-4, m2: Infinity, dt: 1e-4, vrn: -0.05
+  }
+};
+
+const KEYS = ['ct','lt','cb','lb','alpha','mel','mu','reff','m1','m2','dt','vrn'];
+
+function getParams() {
+  const p = {};
+  for (const k of KEYS) p[k] = parseFloat(document.getElementById('n_'+k).value);
+  return p;
+}
+
+function setParams(p) {
+  for (const k of KEYS) {
+    const nEl = document.getElementById('n_'+k);
+    const sEl = document.getElementById('s_'+k);
+    nEl.value = k === 'm2' && !isFinite(p[k]) ? 'Infinity' : p[k];
+    if (isFinite(p[k])) {
+      // Extend slider range if value exceeds current max
+      if (p[k] > parseFloat(sEl.max)) sEl.max = p[k] * 2;
+      sEl.value = p[k];
+    }
+  }
+}
+
+function loadPreset(name) {
+  setParams(PRESETS[name]);
+  update();
+}
+
+// ── Plotting ───────────────────────────────────────────────────────────
+
+const PLOTLY_LAYOUT_BASE = {
+  margin: { t: 35, b: 40, l: 60, r: 80 },
+  font: { family: 'system-ui, sans-serif', size: 12 },
+  legend: { orientation: 'h', y: -0.18 },
+  hovermode: 'x unified',
+};
+
+function update() {
+  const p = getParams();
+  const ct    = p.ct,  lt = p.lt, cb = p.cb, lb = p.lb;
+  const alpha = p.alpha, mel = p.mel, mu = p.mu, reff = p.reff;
+  const invm1 = isFinite(p.m1) ? 1/p.m1 : 0;
+  const invm2 = isFinite(p.m2) ? 1/p.m2 : 0;
+  const invmSum = invm1 + invm2;
+  const mEff  = invmSum > 0 ? 1/invmSum : Infinity;
+  const dt = p.dt, vrn = p.vrn;
+
+  const gapMin = ct * 0.1;
+  const gapMax = (ct + lt) * 1.3;
+  const N = 800;
+  const gaps = [];
+  for (let i = 0; i < N; i++) gaps.push(gapMin + (gapMax - gapMin) * i / (N - 1));
+
+  const hard = [], lub = [], capFactor = [], capRatio = [], Fapplied = [];
+  for (let i = 0; i < N; i++) {
+    const g = gaps[i];
+    const h = hardWeight(g, ct, cb);
+    const l = lubWeight(g, ct, lt, cb, lb);
+    hard.push(h);
+    lub.push(l);
+    const cf = alpha * l;
+    capFactor.push(cf);
+    const gc = Math.max(g, mel);
+    const Func = 6 * Math.PI * mu * reff * reff * (-vrn) / gc;
+    const J = Func * dt;
+    const Jcap = cf * mEff * (-vrn);
+    const cr = J > 0 ? Math.min(1, Jcap / J) : 1;
+    capRatio.push(cr);
+    // Solver applies: Fmag_weighted = Fmag_capped * blend  (line 2310 in HCL solver)
+    // The blend factor appears twice: once inside Jcap, once after capping.
+    Fapplied.push(Func * cr * l);
+  }
+
+  // ─ Panel 1: blend weights ─
+  Plotly.react('plot_weights', [
+    { x: gaps, y: hard, name: 'hard weight',        line: { width: 2 } },
+    { x: gaps, y: lub,  name: 'lubrication weight',  line: { width: 2 } },
+  ], {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Blend weights vs gap', font: { size: 14 } },
+    xaxis: { title: 'gap [m]', exponentformat: 'e' },
+    yaxis: { title: 'weight', range: [-0.05, 1.1] },
+  }, { responsive: true });
+
+  // ─ Panel 2: impulse cap & force ─
+  Plotly.react('plot_cap', [
+    { x: gaps, y: capFactor, name: 'cap factor (&alpha;&middot;blend)', line: { width: 2 } },
+    { x: gaps, y: capRatio,  name: 'impulse cap ratio (J<sub>cap</sub>/J)',  line: { width: 2 } },
+    { x: gaps, y: Fapplied,  name: 'applied force [N] (capped &times; blend)', line: { width: 2 }, yaxis: 'y2' },
+  ], {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Impulse cap ramp &amp; resulting force', font: { size: 14 } },
+    xaxis: { title: 'gap [m]', exponentformat: 'e' },
+    yaxis: { title: 'cap factor / ratio', range: [-0.05, 1.1], side: 'left' },
+    yaxis2: { title: 'force [N]', overlaying: 'y', side: 'right', showgrid: false, exponentformat: 'e' },
+  }, { responsive: true });
+}
+
+// ── Wire up controls ───────────────────────────────────────────────────
+
+for (const k of KEYS) {
+  const sEl = document.getElementById('s_'+k);
+  const nEl = document.getElementById('n_'+k);
+
+  sEl.addEventListener('input', () => {
+    nEl.value = sEl.value;
+    update();
+  });
+
+  nEl.addEventListener('change', () => {
+    const v = parseFloat(nEl.value);
+    if (isFinite(v)) {
+      if (v > parseFloat(sEl.max)) sEl.max = v * 2;
+      if (v < parseFloat(sEl.min)) sEl.min = v;
+      sEl.value = v;
+    }
+    update();
+  });
+}
+
+// ── Initial render ─────────────────────────────────────────────────────
+update();
+</script>
+</body>
+</html>

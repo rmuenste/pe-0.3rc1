@@ -102,7 +102,9 @@ def main():
     J = F_uncapped * dt
     Jcap = cap_factor * m_eff * (-vrn)
     cap_ratio = np.where(J > 0, np.minimum(1.0, Jcap / J), 1.0)
-    F_capped = F_uncapped * cap_ratio
+    # Solver applies: Fmag_weighted = Fmag_capped * blend  (line 2310 in HCL solver)
+    # The blend factor appears twice: once inside Jcap, once after capping.
+    F_applied = F_uncapped * cap_ratio * blend
 
     fig, axes = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
 
@@ -117,7 +119,7 @@ def main():
     ax = axes[1]
     ax.plot(gaps, cap_factor, label="cap factor (alpha * blend)")
     ax.plot(gaps, cap_ratio, label="impulse cap ratio (Jcap/J)")
-    ax.plot(gaps, F_capped, label="capped force [N]")
+    ax.plot(gaps, F_applied, label="applied force [N] (capped * blend)")
     ax.set_xlabel("gap distance [m]")
     ax.set_ylabel("cap / force")
     ax.legend()
