@@ -321,16 +321,16 @@ inline void setupFluidizationSerial(int cfd_rank) {
   const real xMax = 20.3;
   const real yMin = 0.0;
   const real yMax = 0.686;
-  const real zMin = 0.0;
+  const real zMin = 2.0;
   const real zMax = 70.2;
 
   const int baseTargetParticles = 1204;
-  const int targetParticles = static_cast<int>(real(0.25) * static_cast<real>(baseTargetParticles));
+  const int targetParticles = static_cast<int>(real(0.125) * static_cast<real>(baseTargetParticles));
   const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
   const real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
   const real spacing = spacingFactor * radParticle;
   const real pitch = real(2.0) * radParticle + spacing;
-  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle) + real(2.0);
+  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle) + real(0.5);
 
   // Keep one particle radius clearance to the x-boundaries on both sides.
   const real xGridMin = xMin +  1.5 * radParticle;
@@ -354,7 +354,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
 
   int PlaneIDs = 10000;
   MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 0.0, gr, true);
+  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 2.0, gr, true);
 
   createPlane( PlaneIDs++, 0.0, 1.0, 0.0,  0.0, granite );
   // -y
