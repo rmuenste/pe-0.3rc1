@@ -18,6 +18,7 @@ add_subdirectory(vtk_shapes_ascii)
 add_subdirectory(vtk_writer_test)  # VTK Writer verification test
 add_subdirectory(sphere_column_serial)  # Serial sphere column with ShortRangeRepulsion solver
 add_subdirectory(sphere_column_serial_hcl)  # Serial sphere column with HardContactLubricated solver
+add_subdirectory(atc)  # ATC (Annular Tube Configuration) standalone example with timing
 
 # CGAL Examples
 if( CGAL )
