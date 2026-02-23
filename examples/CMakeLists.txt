@@ -16,6 +16,7 @@ add_subdirectory(lubrication_demo)
 add_subdirectory(capsule_spin)
 add_subdirectory(vtk_shapes_ascii)
 add_subdirectory(vtk_writer_test)  # VTK Writer verification test
+add_subdirectory(atc)  # ATC (Annular Tube Configuration) standalone example with timing
 
 # CGAL Examples
 if( CGAL )
