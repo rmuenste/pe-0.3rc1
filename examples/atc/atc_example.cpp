@@ -69,6 +69,107 @@
 
 using namespace pe;
 
+/**
+ * @brief Result structure for centerline position calculations
+ */
+struct CenterlinePosition {
+  Vec3 closestPoint;         // Closest point on centerline to particle
+  real radialDistance;       // Euclidean distance from particle to closest point
+  real lengthAlongCurve;     // Cumulative length from start to closest point
+  real percentageAlongCurve; // Percentage along centerline (0-100%)
+  int segmentIndex;          // Which edge contains the closest point
+};
+
+/**
+ * @brief Calculate total length of a piecewise linear centerline
+ * @param centerline Vector of vertices defining the centerline
+ * @return Total length of the centerline
+ */
+inline real calculateTotalCenterlineLength(const std::vector<Vec3>& centerline) {
+  real totalLength = 0.0;
+  for (size_t i = 0; i < centerline.size() - 1; ++i) {
+    totalLength += (centerline[i + 1] - centerline[i]).length();
+  }
+  return totalLength;
+}
+
+/**
+ * @brief Find closest point on centerline to a given particle position
+ *
+ * For each line segment in the centerline, this function:
+ * 1. Projects the particle position onto the infinite line containing the segment
+ * 2. Clamps the projection to the segment endpoints
+ * 3. Computes the distance from particle to the clamped point
+ * 4. Tracks the segment with minimum distance
+ *
+ * @param particlePos Position of the particle in world coordinates
+ * @param centerline Vector of vertices defining the centerline
+ * @param totalLength Precomputed total length of the centerline
+ * @return CenterlinePosition structure with geometric diagnostics
+ */
+inline CenterlinePosition calculateCenterlinePosition(
+    const Vec3& particlePos,
+    const std::vector<Vec3>& centerline,
+    real totalLength) {
+
+  // Handle empty or degenerate centerline
+  if (centerline.size() < 2) {
+    return CenterlinePosition{Vec3(0,0,0), 0.0, 0.0, 0.0, -1};
+  }
+
+  real minDistance = std::numeric_limits<real>::max();
+  Vec3 closestPoint;
+  real lengthAlongCurve = 0.0;
+  real cumulativeLength = 0.0;
+  int closestSegmentIndex = -1;
+
+  // Iterate over each line segment in the centerline
+  for (size_t i = 0; i < centerline.size() - 1; ++i) {
+    const Vec3& v0 = centerline[i];
+    const Vec3& v1 = centerline[i + 1];
+    Vec3 edgeVec = v1 - v0;
+    real edgeLength = edgeVec.length();
+
+    // Skip degenerate segments
+    if (edgeLength < 1e-10) {
+      continue;
+    }
+
+    // Project particle onto infinite line containing edge
+    // t = (AP · AB) / |AB|^2 where A=v0, B=v1, P=particlePos
+    Vec3 toParticle = particlePos - v0;
+    real t = trans(toParticle) * edgeVec / (edgeLength * edgeLength);
+
+    // Clamp t to [0, 1] to constrain point to line segment
+    t = std::max(real(0), std::min(real(1), t));
+
+    // Closest point on this segment
+    Vec3 pointOnSegment = v0 + edgeVec * t;
+    real distance = (particlePos - pointOnSegment).length();
+
+    // Update if this is the closest segment so far
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestPoint = pointOnSegment;
+      lengthAlongCurve = cumulativeLength + (t * edgeLength);
+      closestSegmentIndex = static_cast<int>(i);
+    }
+
+    cumulativeLength += edgeLength;
+  }
+
+  // Calculate percentage along centerline
+  real percentageAlongCurve = (totalLength > 0.0) ?
+                               (lengthAlongCurve / totalLength) * 100.0 : 0.0;
+
+  return CenterlinePosition{
+    closestPoint,
+    minDistance,
+    lengthAlongCurve,
+    percentageAlongCurve,
+    closestSegmentIndex
+  };
+}
 
 //=================================================================================================
 //
@@ -149,10 +250,66 @@ int main( int argc, char* argv[] )
    //==============================================================================================
    // In the full ATC setup, a triangulated tube mesh with inverted DistanceMap is used.
    // Here we use a simple ground plane as the domain floor for the standalone example.
+   std::string boundaryFileName = std::string("atc_boundary_param_zero.obj");
+   Vec3 boundaryPos(0.0, 0.0, 0.0);  // Boundary mesh in reference position
    MaterialID boundaryMat = createMaterial("boundary", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-   PlaneID groundPlane = createPlane(id++, 0.0, 0.0, 1.0, 0.0, boundaryMat);
-
-   std::cout << "  Domain boundary: ground plane at z=0 (normal = [0,0,1])\n" << std::endl;
+ 
+   // Create boundary mesh as fixed global object
+   TriangleMeshID boundaryMesh = createTriangleMesh(id++, boundaryPos, boundaryFileName, boundaryMat, false, true);
+   boundaryMesh->setFixed(true);
+   //boundaryMesh->setPosition(Vec3(0.000169, -2.256, 0.087286));
+   boundaryMesh->setPosition(Vec3(0.000006, -2.25096, 0.08719));
+ 
+   // Enable DistanceMap acceleration for domain boundary
+   int dmResolution = 128;
+   int dmTolerance = 6;
+   boundaryMesh->enableDistanceMapAcceleration(dmResolution, dmTolerance);
+ 
+   const bool boundaryDistanceMapEnabled = boundaryMesh->hasDistanceMap();
+   const DistanceMap* boundaryDM = boundaryDistanceMapEnabled ? boundaryMesh->getDistanceMap() : nullptr;
+ 
+   if (!boundaryDistanceMapEnabled && isRepresentative) {
+     std::cerr << "WARNING: DistanceMap acceleration failed to initialize for boundary" << std::endl;
+   }
+ 
+   boundaryMesh->getDistanceMap()->invertForDomainBoundary();
+   if (boundaryDistanceMapEnabled && isRepresentative) {
+     // Invert the DistanceMap for domain boundary representation
+     // This transforms: inside mesh -> inside fluid domain (positive distance)
+     //                  outside mesh -> outside fluid domain (negative distance)
+     //                  normals -> point inward to keep particles in domain
+     //boundaryMesh->getDistanceMap()->invertForDomainBoundary();
+     std::cout << "\n--" << "DOMAIN BOUNDARY SETUP"
+               << "--------------------------------------------------------------\n"
+               << " Boundary mesh file                      = " << boundaryFileName << "\n"
+               << " Boundary mesh volume                    = " << boundaryMesh->getVolume() << "\n"
+               << " Distance map enabled                    = yes (INVERTED for domain boundary)\n"
+               << " Distance map grid size                  = "
+               << boundaryDM->getNx() << " x " << boundaryDM->getNy() << " x " << boundaryDM->getNz() << "\n"
+               << " Distance map origin                     = ("
+               << boundaryDM->getOrigin()[0] << ", "
+               << boundaryDM->getOrigin()[1] << ", "
+               << boundaryDM->getOrigin()[2] << ")\n"
+               << " Distance map spacing                    = " << boundaryDM->getSpacing() << "\n"
+               << " Distance map resolution                 = " << dmResolution << "\n"
+               << " Distance map tolerance                  = " << dmTolerance << "\n"
+               << "--------------------------------------------------------------------------------\n" << std::endl;
+ 
+     // Sanity check: Test a point that should be outside the domain
+     Vec3 testPointWorld(-0.4, -2.0, 0.19);  // Outside domain, within grid bounds
+     Vec3 testPointLocal = boundaryMesh->pointFromWFtoBF(testPointWorld);
+     real testDistance = boundaryDM->interpolateDistance(testPointLocal[0], testPointLocal[1], testPointLocal[2]);
+ 
+     std::cout << "\n--" << "ESCAPE DETECTION SANITY CHECK"
+               << "--------------------------------------------------------------\n"
+               << " Test point (world): (" << testPointWorld[0] << ", " << testPointWorld[1] << ", " << testPointWorld[2] << ")\n"
+               << " Test point (local): (" << testPointLocal[0] << ", " << testPointLocal[1] << ", " << testPointLocal[2] << ")\n"
+               << " Signed distance: " << testDistance << "\n"
+               << " Expected: negative (outside domain)\n"
+               << " Result: " << (testDistance < 0.0 ? "PASS - point correctly identified as OUTSIDE" :
+                                 (testDistance > 1e5 ? "OUT OF GRID BOUNDS" : "FAIL - point incorrectly identified as INSIDE")) << "\n"
+               << "--------------------------------------------------------------------------------\n" << std::endl;
+   }
 
    //==============================================================================================
    // Phase 5: Particle Generation along Centerline
