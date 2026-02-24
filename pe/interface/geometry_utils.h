@@ -72,7 +72,8 @@ inline std::vector<Vec3> generatePointsAlongCenterline(
     real sphereRadius,
     real dt = -1.0,  // Default: will be set to 1.0 * sphereRadius if < 0
     int num_rings = 4,
-    int num_steps = 100)
+    int num_steps = 100,
+    int margin_steps = 4)  // Number of ds steps skipped at each end of the curve
 {
     // Set default dt if not specified
     if (dt < 0.0) {
@@ -106,8 +107,8 @@ inline std::vector<Vec3> generatePointsAlongCenterline(
         cumulative_lengths.push_back(cumulative_lengths.back() + edge_lengths[i]);
     }
 
-    // Step 4: Traverse the curve in increments of ds
-    for (double s = 4. * ds + 0.2 * ds; s <= curve_length - 4. * ds; s += ds) {
+    // Step 4: Traverse the curve in increments of ds, skipping margin_steps at each end
+    for (double s = margin_steps * ds + 0.2 * ds; s <= curve_length - margin_steps * ds; s += ds) {
         // Find the edge that contains the current distance s
         size_t edge_index = 0;
         while (edge_index < num_edges && s > cumulative_lengths[edge_index + 1]) {

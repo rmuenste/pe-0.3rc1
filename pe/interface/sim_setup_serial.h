@@ -768,8 +768,11 @@ inline void setupATCSerial(int cfd_rank) {
   real rhoParticle( config.getParticleDensity() );
   MaterialID particleMaterial = createMaterial("particleMaterial", rhoParticle, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
 
-  // Generate sphere positions along the centerline
-  std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad);
+  // Generate sphere positions along the centerline.
+  // num_rings=5 (one extra ring vs. before), margin_steps=20 (up from 4) to keep
+  // a larger empty region at inlet/outlet while preserving ~6992 total particles:
+  //   ~60 cross-sections × 118 particles/section ≈ 7080  (within ±100 of previous count)
+  std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad, -1.0, 5, 100, 20);
 
   int particlesCreated = 0;
   if (config.getPackingMethod() != SimulationConfig::PackingMethod::None) {
