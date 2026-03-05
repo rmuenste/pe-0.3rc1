@@ -210,6 +210,9 @@ public:
    inline void            logProfilingSummary()   const;
    inline size_t          getNumSubcycles()        const;
    inline void            setNumSubcycles( size_t n );
+   inline real            getMinEps()              const { return 0; };
+   inline void            setMinEps( real minEps ) {};
+   inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 ) {};
    //@}
    //**********************************************************************************************
 

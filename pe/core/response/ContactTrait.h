@@ -816,6 +816,42 @@ inline const Vec3& ContactTrait< C<CD,FD,BG,OpenCLSolver> >::getTangentY() const
 
 //=================================================================================================
 //
+//  SPECIALIZATION FOR THE HARD CONTACT AND FLUID SOLVER
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Specialization of ContactTrait for the HardContactAndFluid solver.
+ *
+ * Provides no-op stubs for the lubrication flag/weight interface called by
+ * ContactVector::addLubricationContact. HardContactAndFluid handles collisions
+ * directly without lubrication contacts.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+class ContactTrait< C<CD,FD,BG,HardContactAndFluid> >
+{
+public:
+   explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
+                          const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
+
+   // Required stubs (called by addLubricationContact in ContactVector.h)
+   inline void setLubricationFlag() {}
+   inline void setLubricationWeight( real ) {}
+   inline bool getLubricationFlag() const { return false; }
+   inline real getLubricationWeight() const { return real(1); }
+};
+//*************************************************************************************************
+
+
+//=================================================================================================
+//
 //  SPECIALIZATION FOR THE SHORT-RANGE REPULSION SOLVER
 //
 //=================================================================================================
