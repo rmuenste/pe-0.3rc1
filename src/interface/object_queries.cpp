@@ -10,6 +10,7 @@
 #include <pe/core/detection/fine/DistanceMap.h>
 #include <pe/util/logging/Logger.h>
 #include <pe/core/TimeStep.h>
+#include <pe/config/SimulationConfig.h>
 
 //#define ONLY_ROTATION 
 using namespace pe;
@@ -22,6 +23,17 @@ extern "C"
 void uint64_test(uint64_t* value) {
   *value = 18446744073709551615;
   //*value = 123456789123457890;
+}
+
+extern "C"
+void set_pe_timestep_(double *dTime) {
+  if (dTime == nullptr) {
+    return;
+  }
+
+  const real stepSize = static_cast<real>(*dTime);
+  SimulationConfig::getInstance().setStepsize(stepSize);
+  TimeStep::stepsize(stepSize);
 }
 
 
