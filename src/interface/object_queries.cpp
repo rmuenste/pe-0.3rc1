@@ -36,6 +36,15 @@ void set_pe_timestep_(double *dTime) {
   TimeStep::stepsize(stepSize);
 }
 
+extern "C"
+void get_pe_timestep_(double *dTime) {
+  if (dTime == nullptr) {
+    return;
+  }
+
+  *dTime = static_cast<double>(TimeStep::size());
+}
+
 
 /*
  * This is is build in the pointInsideParticles function. It serves to 
