@@ -214,6 +214,26 @@ extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
 
 
 //=================================================================================================
+extern "C" void commf2c_dns_drag_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+{
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: commf2c_dns_drag_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The DNS drag setup is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
+  fprintf(stderr, "  1. cd build\n");
+  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
+  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
+  fprintf(stderr, "  4. make -j8\n");
+  fprintf(stderr, "========================================================================\n");
+  exit(1);
+}
+//=================================================================================================
+
+
+//=================================================================================================
 extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;
@@ -410,6 +430,11 @@ extern "C" void commf2c_kroupa_(int *Fcomm, int *FcommEx0, int *remoteRank) {
 extern "C" void commf2c_creep_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Creep flow setup
   pe::setupCreepSerial(*remoteRank);
+}
+
+extern "C" void commf2c_dns_drag_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: DNS drag benchmark setup
+  pe::setupDNSDragSerial(*remoteRank);
 }
 
 extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank) {

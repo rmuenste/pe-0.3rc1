@@ -772,7 +772,7 @@ inline void setupATCSerial(int cfd_rank) {
   // num_rings=5 (one extra ring vs. before), margin_steps=20 (up from 4) to keep
   // a larger empty region at inlet/outlet while preserving ~6992 total particles:
   //   ~60 cross-sections × 118 particles/section ≈ 7080  (within ±100 of previous count)
-  std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad, -1.0, 5, 100, 20);
+  std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad, -1.0, 4, 20, 4);
 
   int particlesCreated = 0;
   if (config.getPackingMethod() != SimulationConfig::PackingMethod::None) {
@@ -850,6 +850,94 @@ inline void setupCreepSerial(int cfd_rank) {
   world->setViscosity(simViscosity);
 
   TimeStep::stepsize(0.001);
+}
+
+/**
+ * @brief DNS drag setup for serial mode: periodic unit-cube sphere array
+ *
+ * Creates a monodisperse simple-cubic array of fixed spheres in a unit cube.
+ * The number of spheres is derived from volume fraction and radius settings.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupDNSDragSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::loadFromFile("example.json");
+
+  auto& config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  WorldID world = theWorld();
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
+
+  world->setGravity(config.getGravity());
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(config.getFluidDensity());
+  world->setViscosity(config.getFluidViscosity());
+  world->setDamping(1.0);
+
+  TimeStep::stepsize(config.getStepsize());
+
+  const real radius = config.getBenchRadius();
+  if (radius <= 0.0) {
+    throw std::runtime_error("setupDNSDragSerial: benchRadius must be > 0");
+  }
+
+  const real targetVF = std::max(real(0.0), config.getVolumeFraction());
+  const real sphereVol = (4.0 / 3.0) * M_PI * std::pow(radius, 3);
+
+  int targetCount = 1;
+  if (targetVF > 0.0 && sphereVol > 0.0) {
+    targetCount = std::max(1, static_cast<int>(std::round(targetVF / sphereVol)));
+  }
+
+  int nPerDim = static_cast<int>(std::ceil(std::cbrt(static_cast<double>(targetCount))));
+  nPerDim = std::max(1, nPerDim);
+
+  const int nPerDimMax = static_cast<int>(std::floor(1.0 / (2.0 * radius)));
+  if (nPerDimMax < 1) {
+    throw std::runtime_error("setupDNSDragSerial: sphere diameter exceeds unit-cube side length");
+  }
+  nPerDim = std::min(nPerDim, nPerDimMax);
+
+  const real spacing = 1.0 / static_cast<real>(nPerDim);
+  MaterialID particleMaterial = createMaterial(
+      "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  int idx = 0;
+  int particlesCreated = 0;
+  for (int k = 0; k < nPerDim; ++k) {
+    for (int j = 0; j < nPerDim; ++j) {
+      for (int i = 0; i < nPerDim; ++i) {
+        Vec3 pos((static_cast<real>(i) + 0.5) * spacing,
+                 (static_cast<real>(j) + 0.5) * spacing,
+                 (static_cast<real>(k) + 0.5) * spacing);
+        SphereID sphere = createSphere(++idx, pos, radius, particleMaterial, true);
+        sphere->setFixed(true);
+        sphere->setLinearVel(0.0, 0.0, 0.0);
+        sphere->setAngularVel(0.0, 0.0, 0.0);
+        ++particlesCreated;
+      }
+    }
+  }
+
+  const real actualVF = particlesCreated * sphereVol;
+
+  if (isRepresentative) {
+    std::cout << "\n--DNS DRAG SETUP---------------------------------------------\n"
+              << " Fluid viscosity                         = " << config.getFluidViscosity() << "\n"
+              << " Fluid density                           = " << config.getFluidDensity() << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Radius                                  = " << radius << "\n"
+              << " Target volume fraction                  = " << targetVF << "\n"
+              << " Spheres per dimension                   = " << nPerDim << "\n"
+              << " Number of spheres                       = " << particlesCreated << "\n"
+              << " Achieved volume fraction (unit cube)    = " << actualVF << "\n"
+              << "-------------------------------------------------------------\n"
+              << std::endl;
+  }
 }
 
 /**
