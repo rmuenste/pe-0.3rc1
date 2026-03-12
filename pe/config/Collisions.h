@@ -32,7 +32,9 @@
  *   - pe::detection::coarse::HashGrids
  *   - pe::detection::coarse::SweepAndPrune
  */
+#ifndef pe_COARSE_COLLISION_DETECTOR
 #define pe_COARSE_COLLISION_DETECTOR  pe::detection::coarse::HashGrids
+#endif
 //*************************************************************************************************
 
 
@@ -45,7 +47,9 @@
  * are available for the fine collision detection:
  *   - pe::detection::fine::MaxContacts
  */
+#ifndef pe_FINE_COLLISION_DETECTOR
 #define pe_FINE_COLLISION_DETECTOR  pe::detection::fine::MaxContacts
+#endif
 //*************************************************************************************************
 
 
@@ -59,7 +63,9 @@
  *   - pe::batches::SingleBatch
  *   - pe::batches::UnionFind
  */
+#ifndef pe_BATCH_GENERATOR
 #define pe_BATCH_GENERATOR  pe::batches::UnionFind
+#endif
 //*************************************************************************************************
 
 
@@ -82,7 +88,9 @@
  *   - pe::response::HardContactAndFluid
  *   - pe::response::OpenCLSolver
  */
+#ifndef pe_CONSTRAINT_SOLVER
 #define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
+#endif
 //#define PE_LUBRICATION_CONTACTS 1
 //*************************************************************************************************
 

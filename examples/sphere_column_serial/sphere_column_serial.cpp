@@ -19,13 +19,17 @@
  *  With dt = 1e-3 s and F_max/m ≈ 131,000 m/s², sub-cycling at N=5000
  *  gives dt_sub = 2e-7 s, limiting Δv per sub-step to ~0.026 m/s << v_entry.
  *  Optional velocity damping (γ) is set for near-critical settling.
+ *  Compile-time guard: this binary requires pe_CONSTRAINT_SOLVER =
+ *  pe::response::ShortRangeRepulsion.
  */
 //=================================================================================================
 
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include <pe/core.h>
@@ -39,6 +43,9 @@ using namespace pe;
 // Visualization variables
 bool g_vtk( true );
 bool singleSphereTest( false );
+std::string g_vtk_output_dir( "./paraview" );
+int g_vtk_spacing( 10 );
+unsigned int g_numRows( 5 );
 
 void doSingleSphereTest() {
 
@@ -51,8 +58,6 @@ void doSingleSphereTest() {
    const real rhoSRR     ( real(6.858e-4) );  // security zone width    [m]  (0.06858 cm)
    const real epsSRR     ( real(5e-2)     );  // stiffness         [N⁻¹]   (5e-7 dyne⁻¹ → 5e-2 N⁻¹)
    const real gammaSRR   ( real(0.5)      );  // velocity damping  [N·s/m]  (~critical near equilibrium)
-   const int  visspacing = 10;
-
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -9.81 );
 
@@ -94,7 +99,7 @@ void doSingleSphereTest() {
 
    // Setup of the VTK visualization
    if( g_vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
+      vtk::WriterID vtkw = vtk::activateWriter( g_vtk_output_dir.c_str(), g_vtk_spacing, 0, timesteps, false);
    }
 
    double last_step_ms = 0.0;
@@ -129,25 +134,30 @@ void doColumnTest()
    //   x ∈ [0, 0.2030 m]   (20.30 cm)
    //   y ∈ [0, 6.858e-3 m]  (0.686 cm — barely wider than one sphere diameter)
    //   floor at z = 0 (open top)
-   //
-   // Single sphere placed at the centre of x and y, 3 diameters above the floor.
-   // The y-gap (6.858mm - 2*3.175mm = 0.508mm) is less than rhoSRR (0.686mm),
-   // so the sphere is permanently inside both y-wall security zones simultaneously.
 
    const unsigned int timesteps( 300 );
    const real         dt( real(1e-3) );
-   const int          visspacing( 10 );
-
    // --- Pan et al. (2002) parameters in SI ---
    const real radParticle( real(3.175e-3) );  // sphere radius          [m]  (0.3175 cm)
+   const real dParticle  ( real(2) * radParticle );
    const real rhoParticle( real(1140)     );  // particle density  [kg/m³]  (1.14 g/cm³)
    const real rhoSRR     ( real(6.858e-4) );  // security zone width    [m]  (0.06858 cm)
    const real epsSRR     ( real(5e-2)     );  // stiffness         [N⁻¹]   (5e-7 dyne⁻¹)
    const real gammaSRR   ( real(0.5)      );  // velocity damping  [N·s/m]
+   const real dEff       ( dParticle + rhoSRR );  // centre pitch with surface gap = rho
 
    // Column box dimensions (SI)
    const real boxX( real(0.2030)   );   // 20.30 cm
    const real boxY( real(6.858e-3) );   // 0.686 cm  (= 2r + 0.508mm clearance)
+
+   // Stacked-bed layout: one layer in y, several rows in z, spheres spread across x.
+   const unsigned int nPerRow = static_cast<unsigned int>( std::floor( boxX / dEff ) );
+   const unsigned int nRows   = g_numRows;
+   const unsigned int nTotal  = nPerRow * nRows;
+   const real rowWidth = real(nPerRow - 1) * dEff + dParticle;
+   const real xOffset  = ( boxX - rowWidth ) / real(2) + radParticle;
+   const real y0       = boxY / real(2);
+   const real zBase    = radParticle + rhoSRR / real(2);
 
    WorldID world = theWorld();
    world->setGravity( 0.0, 0.0, -9.81 );
@@ -169,41 +179,49 @@ void doColumnTest()
    theCollisionSystem()->getContactSolver().setGamma( gammaSRR );
    theCollisionSystem()->setNumSubcycles( 5000 );
 
-   // Single sphere: centred in x and y, 3 diameters (= 6 radii) above the floor.
-   //   gap_floor = 3 * 2 * r = 6r  →  z_centre = r + 6r = 7r
-   //   gap_y     = (boxY - 2r) / 2 = 0.254e-3 m  (<< rhoSRR: always in security zone)
-   const real x0 = boxX / real(2);
-   const real y0 = boxY / real(2);
-   const real z0 = real(7) * radParticle;   // r + 3 diameters = 7r above floor
-   SphereID s = createSphere( 0, Vec3(x0, y0, z0), radParticle, mat, true );
+   std::vector<SphereID> spheres;
+   spheres.reserve( nTotal );
+   int id = 0;
+   for( unsigned int row = 0; row < nRows; ++row ) {
+      const real zc = zBase + real(row) * dEff;
+      for( unsigned int col = 0; col < nPerRow; ++col ) {
+         const real xc = xOffset + real(col) * dEff;
+         spheres.push_back( createSphere( id++, Vec3( xc, y0, zc ), radParticle, mat, true ) );
+      }
+   }
 
-   const real gapY = y0 - radParticle;   // gap from back wall (= gap to front wall by symmetry)
+   const real bedHeight0 = zBase + real(nRows - 1) * dEff + radParticle;
+   const real gapY = y0 - radParticle;
 
    std::cout << std::fixed << std::setprecision(6)
-             << "\n--- Thin-column single-sphere SRR test (Pan et al. 2002 geometry) ---\n"
-             << "  box x     = " << boxX*real(1e2) << " cm  y = " << boxY*real(1e3) << " mm\n"
-             << "  radius    = " << radParticle*real(1e3) << " mm\n"
-             << "  y-gap     = " << gapY*real(1e3)
+             << "\n--- Stacked-sphere SRR column test (Pan et al. 2002 geometry) ---\n"
+             << "  box x          = " << boxX*real(1e2) << " cm  y = " << boxY*real(1e3) << " mm\n"
+             << "  radius         = " << radParticle*real(1e3) << " mm\n"
+             << "  d_eff          = " << dEff*real(1e3) << " mm  (d + rho)\n"
+             << "  y-gap          = " << gapY*real(1e3)
              <<    " mm  (rhoSRR = " << rhoSRR*real(1e3) << " mm)"
              <<    "  → ALWAYS inside y-wall SRR zone\n"
-             << "  rho (SRR) = " << rhoSRR  << " m\n"
-             << "  eps       = " << epsSRR  << " N^-1\n"
-             << "  gamma     = " << gammaSRR << " N.s/m\n"
-             << "  z_initial = " << z0*real(1e3) << " mm  (= 7r = floor-gap 6r = 3 diameters)\n"
-             << "  nSubcycles= 5000,  dt = 1e-3 s  =>  dt_sub = 2e-7 s\n"
+             << "  spheres/row    = " << nPerRow << "\n"
+             << "  rows           = " << nRows << "\n"
+             << "  total spheres  = " << nTotal << "\n"
+             << "  bed height(t=0)= " << bedHeight0*real(1e2) << " cm  ("
+             <<    bedHeight0/real(2.54e-2) << " in)\n"
+             << "  rho (SRR)      = " << rhoSRR  << " m\n"
+             << "  eps            = " << epsSRR  << " N^-1\n"
+             << "  gamma          = " << gammaSRR << " N.s/m\n"
+             << "  nSubcycles     = 5000,  dt = 1e-3 s  =>  dt_sub = 2e-7 s\n"
              << "\n"
              << std::setw(6)  << "step"
-             << std::setw(12) << "z [mm]"
-             << std::setw(12) << "gap_z/rho"
-             << std::setw(12) << "vz [m/s]"
-             << std::setw(12) << "y [mm]"
-             << std::setw(12) << "vy [m/s]"
+             << std::setw(14) << "bedH [cm]"
+             << std::setw(14) << "bedH [in]"
+             << std::setw(14) << "minGap/rho"
+             << std::setw(14) << "maxVz [m/s]"
              << std::setw(12) << "t_step[ms]"
              << "\n"
-             << std::string(78, '-') << "\n";
+             << std::string(60, '-') << "\n";
 
    if( g_vtk ) {
-      vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false );
+      vtk::activateWriter( g_vtk_output_dir.c_str(), g_vtk_spacing, 0, timesteps, false );
    }
 
    double last_step_ms = 0.0;
@@ -211,15 +229,39 @@ void doColumnTest()
    for( unsigned int timestep = 0; timestep <= timesteps; ++timestep ) {
 
       if( timestep <= 60 || timestep % 5 == 0 ) {
-         const Vec3 pos = s->getPosition();
-         const Vec3 vel = s->getLinearVel();
-         const real gap_z = pos[2] - radParticle;
+         real maxZ     = -std::numeric_limits<real>::max();
+         real minGap   = std::numeric_limits<real>::max();
+         real maxVzMag = real(0);
+
+         for( unsigned int row = 0; row < nRows; ++row ) {
+            for( unsigned int col = 0; col < nPerRow; ++col ) {
+               const SphereID& sphere = spheres[row * nPerRow + col];
+               const Vec3 pos = sphere->getPosition();
+               const Vec3 vel = sphere->getLinearVel();
+               const real top = pos[2] + radParticle;
+
+               if( top > maxZ ) maxZ = top;
+
+               const real gapFloor = pos[2] - radParticle;
+               if( gapFloor < minGap ) minGap = gapFloor;
+
+               if( row > 0 ) {
+                  const SphereID& below = spheres[(row - 1) * nPerRow + col];
+                  const real centerGap = pos[2] - below->getPosition()[2];
+                  const real surfGap = centerGap - dParticle;
+                  if( surfGap < minGap ) minGap = surfGap;
+               }
+
+               const real vzAbs = std::abs( vel[2] );
+               if( vzAbs > maxVzMag ) maxVzMag = vzAbs;
+            }
+         }
+
          std::cout << std::setw(6)  << timestep
-                   << std::setw(12) << std::setprecision(4) << pos[2]*real(1e3)
-                   << std::setw(12) << gap_z / rhoSRR
-                   << std::setw(12) << vel[2]
-                   << std::setw(12) << pos[1]*real(1e3)
-                   << std::setw(12) << vel[1]
+                   << std::setw(14) << std::setprecision(4) << maxZ * real(1e2)
+                   << std::setw(14) << maxZ / real(2.54e-2)
+                   << std::setw(14) << minGap / rhoSRR
+                   << std::setw(14) << std::setprecision(6) << maxVzMag
                    << std::fixed << std::setprecision(2) << std::setw(12) << last_step_ms
                    << "\n";
       }
@@ -242,12 +284,24 @@ int main( int argc, char* argv[] )
    CommandLineInterface& cli = CommandLineInterface::getInstance();
    cli.getDescription().add_options()
      ( "file",          value<std::string>()->default_value(""), "obj mesh file to be loaded" )
+     ( "vtk-dir",       value<std::string>()->default_value("./paraview"), "output directory for ParaView VTK files" )
+     ( "vtk-spacing",   value<int>()->default_value(10), "write VTK output every N timesteps" )
+     ( "num-rows",      value<unsigned int>()->default_value(5), "number of sphere rows in column test" )
      ( "single-sphere", "run single-sphere floor-impact test instead of column test" );
    cli.parse( argc, argv );
    cli.evaluateOptions();
    variables_map& vm = cli.getVariablesMap();
    if( vm.count( "no-vtk" ) > 0 )
       g_vtk = false;
+   g_vtk_output_dir = vm["vtk-dir"].as<std::string>();
+   g_vtk_spacing = vm["vtk-spacing"].as<int>();
+   if( g_vtk_spacing <= 0 ) {
+      throw std::invalid_argument( "vtk-spacing must be positive" );
+   }
+   g_numRows = vm["num-rows"].as<unsigned int>();
+   if( g_numRows == 0 ) {
+      throw std::invalid_argument( "num-rows must be positive" );
+   }
    if( vm.count( "single-sphere" ) > 0 )
       singleSphereTest = true;
 
