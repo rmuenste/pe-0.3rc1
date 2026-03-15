@@ -885,24 +885,37 @@ inline void setupDNSDragSerial(int cfd_rank) {
     throw std::runtime_error("setupDNSDragSerial: benchRadius must be > 0");
   }
 
+  const real domainLength = 0.1;
+  const real domainVolume = domainLength * domainLength * domainLength;
+  const real diameter = 2.0 * radius;
+  const real wallSurfaceGap = diameter;
+  const real particleSurfaceGap = diameter;
+  const real wallCenterOffset = radius + wallSurfaceGap;
+  const real minCenterSpacing = diameter + particleSurfaceGap;
+
   const real targetVF = std::max(real(0.0), config.getVolumeFraction());
   const real sphereVol = (4.0 / 3.0) * M_PI * std::pow(radius, 3);
 
   int targetCount = 1;
   if (targetVF > 0.0 && sphereVol > 0.0) {
-    targetCount = std::max(1, static_cast<int>(std::round(targetVF / sphereVol)));
+    targetCount = std::max(1, static_cast<int>(std::round(targetVF * domainVolume / sphereVol)));
   }
 
   int nPerDim = static_cast<int>(std::ceil(std::cbrt(static_cast<double>(targetCount))));
   nPerDim = std::max(1, nPerDim);
 
-  const int nPerDimMax = static_cast<int>(std::floor(1.0 / (2.0 * radius)));
+  const real availableSpan = domainLength - 2.0 * wallCenterOffset;
+  int nPerDimMax = 0;
+  if (availableSpan >= 0.0) {
+    nPerDimMax = 1 + static_cast<int>(std::floor(availableSpan / minCenterSpacing));
+  }
   if (nPerDimMax < 1) {
-    throw std::runtime_error("setupDNSDragSerial: sphere diameter exceeds unit-cube side length");
+    throw std::runtime_error(
+        "setupDNSDragSerial: spheres do not fit into [0,0.1]^3 with one-diameter wall clearance");
   }
   nPerDim = std::min(nPerDim, nPerDimMax);
 
-  const real spacing = 1.0 / static_cast<real>(nPerDim);
+  const real spacing = (nPerDim > 1) ? availableSpan / static_cast<real>(nPerDim - 1) : 0.0;
   MaterialID particleMaterial = createMaterial(
       "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
@@ -911,9 +924,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
   for (int k = 0; k < nPerDim; ++k) {
     for (int j = 0; j < nPerDim; ++j) {
       for (int i = 0; i < nPerDim; ++i) {
-        Vec3 pos((static_cast<real>(i) + 0.5) * spacing,
-                 (static_cast<real>(j) + 0.5) * spacing,
-                 (static_cast<real>(k) + 0.5) * spacing);
+        Vec3 pos(wallCenterOffset + static_cast<real>(i) * spacing,
+                 wallCenterOffset + static_cast<real>(j) * spacing,
+                 wallCenterOffset + static_cast<real>(k) * spacing);
         SphereID sphere = createSphere(++idx, pos, radius, particleMaterial, true);
         sphere->setFixed(true);
         sphere->setLinearVel(0.0, 0.0, 0.0);
@@ -923,18 +936,22 @@ inline void setupDNSDragSerial(int cfd_rank) {
     }
   }
 
-  const real actualVF = particlesCreated * sphereVol;
+  const real actualVF = particlesCreated * sphereVol / domainVolume;
 
   if (isRepresentative) {
     std::cout << "\n--DNS DRAG SETUP---------------------------------------------\n"
               << " Fluid viscosity                         = " << config.getFluidViscosity() << "\n"
               << " Fluid density                           = " << config.getFluidDensity() << "\n"
               << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Domain length                           = " << domainLength << "\n"
               << " Radius                                  = " << radius << "\n"
               << " Target volume fraction                  = " << targetVF << "\n"
+              << " Wall surface gap                        = " << wallSurfaceGap << "\n"
+              << " Particle surface gap                    = " << particleSurfaceGap << "\n"
               << " Spheres per dimension                   = " << nPerDim << "\n"
+              << " Center spacing                          = " << spacing << "\n"
               << " Number of spheres                       = " << particlesCreated << "\n"
-              << " Achieved volume fraction (unit cube)    = " << actualVF << "\n"
+              << " Achieved volume fraction                = " << actualVF << "\n"
               << "-------------------------------------------------------------\n"
               << std::endl;
   }
