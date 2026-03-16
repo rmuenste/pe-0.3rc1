@@ -15,6 +15,8 @@ typedef struct {
   real time;
   real density;        // Material density from PE
   real aabb[3];        // AABB extents (xmax-xmin, ymax-ymin, zmax-zmin)
+  real radius;         // Physical radius for spheres, 0 otherwise
+  int typeId;          // PE geometry type (see pe/core/GeomType.h)
   int localIdx;
   int uniqueIdx;
   int systemIdx;

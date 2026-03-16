@@ -1254,11 +1254,14 @@ void getPartStructByIdx(int idx, particleData_t *particle) {
     particle->localIdx  = idx;
     particle->systemIdx = -1;
     particle->time = -1.0;
+    particle->typeId = static_cast<int>(body->getType());
+    particle->radius = 0.0;
 
     // Get material density (need to cast to specific geometry type)
     MaterialID mat;
     if(body->getType() == sphereType) {
       SphereID s = static_body_cast<Sphere>(body);
+      particle->radius = s->getRadius();
       mat = s->getMaterial();
     }
     else if(body->getType() == capsuleType) {
@@ -1499,11 +1502,14 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     particle->localIdx  = idx;
     particle->systemIdx = -1;
     particle->time = -1.0;
+    particle->typeId = static_cast<int>(body->getType());
+    particle->radius = 0.0;
 
     // Get material density (need to cast to specific geometry type)
     MaterialID mat;
     if(body->getType() == sphereType) {
       SphereID s = static_body_cast<Sphere>(body);
+      particle->radius = s->getRadius();
       mat = s->getMaterial();
     }
     else if(body->getType() == capsuleType) {
