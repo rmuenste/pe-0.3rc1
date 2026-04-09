@@ -424,6 +424,202 @@ inline void setupFluidizationSerial(int cfd_rank) {
 }
 
 /**
+ * @brief Fluidization setup for serial mode using Short-Range Repulsion (SRR)
+ *
+ * Pan et al. (2002) fluidization column with the ShortRangeRepulsion solver
+ * instead of the lubrication-based hard-contact solver.  The SRR force law
+ * (Eq. 2.1) prevents particle overlap via a soft quadratic penalty within a
+ * security zone of width rho.
+ *
+ * Domain and particle geometry match setupFluidizationSerial (Pan et al. 2002,
+ * CGS units): [0, 20.3] x [0, 0.686] x [2.0, 70.2] cm, diameter 0.635 cm.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupFluidizationSRRSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  WorldID world = theWorld();
+  CollisionSystemID cs = theCollisionSystem();
+
+  world->setGravity(config.getGravity());
+
+  const real simViscosity(config.getFluidViscosity());
+  const real simRho(config.getFluidDensity());
+  const real rhoParticle(config.getParticleDensity());
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  // CRITICAL: Enable automatic force reset after each simulation step
+  // This prevents force accumulation when using substepping
+  world->setAutoForceReset(true);
+
+  //==============================================================================================
+  // SRR solver configuration (Pan et al. 2002, Eq. 2.1, CGS parameters)
+  //==============================================================================================
+  // Paper parameters (§4):
+  //   rho   = 0.06858 cm        (security zone width)
+  //   eps_p = eps_w = 5e-7 dyne⁻¹
+  //   gamma = velocity damping for near-critical settling
+  //
+  // Sub-cycling: F_max/m ~ 131,000 m/s²  →  N=5000 gives dt_sub = 2e-7 s
+  //              for dt = 1e-3 s, Δv_sub ~ 0.026 m/s  (stable)
+  const real rhoSRR   ( real(0.06858) );  // security zone width      [cm]
+  const real epsSRR   ( real(5e-7)    );  // stiffness                [dyne⁻¹]
+  const real gammaSRR ( real(0.5)     );  // velocity damping         [dyne·s/cm]
+  const size_t nSubcycles = 5000;
+
+  cs->getContactSolver().setRho  ( rhoSRR  );
+  cs->getContactSolver().setEpsP ( epsSRR  );
+  cs->getContactSolver().setEpsW ( epsSRR  );
+  cs->getContactSolver().setGamma( gammaSRR );
+  cs->setNumSubcycles( nSubcycles );
+
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
+                                               false);
+  }
+
+  // Activate checkpointer if configured
+  if (isRepresentative && config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         config.getPointerspacing(),
+                         0, config.getTimesteps());
+  }
+
+  //==============================================================================================
+  // Pan et al. (2002) column geometry (CGS units)
+  //==============================================================================================
+  const real xMin = 0.0;
+  const real xMax = 20.3;
+  const real yMin = 0.0;
+  const real yMax = 0.686;
+  const real zMin = 2.0;
+  const real zMax = 70.2;
+
+  const int baseTargetParticles = 1204;
+  const int targetParticles = static_cast<int>(real(0.125) * static_cast<real>(baseTargetParticles));
+  const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
+  const real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
+  const real spacing = spacingFactor * radParticle;
+  const real pitch = real(2.0) * radParticle + spacing;
+  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle) + real(0.5);
+
+  const real xGridMin = xMin + 1.5 * radParticle;
+  const real xGridMax = xMax - radParticle;
+  const real xSpan = xGridMax - xGridMin;
+  const real ySpan = (yMax - yMin) - real(2.0) * radParticle;
+  const real zSpan = (zMax - zStart) - radParticle;
+
+  const int nxMax = static_cast<int>(std::floor(xSpan / pitch)) + 1;
+  const int nyMax = static_cast<int>(std::floor(ySpan / pitch)) + 1;
+  const int nzMax = static_cast<int>(std::floor(zSpan / pitch)) + 1;
+
+  if (nxMax <= 0 || nyMax <= 0 || nzMax <= 0) {
+    throw std::runtime_error("setupFluidizationSRRSerial: invalid grid dimensions for requested geometry.");
+  }
+
+  const int maxCapacity = nxMax * nyMax * nzMax;
+  if (maxCapacity < targetParticles) {
+    throw std::runtime_error("setupFluidizationSRRSerial: domain capacity smaller than requested particle count.");
+  }
+
+  //==============================================================================================
+  // Boundary planes: floor + y-walls (open top, open x-sides)
+  //==============================================================================================
+  int PlaneIDs = 10000;
+  MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 2.0, gr, true);   // floor at z = 2.0
+  createPlane(PlaneIDs++, 0.0, 1.0, 0.0, 0.0, gr, true);   // +y wall at y = 0
+  createPlane(PlaneIDs++, 0.0,-1.0, 0.0, -0.686, gr, true); // -y wall at y = 0.686
+
+  //==============================================================================================
+  // Particle placement (grid packing)
+  //==============================================================================================
+  MaterialID myMaterial = createMaterial("FluidizationSRR", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  int particlesCreated = 0;
+  int usedNx = 0;
+  int usedNy = 0;
+  int usedNz = 0;
+
+  int globalIndex = 0;
+  if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid) {
+    for (int iz = 0; iz < nzMax && globalIndex < targetParticles; ++iz) {
+      const real z = zStart + static_cast<real>(iz) * pitch;
+      for (int iy = 0; iy < nyMax && globalIndex < targetParticles; ++iy) {
+        const real y = (yMin + radParticle) + static_cast<real>(iy) * pitch;
+        for (int ix = 0; ix < nxMax && globalIndex < targetParticles; ++ix) {
+          const real x = xGridMin + static_cast<real>(ix) * pitch;
+          createSphere(globalIndex, Vec3(x, y, z), radParticle, myMaterial, true);
+          ++particlesCreated;
+          ++globalIndex;
+          usedNx = std::max(usedNx, ix + 1);
+          usedNy = std::max(usedNy, iy + 1);
+          usedNz = std::max(usedNz, iz + 1);
+        }
+      }
+    }
+  }
+
+  TimeStep::stepsize(config.getStepsize());
+
+  if (isRepresentative) {
+    const real sphereVol = (real(4.0) / real(3.0)) * M_PI * radParticle * radParticle * radParticle;
+    const real totalVol = static_cast<real>(particlesCreated) * sphereVol;
+    const real totalMass = totalVol * rhoParticle;
+    const real dt = config.getStepsize();
+    const real dtSub = dt / static_cast<real>(nSubcycles);
+
+    std::cout << "\n--" << "Fluidization SRR SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << dt << "\n"
+              << " Substepping                             = " << config.getSubsteps() << "\n"
+              << " Auto force reset                        = enabled\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Column bounds [x,y,z]                   = "
+              << "[" << xMin << "," << xMax << "] x "
+              << "[" << yMin << "," << yMax << "] x "
+              << "[" << zMin << "," << zMax << "]\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << " Particle radius                         = " << radParticle << "\n"
+              << " Particle diameter                       = " << (real(2.0) * radParticle) << "\n"
+              << " Spacing factor                          = " << spacingFactor << "\n"
+              << " Gap (between surfaces)                  = " << spacing << "\n"
+              << " Center-to-center pitch                  = " << pitch << "\n"
+              << " Grid start z                            = " << zStart << "\n"
+              << " Grid extents used (nx,ny,nz)            = "
+              << usedNx << ", " << usedNy << ", " << usedNz << "\n"
+              << " Total particle mass                     = " << totalMass << "\n"
+              << " Total particle volume                   = " << totalVol << "\n"
+              << " --- SRR parameters (Pan et al. 2002) ---\n"
+              << " rho (security zone)                     = " << rhoSRR << " cm\n"
+              << " eps_p = eps_w                           = " << epsSRR << " dyne^-1\n"
+              << " gamma (damping)                         = " << gammaSRR << " dyne.s/cm\n"
+              << " nSubcycles                              = " << nSubcycles << "\n"
+              << " dt_sub                                  = " << dtSub << " s\n"
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
+              << " Checkpointing                           = " << (config.getUseCheckpointer() ? "enabled" : "disabled") << "\n"
+              << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+}
+
+/**
  * @brief Generic serial mode initialization
  *
  * This is a generic initialization function that can be used for various

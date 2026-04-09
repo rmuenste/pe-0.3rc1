@@ -31,6 +31,7 @@
 
 #include <pe/core/rigidbody/GeomPrimitive.h>
 #include <pe/core/Thresholds.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/Types.h>
 #include <pe/math/Constants.h>
 #include <pe/math/Matrix3x3.h>
@@ -218,7 +219,7 @@ inline real SphereBase::calcDensity( real radius, real mass )
  */
 inline void SphereBase::calcBoundingBox()
 {
-   const real length( radius_ + contactThreshold + lubricationThreshold );
+   const real length( radius_ + contactThreshold + lubrication::getLubricationThreshold() );
 
    aabb_[0] = gpos_[0] - length;
    aabb_[1] = gpos_[1] - length;

@@ -402,6 +402,11 @@ extern "C" void commf2c_fluidization_(int *Fcomm, int *FcommEx0, int *remoteRank
   pe::setupFluidizationSerial(*remoteRank);
 }
 
+extern "C" void commf2c_fluidization_srr_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Fluidization with Short-Range Repulsion solver
+  pe::setupFluidizationSRRSerial(*remoteRank);
+}
+
 extern "C" void commf2c_dcav_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: DCAV setup
   pe::setupDCAVSerial(*remoteRank);
