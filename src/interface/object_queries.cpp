@@ -1136,8 +1136,8 @@ void setForcesByIdx(int idx,
   body = world->getBody(static_cast<unsigned int>(widx));
 
   Vec3 f(force[0], force[1], force[2]);
-  body->setForce(1.025 * f);
-  Vec3 t(0.0, 0.0, 0.0);
+  body->setForce(f);
+  Vec3 t(torque[0], torque[1], torque[2]);
   body->setTorque(t);
 
 } 
@@ -1169,7 +1169,7 @@ void setRemoteForcesByIdx(int idx,
 
   Vec3 f(force[0], force[1], force[2]);
   body->setForce(f);
-  Vec3 t(0.0, 0.0, 0.0);
+  Vec3 t(torque[0], torque[1], torque[2]);
   body->setTorque(t);
 
 } 
