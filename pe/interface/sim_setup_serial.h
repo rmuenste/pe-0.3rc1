@@ -1540,6 +1540,8 @@ inline void stepSimulationSerial() {
   // in the first substep (with reduced dt), then reset to zero, causing incorrect dynamics.
   // Use the PE library's built-in applyFluidForces() method which properly handles
   // force application and reset.
+  SerialStepContext serialStepCtx = {
+      world, config, isRepresentative, timestep, fullStepSize, substeps};
   for (auto it = theCollisionSystem()->getBodyStorage().begin();
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
@@ -1557,38 +1559,9 @@ inline void stepSimulationSerial() {
     Vec3 v_after = body->getLinearVel();
     Vec3 deltaV = v_after - v_before;
     real deltaVMag = deltaV.length();
-
-    // Log if stuck OR if force/velocity change is large
-    if (body->isStuck_ || forceMag > 50.0 || deltaVMag > 5.0 || v_after.length() > 10.0) {
-      pe_LOG_INFO_SECTION( log ) {
-        log << "FLUID FORCE APPLICATION at timestep " << timestep << ":\n";
-        log << "  Particle (ID=" << body->getSystemID() << ")\n";
-        log << "  Trigger: ";
-        if (body->isStuck_) log << "[STUCK] ";
-        if (forceMag > 50.0) log << "[HIGH FORCE=" << forceMag << "] ";
-        if (deltaVMag > 5.0) log << "[LARGE DELTA_V=" << deltaVMag << "] ";
-        if (v_after.length() > 10.0) log << "[HIGH VELOCITY=" << v_after.length() << "] ";
-        log << "\n";
-        log << "  Applied force: (" << force[0] << ", " << force[1] << ", " << force[2] << ")\n";
-        log << "  Force magnitude: " << forceMag << "\n";
-        log << "  Mass: " << mass << ", invMass: " << body->getInvMass() << "\n";
-        log << "  dt: " << fullStepSize << "\n";
-        log << "  Velocity change (Δv = F/m * dt): (" << deltaV[0] << ", " << deltaV[1] << ", " << deltaV[2] << ")\n";
-        log << "  Velocity change magnitude: " << deltaVMag << "\n";
-        log << "  Velocity before: (" << v_before[0] << ", " << v_before[1] << ", " << v_before[2]
-            << ") mag=" << v_before.length() << "\n";
-        log << "  Velocity after: (" << v_after[0] << ", " << v_after[1] << ", " << v_after[2]
-            << ") mag=" << v_after.length() << "\n";
-
-        if (forceMag > 50.0) {
-          log << "  >>> DIAGNOSIS: Extremely high fluid force from CFD!\n";
-          log << "  >>> Expected Δv = (1/" << mass << ") * " << fullStepSize << " * " << forceMag << " = " << (forceMag * fullStepSize / mass) << "\n";
-        }
-        if (deltaVMag > 5.0) {
-          log << "  >>> WARNING: Single timestep velocity change > 5.0 - particle will likely be stuck!\n";
-        }
-      }
-    }
+    FluidForceApplicationContext forceCtx = {
+        body, v_before, force, forceMag, mass, v_after, deltaV, deltaVMag};
+    serialStepFeatureSet().afterFluidForceApplication(serialStepCtx, forceCtx);
   }
 
   // Set global timestep to substep size for physics integration
@@ -1649,8 +1622,6 @@ inline void stepSimulationSerial() {
     }
   }
 
-  SerialStepContext serialStepCtx = {
-      world, config, isRepresentative, timestep, fullStepSize, substeps};
   serialStepFeatureSet().afterMainStep(serialStepCtx);
 
   // Particle diagnostics output (once per main timestep only)

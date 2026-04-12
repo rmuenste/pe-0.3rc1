@@ -94,14 +94,29 @@ struct SerialStepContext {
   int substeps;
 };
 
+struct FluidForceApplicationContext {
+  BodyID body;
+  Vec3 velocityBefore;
+  Vec3 appliedForce;
+  real forceMagnitude;
+  real mass;
+  Vec3 velocityAfter;
+  Vec3 deltaVelocity;
+  real deltaVelocityMagnitude;
+};
+
 class SerialStepFeature {
  public:
   virtual ~SerialStepFeature() {}
+  virtual void afterFluidForceApplication(
+      const SerialStepContext&, const FluidForceApplicationContext&) {}
   virtual void afterMainStep(const SerialStepContext& ctx) = 0;
 };
 
 class NullSerialStepFeature : public SerialStepFeature {
  public:
+  virtual void afterFluidForceApplication(
+      const SerialStepContext&, const FluidForceApplicationContext&) {}
   virtual void afterMainStep(const SerialStepContext&) {}
 };
 
@@ -566,6 +581,57 @@ class StuckParticleDiagnosticsFeature : public SerialStepFeature {
   }
 
  public:
+  virtual void afterFluidForceApplication(
+      const SerialStepContext& ctx,
+      const FluidForceApplicationContext& forceCtx) {
+    if (!ctx.config.getSerialEnableStuckDiagnostics()) {
+      return;
+    }
+
+    BodyID body = forceCtx.body;
+    if (!body->isStuck_ &&
+        forceCtx.forceMagnitude <= 50.0 &&
+        forceCtx.deltaVelocityMagnitude <= 5.0 &&
+        forceCtx.velocityAfter.length() <= 10.0) {
+      return;
+    }
+
+    pe_LOG_INFO_SECTION(log) {
+      log << "FLUID FORCE APPLICATION at timestep " << ctx.timestep << ":\n";
+      log << "  Particle (ID=" << body->getSystemID() << ")\n";
+      log << "  Trigger: ";
+      if (body->isStuck_) log << "[STUCK] ";
+      if (forceCtx.forceMagnitude > 50.0) log << "[HIGH FORCE=" << forceCtx.forceMagnitude << "] ";
+      if (forceCtx.deltaVelocityMagnitude > 5.0) log << "[LARGE DELTA_V=" << forceCtx.deltaVelocityMagnitude << "] ";
+      if (forceCtx.velocityAfter.length() > 10.0) log << "[HIGH VELOCITY=" << forceCtx.velocityAfter.length() << "] ";
+      log << "\n";
+      log << "  Applied force: (" << forceCtx.appliedForce[0] << ", "
+          << forceCtx.appliedForce[1] << ", " << forceCtx.appliedForce[2] << ")\n";
+      log << "  Force magnitude: " << forceCtx.forceMagnitude << "\n";
+      log << "  Mass: " << forceCtx.mass << ", invMass: " << body->getInvMass() << "\n";
+      log << "  dt: " << ctx.fullStepSize << "\n";
+      log << "  Velocity change (Δv = F/m * dt): (" << forceCtx.deltaVelocity[0] << ", "
+          << forceCtx.deltaVelocity[1] << ", " << forceCtx.deltaVelocity[2] << ")\n";
+      log << "  Velocity change magnitude: " << forceCtx.deltaVelocityMagnitude << "\n";
+      log << "  Velocity before: (" << forceCtx.velocityBefore[0] << ", "
+          << forceCtx.velocityBefore[1] << ", " << forceCtx.velocityBefore[2]
+          << ") mag=" << forceCtx.velocityBefore.length() << "\n";
+      log << "  Velocity after: (" << forceCtx.velocityAfter[0] << ", "
+          << forceCtx.velocityAfter[1] << ", " << forceCtx.velocityAfter[2]
+          << ") mag=" << forceCtx.velocityAfter.length() << "\n";
+
+      if (forceCtx.forceMagnitude > 50.0) {
+        log << "  >>> DIAGNOSIS: Extremely high fluid force from CFD!\n";
+        log << "  >>> Expected Δv = (1/" << forceCtx.mass << ") * " << ctx.fullStepSize
+            << " * " << forceCtx.forceMagnitude << " = "
+            << (forceCtx.forceMagnitude * ctx.fullStepSize / forceCtx.mass) << "\n";
+      }
+      if (forceCtx.deltaVelocityMagnitude > 5.0) {
+        log << "  >>> WARNING: Single timestep velocity change > 5.0 - particle will likely be stuck!\n";
+      }
+    }
+  }
+
   virtual void afterMainStep(const SerialStepContext& ctx) {
     if (!ctx.config.getSerialEnableStuckDiagnostics()) {
       return;
@@ -629,6 +695,14 @@ class SerialStepFeatureSet {
  public:
   SerialStepFeatureSet()
       : escapeEnabled_(false), stuckEnabled_(false), escapeFeature_(), stuckFeature_() {}
+
+  void afterFluidForceApplication(
+      const SerialStepContext& ctx,
+      const FluidForceApplicationContext& forceCtx) {
+    ensureFeatures(ctx.config);
+    escapeFeature_->afterFluidForceApplication(ctx, forceCtx);
+    stuckFeature_->afterFluidForceApplication(ctx, forceCtx);
+  }
 
   void afterMainStep(const SerialStepContext& ctx) {
     ensureFeatures(ctx.config);
