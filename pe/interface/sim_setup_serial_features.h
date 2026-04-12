@@ -9,10 +9,14 @@
 #include <pe/util/logging/Logger.h>
 #include <algorithm>
 #include <deque>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <vector>
 
 namespace pe {
@@ -348,6 +352,52 @@ class DomainEscapeReinsertionFeature : public SerialStepFeature {
   }
 };
 
+class SpherePositionOutputFeature : public SerialStepFeature {
+ public:
+  virtual void afterMainStep(const SerialStepContext& ctx) {
+    if (!ctx.config.getSerialEnableSpherePositionLog() || !ctx.isRepresentative) {
+      return;
+    }
+
+    const unsigned int spacing = ctx.config.getSerialSpherePositionLogSpacing();
+    if (!(ctx.timestep == 0 || (spacing > 0 && ctx.timestep % spacing == 0))) {
+      return;
+    }
+
+    mkdir("spheres", 0755);
+
+    std::ostringstream filename;
+    filename << "spheres/spheres_" << ctx.timestep << ".txt";
+
+    std::ofstream outfile(filename.str().c_str());
+    if (!outfile.is_open()) {
+      std::cerr << "WARNING: Failed to open " << filename.str()
+                << " for writing" << std::endl;
+      return;
+    }
+
+    outfile << "# Timestep: " << ctx.timestep << "\n";
+    outfile << "# Format: sphere_id x y z\n";
+
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      BodyID body = *it;
+      if (body->getType() != sphereType) {
+        continue;
+      }
+
+      const Vec3 pos = body->getPosition();
+      outfile << body->getSystemID() << " "
+              << pos[0] << " "
+              << pos[1] << " "
+              << pos[2] << "\n";
+    }
+
+    outfile.close();
+    std::cout << "Sphere positions written to: " << filename.str() << std::endl;
+  }
+};
+
 class StuckParticleDiagnosticsFeature : public SerialStepFeature {
  private:
   struct ParticlePositionHistory {
@@ -669,8 +719,10 @@ class SerialStepFeatureSet {
  private:
   bool escapeEnabled_;
   bool stuckEnabled_;
+  bool sphereLogEnabled_;
   std::unique_ptr<SerialStepFeature> escapeFeature_;
   std::unique_ptr<SerialStepFeature> stuckFeature_;
+  std::unique_ptr<SerialStepFeature> sphereLogFeature_;
 
   void ensureFeatures(const SimulationConfig& config) {
     if (!escapeFeature_ || escapeEnabled_ != config.getSerialEnableEscapeReinsertion()) {
@@ -690,11 +742,26 @@ class SerialStepFeatureSet {
         stuckFeature_.reset(new NullSerialStepFeature());
       }
     }
+
+    if (!sphereLogFeature_ ||
+        sphereLogEnabled_ != config.getSerialEnableSpherePositionLog()) {
+      sphereLogEnabled_ = config.getSerialEnableSpherePositionLog();
+      if (sphereLogEnabled_) {
+        sphereLogFeature_.reset(new SpherePositionOutputFeature());
+      } else {
+        sphereLogFeature_.reset(new NullSerialStepFeature());
+      }
+    }
   }
 
  public:
   SerialStepFeatureSet()
-      : escapeEnabled_(false), stuckEnabled_(false), escapeFeature_(), stuckFeature_() {}
+      : escapeEnabled_(false),
+        stuckEnabled_(false),
+        sphereLogEnabled_(false),
+        escapeFeature_(),
+        stuckFeature_(),
+        sphereLogFeature_() {}
 
   void afterFluidForceApplication(
       const SerialStepContext& ctx,
@@ -708,6 +775,7 @@ class SerialStepFeatureSet {
     ensureFeatures(ctx.config);
     escapeFeature_->afterMainStep(ctx);
     stuckFeature_->afterMainStep(ctx);
+    sphereLogFeature_->afterMainStep(ctx);
   }
 };
 

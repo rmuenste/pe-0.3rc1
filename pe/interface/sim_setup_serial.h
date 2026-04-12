@@ -1579,49 +1579,6 @@ inline void stepSimulationSerial() {
   // Restore original timestep size
   TimeStep::stepsize(fullStepSize);
 
-  //==============================================================================================
-  // Sphere Position Output (Boost-free VTK workaround)
-  // Output at timestep 0 and every 50th timestep
-  //==============================================================================================
-  if (isRepresentative && (timestep == 0 || timestep % 50 == 0)) {
-    // Create output directory using POSIX (safe, no Boost dependency)
-    mkdir("spheres", 0755);  // Idempotent - won't fail if exists
-
-    // Generate filename: spheres_<timestep>.txt
-    std::ostringstream filename;
-    filename << "spheres/spheres_" << timestep << ".txt";
-
-    // Open file for writing
-    std::ofstream outfile(filename.str().c_str());
-    if (outfile.is_open()) {
-      // Write header comment
-      outfile << "# Timestep: " << timestep << "\n";
-      outfile << "# Format: sphere_id x y z\n";
-
-      // Iterate over all bodies and extract sphere positions
-      for (auto it = theCollisionSystem()->getBodyStorage().begin();
-           it != theCollisionSystem()->getBodyStorage().end(); ++it) {
-        BodyID body = *it;
-
-        // Filter for spheres only
-        if (body->getType() == sphereType) {
-          Vec3 pos = body->getPosition();
-          outfile << body->getSystemID() << " "
-                  << pos[0] << " "
-                  << pos[1] << " "
-                  << pos[2] << "\n";
-        }
-      }
-
-      outfile.close();
-
-      // Confirmation message
-      std::cout << "Sphere positions written to: " << filename.str() << std::endl;
-    } else {
-      std::cerr << "WARNING: Failed to open " << filename.str() << " for writing" << std::endl;
-    }
-  }
-
   serialStepFeatureSet().afterMainStep(serialStepCtx);
 
   // Particle diagnostics output (once per main timestep only)

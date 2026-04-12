@@ -85,6 +85,8 @@ SimulationConfig::SimulationConfig()
     , serialStuckDetectionWindow_(50)
     , serialStuckDisplacementThreshold_(0.01)
     , serialStuckWallDistanceThreshold_(0.05)
+    , serialEnableSpherePositionLog_(false)
+    , serialSpherePositionLogSpacing_(50)
     , centerlineVertices_()
     , totalCenterlineLength_(0.0)
 {
@@ -297,6 +299,12 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("serialStuckWallDistanceThreshold_"))
         config.setSerialStuckWallDistanceThreshold(j["serialStuckWallDistanceThreshold_"].get<real>());
+
+    if (j.contains("serialEnableSpherePositionLog_"))
+        config.setSerialEnableSpherePositionLog(j["serialEnableSpherePositionLog_"].get<bool>());
+
+    if (j.contains("serialSpherePositionLogSpacing_"))
+        config.setSerialSpherePositionLogSpacing(j["serialSpherePositionLogSpacing_"].get<unsigned int>());
 
     // Set gravity vector
     if (j.contains("gravity_")) {
