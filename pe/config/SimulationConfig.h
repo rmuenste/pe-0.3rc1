@@ -32,6 +32,7 @@
 #include <pe/math/Vector3.h>
 #include <boost/filesystem.hpp>
 #include <string>
+#include <vector>
 
 
 namespace pe {
@@ -225,6 +226,30 @@ public:
     //@}
     //**************************************************************************************
 
+    //**Serial post-step feature parameters************************************************
+    /*!\name Serial post-step feature switches and parameters */
+    //@{
+    bool getSerialEnableEscapeReinsertion() const { return serialEnableEscapeReinsertion_; }
+    void setSerialEnableEscapeReinsertion(bool value) { serialEnableEscapeReinsertion_ = value; }
+    bool getSerialEnableStuckDiagnostics() const { return serialEnableStuckDiagnostics_; }
+    void setSerialEnableStuckDiagnostics(bool value) { serialEnableStuckDiagnostics_ = value; }
+    real getSerialReinsertionSafetyMargin() const { return serialReinsertionSafetyMargin_; }
+    void setSerialReinsertionSafetyMargin(real value) { serialReinsertionSafetyMargin_ = value; }
+    const std::vector<Vec3>& getSerialReinsertionSafePositions() const { return serialReinsertionSafePositions_; }
+    void setSerialReinsertionSafePositions(const std::vector<Vec3>& positions) { serialReinsertionSafePositions_ = positions; }
+    int getSerialStuckDetectionWindow() const { return serialStuckDetectionWindow_; }
+    void setSerialStuckDetectionWindow(int value) { serialStuckDetectionWindow_ = value; }
+    real getSerialStuckDisplacementThreshold() const { return serialStuckDisplacementThreshold_; }
+    void setSerialStuckDisplacementThreshold(real value) { serialStuckDisplacementThreshold_ = value; }
+    real getSerialStuckWallDistanceThreshold() const { return serialStuckWallDistanceThreshold_; }
+    void setSerialStuckWallDistanceThreshold(real value) { serialStuckWallDistanceThreshold_ = value; }
+    bool getSerialEnableSpherePositionLog() const { return serialEnableSpherePositionLog_; }
+    void setSerialEnableSpherePositionLog(bool value) { serialEnableSpherePositionLog_ = value; }
+    unsigned int getSerialSpherePositionLogSpacing() const { return serialSpherePositionLogSpacing_; }
+    void setSerialSpherePositionLogSpacing(unsigned int value) { serialSpherePositionLogSpacing_ = value; }
+    //@}
+    //**************************************************************************************
+
     //**Centerline parameters***************************************************************
     /*!\name Centerline parameters for stuck particle diagnostics */
     //@{
@@ -293,6 +318,17 @@ private:
     real contactHysteresisDelta_; //!< Half-width of contact blend band
     real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
     real minEpsLub_;             //!< Regularization epsilon for lubrication gap
+
+    // Serial post-step features
+    bool serialEnableEscapeReinsertion_; //!< Enable domain escape handling and reinsertion in serial stepping
+    bool serialEnableStuckDiagnostics_; //!< Enable stuck particle diagnostics in serial stepping
+    real serialReinsertionSafetyMargin_; //!< Additional spacing used when testing safe reinsertion positions
+    std::vector<Vec3> serialReinsertionSafePositions_; //!< Candidate reinsertion positions for escaped particles
+    int serialStuckDetectionWindow_; //!< Number of main timesteps considered for stuck diagnostics
+    real serialStuckDisplacementThreshold_; //!< Max displacement across the detection window to classify a particle as stuck
+    real serialStuckWallDistanceThreshold_; //!< Distance-to-wall threshold used for near-wall stuck diagnostics
+    bool serialEnableSpherePositionLog_; //!< Enable writing per-timestep sphere position snapshots in serial stepping
+    unsigned int serialSpherePositionLogSpacing_; //!< Main-timestep spacing for sphere position snapshot output
 
     // Centerline data for stuck particle diagnostics
     std::vector<Vec3> centerlineVertices_; //!< Centerline vertices for tube geometry
