@@ -78,9 +78,19 @@ SimulationConfig::SimulationConfig()
     , contactHysteresisDelta_(1e-9)
     , alphaImpulseCap_(1.0)
     , minEpsLub_(1e-8)
+    , serialEnableEscapeReinsertion_(false)
+    , serialEnableStuckDiagnostics_(false)
+    , serialReinsertionSafetyMargin_(0.02)
+    , serialReinsertionSafePositions_()
+    , serialStuckDetectionWindow_(50)
+    , serialStuckDisplacementThreshold_(0.01)
+    , serialStuckWallDistanceThreshold_(0.05)
     , centerlineVertices_()
     , totalCenterlineLength_(0.0)
 {
+    serialReinsertionSafePositions_.push_back(Vec3(-0.5, -2.65, 0.0));
+    serialReinsertionSafePositions_.push_back(Vec3(-0.5, -2.5, 0.0));
+    serialReinsertionSafePositions_.push_back(Vec3(0.0, -2.5, 0.0));
 }
 //=================================================================================================
 
@@ -253,6 +263,40 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set lubrication gap regularization
     if (j.contains("minEpsLub_"))
         config.setMinEpsLub(j["minEpsLub_"].get<real>());
+
+    if (j.contains("serialEnableEscapeReinsertion_"))
+        config.setSerialEnableEscapeReinsertion(j["serialEnableEscapeReinsertion_"].get<bool>());
+
+    if (j.contains("serialEnableStuckDiagnostics_"))
+        config.setSerialEnableStuckDiagnostics(j["serialEnableStuckDiagnostics_"].get<bool>());
+
+    if (j.contains("serialReinsertionSafetyMargin_"))
+        config.setSerialReinsertionSafetyMargin(j["serialReinsertionSafetyMargin_"].get<real>());
+
+    if (j.contains("serialReinsertionSafePositions_")) {
+        std::vector<Vec3> positions;
+        const nlohmann::json& points = j["serialReinsertionSafePositions_"];
+        if (points.is_array()) {
+            for (size_t i = 0; i < points.size(); ++i) {
+                if (!points[i].is_array() || points[i].size() != 3) {
+                    throw std::invalid_argument("serialReinsertionSafePositions_ entries must be [x, y, z] arrays");
+                }
+                positions.push_back(Vec3(points[i][0].get<real>(),
+                                         points[i][1].get<real>(),
+                                         points[i][2].get<real>()));
+            }
+        }
+        config.setSerialReinsertionSafePositions(positions);
+    }
+
+    if (j.contains("serialStuckDetectionWindow_"))
+        config.setSerialStuckDetectionWindow(j["serialStuckDetectionWindow_"].get<int>());
+
+    if (j.contains("serialStuckDisplacementThreshold_"))
+        config.setSerialStuckDisplacementThreshold(j["serialStuckDisplacementThreshold_"].get<real>());
+
+    if (j.contains("serialStuckWallDistanceThreshold_"))
+        config.setSerialStuckWallDistanceThreshold(j["serialStuckWallDistanceThreshold_"].get<real>());
 
     // Set gravity vector
     if (j.contains("gravity_")) {
