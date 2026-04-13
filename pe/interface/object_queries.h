@@ -43,16 +43,6 @@ void synchronizeForces();
 
 /*
  *!\brief The function returns a mapping from 0,..,numParticles-1 to the bodystorage corr. indices
- */
-void particleMapping(); 
-
-/*
- *!\brief The function returns a mapping from 0,..,numRemParticles-1 to the shadow copy corr. indices
- */
-void remoteParticleMapping(); 
-
-/*
- *!\brief The function returns a mapping from 0,..,numParticles-1 to the bodystorage corr. indices
  * \param idxMap Integer array that contains the mapping
  */
 void getParticlesIndexMap(int *idxMap); 
@@ -223,111 +213,6 @@ void getRemoteObjByIdx(int idx,
                        double *time,
                        double pos[3],
                        double vel[3]); 
-
-/*
- *!\brief Returns a copy of the remote object main parameters. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void getRemoteObjByIdx(int idx,
-                       int *lidx,
-                       int *uidx,
-                       double *time,
-                       double pos[3],
-                       double vel[3]); 
-
-/*
- *!\brief Set updated parameters for the object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void setObjByIdx(int idx,
-                 int *lidx,
-                 int *uidx,
-                 double *time,
-                 double pos[3],
-                 double vel[3]); 
-/*
- *!\brief Set updated parameters for the remote object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void setRemoteObjByIdx(int idx,
-                       int *lidx,
-                       int *uidx,
-                       double *time,
-                       double pos[3],
-                       double vel[3]); 
-
-/*
- *!\brief Set updated parameters for the object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void setForcesByIdx(int idx,
-                    int *lidx,
-                    int *uidx,
-                    double force[3],
-                    double torque[3]); 
-/*
- *!\brief Set updated parameters for the remote object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void setRemoteForcesByIdx(int idx,
-                          int *lidx,
-                          int *uidx,
-                          double force[3],
-                          double torque[3]); 
-
-/*
- *!\brief Set updated parameters for the object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void setForcesByIdx(int idx,
-                    int *lidx,
-                    int *uidx,
-                    double force[3],
-                    double torque[3]); 
-/*
- *!\brief Set updated parameters for the remote object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-void setRemoteForcesByIdx(int idx,
-                          int *lidx,
-                          int *uidx,
-                          double force[3],
-                          double torque[3]); 
 
 /*
  *!\brief The function returns true if the point is inside the object else false

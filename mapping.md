@@ -1,176 +1,169 @@
 # Fortran to C++ Function Mapping
 
-This document maps the Fortran interface functions defined in `source/src_particles/dem_query.f90` to their C++ implementations through the extern "C" interface layer.
+This document tracks the current interface surface defined in
+`source/src_particles/dem_query.f90` and the C++ entry points in `libs/pe`.
+It is intentionally split into:
+- live mappings that still exist in the active code path
+- legacy or orphaned entries that are present in the tree but no longer form a
+  complete Fortran -> C++ path
 
 ## Function Mapping Chain
 
 The mapping follows this pattern:
-**Fortran Interface** → **extern "C" Function** → **C++ Implementation**
-
----
+**Fortran Interface** -> **extern "C" Function** -> **C++ Implementation**
 
 ## Particle Count Functions
 
 ### getTotalParticles
-- **Fortran Interface**: `getTotalParticles()` (line 35 in dem_query.f90)
-- **extern "C" Function**: `getTotalParticles()` (./pe/interface/c_interface_queries.h:16)
-- **C++ Implementation**: `getTotalParts()` (./src/interface/object_queries.cpp:592-613)
+- **Fortran Interface**: `getTotalParticles()` (line 35 in `dem_query.f90`)
+- **extern "C" Function**: `getTotalParticles()` (`./pe/interface/c_interface_queries.h`)
+- **C++ Implementation**: `getTotalParts()` (`./src/interface/object_queries.cpp`)
 
 ### getNumParticles
-- **Fortran Interface**: `getNumParticles()` (line 46 in dem_query.f90)
-- **extern "C" Function**: `getNumParticles()` (./pe/interface/c_interface_queries.h:25)
-- **C++ Implementation**: `getNumParts()` (./src/interface/object_queries.cpp:621-648)
+- **Fortran Interface**: `getNumParticles()` (line 46 in `dem_query.f90`)
+- **extern "C" Function**: `getNumParticles()` (`./pe/interface/c_interface_queries.h`)
+- **C++ Implementation**: `getNumParts()` (`./src/interface/object_queries.cpp`)
 
 ### getNumRemParticles
-- **Fortran Interface**: `getNumRemParticles()` (line 56 in dem_query.f90)
-- **extern "C" Function**: `getNumRemParticles()` (./pe/interface/c_interface_queries.h:35)
-- **C++ Implementation**: `getNumRemParts()` (./src/interface/object_queries.cpp:654-658)
-
----
+- **Fortran Interface**: `getNumRemParticles()` (line 56 in `dem_query.f90`)
+- **extern "C" Function**: `getNumRemParticles()` (`./pe/interface/c_interface_queries.h`)
+- **C++ Implementation**: `getNumRemParts()` (`./src/interface/object_queries.cpp`)
 
 ## Particle Access Functions
 
-### getParticle
-- **Fortran Interface**: `getParticle(idx, lidx, uidx, time, pos, vel)` (line 65 in dem_query.f90)
-- **extern "C" Function**: `getParticle()` (./pe/interface/c_interface_particle_getset.h:59)
-- **C++ Implementation**: `getObjByIdx()` (./src/interface/object_queries.cpp:756-788)
-
 ### getParticle2
-- **Fortran Interface**: `getParticle2(idx, particle)` (line 80 in dem_query.f90)
-- **extern "C" Function**: `getParticle2()` (./pe/interface/c_interface_particle_getset.h:78)
-- **C++ Implementation**: `getPartStructByIdx()` (./src/interface/object_queries.cpp:1018-1058)
+- **Fortran Interface**: `getParticle2(idx, particle)` (line 70 in `dem_query.f90`)
+- **extern "C" Function**: `getParticle2()` (`./pe/interface/c_interface_particle_getset.h`)
+- **C++ Implementation**: `getPartStructByIdx()` (`./src/interface/object_queries.cpp`)
 
 ### setParticle2
-- **Fortran Interface**: `setParticle2(particle)` (line 92 in dem_query.f90)
-- **extern "C" Function**: `setParticle2()` (./pe/interface/c_interface_particle_getset.h:89)
-- **C++ Implementation**: `setPartStruct()` (./src/interface/object_queries.cpp:1066-1102)
-
-### setParticle
-- **Fortran Interface**: `setParticle(idx, lidx, uidx, time, pos, vel)` (line 141 in dem_query.f90)
-- **extern "C" Function**: Not found in interface headers (missing mapping)
-- **C++ Implementation**: `setObjByIdx()` (./src/interface/object_queries.cpp:848-873)
-
----
+- **Fortran Interface**: `setParticle2(particle)` (line 83 in `dem_query.f90`)
+- **extern "C" Function**: `setParticle2()` (`./pe/interface/c_interface_particle_getset.h`)
+- **C++ Implementation**: `setPartStruct()` (`./src/interface/object_queries.cpp`)
 
 ## Remote Particle Functions
 
-### getRemoteParticle
-- **Fortran Interface**: `getRemoteParticle(idx, lidx, uidx, time, pos, vel)` (line 103 in dem_query.f90)
-- **extern "C" Function**: `getRemoteParticle()` (./pe/interface/c_interface_particle_getset.h:116)
-- **C++ Implementation**: `getRemoteObjByIdx()` (./src/interface/object_queries.cpp:802-834)
-
 ### getRemoteParticle2
-- **Fortran Interface**: `getRemoteParticle2(idx, particle)` (line 118 in dem_query.f90)
-- **extern "C" Function**: `getRemoteParticle2()` (./pe/interface/c_interface_particle_getset.h:135)
-- **C++ Implementation**: `getRemPartStructByIdx()` (./src/interface/object_queries.cpp:1157-1211)
+- **Fortran Interface**: `getRemoteParticle2(idx, particle)` (line 107 in `dem_query.f90`)
+- **extern "C" Function**: `getRemoteParticle2()` (`./pe/interface/c_interface_particle_getset.h`)
+- **C++ Implementation**: `getRemPartStructByIdx()` (`./src/interface/object_queries.cpp`)
 
 ### setRemoteParticle2
-- **Fortran Interface**: `setRemoteParticle2(particle)` (line 130 in dem_query.f90)
-- **extern "C" Function**: `setRemoteParticle2()` (./pe/interface/c_interface_particle_getset.h:100)
-- **C++ Implementation**: `setRemPartStruct()` (./src/interface/object_queries.cpp:1108-1147)
+- **Fortran Interface**: `setRemoteParticle2(particle)` (line 123 in `dem_query.f90`)
+- **extern "C" Function**: `setRemoteParticle2()` (`./pe/interface/c_interface_particle_getset.h`)
+- **C++ Implementation**: `setRemPartStruct()` (`./src/interface/object_queries.cpp`)
 
----
+## Geometry and Type Queries
 
-## Force Setting Functions
-
-### setForces
-- **Fortran Interface**: `setForces(idx, lidx, uidx, force, torque)` (line 156 in dem_query.f90)
-- **extern "C" Function**: `setForces()` (./pe/interface/c_interface_particle_getset.h:17)
-- **C++ Implementation**: `setForcesByIdx()` (./src/interface/object_queries.cpp:924-941)
-
-### setRemoteForces
-- **Fortran Interface**: `setRemoteForces(idx, lidx, uidx, force, torque)` (line 170 in dem_query.f90)
-- **extern "C" Function**: `setRemoteForces()` (./pe/interface/c_interface_particle_getset.h:36)
-- **C++ Implementation**: `setRemoteForcesByIdx()` (./src/interface/object_queries.cpp:954-971)
-
----
-
-## Geometric Query Functions
-
-### pointInsideObject
-- **Fortran Interface**: `pointInsideObject(idx, pos)` (line 204 in dem_query.f90)
-- **extern "C" Function**: `pointInsideObject()` (./pe/interface/c_interface_particle_fbm.h:7)
-- **C++ Implementation**: `isInsideObject()` (./src/interface/object_queries.cpp:533-552)
-
-### pointInsideRemObject
-- **Fortran Interface**: `pointInsideRemObject(idx, pos)` (line 215 in dem_query.f90)
-- **extern "C" Function**: `pointInsideRemObject()` (./pe/interface/c_interface_particle_fbm.h:20)
-- **C++ Implementation**: `isInsideRemObject()` (./src/interface/object_queries.cpp:561-583)
-
----
-
-## Type and Property Query Functions
-
-### isSphere (isTypeSphere)
-- **Fortran Interface**: `isSphere(idx)` → bound to `isTypeSphere` (line 184 in dem_query.f90)
-- **extern "C" Function**: `isTypeSphere()` (./pe/interface/c_interface_queries.h:58)
-- **C++ Implementation**: `isSphereType()` (./src/interface/object_queries.cpp:696-712)
+### isSphere
+- **Fortran Interface**: `isSphere(idx)` -> bound to `isTypeSphere` (line 163 in `dem_query.f90`)
+- **extern "C" Function**: `isTypeSphere()` (`./pe/interface/c_interface_queries.h`)
+- **C++ Implementation**: `isSphereType()` (`./src/interface/object_queries.cpp`)
 
 ### getParticleRadius
-- **Fortran Interface**: `getParticleRadius(idx)` (line 194 in dem_query.f90)
-- **extern "C" Function**: `getParticleRadius()` (./pe/interface/c_interface_queries.h:45)
-- **C++ Implementation**: `getObjRadius()` (./src/interface/object_queries.cpp:979-1008)
+- **Fortran Interface**: `getParticleRadius(idx)` (line 173 in `dem_query.f90`)
+- **extern "C" Function**: `getParticleRadius()` (`./pe/interface/c_interface_queries.h`)
+- **C++ Implementation**: `getObjRadius()` (`./src/interface/object_queries.cpp`)
 
----
+### pointInsideObject
+- **Fortran Interface**: `pointInsideObject(idx, pos)` (line 139 in `dem_query.f90`)
+- **extern "C" Function**: `pointInsideObject()` (`./pe/interface/c_interface_particle_fbm.h`)
+- **C++ Implementation**: `isInsideObject()` (`./src/interface/object_queries.cpp`)
+
+### pointInsideRemObject
+- **Fortran Interface**: `pointInsideRemObject(idx, pos)` (line 151 in `dem_query.f90`)
+- **extern "C" Function**: `pointInsideRemObject()` (`./pe/interface/c_interface_particle_fbm.h`)
+- **C++ Implementation**: `isInsideRemObject()` (`./src/interface/object_queries.cpp`)
 
 ## Mapping and Utility Functions
 
 ### check_rem_id
-- **Fortran Interface**: `check_rem_id(fbmid, id)` (line 226 in dem_query.f90)
-- **extern "C" Function**: `check_rem_id()` (./pe/interface/c_interface_queries.h:4)
-- **C++ Implementation**: `checkRemoteFBM()` (./src/interface/object_queries.cpp:468-486)
+- **Fortran Interface**: `check_rem_id(fbmid, id)` (line 163 in `dem_query.f90`)
+- **extern "C" Function**: `check_rem_id()` (`./pe/interface/c_interface_queries.h`)
+- **C++ Implementation**: `checkRemoteFBM()` (`./src/interface/object_queries.cpp`)
 
 ### rem_particles_index_map
-- **Fortran Interface**: `rem_particles_index_map(idxMap)` (line 234 in dem_query.f90)
-- **extern "C" Function**: `rem_particles_index_map()` (./pe/interface/c_interface_particle_fbm.h:44)
-- **C++ Implementation**: `getRemoteParticlesIndexMap()` (./src/interface/object_queries.cpp:154-193)
+- **Fortran Interface**: `rem_particles_index_map(idxMap)` (line 234 in `dem_query.f90`)
+- **extern "C" Function**: `rem_particles_index_map()` (`./pe/interface/c_interface_particle_fbm.h`)
+- **C++ Implementation**: `getRemoteParticlesIndexMap()` (`./src/interface/object_queries.cpp`)
 
 ### particles_index_map
-- **Fortran Interface**: `particles_index_map(idxMap)` (line 241 in dem_query.f90)
-- **extern "C" Function**: `particles_index_map()` (./pe/interface/c_interface_particle_fbm.h:77)
-- **C++ Implementation**: `getParticlesIndexMap()` (./src/interface/object_queries.cpp:115-145)
+- **Fortran Interface**: `particles_index_map(idxMap)` (line 241 in `dem_query.f90`)
+- **extern "C" Function**: `particles_index_map()` (`./pe/interface/c_interface_particle_fbm.h`)
+- **C++ Implementation**: `getParticlesIndexMap()` (`./src/interface/object_queries.cpp`)
 
 ### get_bytes
-- **Fortran Interface**: `get_bytes(bytes)` (line 248 in dem_query.f90)
-- **extern "C" Function**: Not found in interface headers (missing extern "C" wrapper)
-- **C++ Implementation**: Likely related to `uint64toByteArray()` (object_queries.h:335)
+- **Fortran Interface**: `get_bytes(bytes)` (line 191 in `dem_query.f90`)
+- **extern "C" Function**: not found
+- **C++ Implementation**: no live implementation found
+
+## Legacy / Removed Entries
+
+These names still appear in comments, wrappers, or internal helpers, but they no
+longer form a complete active Fortran -> C++ interface path.
+
+### getParticle
+- Removed from the current `dem_query.f90` interface surface.
+- `getLocalParticle()` still contains a call to `getParticle` at
+  [dem_query.f90:353](</home/rafa/code/FeatFloWer/FeatFloWer/source/src_particles/dem_query.f90:353>),
+  so that call site should be updated or removed.
+
+### getRemoteParticle
+- Removed from the current `dem_query.f90` interface surface.
+- The old C++ implementation comment remains in
+  `./src/interface/object_queries.cpp`, but there is no live Fortran binding.
+
+### setForces
+- Removed from the current `dem_query.f90` interface surface.
+
+### setRemoteForces
+- Removed from the current `dem_query.f90` interface surface.
+- The wrapper still exists in `./pe/interface/c_interface_particle_getset.h`,
+  but it is no longer backed by a live Fortran binding.
+
+### setParticle
+- Removed from the current `dem_query.f90` interface surface.
 
 ### map_local_to_system
-- **Fortran Interface**: `map_local_to_system(lidx, vidx)` (line 255 in dem_query.f90)
-- **extern "C" Function**: Not found in interface headers (missing extern "C" wrapper)
-- **C++ Implementation**: Unknown - implementation not located
+- Removed from the current `dem_query.f90` interface surface.
 
 ### map_local_to_system2
-- **Fortran Interface**: `map_local_to_system2(lidx, vidx)` (line 263 in dem_query.f90)
-- **extern "C" Function**: Not found in interface headers (missing extern "C" wrapper)
-- **C++ Implementation**: Unknown - implementation not located
+- Removed from the current `dem_query.f90` interface surface.
 
----
+### pointInsideParticles(int* inpr, double pos[3])
+- Declaration still exists in `./pe/interface/object_queries.h`, but there is no
+  active C++ implementation or call path.
+
+### particleMapping / remoteParticleMapping
+- Internal helpers in `./src/interface/object_queries.cpp`.
+- No remaining public callers after removing `map_particles_` and
+  `rem_map_particles_`.
+
+### setRemoteObjByIdx
+- Internal helper in `./src/interface/object_queries.cpp`.
+- No live callers remain.
 
 ## Summary
 
-### Complete Mappings: 15 functions
-These functions have complete Fortran → extern "C" → C++ mappings:
+### Live mappings: 14
 - getTotalParticles, getNumParticles, getNumRemParticles
-- getParticle, getParticle2, setParticle2
-- getRemoteParticle, getRemoteParticle2, setRemoteParticle2
-- setForces, setRemoteForces
+- getParticle2, setParticle2
+- getRemoteParticle2, setRemoteParticle2
 - pointInsideObject, pointInsideRemObject
 - isSphere/isTypeSphere, getParticleRadius
 - check_rem_id, rem_particles_index_map, particles_index_map
 
-### Incomplete Mappings: 4 functions
-These functions have Fortran interfaces but missing extern "C" wrappers:
-- setParticle (has C++ implementation but no extern "C" wrapper found)
-- get_bytes (implementation unclear)
-- map_local_to_system (implementation not found)
-- map_local_to_system2 (implementation not found)
+### Legacy or removed entries
+- getParticle, getRemoteParticle, setForces, setRemoteForces, setParticle
+- map_local_to_system, map_local_to_system2
+- pointInsideParticles(int* inpr, double pos[3])
+- particleMapping, remoteParticleMapping
+- setRemoteObjByIdx
+- get_bytes
 
-### Primary Implementation File
-**All C++ implementations are in**: `./src/interface/object_queries.cpp`
+## Interface Headers
 
-### Interface Header Files
-- `./pe/interface/c_interface_queries.h` - Particle count and type queries
-- `./pe/interface/c_interface_particle_getset.h` - Particle get/set operations
+- `./pe/interface/c_interface_queries.h` - particle count and type queries
+- `./pe/interface/c_interface_particle_getset.h` - particle get/set operations
 - `./pe/interface/c_interface_particle_fbm.h` - FBM-related functions and mappings
-- `./pe/interface/object_queries.h` - C++ function declarations
+- `./pe/interface/object_queries.h` - C++ declarations

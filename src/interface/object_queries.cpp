@@ -938,51 +938,6 @@ bool isCapsuleType(int idx) {
 //  Getter/Setter for Objects aka Particles 
 //
 //=================================================================================================
-/*
- *!\brief Returns a copy of the object main parameters. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-// Bound to Fortran function getParticle(idx, lidx, uidx, time, pos, vel) in
-// source/src_particles/dem_query.f90 line 65
-void getObjByIdx(int idx,
-                 int *lidx,
-                 int *uidx,
-                 double *time,
-                 double pos[3],
-                 double vel[3]) {
-
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-
-  BodyID body;
-  if ( widx < world->size() ) {
-    body = world->getBody(static_cast<unsigned int>(widx));
-    Vec3 v = body->getLinearVel();
-    vel[0] = v[0];
-    vel[1] = v[1];
-    vel[2] = v[2];
-    Vec3 p = body->getPosition();
-    pos[0] = p[0];
-    pos[1] = p[1];
-    pos[2] = p[2];
-    // TODO: this is a dubious conversion to a smaller type -> fix
-    *lidx = body->getSystemID();
-    *uidx = idx;
-//    std::cout << idx << "pos: " << vec3ToString(p)<< "vel: " << vec3ToString(v) << std::endl;
-  }
-  else {
-    std::stringstream msg;
-    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
-    throw std::out_of_range(msg.str());
-  }
-
-} 
-//=================================================================================================
 
 
 //=================================================================================================
@@ -1035,46 +990,6 @@ void getRemoteObjByIdx(int idx,
 
 //=================================================================================================
 /*
- *!\brief Set updated parameters for the object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-// Bound to Fortran function setParticle(idx, lidx, uidx, time, pos, vel) in
-// source/src_particles/dem_query.f90 line 141
-void setObjByIdx(int idx,
-                 int *lidx,
-                 int *uidx,
-                 double *time,
-                 double pos[3],
-                 double vel[3]) {
-
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-
-  BodyID body;
-  if ( widx < world->size() ) {
-    body = world->getBody(static_cast<unsigned int>(widx));
-    Vec3 v(vel[0], vel[1], vel[2]);
-    body->setLinearVel(v);
-    Vec3 p(pos[0], pos[1], pos[2]);
-    body->setPosition(p);
-//    std::cout << idx << "pos: " << vec3ToString(p)<< "vel: " << vec3ToString(v) << std::endl;
-  }
-  else {
-    std::stringstream msg;
-    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
-    throw std::out_of_range(msg.str());
-  }
-
-} 
-//=================================================================================================
-
-//=================================================================================================
-/*
  *!\brief Set updated parameters for the remote object. The function is callable from Fortran
  * \param idx The system id
  * \param lidx The local id
@@ -1109,73 +1024,10 @@ void setRemoteObjByIdx(int idx,
   }
 
 } 
-
 //=================================================================================================
 
-/*
- *!\brief Set updated parameters for the object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-// Bound to Fortran function setForces(idx, lidx, uidx, force, torque) in
-// source/src_particles/dem_query.f90 line 156
-void setForcesByIdx(int idx,
-                    int *lidx,
-                    int *uidx,
-                    double force[3],
-                    double torque[3]) {
-
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-
-  BodyID body;
-  body = world->getBody(static_cast<unsigned int>(widx));
-
-  Vec3 f(force[0], force[1], force[2]);
-  body->setForce(f);
-  Vec3 t(torque[0], torque[1], torque[2]);
-  body->setTorque(t);
-
-} 
-//=================================================================================================
 
 //=================================================================================================
-/*
- *!\brief Set updated parameters for the object. The function is callable from Fortran
- * \param idx The system id
- * \param lidx The local id
- * \param uidx The unique id
- * \param time The contact time 
- * \param pos The global position of the object
- * \param vel The global velocity of the object
- */
-// Bound to Fortran function setRemoteForces(idx, lidx, uidx, force, torque) in
-// source/src_particles/dem_query.f90 line 170
-void setRemoteForcesByIdx(int idx,
-                          int *lidx,
-                          int *uidx,
-                          double force[3],
-                          double torque[3]) {
-
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-
-  BodyID body;
-  body = theWorld()->getShadowBody(static_cast<unsigned int>(widx));
-
-  Vec3 f(force[0], force[1], force[2]);
-  body->setForce(f);
-  Vec3 t(torque[0], torque[1], torque[2]);
-  body->setTorque(t);
-
-} 
-
-//=================================================================================================
-
 /*
  *!\brief The function returns the radius the particle idx
  * \param idx The index of the particle
@@ -1709,17 +1561,6 @@ bool mapLocalToSystem2(int lidx, int vidx) {
 //  }
 //}
 //=================================================================================================
-
-extern "C"
-bool map_local_to_system(int lidx, int vidx) {
-  return mapLocalToSystem(lidx, vidx);
-}
-
-extern "C"
-bool map_local_to_system2(int lidx, int vidx) {
-  return mapLocalToSystem(lidx, vidx);
-}
-
 
 #ifdef PE_USE_CGAL
 //=================================================================================================
