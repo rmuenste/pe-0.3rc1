@@ -94,28 +94,6 @@ void rem_particles_index_map(int *idxMap) {
  *!\brief Synchronize the forces acting on the remote particles
  */
 extern "C"  
-void map_particles_() {
-  particleMapping(); 
-} 
-//=================================================================================================
-
-
-//=================================================================================================
-/*
- *!\brief Synchronize the forces acting on the remote particles
- */
-extern "C"  
-void rem_map_particles_() {
-  remoteParticleMapping(); 
-} 
-//=================================================================================================
-
-
-//=================================================================================================
-/*
- *!\brief Synchronize the forces acting on the remote particles
- */
-extern "C"  
 // Bound to Fortran function particles_index_map(idxMap) in
 // source/src_particles/dem_query.f90 line 241
 void particles_index_map(int *idxMap) {
