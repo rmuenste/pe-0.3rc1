@@ -192,10 +192,12 @@ public:
    inline void setRelLinearVel ( const Vec3& lvel );
    inline void setLinearVel    ( real vx, real vy, real vz );
    inline void setLinearVel    ( const Vec3& lvel );
-   inline void setRelAngularVel( real ax, real ay, real az );
-   inline void setRelAngularVel( const Vec3& avel );
+   inline void setRelAngularVel ( real ax, real ay, real az );
+   inline void setRelAngularVel ( const Vec3& avel );
    inline void setAngularVel   ( real ax, real ay, real az );
    inline void setAngularVel   ( const Vec3& avel );
+   inline void setLinearDofMask( const Vec3& mask );
+   inline const Vec3& getLinearDofMask() const;
    //@}
    //**********************************************************************************************
 
@@ -273,7 +275,7 @@ public:
            inline void        addForceAtPos      ( real fx, real fy, real fz, real px, real py, real pz );
            inline void        addForceAtPos      ( const Vec3& f, const Vec3& gpos );
            inline void        applyForces        ( real dt );
-           inline void        applyFluidForces   ( real dt );
+           inline void        applyFluidForces   ( real dt, real relaxation = real(1) );
 
            inline void        addTorque( real tx, real ty, real tz );
            inline void        addTorque( const Vec3& t );
@@ -1631,11 +1633,59 @@ inline void RigidBody::applyForces( real dt )
 
 
 //*************************************************************************************************
-inline void RigidBody::applyFluidForces( real dt )
+inline void RigidBody::applyFluidForces( real dt, real relaxation )
 {
-   v_ += invMass_ * dt * force_;
-   w_ += dt * ( getInvInertia() * torque_ );  
+   // Under-relaxed force averaging to damp the Nyquist-in-time mode
+   // arising from the explicit partitioned CFD-PE coupling.
+   //   F_eff = relaxation * F_n + (1 - relaxation) * F_{n-1}
+   // relaxation = 1.0: fully explicit (no stabilization)
+   // relaxation = 0.5: trapezoidal rule (standard mean force)
+   // relaxation < 0.5: stronger damping (more weight on previous force)
+   // On the very first call, fall back to the current force only.
+   Vec3 effForce  = force_;
+   Vec3 effTorque = torque_;
+   if( hasPrevFluidForce_ ) {
+      effForce  = relaxation * force_ + ( real(1) - relaxation ) * prevFluidForce_;
+      effTorque = relaxation * torque_ + ( real(1) - relaxation ) * prevFluidTorque_;
+   }
+
+   // Store current force as previous for next timestep
+   prevFluidForce_    = force_;
+   prevFluidTorque_   = torque_;
+   hasPrevFluidForce_ = true;
+
+   v_ += invMass_ * dt * effForce;
+   w_ += dt * ( getInvInertia() * effTorque );
+   // Enforce linear DOF constraints
+   v_[0] *= linearDofMask_[0];
+   v_[1] *= linearDofMask_[1];
+   v_[2] *= linearDofMask_[2];
    resetForce();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the per-axis linear DOF constraint mask.
+ *
+ * \param mask Vec3 where each component is 1 (free) or 0 (locked).
+ *
+ * Use this to constrain a rigid body to move only along certain axes.
+ * For example, setLinearDofMask(Vec3(1,0,1)) locks the y-axis.
+ */
+inline void RigidBody::setLinearDofMask( const Vec3& mask )
+{
+   linearDofMask_ = mask;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the per-axis linear DOF constraint mask.
+ */
+inline const Vec3& RigidBody::getLinearDofMask() const
+{
+   return linearDofMask_;
 }
 //*************************************************************************************************
 

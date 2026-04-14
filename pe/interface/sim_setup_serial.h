@@ -215,16 +215,21 @@ inline void setupFluidizationSerial(int cfd_rank) {
   const real xMax = 20.3;
   const real yMin = 0.0;
   const real yMax = 0.686;
-  const real zMin = 2.0;
+  //const real zMin = 2.0;
   const real zMax = 70.2;
 
-  const int baseTargetParticles = 1204;
-  const int targetParticles = static_cast<int>(real(0.125) * static_cast<real>(baseTargetParticles));
+  const int baseTargetParticles = 27;
+  //const int targetParticles = static_cast<int>(real(1.000) * static_cast<real>(baseTargetParticles));
+  const int targetParticles = 1.0; //static_cast<int>(real(1.000) * static_cast<real>(baseTargetParticles));
   const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
+  const real zMin = radParticle;
   const real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
   const real spacing = spacingFactor * radParticle;
   const real pitch = real(2.0) * radParticle + spacing;
-  const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle) + real(0.5);
+  const real zStart = std::max(0.0, zMin + 0.125 * radParticle);
+
+  const real xMid = (xMax - xMin) * 0.5;
+  const real yMid = (yMax - yMin) * 0.5;
 
   // Keep one particle radius clearance to the x-boundaries on both sides.
   const real xGridMin = xMin +  1.5 * radParticle;
@@ -248,7 +253,8 @@ inline void setupFluidizationSerial(int cfd_rank) {
 
   int PlaneIDs = 10000;
   MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 2.0, gr, true);
+   
+  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, radParticle, gr, true);
 
   createPlane( PlaneIDs++, 0.0, 1.0, 0.0,  0.0, granite );
   // -y
@@ -261,9 +267,12 @@ inline void setupFluidizationSerial(int cfd_rank) {
   int usedNx = 0;
   int usedNy = 0;
   int usedNz = 0;
-
+  SphereID theSphere;
   int globalIndex = 0;
   if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid) {
+//          theSphere = createSphere(globalIndex, Vec3(xMid, yMid, zStart), radParticle, myMaterial, true);
+//          ++particlesCreated;
+//          ++globalIndex;
     for (int iz = 0; iz < nzMax && globalIndex < targetParticles; ++iz) {
       const real z = zStart + static_cast<real>(iz) * pitch;
       for (int iy = 0; iy < nyMax && globalIndex < targetParticles; ++iy) {
@@ -280,6 +289,9 @@ inline void setupFluidizationSerial(int cfd_rank) {
       }
     }
   }
+
+//  theSphere->setPosition(Vec3(10.4436, 0.321433, 2.11815));
+//  theSphere->setLinearVel(Vec3(2.592734E-01, 1.774744E-01, 8.460528E-02));
 
   TimeStep::stepsize(config.getStepsize());
 
@@ -367,6 +379,8 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   // Sub-cycling: F_max/m ~ 131,000 m/s²  →  N=5000 gives dt_sub = 2e-7 s
   //              for dt = 1e-3 s, Δv_sub ~ 0.026 m/s  (stable)
   const real rhoSRR   ( real(0.06858) );  // security zone width      [cm]
+  //const real rhoSRR   ( real(0.0852) );  // security zone width      [cm]
+  //const real rhoSRR   ( real(0.1) );  // security zone width      [cm]
   const real epsSRR   ( real(5e-7)    );  // stiffness                [dyne⁻¹]
   const real gammaSRR ( real(0.5)     );  // velocity damping         [dyne·s/cm]
   const size_t nSubcycles = 5000;
@@ -376,6 +390,12 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   cs->getContactSolver().setEpsW ( epsSRR  );
   cs->getContactSolver().setGamma( gammaSRR );
   cs->setNumSubcycles( nSubcycles );
+
+  // Inflate the lubrication threshold so that the fine collision detector
+  // generates contacts at distances up to rho (the SRR security zone width).
+  // Without this, contacts are only generated at gap < contactThreshold (1e-8)
+  // and SRR never sees particles within the security zone.
+  lubrication::setLubricationThreshold( real(0.07) );
 
   //==============================================================================================
   // Visualization Configuration
@@ -407,7 +427,17 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   const int baseTargetParticles = 1204;
   const int targetParticles = static_cast<int>(real(0.125) * static_cast<real>(baseTargetParticles));
   const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
-  const real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
+  const real minSpacingFactor = rhoSRR / radParticle;  // minimum to respect SRR security zone
+  real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
+  if (spacingFactor < minSpacingFactor) {
+    std::cerr << "\n*** WARNING: fluidizationSpacingFactor = " << spacingFactor
+              << " gives inter-particle gap = " << (spacingFactor * radParticle)
+              << " cm, which violates the SRR security zone rho = " << rhoSRR << " cm.\n"
+              << "    Minimum safe spacing factor = " << minSpacingFactor
+              << " (gap = rho = " << rhoSRR << " cm).\n"
+              << "    Auto-correcting to " << minSpacingFactor << ".\n" << std::endl;
+    spacingFactor = minSpacingFactor;
+  }
   const real spacing = spacingFactor * radParticle;
   const real pitch = real(2.0) * radParticle + spacing;
   const real zStart = std::max(real(4.0) * radParticle, zMin + radParticle) + real(0.5);
@@ -432,38 +462,90 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   }
 
   //==============================================================================================
-  // Boundary planes: floor + y-walls (open top, open x-sides)
+  // Materials (used by both fresh-start and resume paths).
+  // Boundary planes: floor only (open top, open x-sides, no y-walls).
+  // Y-walls removed: the column is quasi-2D (single particle row in y).
+  // Y-confinement is enforced by locking the y-DOF on each particle instead.
   //==============================================================================================
-  int PlaneIDs = 10000;
-  MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 2.0, gr, true);   // floor at z = 2.0
-  createPlane(PlaneIDs++, 0.0, 1.0, 0.0, 0.0, gr, true);   // +y wall at y = 0
-  createPlane(PlaneIDs++, 0.0,-1.0, 0.0, -0.686, gr, true); // -y wall at y = 0.686
-
-  //==============================================================================================
-  // Particle placement (grid packing)
-  //==============================================================================================
+  MaterialID gr         = createMaterial("ground",          rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   MaterialID myMaterial = createMaterial("FluidizationSRR", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  // Place all particles at the y-midpoint of the column (quasi-2D, single row)
+  const real yMid = real(0.5) * (yMin + yMax);
 
   int particlesCreated = 0;
   int usedNx = 0;
   int usedNy = 0;
   int usedNz = 0;
 
-  int globalIndex = 0;
-  if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid) {
-    for (int iz = 0; iz < nzMax && globalIndex < targetParticles; ++iz) {
-      const real z = zStart + static_cast<real>(iz) * pitch;
-      for (int iy = 0; iy < nyMax && globalIndex < targetParticles; ++iy) {
-        const real y = (yMin + radParticle) + static_cast<real>(iy) * pitch;
-        for (int ix = 0; ix < nxMax && globalIndex < targetParticles; ++ix) {
-          const real x = xGridMin + static_cast<real>(ix) * pitch;
-          createSphere(globalIndex, Vec3(x, y, z), radParticle, myMaterial, true);
-          ++particlesCreated;
-          ++globalIndex;
-          usedNx = std::max(usedNx, ix + 1);
-          usedNy = std::max(usedNy, iy + 1);
-          usedNz = std::max(usedNz, iz + 1);
+  const bool resume = config.getResume();
+  if (resume) {
+    //============================================================================================
+    // Resume path: restore world state from a checkpoint.
+    //
+    // BodyBinaryReader::readFile clears the world before unmarshaling, then
+    // restores spheres from the per-rank local buffer and planes (plus other
+    // global bodies) from the globals section.  In serial PE mode the
+    // pe_EXCLUSIVE_SECTION(0) block in the writer always executes, so the floor
+    // plane is normally present in the checkpoint.
+    //
+    // Two pieces of state are NOT serialized by the Checkpointer and must be
+    // re-applied here:
+    //   1. linearDofMask_  — defaults to (1,1,1) on instantiation, so the
+    //                        quasi-2D y-lock would otherwise be silently lost.
+    //   2. The floor plane — defensive fallback in case a checkpoint format
+    //                        change ever drops it from the globals section.
+    //============================================================================================
+    readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+
+    int planeCount = 0;
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      if ((*it)->getType() == planeType) { ++planeCount; }
+    }
+    if (planeCount < 3) {
+      // Old checkpoints may only have the floor plane (or none).
+      // Recreate all boundary planes; duplicates are harmless for
+      // the collision detector (floor plane already present is fine).
+      int PlaneIDs = 10000;
+      createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 2.0, gr, true);   // floor at z = 2.0
+      createPlane(PlaneIDs++,  1.0, 0.0, 0.0,  xMin, gr, true); // left  wall at x = xMin
+      createPlane(PlaneIDs++, -1.0, 0.0, 0.0, -xMax, gr, true); // right wall at x = xMax
+    }
+
+    // Re-apply quasi-2D y-DOF lock to all loaded spheres.
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      if ((*it)->getType() == sphereType) {
+        (*it)->setLinearDofMask( Vec3(1, 0, 1) );
+        ++particlesCreated;
+      }
+    }
+  } else {
+    //============================================================================================
+    // Fresh-start path: create the floor plane and pack particles on a regular grid.
+    //============================================================================================
+    int PlaneIDs = 10000;
+    createPlane(PlaneIDs++, 0.0, 0.0, 1.0, 2.0, gr, true);   // floor at z = 2.0
+    createPlane(PlaneIDs++,  1.0, 0.0, 0.0,  xMin, gr, true); // left  wall at x = xMin
+    createPlane(PlaneIDs++, -1.0, 0.0, 0.0, -xMax, gr, true); // right wall at x = xMax
+
+    int globalIndex = 0;
+    if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid) {
+      for (int iz = 0; iz < nzMax && globalIndex < targetParticles; ++iz) {
+        const real z = zStart + static_cast<real>(iz) * pitch;
+        for (int iy = 0; iy < nyMax && globalIndex < targetParticles; ++iy) {
+          for (int ix = 0; ix < nxMax && globalIndex < targetParticles; ++ix) {
+            const real x = xGridMin + static_cast<real>(ix) * pitch;
+            SphereID sp = createSphere(globalIndex, Vec3(x, yMid, z), radParticle, myMaterial, true);
+            // Lock y-axis: quasi-2D confinement without y-wall planes
+            sp->setLinearDofMask( Vec3(1, 0, 1) );
+            ++particlesCreated;
+            ++globalIndex;
+            usedNx = std::max(usedNx, ix + 1);
+            usedNy = std::max(usedNy, iy + 1);
+            usedNz = std::max(usedNz, iz + 1);
+          }
         }
       }
     }
@@ -480,6 +562,9 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
 
     std::cout << "\n--" << "Fluidization SRR SETUP"
               << "--------------------------------------------------------------\n"
+              << " Mode                                    = "
+              << (resume ? std::string("resume from ") + config.getResumeCheckpointFile()
+                         : std::string("fresh start")) << "\n"
               << " Simulation stepsize dt                  = " << dt << "\n"
               << " Substepping                             = " << config.getSubsteps() << "\n"
               << " Auto force reset                        = enabled\n"
@@ -507,8 +592,13 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
               << " gamma (damping)                         = " << gammaSRR << " dyne.s/cm\n"
               << " nSubcycles                              = " << nSubcycles << "\n"
               << " dt_sub                                  = " << dtSub << " s\n"
+              << " Lubrication threshold (contact range)    = " << lubrication::getLubricationThreshold() << " cm\n"
               << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
               << " Checkpointing                           = " << (config.getUseCheckpointer() ? "enabled" : "disabled") << "\n"
+              << " X-walls                                 = enabled (SRR repulsion at x=" << xMin << " and x=" << xMax << ")\n"
+              << " Y-walls                                 = removed (quasi-2D)\n"
+              << " Y-DOF constraint                        = locked (mask 1,0,1)\n"
+              << " Particle y-placement                    = " << yMid << " cm (column midpoint)\n"
               << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 }
@@ -975,7 +1065,7 @@ inline void setupDNSDragSerial(int cfd_rank) {
     throw std::runtime_error("setupDNSDragSerial: benchRadius must be > 0");
   }
 
-  const real domainLength = 0.1;
+  const real domainLength = 1.0;
   const real domainVolume = domainLength * domainLength * domainLength;
   const real diameter = 2.0 * radius;
   const real wallSurfaceGap = diameter;
@@ -1001,7 +1091,7 @@ inline void setupDNSDragSerial(int cfd_rank) {
   }
   if (nPerDimMax < 1) {
     throw std::runtime_error(
-        "setupDNSDragSerial: spheres do not fit into [0,0.1]^3 with one-diameter wall clearance");
+        "setupDNSDragSerial: spheres do not fit into [0,1]^3 with one-diameter wall clearance");
   }
   nPerDim = std::min(nPerDim, nPerDimMax);
 
@@ -1542,6 +1632,11 @@ inline void stepSimulationSerial() {
   // force application and reset.
   SerialStepContext serialStepCtx = {
       world, config, isRepresentative, timestep, fullStepSize, substeps};
+
+  // Under-relaxation parameter for fluid force averaging (Nyquist stabilization).
+  // alpha = 1.0: fully explicit, alpha = 0.5: trapezoidal, alpha < 0.5: stronger damping.
+  const real alpha = real(0.35);
+
   for (auto it = theCollisionSystem()->getBodyStorage().begin();
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
@@ -1552,9 +1647,8 @@ inline void stepSimulationSerial() {
     real forceMag = force.length();
     real mass = body->getMass();
 
-    // Apply fluid forces using the library function with full main timestep
-    // This applies forces to velocities and resets forces if forceReset is enabled
-    body->applyFluidForces(fullStepSize);
+    // Apply fluid forces with under-relaxed averaging
+    body->applyFluidForces(fullStepSize, alpha);
 
     Vec3 v_after = body->getLinearVel();
     Vec3 deltaV = v_after - v_before;

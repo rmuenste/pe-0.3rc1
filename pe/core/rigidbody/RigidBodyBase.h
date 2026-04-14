@@ -149,6 +149,10 @@ protected:
    mutable Vec3 w_;  //!< Angular velocity of this rigid body.
    Vec3 force_;      //!< Total force (external+contact) acting in the body's center of mass.
    Vec3 torque_;     //!< Total torque (external+contact) acting in the body's center of mass.
+   Vec3 prevFluidForce_;   //!< Previous timestep's fluid force (for mean-force stabilization).
+   Vec3 prevFluidTorque_;  //!< Previous timestep's fluid torque (for mean-force stabilization).
+   bool hasPrevFluidForce_;  //!< False until the first fluid force has been applied.
+   Vec3 linearDofMask_;  //!< Per-axis mask for linear DOF constraints (1=free, 0=locked).
    Mat3 I_;          //!< The moment of inertia in reference to the body's own body frame.
                      /*!< The moment of inertia quantifies the rotational inertia of a rigid
                           body, i.e. its inertia with respect to rotational motion, in a manner

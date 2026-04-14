@@ -90,6 +90,7 @@
 #include <pe/util/Types.h>
 #include <pe/util/Vector.h>
 #include <set>
+#include <pe/config/SimulationConfig.h>
 
 
 
@@ -2004,14 +2005,24 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
              // TODO: find out what happens here
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
-//             std::cout << "==========================================================" << std::endl;
-//             std::cout << "Velocity update: " << v_[j][2] << std::endl;
-//             std::cout << "vol : " << vol  << std::endl;
-//             std::cout << "rho : " << rho  << std::endl;
-//             std::cout << "rho-liquid : " << Settings::liquidDensity()  << std::endl;
-//             std::cout << "invMass : " << body->getInvMass() << std::endl;
-//             std::cout << "buoyancy : " << buoyancy  << std::endl;
-//             std::cout << "==========================================================" << std::endl;
+             Vec3 dVel = buoyancy * Settings::gravity() * dt;
+
+             auto &config = SimulationConfig::getInstance();
+             const bool isRepresentative = (config.getCfdRank() == 1);
+             // comment
+             if(isRepresentative) {
+             std::cout << "==========================================================" << std::endl;
+             std::cout << "rank: " << MPISettings::rank() << std::endl;
+             std::cout << "Velocity update: " << v_[j][2] << std::endl;
+             std::cout << "dU_z: " << dVel[2] << std::endl;
+             std::cout << "g_eff_z: " << dVel[2] / dt << std::endl;
+             std::cout << "vol : " << vol  << std::endl;
+             std::cout << "rho : " << rho  << std::endl;
+             std::cout << "rho-liquid : " << Settings::liquidDensity()  << std::endl;
+             std::cout << "invMass : " << body->getInvMass() << std::endl;
+             std::cout << "buoyancy : " << buoyancy  << std::endl;
+             std::cout << "==========================================================" << std::endl;
+             }
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
            else if(body->getType() == capsuleType) {

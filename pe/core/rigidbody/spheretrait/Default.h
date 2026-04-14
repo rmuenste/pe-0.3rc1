@@ -29,6 +29,7 @@
 //*************************************************************************************************
 
 #include <pe/core/rigidbody/SphereBase.h>
+#include <pe/core/Materials.h>
 #include <pe/math/Vector3.h>
 #include <pe/system/Precision.h>
 #include <pe/util/Types.h>
@@ -165,8 +166,16 @@ void SphereTrait<C>::move( real dt )
    if( awake_ ) {
       if( !fixed_ ) {
          // Calculating the linear acceleration by the equation
-         //   force * m^(-1) + gravity
-         const Vec3 vdot( force_ * invMass_ + Settings::gravity() );
+         //   force * m^(-1) + g_eff
+         // In liquid-solid mode, replace bare gravity with buoyancy-corrected
+         // effective gravity: g_eff = (rho_p - rho_f) / rho_p * g
+         Vec3 effectiveGravity( Settings::gravity() );
+         if( Settings::liquidSolid() ) {
+            const real rho_p = Material::getDensity( getMaterial() );
+            const real rho_f = Settings::liquidDensity();
+            effectiveGravity *= ( rho_p - rho_f ) / rho_p;
+         }
+         const Vec3 vdot( force_ * invMass_ + effectiveGravity );
 
          // Calculating the angular acceleration by the equation
          //   R * Iinv * R^T * torque
@@ -181,6 +190,11 @@ void SphereTrait<C>::move( real dt )
 
          // Updating the linear velocity
          v_ += vdot * dt;
+
+         // Enforce linear DOF constraints
+         v_[0] *= linearDofMask_[0];
+         v_[1] *= linearDofMask_[1];
+         v_[2] *= linearDofMask_[2];
 
          // Updating the angular velocity
          w_ += wdot * dt;
