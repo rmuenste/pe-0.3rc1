@@ -425,7 +425,7 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   const real zMax = 70.2;
 
   const int baseTargetParticles = 1204;
-  const int targetParticles = static_cast<int>(real(0.125) * static_cast<real>(baseTargetParticles));
+  const int targetParticles = static_cast<int>(real(1.0) * static_cast<real>(baseTargetParticles));
   const real radParticle = real(0.5) * real(0.635);  // Diameter 0.635 cm
   const real minSpacingFactor = rhoSRR / radParticle;  // minimum to respect SRR security zone
   real spacingFactor = std::max(real(0.0), config.getFluidizationSpacingFactor());
