@@ -10,7 +10,9 @@ void loadSimulationConfig(const std::string &fileName);
 
 }  // namespace pe
 extern "C" void step_simulation_();
+extern "C" void step_el_frozen_trace_();
 void stepSimulation();
+void stepELFrozenTrace();
 void setupParticleBench(MPI_Comm ex0);
 void setupFluidization(MPI_Comm ex0);
 void setupFSIBench(MPI_Comm ex0);

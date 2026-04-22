@@ -175,6 +175,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
   WorldID world = theWorld();
   CollisionSystemID cs = theCollisionSystem();
   applyOptionalLubricationParams(*cs, config);
+  lubrication::setLubricationThreshold(real(0));
 
   world->setGravity(config.getGravity());
 
@@ -626,6 +627,167 @@ inline void setupGeneralInitSerial(int cfd_rank) {
   TimeStep::stepsize(config.getStepsize());
 
   // Serial mode: minimal setup, particles managed by CFD code
+}
+
+/**
+ * @brief Frozen-field E-L scaffold setup for serial mode
+ *
+ * Loads the JSON configuration and initializes only the general PE world state.
+ * No benchmark geometry or particles are created here; the caller can use this
+ * as a lightweight PE bootstrap for checkpoint-driven frozen-field applications.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupELFrozenTraceSerial(int cfd_rank,
+                                     real xmin, real xmax,
+                                     real ymin, real ymax,
+                                     real zmin, real zmax) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  config.setCfdDomainMin(Vec3(xmin, ymin, zmin));
+  config.setCfdDomainMax(Vec3(xmax, ymax, zmax));
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  WorldID world = theWorld();
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
+
+  world->setGravity(config.getGravity());
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(config.getFluidDensity());
+  world->setViscosity(config.getFluidViscosity());
+  world->setDamping(1.0);
+  world->setAutoForceReset(true);
+
+  TimeStep::stepsize(config.getStepsize());
+
+  const real rhoParticle(config.getParticleDensity());
+  const real particleDiameter(real(0.01));
+  const real particleRadius(real(0.5) * particleDiameter);
+  const real cylinderCenterX(real(0.5));
+  const real cylinderCenterY(real(0.2));
+  const real cylinderCenterZ(real(0.205));
+  const real cylinderRadius(real(0.05));
+  const real particleGap(real(1.5) * particleDiameter);
+  const real pitch(particleDiameter + particleGap);
+  const real wallPadding(particleRadius + particleGap);
+  const real xSeedMin(xmin + wallPadding);
+  const real xSeedMax(real(0.3) - wallPadding);
+  const real ySeedMin(ymin + wallPadding);
+  const real ySeedMax(ymax - wallPadding);
+  const real zSeedMin(zmin + wallPadding);
+  const real zSeedMax(zmax - wallPadding);
+  const bool hasOpenOutflowXMax(true);
+
+  if (xSeedMin >= xSeedMax || ySeedMin >= ySeedMax || zSeedMin >= zSeedMax) {
+    throw std::runtime_error("Frozen trace setup failed: CFD domain too small for requested particle padding.");
+  }
+
+  const int nx = std::max(1, static_cast<int>(std::floor((xSeedMax - xSeedMin) / pitch)) + 1);
+  const int ny = std::max(1, static_cast<int>(std::floor((ySeedMax - ySeedMin) / pitch)) + 1);
+  const int nz = std::max(1, static_cast<int>(std::floor((zSeedMax - zSeedMin) / pitch)) + 1);
+
+  const auto latticeCoord = [pitch](int i, real minVal) -> real {
+    return minVal + real(i) * pitch;
+  };
+
+  MaterialID tracerMaterial = createMaterial("frozen_trace_particle", rhoParticle,
+                                             0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID wallMaterial = createMaterial("frozen_trace_wall", real(1.0),
+                                           0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID obstacleMaterial = createMaterial("frozen_trace_cylinder", real(1.0),
+                                               0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  int planeIds = 12000;
+  createPlane(planeIds++,  1.0,  0.0,  0.0,  xmin,  wallMaterial, true);  // closed inlet plane
+  createPlane(planeIds++,  0.0,  1.0,  0.0,  ymin,  wallMaterial, true);  // y = ymin wall
+  createPlane(planeIds++,  0.0, -1.0,  0.0, -ymax,  wallMaterial, true);  // y = ymax wall
+  createPlane(planeIds++,  0.0,  0.0,  1.0,  zmin,  wallMaterial, true);  // z = zmin wall
+  createPlane(planeIds++,  0.0,  0.0, -1.0, -zmax,  wallMaterial, true);  // z = zmax wall
+
+  CylinderID obstacleCylinder = createCylinder(planeIds++, Vec3(cylinderCenterX, cylinderCenterY, cylinderCenterZ),
+                                               cylinderRadius, zmax - zmin, obstacleMaterial, true);
+  obstacleCylinder->rotate(0, M_PI * 0.5, 0.0);
+  obstacleCylinder->setFixed(true);
+
+  int idx = 0;
+  int particlesCreated = 0;
+  int particlesSkippedByCylinder = 0;
+
+  for (int iz = 0; iz < nz; ++iz) {
+    const real z = latticeCoord(iz, zSeedMin);
+    for (int iy = 0; iy < ny; ++iy) {
+      const real y = latticeCoord(iy, ySeedMin);
+      for (int ix = 0; ix < nx; ++ix) {
+        const real x = latticeCoord(ix, xSeedMin);
+        const real dx = x - cylinderCenterX;
+        const real dy = y - cylinderCenterY;
+        const real radialDistance = std::sqrt(dx * dx + dy * dy);
+
+        // Exclude points inside the obstacle cylinder extended by one particle radius.
+        if (radialDistance <= cylinderRadius + particleRadius) {
+          ++particlesSkippedByCylinder;
+          continue;
+        }
+
+        createSphere(idx++, Vec3(x, y, z), particleRadius, tracerMaterial, true);
+        ++particlesCreated;
+      }
+    }
+  }
+
+  if (particlesCreated == 0) {
+    throw std::runtime_error("Frozen trace setup failed: no particles remain after cylinder exclusion.");
+  }
+
+  if (isRepresentative && config.getVtk()) {
+    vtk::WriterID vtk = vtk::activateWriter("./paraview", 1, 0, config.getTimesteps(), false);
+    const Vec3 gravity = world->getGravity();
+    const real initDumpDt = std::max(real(1e-12), TimeStep::size() * real(1e-9));
+
+    // The VTK writer is trigger-based. Emit one initial snapshot without materially
+    // changing the seeded particle cloud by stepping once with vanishing dt and no gravity.
+    world->setGravity(0.0, 0.0, 0.0);
+    world->simulationStep(initDumpDt);
+    world->setGravity(gravity);
+    TimeStep::stepsize(config.getStepsize());
+  }
+
+  if (isRepresentative) {
+    std::cout << "\n--"
+              << "Frozen-Field PE General Initialization"
+              << "--------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << config.getFluidViscosity() << "\n"
+              << " Fluid density                           = " << config.getFluidDensity() << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " CFD domain xmin/xmax                    = " << xmin << " / " << xmax << "\n"
+              << " CFD domain ymin/ymax                    = " << ymin << " / " << ymax << "\n"
+              << " CFD domain zmin/zmax                    = " << zmin << " / " << zmax << "\n"
+              << " Closed PE wall planes                   = x = xmin, y = ymin/ymax, z = zmin/zmax\n"
+              << " Open particle outflow                   = x = xmax"
+              << (hasOpenOutflowXMax ? "" : " (disabled)") << "\n"
+              << " Particle diameter                       = " << particleDiameter << "\n"
+              << " Particle radius                         = " << particleRadius << "\n"
+              << " Particle gap                            = " << particleGap << "\n"
+              << " Center-to-center pitch                  = " << pitch << "\n"
+              << " Wall padding                            = " << wallPadding << "\n"
+              << " Seed lattice                            = " << nx << " x " << ny << " x " << nz << "\n"
+              << " Seed box xmin/xmax                      = " << xSeedMin << " / " << xSeedMax << "\n"
+              << " Seed box ymin/ymax                      = " << ySeedMin << " / " << ySeedMax << "\n"
+              << " Seed box zmin/zmax                      = " << zSeedMin << " / " << zSeedMax << "\n"
+              << " Excluded cylinder center(x,y,z), radius = "
+              << cylinderCenterX << ", " << cylinderCenterY << ", " << cylinderCenterZ
+              << ", " << cylinderRadius << "\n"
+              << " Fixed PE cylinder length                = " << (zmax - zmin) << "\n"
+              << " Particles skipped by cylinder           = " << particlesSkippedByCylinder << "\n"
+              << " Particles created                       = " << particlesCreated << "\n"
+              << "--------------------------------------------------------------------------------\n"
+              << std::endl;
+  }
 }
 
 /**
@@ -1604,6 +1766,139 @@ inline void setupRotationSerial(int cfd_rank) {
  * - Particle diagnostics are printed once per main timestep
  * - Checkpointer (if enabled) is triggered once per main timestep
  */
+inline SerialStepContext makeSerialStepContext(WorldID world,
+                                               SimulationConfig &config,
+                                               const bool isRepresentative,
+                                               const int timestep,
+                                               const real fullStepSize,
+                                               const int substeps) {
+  SerialStepContext ctx = {world, config, isRepresentative, timestep, fullStepSize, substeps};
+  return ctx;
+}
+
+inline void applySerialFluidForces(const SerialStepContext &serialStepCtx,
+                                   const real alpha,
+                                   const bool triggerFeatureHooks) {
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+
+    Vec3 v_before = body->getLinearVel();
+    Vec3 force = body->getForce();
+    real forceMag = force.length();
+    real mass = body->getMass();
+
+    body->applyFluidForces(serialStepCtx.fullStepSize, alpha);
+
+    if (triggerFeatureHooks) {
+      Vec3 v_after = body->getLinearVel();
+      Vec3 deltaV = v_after - v_before;
+      real deltaVMag = deltaV.length();
+      FluidForceApplicationContext forceCtx = {
+          body, v_before, force, forceMag, mass, v_after, deltaV, deltaVMag};
+      serialStepFeatureSet().afterFluidForceApplication(serialStepCtx, forceCtx);
+    }
+  }
+}
+
+inline void advanceSerialSubsteps(WorldID world,
+                                  const real fullStepSize,
+                                  const int substeps) {
+  const real substepSize = fullStepSize / static_cast<real>(substeps);
+
+  TimeStep::stepsize(substepSize);
+  for (int istep = 0; istep < substeps; ++istep) {
+    world->simulationStep(substepSize);
+  }
+  TimeStep::stepsize(fullStepSize);
+}
+
+inline void emitRepresentativeSerialParticleDiagnostics(WorldID world,
+                                                        const int timestep,
+                                                        const real fullStepSize,
+                                                        const int substeps) {
+  unsigned int i(0);
+  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
+    World::SizeType widx = static_cast<World::SizeType>(i);
+    BodyID body = world->getBody(static_cast<unsigned int>(widx));
+    if(body->getType() == sphereType ||
+       body->getType() == capsuleType ||
+       body->getType() == ellipsoidType ||
+       body->getType() == cylinderType ||
+       body->getType() == triangleMeshType) {
+
+      const Vec3 vel = body->getLinearVel();
+      const Vec3 ang = body->getAngularVel();
+#ifdef PE_SERIAL_VERBOSE_PARTICLE_OUTPUT
+      std::cout << "==Single Particle Data========================================================" << std::endl;
+
+      std::cout << "Position: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
+                                   body->getPosition()[0] << " " <<
+                                   body->getPosition()[1] << " " <<
+                                   body->getPosition()[2] << std::endl;
+      std::cout << "Velocity: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
+                                   vel[0] << " " <<
+                                   vel[1] << " " <<
+                                   vel[2] << std::endl;
+      std::cout << "Omega:    " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
+                                   ang[0] << " " <<
+                                   ang[1] << " " <<
+                                   ang[2] << std::endl;
+      std::cout << "We are using " << substeps << " substeps per CFD step." << std::endl;
+#endif
+    }
+  }
+}
+
+inline int countELFrozenTraceParticles(WorldID world) {
+  int particleCount = 0;
+  for (auto it = world->begin(); it != world->end(); ++it) {
+    if ((*it)->getType() == sphereType) {
+      ++particleCount;
+    }
+  }
+  return particleCount;
+}
+
+inline bool isFiniteVec3(const Vec3 &value) {
+  return std::isfinite(value[0]) && std::isfinite(value[1]) && std::isfinite(value[2]);
+}
+
+inline int cullELFrozenTraceParticles(WorldID world,
+                                      const Vec3 &domainMin,
+                                      const Vec3 &domainMax) {
+  int removed = 0;
+  const real epsX = std::max(real(1e-12), std::abs(domainMax[0]) * real(1e-12));
+  const real epsY = std::max(real(1e-12), std::abs(domainMax[1]) * real(1e-12));
+  const real epsZ = std::max(real(1e-12), std::abs(domainMax[2]) * real(1e-12));
+  for (auto it = world->begin(); it != world->end();) {
+    BodyID body = *it;
+    if (body->getType() != sphereType) {
+      ++it;
+      continue;
+    }
+
+    const Vec3 pos = body->getPosition();
+    const Vec3 vel = body->getLinearVel();
+    const Vec3 ang = body->getAngularVel();
+
+    const bool invalidState = !isFiniteVec3(pos) || !isFiniteVec3(vel) || !isFiniteVec3(ang);
+    const bool outsideClosedFaces =
+        (pos[0] < domainMin[0] - epsX) ||
+        (pos[1] < domainMin[1] - epsY) || (pos[1] > domainMax[1] + epsY) ||
+        (pos[2] < domainMin[2] - epsZ) || (pos[2] > domainMax[2] + epsZ);
+    const bool outsideOpenOutflow = (pos[0] > domainMax[0] + epsX);
+
+    if (invalidState || outsideClosedFaces || outsideOpenOutflow) {
+      it = world->destroy(it);
+      ++removed;
+    } else {
+      ++it;
+    }
+  }
+  return removed;
+}
+
 inline void stepSimulationSerial() {
   WorldID world = theWorld();
   auto &config = SimulationConfig::getInstance();
@@ -1611,7 +1906,6 @@ inline void stepSimulationSerial() {
 
   static int timestep = 0;
 
-  // Test log message to verify logging is working
   if (timestep == 0) {
     pe_LOG_INFO_SECTION( log ) {
       log << "PE Logging initialized for CFD rank " << config.getCfdRank() << "\n";
@@ -1619,95 +1913,54 @@ inline void stepSimulationSerial() {
     }
   }
 
-  // Substepping configuration
-  int substeps = config.getSubsteps();
-  real fullStepSize = config.getStepsize();
-  real substepSize = fullStepSize / static_cast<real>(substeps);
+  const int substeps = config.getSubsteps();
+  const real fullStepSize = config.getStepsize();
+  SerialStepContext serialStepCtx = makeSerialStepContext(
+      world, config, isRepresentative, timestep, fullStepSize, substeps);
 
-  // CRITICAL: Apply external forces (fluid drag) with FULL timestep BEFORE substepping
-  // The fluid forces are set by the CFD code before this function is called.
-  // If we don't apply them here with the full timestep, they will only be applied
-  // in the first substep (with reduced dt), then reset to zero, causing incorrect dynamics.
-  // Use the PE library's built-in applyFluidForces() method which properly handles
-  // force application and reset.
-  SerialStepContext serialStepCtx = {
-      world, config, isRepresentative, timestep, fullStepSize, substeps};
-
-  // Under-relaxation parameter for fluid force averaging (Nyquist stabilization).
-  // alpha = 1.0: fully explicit, alpha = 0.5: trapezoidal, alpha < 0.5: stronger damping.
   const real alpha = real(0.35);
-
-  for (auto it = theCollisionSystem()->getBodyStorage().begin();
-       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
-    BodyID body = *it;
-
-    // DIAGNOSTIC: Track velocity changes from fluid force application
-    Vec3 v_before = body->getLinearVel();
-    Vec3 force = body->getForce();
-    real forceMag = force.length();
-    real mass = body->getMass();
-
-    // Apply fluid forces with under-relaxed averaging
-    body->applyFluidForces(fullStepSize, alpha);
-
-    Vec3 v_after = body->getLinearVel();
-    Vec3 deltaV = v_after - v_before;
-    real deltaVMag = deltaV.length();
-    FluidForceApplicationContext forceCtx = {
-        body, v_before, force, forceMag, mass, v_after, deltaV, deltaVMag};
-    serialStepFeatureSet().afterFluidForceApplication(serialStepCtx, forceCtx);
-  }
-
-  // Set global timestep to substep size for physics integration
-  TimeStep::stepsize(substepSize);
-
-  // Execute substeps (for collision handling and gravity)
-  for (int istep = 0; istep < substeps; ++istep) {
-    // Perform one substep
-    // Note: world->simulationStep() calls Trigger::triggerAll() which triggers VTK output
-    // VTK output frequency is controlled by adjusting visspacing in setup functions
-    // (see setupDrillSerial() and setupFSIBenchSerial() for examples)
-    world->simulationStep(substepSize);
-  }
-
-  // Restore original timestep size
-  TimeStep::stepsize(fullStepSize);
+  applySerialFluidForces(serialStepCtx, alpha, true);
+  advanceSerialSubsteps(world, fullStepSize, substeps);
 
   serialStepFeatureSet().afterMainStep(serialStepCtx);
 
-  // Particle diagnostics output (once per main timestep only)
   if (isRepresentative) {
-    unsigned int i(0);
-    for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
-      World::SizeType widx = static_cast<World::SizeType>(i);
-      BodyID body = world->getBody(static_cast<unsigned int>(widx));
-      if(body->getType() == sphereType ||
-         body->getType() == capsuleType ||
-         body->getType() == ellipsoidType ||
-         body->getType() == cylinderType ||
-         body->getType() == triangleMeshType) {
+    emitRepresentativeSerialParticleDiagnostics(world, timestep, fullStepSize, substeps);
+  }
 
-        const Vec3 vel = body->getLinearVel();
-        const Vec3 ang = body->getAngularVel();
-#ifdef PE_SERIAL_VERBOSE_PARTICLE_OUTPUT
-        std::cout << "==Single Particle Data========================================================" << std::endl;
+  timestep++;
+}
 
-        std::cout << "Position: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
-                                     body->getPosition()[0] << " " <<
-                                     body->getPosition()[1] << " " <<
-                                     body->getPosition()[2] << std::endl;
-        std::cout << "Velocity: " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
-                                     body->getLinearVel()[0] << " " <<
-                                     body->getLinearVel()[1] << " " <<
-                                     body->getLinearVel()[2] << std::endl;
-        std::cout << "Omega:    " << body->getSystemID() << " " << timestep * fullStepSize << " " <<
-                                     body->getAngularVel()[0] << " " <<
-                                     body->getAngularVel()[1] << " " <<
-                                     body->getAngularVel()[2] << std::endl;
-       std::cout << "We are using " << substeps << " substeps per CFD step." << std::endl;
-#endif
-      }
-    }
+inline void stepELFrozenTraceSerial() {
+  WorldID world = theWorld();
+  auto &config = SimulationConfig::getInstance();
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  static int timestep = 0;
+
+  const int substeps = config.getSubsteps();
+  const real fullStepSize = config.getStepsize();
+  const real alpha = real(0.35);
+  const Vec3 domainMin = config.getCfdDomainMin();
+  const Vec3 domainMax = config.getCfdDomainMax();
+  const int particlesBefore = countELFrozenTraceParticles(world);
+
+  SerialStepContext serialStepCtx = makeSerialStepContext(
+      world, config, isRepresentative, timestep, fullStepSize, substeps);
+
+  applySerialFluidForces(serialStepCtx, alpha, false);
+  advanceSerialSubsteps(world, fullStepSize, substeps);
+
+  const int particlesRemoved = cullELFrozenTraceParticles(world, domainMin, domainMax);
+  const int particlesAfter = countELFrozenTraceParticles(world);
+
+  if (isRepresentative) {
+    std::cout << "Frozen-field PE step: timestep=" << timestep
+              << " | particles before/after = " << particlesBefore
+              << " / " << particlesAfter
+              << " | outflow removed = " << particlesRemoved
+              << " | substeps = " << substeps
+              << std::endl;
   }
 
   timestep++;

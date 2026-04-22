@@ -232,6 +232,28 @@ extern "C" void commf2c_dns_drag_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remo
 }
 //=================================================================================================
 
+//=================================================================================================
+extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
+                                         double *xmin, double *xmax,
+                                         double *ymin, double *ymax,
+                                         double *zmin, double *zmax)
+{
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: commf2c_el_frozen_trace_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The frozen-field PE bootstrap is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
+  fprintf(stderr, "  1. cd build\n");
+  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
+  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
+  fprintf(stderr, "  4. make -j8\n");
+  fprintf(stderr, "========================================================================\n");
+  exit(1);
+}
+//=================================================================================================
+
 
 //=================================================================================================
 extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
@@ -440,6 +462,14 @@ extern "C" void commf2c_creep_(int *Fcomm, int *FcommEx0, int *remoteRank) {
 extern "C" void commf2c_dns_drag_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: DNS drag benchmark setup
   pe::setupDNSDragSerial(*remoteRank);
+}
+
+extern "C" void commf2c_el_frozen_trace_(int *Fcomm, int *FcommEx0, int *remoteRank,
+                                         double *xmin, double *xmax,
+                                         double *ymin, double *ymax,
+                                         double *zmin, double *zmax) {
+  // Serial PE mode: frozen-field general initialization only
+  pe::setupELFrozenTraceSerial(*remoteRank, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
 }
 
 extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank) {

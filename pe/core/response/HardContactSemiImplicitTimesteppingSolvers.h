@@ -61,6 +61,11 @@ public:
    pe_CONSTRAINT_MUST_BE_SAME_TYPE( U2, NullType );
    /*! \endcond */
    //**********************************************************************************************
+
+   inline void setRho( real /*rho*/ ) {}
+   inline void setEpsP( real /*eps*/ ) {}
+   inline void setEpsW( real /*eps*/ ) {}
+   inline void setGamma( real /*gamma*/ ) {}
 };
 //*************************************************************************************************
 

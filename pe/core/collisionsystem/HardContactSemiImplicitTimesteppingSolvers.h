@@ -222,6 +222,8 @@ public:
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
    inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
+   inline void            setMinEps( real /*minEps*/ ) {}
+   inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
    //@}
    //**********************************************************************************************
 
@@ -4411,4 +4413,3 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 } // namespace pe
 
 #endif
-

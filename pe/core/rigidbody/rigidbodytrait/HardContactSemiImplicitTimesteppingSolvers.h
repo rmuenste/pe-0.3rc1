@@ -92,6 +92,7 @@ public:
    size_t index_;
    int wallContact_;
    real contactDistance_;
+   bool isStuck_ = false;  // Flag for stuck-particle diagnostics used by serial interface tooling
 };
 //*************************************************************************************************
 

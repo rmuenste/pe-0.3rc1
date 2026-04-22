@@ -99,6 +99,19 @@ extern "C" void step_simulation_() {
 }
 //=================================================================================================
 
+//=================================================================================================
+extern "C" void step_el_frozen_trace_() {
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: step_el_frozen_trace_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The frozen-field particle step is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled.\n");
+  exit(1);
+}
+//=================================================================================================
+
 
 //=================================================================================================
 void singleOutput_v1(BodyID body, int timestep) {
@@ -296,6 +309,12 @@ void loadSimulationConfig(const std::string &fileName) {
 //=================================================================================================
 extern "C" void step_simulation_() {
   pe::stepSimulationSerial();
+}
+//=================================================================================================
+
+//=================================================================================================
+extern "C" void step_el_frozen_trace_() {
+  pe::stepELFrozenTraceSerial();
 }
 //=================================================================================================
 

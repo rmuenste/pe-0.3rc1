@@ -135,6 +135,10 @@ public:
     int getPz() const { return processesZ_; }
     int getCfdRank() const { return cfdRank_; }
     void setCfdRank(int value) { cfdRank_ = value; }
+    const Vec3& getCfdDomainMin() const { return cfdDomainMin_; }
+    const Vec3& getCfdDomainMax() const { return cfdDomainMax_; }
+    void setCfdDomainMin(const Vec3& value) { cfdDomainMin_ = value; }
+    void setCfdDomainMax(const Vec3& value) { cfdDomainMax_ = value; }
     //@}
     //**************************************************************************************
 
@@ -281,6 +285,8 @@ private:
     int processesY_;             //!< Number of processes in y-direction
     int processesZ_;             //!< Number of processes in z-direction
     int cfdRank_;                //!< Designated CFD rank owning the authoritative particle state
+    Vec3 cfdDomainMin_;          //!< Global minimum corner of the CFD mesh domain
+    Vec3 cfdDomainMax_;          //!< Global maximum corner of the CFD mesh domain
 
     // Random number generator parameters
     size_t seed_;                //!< Seed for random number generator
