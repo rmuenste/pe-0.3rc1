@@ -43,6 +43,7 @@ template<typename> class ProcessTrait;
 #include <pe/core/rigidbody/rigidbodytrait/DEMSolver.h>
 #include <pe/core/rigidbody/rigidbodytrait/DEMSolverObsolete.h>
 #include <pe/core/rigidbody/rigidbodytrait/HardContactSemiImplicitTimesteppingSolvers.h>
+#include <pe/core/rigidbody/rigidbodytrait/HardContactEulerLagrange.h>
 #include <pe/core/rigidbody/rigidbodytrait/HardContactAndFluid.h>
 #include <pe/core/rigidbody/rigidbodytrait/HardContactLubricated.h>
 #include <pe/core/rigidbody/rigidbodytrait/ShortRangeRepulsion.h>

@@ -201,6 +201,37 @@ public:
 
 //=================================================================================================
 //
+//  SPECIALIZATION FOR THE HARD CONTACT EULER-LAGRANGE SOLVER
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*! \cond PE_INTERNAL */
+/*!\brief Specialization of the ParallelTrait class template for the hard-contact Euler-Lagrange solver.
+ * \ingroup mpi
+ *
+ * This specialization of the ParallelTrait class template provides the information that an MPI
+ * parallel execution is possible for the dedicated Euler-Lagrange hard-contact solver.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+class ParallelTrait< C<CD,FD,BG,response::HardContactEulerLagrange> >
+{
+public:
+   //**********************************************************************************************
+   enum { value = 1 };
+   //**********************************************************************************************
+};
+
+
+//=================================================================================================
+//
 //  SPECIALIZATION FOR THE HARD CONTACT AND FLUID 
 //
 //=================================================================================================

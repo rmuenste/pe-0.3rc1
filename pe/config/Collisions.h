@@ -89,7 +89,7 @@
  *   - pe::response::OpenCLSolver
  */
 #ifndef pe_CONSTRAINT_SOLVER
-#define pe_CONSTRAINT_SOLVER  pe::response::HardContactSemiImplicitTimesteppingSolvers
+#define pe_CONSTRAINT_SOLVER  pe::response::HardContactEulerLagrange
 #endif
 //*************************************************************************************************
 
