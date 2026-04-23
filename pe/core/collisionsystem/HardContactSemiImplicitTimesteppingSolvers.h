@@ -1915,31 +1915,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          initializeVelocityCorrections( *body, dv_[j], dw_[j], dt );
 
          if( body->awake_ && !body->isFixed() ) {
-           MaterialID mat;
-           if(body->getType() == sphereType) {
-             BodyID b( *body );
-             SphereID s = static_body_cast<Sphere>(b);
-             mat = s->getMaterial();
-             real rho = Material::getDensity( mat );
-             real rad = s->getRadius();
-             real vol = real(4.0)/real(3.0) * M_PI * rad * rad * rad;
-             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
-             // TODO: find out what happens here
-             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
-//             std::cout << "==========================================================" << std::endl;
-//             std::cout << "Gravity update: " << v_[j].z() << std::endl;
-//             std::cout << "vol : " << vol  << std::endl;
-//             std::cout << "rho : " << rho  << std::endl;
-//             std::cout << "rho-liquid : " << Settings::liquidDensity()  << std::endl;
-//             std::cout << "invMass : " << body->getInvMass() << std::endl;
-//             std::cout << "buoyancy : " << buoyancy  << std::endl;
-//             std::cout << "==========================================================" << std::endl;
-             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
-           }
-           else {
-            v_[j] = body->getLinearVel() + Settings::gravity() * dt;
-            w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
-           }
+           v_[j] = body->getLinearVel() + Settings::gravity() * dt;
+           w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
          }
          else {
             v_[j] = body->getLinearVel();
