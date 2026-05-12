@@ -28,6 +28,10 @@ void setupSpan(MPI_Comm ex0);
 void setupLubricationLab(MPI_Comm ex0);
 void setupDrill(MPI_Comm ex0);
 void setupATC(MPI_Comm ex0);
+void setupELFrozenTrace(MPI_Comm ex0,
+                        pe::real xmin, pe::real xmax,
+                        pe::real ymin, pe::real ymax,
+                        pe::real zmin, pe::real zmax);
 
 
 #endif

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <pe/interface/setup_optional_collision_params.h>
 
 using namespace pe::povray;
 
@@ -143,8 +144,8 @@ void setupArchimedesEmpty(MPI_Comm ex0) {
   // We can even run into the "registering distant domain" error when the AABB of the 
   // particle is close in size to the size of a domain part!
   //======================================================================================== 
-  theCollisionSystem()->setLubrication(useLubrication);
-  theCollisionSystem()->setSlipLength(slipLength);
+  setOptionalLubrication(theCollisionSystem(), useLubrication);
+  setOptionalSlipLength(theCollisionSystem(), slipLength);
   theCollisionSystem()->setMinEps(0.01);
   theCollisionSystem()->setMaxIterations(200);
 

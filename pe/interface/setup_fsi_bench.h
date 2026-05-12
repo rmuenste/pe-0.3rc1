@@ -1,4 +1,6 @@
 
+#include <pe/interface/setup_optional_collision_params.h>
+
 void setupFSIBench(MPI_Comm ex0) {
 
   auto& config = SimulationConfig::getInstance();
@@ -438,7 +440,7 @@ void setupFSIBench(MPI_Comm ex0) {
   real startZ = h0 + radBench; 
   // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", particleRho, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  theCollisionSystem()->setSlipLength(slipLength);
+  setOptionalSlipLength(theCollisionSystem(), slipLength);
   Vec3 position(-0.0, -0.0, startZ);
 
   //==============================================================================================
@@ -505,4 +507,3 @@ void setupFSIBench(MPI_Comm ex0) {
   MPI_Barrier(cartcomm);
    
 }
-

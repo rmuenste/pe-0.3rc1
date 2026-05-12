@@ -1,6 +1,7 @@
 
 #include <pe/interface/decompose.h>
 #include <pe/config/SimulationConfig.h>
+#include <pe/interface/setup_optional_collision_params.h>
 
 void setupParticleBench(MPI_Comm ex0) {
 
@@ -166,7 +167,7 @@ void setupParticleBench(MPI_Comm ex0) {
   Vec3 position(-0.0, -0.0, 0.1275);
 
   // Create a custom material for the benchmark
-  theCollisionSystem()->setSlipLength(slipLength);
+  setOptionalSlipLength(theCollisionSystem(), slipLength);
   MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
   //==============================================================================================
@@ -231,4 +232,3 @@ void setupParticleBench(MPI_Comm ex0) {
   MPI_Barrier(cartcomm);
    
 }
-

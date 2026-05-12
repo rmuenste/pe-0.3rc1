@@ -101,14 +101,7 @@ extern "C" void step_simulation_() {
 
 //=================================================================================================
 extern "C" void step_el_frozen_trace_() {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "========================================================================\n");
-  fprintf(stderr, "ERROR: step_el_frozen_trace_() is not implemented in parallel PE mode\n");
-  fprintf(stderr, "========================================================================\n");
-  fprintf(stderr, "The frozen-field particle step is currently only supported in PE serial mode.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled.\n");
-  exit(1);
+  stepELFrozenTrace();
 }
 //=================================================================================================
 
@@ -289,6 +282,124 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_span.h>
 #include <pe/interface/setup_drill.h>
 #include <pe/interface/setup_atc.h>
+#include <pe/interface/setup_el_frozen_trace.h>
+
+namespace {
+
+bool elFrozenTraceIsFiniteVec3(const Vec3 &value) {
+  return std::isfinite(value[0]) && std::isfinite(value[1]) && std::isfinite(value[2]);
+}
+
+int countELFrozenTraceLocalParticles() {
+  int particleCount = 0;
+  WorldID world = theWorld();
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+    if (body->getType() == sphereType) {
+      ++particleCount;
+    }
+  }
+  return particleCount;
+}
+
+void applyELFrozenTraceFluidForces(const real fullStepSize, const real alpha) {
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+    if (body->isFixed()) {
+      continue;
+    }
+    body->applyFluidForces(fullStepSize, alpha);
+  }
+}
+
+int cullELFrozenTraceLocalParticles(const Vec3 &domainMin, const Vec3 &domainMax) {
+  int removed = 0;
+  WorldID world = theWorld();
+  const real epsX = std::max(real(1e-12), std::abs(domainMax[0]) * real(1e-12));
+  const real epsY = std::max(real(1e-12), std::abs(domainMax[1]) * real(1e-12));
+  const real epsZ = std::max(real(1e-12), std::abs(domainMax[2]) * real(1e-12));
+
+  for (auto it = world->begin(); it != world->end();) {
+    BodyID body = *it;
+    if (body->getType() != sphereType) {
+      ++it;
+      continue;
+    }
+
+    const Vec3 pos = body->getPosition();
+    const Vec3 vel = body->getLinearVel();
+    const Vec3 ang = body->getAngularVel();
+
+    const bool invalidState = !elFrozenTraceIsFiniteVec3(pos) ||
+                              !elFrozenTraceIsFiniteVec3(vel) ||
+                              !elFrozenTraceIsFiniteVec3(ang);
+    const bool outsideClosedFaces =
+        (pos[0] < domainMin[0] - epsX) ||
+        (pos[1] < domainMin[1] - epsY) || (pos[1] > domainMax[1] + epsY) ||
+        (pos[2] < domainMin[2] - epsZ) || (pos[2] > domainMax[2] + epsZ);
+    const bool outsideOpenOutflow = (pos[0] > domainMax[0] + epsX);
+
+    if (invalidState || outsideClosedFaces || outsideOpenOutflow) {
+      it = world->destroy(it);
+      ++removed;
+    } else {
+      ++it;
+    }
+  }
+
+  return removed;
+}
+
+}  // namespace
+
+void stepELFrozenTrace() {
+  auto &config = SimulationConfig::getInstance();
+  WorldID world = theWorld();
+  MPI_Comm cartcomm = theMPISystem()->getComm();
+
+  static int timestep = 0;
+
+  const int substeps = std::max(1, config.getSubsteps());
+  const real fullStepSize = config.getStepsize();
+  const real substepSize = fullStepSize / static_cast<real>(substeps);
+  const real alpha = real(0.35);
+
+  const int localBefore = countELFrozenTraceLocalParticles();
+  int globalBefore = 0;
+  MPI_Reduce(&localBefore, &globalBefore, 1, MPI_INT, MPI_SUM, 0, cartcomm);
+
+  applyELFrozenTraceFluidForces(fullStepSize, alpha);
+
+  TimeStep::stepsize(substepSize);
+  for (int istep = 0; istep < substeps; ++istep) {
+    world->simulationStep(substepSize);
+  }
+  TimeStep::stepsize(fullStepSize);
+
+  const int localRemoved = cullELFrozenTraceLocalParticles(config.getCfdDomainMin(),
+                                                          config.getCfdDomainMax());
+  world->synchronize();
+
+  const int localAfter = countELFrozenTraceLocalParticles();
+  int globalAfter = 0;
+  int globalRemoved = 0;
+  MPI_Reduce(&localAfter, &globalAfter, 1, MPI_INT, MPI_SUM, 0, cartcomm);
+  MPI_Reduce(&localRemoved, &globalRemoved, 1, MPI_INT, MPI_SUM, 0, cartcomm);
+
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << "Frozen-field PE parallel step: timestep=" << timestep
+              << " | owned particles before/after = " << globalBefore
+              << " / " << globalAfter
+              << " | outflow removed = " << globalRemoved
+              << " | substeps = " << substeps
+              << std::endl;
+  }
+
+  ++timestep;
+  MPI_Barrier(cartcomm);
+}
 //
 //=================================================================================================
 //

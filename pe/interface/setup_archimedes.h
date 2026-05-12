@@ -2,6 +2,7 @@
 #include <pe/interface/decompose.h>
 #include <pe/interface/geometry_utils.h>
 #include <pe/config/SimulationConfig.h>
+#include <pe/interface/setup_optional_collision_params.h>
 #include <random>
 #include <algorithm>
 #include <vector>
@@ -334,8 +335,8 @@ void setupArchimedes(MPI_Comm ex0)
    // We can even run into the "registering distant domain" error when the AABB of the
    // particle is close in size to the size of a domain part!
    //=================================================================================
-   theCollisionSystem()->setLubrication(useLubrication);
-   theCollisionSystem()->setSlipLength(slipLength);
+   setOptionalLubrication(theCollisionSystem(), useLubrication);
+   setOptionalSlipLength(theCollisionSystem(), slipLength);
    theCollisionSystem()->setMinEps(0.01);
    theCollisionSystem()->setMaxIterations(200);
 

@@ -150,6 +150,18 @@ void synchronizeForces() {
 
 //=================================================================================================
 
+extern "C"
+void sync_el_frozen_forces_() {
+#ifndef PE_SERIAL_MODE
+    MPI_Comm cartcomm = theMPISystem()->getComm();
+    MPI_Barrier(cartcomm);
+    theCollisionSystem()->synchronizeForces();
+    theWorld()->synchronize();
+#endif
+}
+
+//=================================================================================================
+
 
 //=================================================================================================
 //
@@ -1102,9 +1114,9 @@ void getPartStructByIdx(int idx, particleData_t *particle) {
     particle->position[2] = p[2];
 
     // TODO: this is a dubious conversion to a smaller type -> fix
-    particle->uniqueIdx = body->getSystemID();
+    particle->uniqueIdx = body->getID();
     particle->localIdx  = idx;
-    particle->systemIdx = -1;
+    particle->systemIdx = body->getSystemID();
     particle->time = -1.0;
     particle->typeId = static_cast<int>(body->getType());
     particle->radius = 0.0;
@@ -1350,9 +1362,9 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     particle->angvel[2] = omega[2];
 
     // TODO: this is a dubious conversion to a smaller type -> fix
-    particle->uniqueIdx = body->getSystemID();
+    particle->uniqueIdx = body->getID();
     particle->localIdx  = idx;
-    particle->systemIdx = -1;
+    particle->systemIdx = body->getSystemID();
     particle->time = -1.0;
     particle->typeId = static_cast<int>(body->getType());
     particle->radius = 0.0;

@@ -238,19 +238,25 @@ extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
                                          double *ymin, double *ymax,
                                          double *zmin, double *zmax)
 {
-  fprintf(stderr, "\n");
-  fprintf(stderr, "========================================================================\n");
-  fprintf(stderr, "ERROR: commf2c_el_frozen_trace_() is not implemented in parallel PE mode\n");
-  fprintf(stderr, "========================================================================\n");
-  fprintf(stderr, "The frozen-field PE bootstrap is currently only supported in PE serial mode.\n");
-  fprintf(stderr, "\n");
-  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
-  fprintf(stderr, "  1. cd build\n");
-  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
-  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
-  fprintf(stderr, "  4. make -j8\n");
-  fprintf(stderr, "========================================================================\n");
-  exit(1);
+  int remRank = *remoteRank;
+
+  if (remRank != 0) {
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0);
+    int rank = 0;
+    int size = 0;
+    MPI_Comm_rank(CcommEx0, &rank);
+    MPI_Comm_size(CcommEx0, &size);
+
+    if (rank == 0) {
+      printf("%d> C) Configuration frozen-field E-L trace with %d PE processes.\n", remRank, size);
+    }
+    if (CcommEx0 == MPI_COMM_NULL) {
+      printf("%d> C) Error converting Fortran communicator for frozen-field E-L trace.\n", remRank);
+      return;
+    }
+
+    setupELFrozenTrace(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+  }
 }
 //=================================================================================================
 
