@@ -966,6 +966,7 @@ inline void setupATCSerial(int cfd_rank) {
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);
+  const bool resume = config.getResume();
 
   WorldID world = theWorld();
 
@@ -1016,80 +1017,111 @@ inline void setupATCSerial(int cfd_rank) {
   // SphereID sphere = createSphere(idx++, position, radius, myMaterial, global);
   int idx = 0;
 
+  int restoredBoundaryMeshes = 0;
+  if (resume) {
+    // Resume must load on every rank in PE serial mode, because each CFD rank runs
+    // its own PE instance and later queries local particle storage.  TriangleMesh
+    // distance-map checkpointing is not reliable yet, so discard restored meshes
+    // and recreate the domain boundary exactly like the fresh-start path below.
+    readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+
+    WorldID restoredWorld = theWorld();
+    for (auto it = restoredWorld->begin(); it != restoredWorld->end();) {
+      if ((*it)->getType() == triangleMeshType) {
+        it = restoredWorld->destroy(it);
+        ++restoredBoundaryMeshes;
+      } else {
+        ++it;
+      }
+    }
+  }
+
   //==============================================================================================
   // Domain Boundary Configuration
   //==============================================================================================
-  std::string boundaryFileName = std::string("atc_boundary_param_zero.obj");
-  Vec3 boundaryPos(0.0, 0.0, 0.0);  // Boundary mesh in reference position
+  const bool domainBoundaryEnabled = config.getDomainBoundaryEnabled();
+  std::string boundaryFileName = config.getDomainBoundaryFilePath().string();
+  Vec3 boundaryPos = config.getDomainBoundaryPosition();
   MaterialID boundaryMat = createMaterial("boundary", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
-  // Create boundary mesh as fixed global object
-  TriangleMeshID boundaryMesh = createTriangleMesh(idx++, boundaryPos, boundaryFileName, boundaryMat, false, true);
-  boundaryMesh->setFixed(true);
-  //boundaryMesh->setPosition(Vec3(0.000169, -2.256, 0.087286));
-  boundaryMesh->setPosition(Vec3(0.000006, -2.25096, 0.08719));
+  TriangleMeshID boundaryMesh(nullptr);
+  if (domainBoundaryEnabled) {
+    boundaryMesh = createTriangleMesh(idx++, boundaryPos, boundaryFileName, boundaryMat, false,
+                                      config.getDomainBoundaryVisible());
+    boundaryMesh->setFixed(config.getDomainBoundaryFixed());
+    boundaryMesh->setPosition(boundaryPos);
 
 #ifdef PE_USE_CGAL
-  // Enable DistanceMap acceleration for domain boundary
-  int dmResolution = 128;
-  int dmTolerance = 6;
-  boundaryMesh->enableDistanceMapAcceleration(dmResolution, dmTolerance);
+    if (config.getDomainBoundaryDistanceMapEnabled()) {
+      // Enable DistanceMap acceleration for domain boundary
+      int dmResolution = config.getDomainBoundaryDistanceMapResolution();
+      int dmTolerance = config.getDomainBoundaryDistanceMapTolerance();
+      boundaryMesh->enableDistanceMapAcceleration(dmResolution, dmTolerance);
 
-  const bool boundaryDistanceMapEnabled = boundaryMesh->hasDistanceMap();
-  const DistanceMap* boundaryDM = boundaryDistanceMapEnabled ? boundaryMesh->getDistanceMap() : nullptr;
+      const bool boundaryDistanceMapEnabled = boundaryMesh->hasDistanceMap();
+      const DistanceMap* boundaryDM = boundaryDistanceMapEnabled ? boundaryMesh->getDistanceMap() : nullptr;
 
-  if (!boundaryDistanceMapEnabled && isRepresentative) {
-    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for boundary" << std::endl;
-  }
+      if (!boundaryDistanceMapEnabled && isRepresentative) {
+        std::cerr << "WARNING: DistanceMap acceleration failed to initialize for boundary" << std::endl;
+      }
 
-  boundaryMesh->getDistanceMap()->invertForDomainBoundary();
-  if (boundaryDistanceMapEnabled && isRepresentative) {
-    // Invert the DistanceMap for domain boundary representation
-    // This transforms: inside mesh -> inside fluid domain (positive distance)
-    //                  outside mesh -> outside fluid domain (negative distance)
-    //                  normals -> point inward to keep particles in domain
-    //boundaryMesh->getDistanceMap()->invertForDomainBoundary();
-    std::cout << "\n--" << "DOMAIN BOUNDARY SETUP"
-              << "--------------------------------------------------------------\n"
-              << " Boundary mesh file                      = " << boundaryFileName << "\n"
-              << " Boundary mesh volume                    = " << boundaryMesh->getVolume() << "\n"
-              << " Distance map enabled                    = yes (INVERTED for domain boundary)\n"
-              << " Distance map grid size                  = "
-              << boundaryDM->getNx() << " x " << boundaryDM->getNy() << " x " << boundaryDM->getNz() << "\n"
-              << " Distance map origin                     = ("
-              << boundaryDM->getOrigin()[0] << ", "
-              << boundaryDM->getOrigin()[1] << ", "
-              << boundaryDM->getOrigin()[2] << ")\n"
-              << " Distance map spacing                    = " << boundaryDM->getSpacing() << "\n"
-              << " Distance map resolution                 = " << dmResolution << "\n"
-              << " Distance map tolerance                  = " << dmTolerance << "\n"
-              << "--------------------------------------------------------------------------------\n" << std::endl;
+      if (boundaryDistanceMapEnabled && config.getDomainBoundaryInvertDistanceMap()) {
+        boundaryMesh->getDistanceMap()->invertForDomainBoundary();
+      }
+      if (boundaryDistanceMapEnabled && isRepresentative) {
+        // Invert the DistanceMap for domain boundary representation
+        // This transforms: inside mesh -> inside fluid domain (positive distance)
+        //                  outside mesh -> outside fluid domain (negative distance)
+        //                  normals -> point inward to keep particles in domain
+        std::cout << "\n--" << "DOMAIN BOUNDARY SETUP"
+                  << "--------------------------------------------------------------\n"
+                  << " Boundary mesh file                      = " << boundaryFileName << "\n"
+                  << " Boundary mesh volume                    = " << boundaryMesh->getVolume() << "\n"
+                  << " Distance map enabled                    = yes"
+                  << (config.getDomainBoundaryInvertDistanceMap() ? " (INVERTED for domain boundary)" : "")
+                  << "\n"
+                  << " Distance map grid size                  = "
+                  << boundaryDM->getNx() << " x " << boundaryDM->getNy() << " x " << boundaryDM->getNz() << "\n"
+                  << " Distance map origin                     = ("
+                  << boundaryDM->getOrigin()[0] << ", "
+                  << boundaryDM->getOrigin()[1] << ", "
+                  << boundaryDM->getOrigin()[2] << ")\n"
+                  << " Distance map spacing                    = " << boundaryDM->getSpacing() << "\n"
+                  << " Distance map resolution                 = " << dmResolution << "\n"
+                  << " Distance map tolerance                  = " << dmTolerance << "\n"
+                  << "--------------------------------------------------------------------------------\n" << std::endl;
 
-    // Write inverted DistanceMap to VTK for visual inspection
-    vtk::DistanceMapWriter::writeVTI("atc_boundary_distancemap.vti", *boundaryDM);
-    std::cout << "Inverted DistanceMap written to: atc_boundary_distancemap.vti\n" << std::endl;
+        if (config.getDomainBoundaryWriteDistanceMapVti()) {
+          vtk::DistanceMapWriter::writeVTI(config.getDomainBoundaryDistanceMapVtiFile().string(),
+                                           *boundaryDM);
+          std::cout << "DistanceMap written to: "
+                    << config.getDomainBoundaryDistanceMapVtiFile() << "\n" << std::endl;
+        }
 
-    // Sanity check: Test a point that should be outside the domain
-    Vec3 testPointWorld(-0.4, -2.0, 0.19);  // Outside domain, within grid bounds
-    Vec3 testPointLocal = boundaryMesh->pointFromWFtoBF(testPointWorld);
-    real testDistance = boundaryDM->interpolateDistance(testPointLocal[0], testPointLocal[1], testPointLocal[2]);
+        // Sanity check: Test a point that should be outside the domain
+        Vec3 testPointWorld(-0.4, -2.0, 0.19);  // Outside domain, within grid bounds
+        Vec3 testPointLocal = boundaryMesh->pointFromWFtoBF(testPointWorld);
+        real testDistance = boundaryDM->interpolateDistance(testPointLocal[0], testPointLocal[1], testPointLocal[2]);
 
-    std::cout << "\n--" << "ESCAPE DETECTION SANITY CHECK"
-              << "--------------------------------------------------------------\n"
-              << " Test point (world): (" << testPointWorld[0] << ", " << testPointWorld[1] << ", " << testPointWorld[2] << ")\n"
-              << " Test point (local): (" << testPointLocal[0] << ", " << testPointLocal[1] << ", " << testPointLocal[2] << ")\n"
-              << " Signed distance: " << testDistance << "\n"
-              << " Expected: negative (outside domain)\n"
-              << " Result: " << (testDistance < 0.0 ? "PASS - point correctly identified as OUTSIDE" :
-                                (testDistance > 1e5 ? "OUT OF GRID BOUNDS" : "FAIL - point incorrectly identified as INSIDE")) << "\n"
-              << "--------------------------------------------------------------------------------\n" << std::endl;
-  }
+        std::cout << "\n--" << "ESCAPE DETECTION SANITY CHECK"
+                  << "--------------------------------------------------------------\n"
+                  << " Test point (world): (" << testPointWorld[0] << ", " << testPointWorld[1] << ", " << testPointWorld[2] << ")\n"
+                  << " Test point (local): (" << testPointLocal[0] << ", " << testPointLocal[1] << ", " << testPointLocal[2] << ")\n"
+                  << " Signed distance: " << testDistance << "\n"
+                  << " Expected: negative (outside domain)\n"
+                  << " Result: " << (testDistance < 0.0 ? "PASS - point correctly identified as OUTSIDE" :
+                                    (testDistance > 1e5 ? "OUT OF GRID BOUNDS" : "FAIL - point incorrectly identified as INSIDE")) << "\n"
+                  << "--------------------------------------------------------------------------------\n" << std::endl;
+      }
+    }
 #else
-  const bool boundaryDistanceMapEnabled = false;
-  if (isRepresentative) {
-    std::cout << "WARNING: DistanceMap not available (PE_USE_CGAL not defined)" << std::endl;
-  }
+    if (config.getDomainBoundaryDistanceMapEnabled() && isRepresentative) {
+      std::cout << "WARNING: DistanceMap not available (PE_USE_CGAL not defined)" << std::endl;
+    }
 #endif
+  } else if (isRepresentative) {
+    std::cout << "Domain boundary disabled by configuration" << std::endl;
+  }
   //==============================================================================================
   // Particle Generation along Centerline
   //==============================================================================================
@@ -1114,14 +1146,38 @@ inline void setupATCSerial(int cfd_rank) {
   // num_rings=5 (one extra ring vs. before), margin_steps=20 (up from 4) to keep
   // a larger empty region at inlet/outlet while preserving ~6992 total particles:
   //   ~60 cross-sections × 118 particles/section ≈ 7080  (within ±100 of previous count)
-  std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad, -1.0, 4, 20, 4);
+  std::vector<Vec3> generatedSpherePositions =
+      generatePointsAlongCenterline(edges, sphereRad, -1.0, 4, 20, 4);
 
   int particlesCreated = 0;
-  if (config.getPackingMethod() != SimulationConfig::PackingMethod::None) {
-    // Create spheres at generated positions (serial mode: no domain ownership check needed)
-    for (auto spherePos: spherePositions) {
-      createSphere(idx++, spherePos, sphereRad, particleMaterial);
-      particlesCreated++;
+  const auto packingMethod = config.getPackingMethod();
+  if (resume) {
+    // Checkpoint resume owns particle initialization completely.  Do not create
+    // any additional particles from the configured packing method.
+    for (auto it = theCollisionSystem()->getBodyStorage().begin();
+         it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+      if ((*it)->getType() == sphereType) {
+        ++particlesCreated;
+      }
+    }
+  } else {
+    if (packingMethod == SimulationConfig::PackingMethod::External) {
+      std::vector<Vec3> spherePositions = readVectorsFromFile(config.getXyzFilePath().string());
+      if (isRepresentative) {
+        std::cout << " Loading external particle positions from: "
+                  << config.getXyzFilePath() << "\n"
+                  << " Positions read: " << spherePositions.size() << "\n";
+      }
+      for (auto spherePos: spherePositions) {
+        createSphere(idx++, spherePos, sphereRad, particleMaterial);
+        particlesCreated++;
+      }
+    } else if (packingMethod != SimulationConfig::PackingMethod::None) {
+      // Create spheres at generated positions (serial mode: no domain ownership check needed)
+      for (auto spherePos: generatedSpherePositions) {
+        createSphere(idx++, spherePos, sphereRad, particleMaterial);
+        particlesCreated++;
+      }
     }
   }
 
@@ -1133,9 +1189,13 @@ inline void setupATCSerial(int cfd_rank) {
     std::cout << "\n--" << "ATC SETUP"
               << "--------------------------------------------------------------\n"
               << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Mode                                    = "
+              << (resume ? std::string("resume from ") + config.getResumeCheckpointFile()
+                         : std::string("fresh start")) << "\n"
               << " Fluid viscosity                         = " << simViscosity << "\n"
               << " Fluid density                           = " << simRho << "\n"
               << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Restored boundary meshes discarded      = " << restoredBoundaryMeshes << "\n"
               << " Total number of particles               = " << particlesCreated << "\n"
               << " Particle radius                         = " << sphereRad << "\n"
               << " Particle volume                         = " << partVol << "\n"

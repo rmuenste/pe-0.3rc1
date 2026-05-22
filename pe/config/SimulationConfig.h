@@ -198,6 +198,34 @@ public:
     //@}
     //**************************************************************************************
 
+    //**Domain boundary parameters*********************************************************
+    /*!\name Domain boundary parameters */
+    //@{
+    bool getDomainBoundaryEnabled() const { return domainBoundaryEnabled_; }
+    void setDomainBoundaryEnabled(bool value) { domainBoundaryEnabled_ = value; }
+    const boost::filesystem::path& getDomainBoundaryFilePath() const { return domainBoundaryFilePath_; }
+    void setDomainBoundaryFilePath(const boost::filesystem::path& path) { domainBoundaryFilePath_ = path; }
+    const Vec3& getDomainBoundaryPosition() const { return domainBoundaryPosition_; }
+    void setDomainBoundaryPosition(const Vec3& value) { domainBoundaryPosition_ = value; }
+    bool getDomainBoundaryFixed() const { return domainBoundaryFixed_; }
+    void setDomainBoundaryFixed(bool value) { domainBoundaryFixed_ = value; }
+    bool getDomainBoundaryVisible() const { return domainBoundaryVisible_; }
+    void setDomainBoundaryVisible(bool value) { domainBoundaryVisible_ = value; }
+    bool getDomainBoundaryDistanceMapEnabled() const { return domainBoundaryDistanceMapEnabled_; }
+    void setDomainBoundaryDistanceMapEnabled(bool value) { domainBoundaryDistanceMapEnabled_ = value; }
+    int getDomainBoundaryDistanceMapResolution() const { return domainBoundaryDistanceMapResolution_; }
+    void setDomainBoundaryDistanceMapResolution(int value) { domainBoundaryDistanceMapResolution_ = value; }
+    int getDomainBoundaryDistanceMapTolerance() const { return domainBoundaryDistanceMapTolerance_; }
+    void setDomainBoundaryDistanceMapTolerance(int value) { domainBoundaryDistanceMapTolerance_ = value; }
+    bool getDomainBoundaryInvertDistanceMap() const { return domainBoundaryInvertDistanceMap_; }
+    void setDomainBoundaryInvertDistanceMap(bool value) { domainBoundaryInvertDistanceMap_ = value; }
+    bool getDomainBoundaryWriteDistanceMapVti() const { return domainBoundaryWriteDistanceMapVti_; }
+    void setDomainBoundaryWriteDistanceMapVti(bool value) { domainBoundaryWriteDistanceMapVti_ = value; }
+    const boost::filesystem::path& getDomainBoundaryDistanceMapVtiFile() const { return domainBoundaryDistanceMapVtiFile_; }
+    void setDomainBoundaryDistanceMapVtiFile(const boost::filesystem::path& path) { domainBoundaryDistanceMapVtiFile_ = path; }
+    //@}
+    //**************************************************************************************
+
     //**Packing parameters******************************************************************
     /*!\name Packing parameters */
     //@{
@@ -310,6 +338,19 @@ private:
     real benchRadius_;           //!< Radius of the benchmark geometry
     real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
+
+    // Domain boundary parameters
+    bool domainBoundaryEnabled_; //!< Enable ATC triangle mesh domain boundary setup
+    boost::filesystem::path domainBoundaryFilePath_; //!< Triangle mesh file used for ATC domain boundary
+    Vec3 domainBoundaryPosition_; //!< World-frame position applied to the ATC domain boundary
+    bool domainBoundaryFixed_; //!< Whether the ATC domain boundary is fixed
+    bool domainBoundaryVisible_; //!< Whether the ATC domain boundary is visible to PE writers
+    bool domainBoundaryDistanceMapEnabled_; //!< Enable domain boundary distance map construction
+    int domainBoundaryDistanceMapResolution_; //!< Distance map resolution parameter
+    int domainBoundaryDistanceMapTolerance_; //!< Distance map tolerance parameter
+    bool domainBoundaryInvertDistanceMap_; //!< Invert distance map signs/normals for domain boundary use
+    bool domainBoundaryWriteDistanceMapVti_; //!< Write distance map VTI for inspection
+    boost::filesystem::path domainBoundaryDistanceMapVtiFile_; //!< Output VTI filename
 
     // Packing parameters
     PackingMethod packingMethod_; //!< Particle packing method

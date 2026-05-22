@@ -70,6 +70,17 @@ SimulationConfig::SimulationConfig()
     , benchRadius_(0.0015)
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
+    , domainBoundaryEnabled_(true)
+    , domainBoundaryFilePath_("atc_boundary_param_zero.obj")
+    , domainBoundaryPosition_(0.000006, -2.25096, 0.08719)
+    , domainBoundaryFixed_(true)
+    , domainBoundaryVisible_(true)
+    , domainBoundaryDistanceMapEnabled_(true)
+    , domainBoundaryDistanceMapResolution_(128)
+    , domainBoundaryDistanceMapTolerance_(6)
+    , domainBoundaryInvertDistanceMap_(true)
+    , domainBoundaryWriteDistanceMapVti_(true)
+    , domainBoundaryDistanceMapVtiFile_("atc_boundary_distancemap.vti")
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
     , particleDensity_(1.0)
@@ -231,6 +242,61 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
                                    j["benchStartPosition_"][1].get<real>(),
                                    j["benchStartPosition_"][2].get<real>());
             config.setBenchStartPosition(benchStartPosition);
+        }
+    }
+
+    if (j.contains("domainBoundary_")) {
+        const nlohmann::json& boundary = j["domainBoundary_"];
+        if (!boundary.is_object()) {
+            throw std::invalid_argument("domainBoundary_ must be a JSON object");
+        }
+
+        if (boundary.contains("enabled"))
+            config.setDomainBoundaryEnabled(boundary["enabled"].get<bool>());
+
+        if (boundary.contains("file"))
+            config.setDomainBoundaryFilePath(boost::filesystem::path(boundary["file"].get<std::string>()));
+
+        if (boundary.contains("position")) {
+            const nlohmann::json& position = boundary["position"];
+            if (!position.is_array() || position.size() != 3) {
+                throw std::invalid_argument("domainBoundary_.position must be a [x, y, z] array");
+            }
+            config.setDomainBoundaryPosition(Vec3(position[0].get<real>(),
+                                                  position[1].get<real>(),
+                                                  position[2].get<real>()));
+        }
+
+        if (boundary.contains("fixed"))
+            config.setDomainBoundaryFixed(boundary["fixed"].get<bool>());
+
+        if (boundary.contains("visible"))
+            config.setDomainBoundaryVisible(boundary["visible"].get<bool>());
+
+        if (boundary.contains("distanceMap")) {
+            const nlohmann::json& distanceMap = boundary["distanceMap"];
+            if (!distanceMap.is_object()) {
+                throw std::invalid_argument("domainBoundary_.distanceMap must be a JSON object");
+            }
+
+            if (distanceMap.contains("enabled"))
+                config.setDomainBoundaryDistanceMapEnabled(distanceMap["enabled"].get<bool>());
+
+            if (distanceMap.contains("resolution"))
+                config.setDomainBoundaryDistanceMapResolution(distanceMap["resolution"].get<int>());
+
+            if (distanceMap.contains("tolerance"))
+                config.setDomainBoundaryDistanceMapTolerance(distanceMap["tolerance"].get<int>());
+
+            if (distanceMap.contains("invertForDomainBoundary"))
+                config.setDomainBoundaryInvertDistanceMap(distanceMap["invertForDomainBoundary"].get<bool>());
+
+            if (distanceMap.contains("writeVti"))
+                config.setDomainBoundaryWriteDistanceMapVti(distanceMap["writeVti"].get<bool>());
+
+            if (distanceMap.contains("vtiFile"))
+                config.setDomainBoundaryDistanceMapVtiFile(
+                    boost::filesystem::path(distanceMap["vtiFile"].get<std::string>()));
         }
     }
 
