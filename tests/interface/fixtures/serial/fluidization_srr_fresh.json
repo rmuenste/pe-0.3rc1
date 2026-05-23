@@ -1,0 +1,15 @@
+{
+  "timesteps_": 1,
+  "stepsize_": 0.001,
+  "substeps_": 1,
+  "vtk_": false,
+  "useCheckpointer_": false,
+  "resume_": false,
+  "checkpoint_path_": "checkpoints",
+  "particleDensity_": 1.0,
+  "fluidViscosity_": 1.0,
+  "fluidDensity_": 1.0,
+  "gravity_": [0.0, 0.0, -9.81],
+  "fluidizationSpacingFactor_": 0.25,
+  "packingMethod_": "grid"
+}
