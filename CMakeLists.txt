@@ -587,6 +587,16 @@ endif()
 
 #==================================================================================================
 #
+# Interface smoke tests
+#
+#=================================================================================================
+if(BUILD_TESTING AND USE_PE AND USE_PE_SERIAL_MODE AND TARGET pe_static)
+   add_subdirectory(tests/interface)
+endif()
+
+
+#==================================================================================================
+#
 # Build of the examples
 #
 #=================================================================================================
@@ -688,4 +698,3 @@ EXTRA_PACKAGES   = ${CMAKE_SOURCE_DIR}/doc/pe
 PREDEFINED       = ${DEFINES} PE_PUBLIC= PE_PRIVATE= PE_PROTECTED= PE_NOTHROW=" )
    ADD_CUSTOM_TARGET( doc ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/doc/Doxyfile WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/doc COMMENT "Generating documentation" )
 endif()
-

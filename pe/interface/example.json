@@ -18,6 +18,21 @@
     "benchRadius_": 0.0075,
     "fluidizationSpacingFactor_": 0.1,
     "benchStartPosition_": [1.0, 0.01, 0.1275],
+    "domainBoundary_": {
+        "enabled": true,
+        "file": "atc_boundary_param_zero.obj",
+        "position": [0.000006, -2.25096, 0.08719],
+        "fixed": true,
+        "visible": true,
+        "distanceMap": {
+            "enabled": true,
+            "resolution": 128,
+            "tolerance": 6,
+            "invertForDomainBoundary": true,
+            "writeVti": true,
+            "vtiFile": "atc_boundary_distancemap.vti"
+        }
+    },
     "packingMethod_": "grid",
     "xyzFilePath_": "",
     "particleDensity_": 1120.0,
