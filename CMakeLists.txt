@@ -24,6 +24,8 @@
 cmake_minimum_required(VERSION 3.15)  # or higher, if possible.  3.15 introduced INTERFACE_LIBRARY
 project(pe)
 
+include(CTest)
+
 # Enable ExternalProject module
 include(ExternalProject)
 include(FetchContent)
@@ -53,6 +55,10 @@ set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support." 
 
 # Option to enable/disable JSON support
 option(USE_JSON "Use nlohmann/json library" ON)
+
+option(PE_BUILD_INTERFACE_TESTS
+       "Build lightweight PE interface smoke tests when BUILD_TESTING is enabled"
+       ${BUILD_TESTING})
 
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
 option(USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: OFF)" OFF)
@@ -590,7 +596,7 @@ endif()
 # Interface smoke tests
 #
 #=================================================================================================
-if(BUILD_TESTING AND USE_PE AND USE_PE_SERIAL_MODE AND TARGET pe_static)
+if(BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
    add_subdirectory(tests/interface)
 endif()
 

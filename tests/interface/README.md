@@ -20,6 +20,20 @@ cmake --build build-el-frozen-trace-gcc14 --target pe_interface_smoke_serial
 ctest --test-dir build-el-frozen-trace-gcc14 -R pe-interface-serial --output-on-failure
 ```
 
+From a standalone PE checkout, only PE's normal dependencies plus testing are
+needed:
+
+```bash
+cmake -S . -B build-interface-tests \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON \
+  -DUSE_JSON=ON \
+  -DEIGEN=ON
+
+cmake --build build-interface-tests --target pe_interface_smoke_serial
+ctest --test-dir build-interface-tests -R pe-interface-serial --output-on-failure
+```
+
 Future parallel interface coverage should live next to this runner as a separate
 `pe_interface_smoke_parallel` target with fixtures under `fixtures/parallel` and
 CTest names using the `pe-interface-parallel-*` prefix.
