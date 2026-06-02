@@ -1,3 +1,61 @@
+// Serial interface smoke test harness.
+//
+// PE singleton topology and why it matters for testing
+// -----------------------------------------------------
+// The PE engine exposes its state through process-global singletons:
+// theCollisionSystem() owns the body storage and collision pipeline, and
+// SimulationConfig::getInstance() holds all configuration parsed from JSON.
+// The interface setup functions (setupATCSerial, setupFluidizationSRRSerial,
+// ...) initialise these singletons as a side effect. Once initialised they
+// cannot be reset or torn down — there is no "clear world" call. Calling a
+// second setup function in the same process would operate on already-populated
+// singletons, producing contaminated simulation state and unreliable
+// assertions. Running multiple interface tests sequentially inside one process
+// is therefore not safe.
+//
+// Process-per-case as the isolation mechanism
+// --------------------------------------------
+// Each --case is always its own process. main() parses args, selects exactly
+// one case, runs exactly one test function, and exits. There is no "run all
+// cases sequentially" path. CTest invokes this binary once per case, giving
+// each invocation a fresh address space and therefore freshly default-
+// constructed singletons. No teardown logic is needed because the OS reclaims
+// the entire process after every case.
+//
+// Execution flow:
+//
+//   CTest
+//    ├── pe_interface_smoke_serial --case atc-external           → fresh process → setupATCSerial → exit
+//    ├── pe_interface_smoke_serial --case atc-cgal-distancemap   → fresh process → setupATCSerial → exit
+//    ├── pe_interface_smoke_serial --case fluidization-srr-fresh → fresh process → setupFluidizationSRRSerial → exit
+//    ├── pe_interface_smoke_serial --case atc-resume-roundtrip   → fresh process
+//    │     ├── forks seed child  → child process → setupATCSerial → writes checkpoint → exit
+//    │     └── parent continues  → same process  → setupATCSerial (resume) → exit
+//    └── pe_interface_smoke_serial --case fluidization-srr-resume-roundtrip → fresh process
+//          ├── forks seed child  → child process → setupFluidizationSRRSerial → writes checkpoint → exit
+//          └── parent continues  → same process  → setupFluidizationSRRSerial (resume) → exit
+//
+// The roundtrip cases are the only ones where two setup calls happen in related
+// processes. The seed always runs in a fork/execv child so it gets its own
+// clean singleton state; the parent calls setup exactly once after the child
+// exits. "One case = one process" is the load-bearing design decision that
+// makes the harness correct without any singleton teardown logic.
+//
+// Adding a new case
+// -----------------
+// 1. Add or reuse fixture files under fixtures/serial.
+// 2. Add a CTest entry in tests/interface/CMakeLists.txt with
+//    pe_add_interface_serial_test(<ctest-name>, <case-name>). Gate it with the
+//    required feature option, for example if(CGAL), when the case needs an
+//    optional dependency.
+// 3. Teach main() to map <case-name> to the fixture config that should be
+//    copied to example.json.
+// 4. Implement a single run<CaseName>() or seed<CaseName>() helper that calls
+//    exactly one setup function and performs focused assertions.
+// 5. Dispatch <case-name> to that helper in main(). Do not add a mode that runs
+//    multiple cases in one process; each new scenario should be a separate
+//    CTest case so process isolation remains intact.
+
 #include <pe/config/SimulationConfig.h>
 #include <pe/core.h>
 #include <pe/core/BodyBinaryWriter.h>
@@ -7,6 +65,7 @@
 
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -176,6 +235,33 @@ void requireAllSpheresYLocked() {
   require(spheres > 0, "No spheres found while checking y-DOF lock");
 }
 
+pe::ConstTriangleMeshID findSingleTriangleMesh() {
+  pe::ConstTriangleMeshID mesh = nullptr;
+  const auto& storage = pe::theCollisionSystem()->getBodyStorage();
+  for (auto it = storage.begin(); it != storage.end(); ++it) {
+    if ((*it)->getType() != pe::triangleMeshType) {
+      continue;
+    }
+    require(mesh == nullptr, "Expected exactly one triangle mesh");
+    mesh = static_cast<pe::ConstTriangleMeshID>(*it);
+  }
+  require(mesh != nullptr, "Expected one triangle mesh");
+  return mesh;
+}
+
+void requireFileContains(const fs::path& path, const std::string& needle) {
+  require(fs::exists(path), "Expected output file does not exist: " + path.string());
+  require(fs::is_regular_file(path), "Expected output path is not a file: " + path.string());
+  require(fs::file_size(path) > 0, "Expected output file is empty: " + path.string());
+
+  std::ifstream input(path.string().c_str());
+  require(input.good(), "Could not read output file: " + path.string());
+  const std::string contents((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+  require(contents.find(needle) != std::string::npos,
+          "Output file does not contain expected marker '" + needle + "': " + path.string());
+}
+
 void writeCheckpoint(const fs::path& checkpointPath, const std::string& name) {
   fs::create_directories(checkpointPath);
   pe::BodyBinaryWriter writer;
@@ -204,6 +290,32 @@ void seedAtcRoundtrip() {
   require(countBodies(pe::sphereType) == 3, "ATC seed did not create fixture particles");
   require(countBodies(pe::triangleMeshType) == 1, "ATC seed did not create boundary mesh");
   writeCheckpoint("checkpoints", "resume_seed");
+}
+
+void runAtcCgalDistanceMap() {
+#ifndef PE_USE_CGAL
+  fail("ATC CGAL DistanceMap test requires PE_USE_CGAL");
+#else
+  pe::setupATCSerial(1);
+  requireCommonConfig(false, pe::SimulationConfig::External);
+
+  const auto& config = pe::SimulationConfig::getInstance();
+  require(config.getDomainBoundaryDistanceMapEnabled() == true,
+          "ATC distance map should be enabled for CGAL fixture");
+  require(config.getDomainBoundaryWriteDistanceMapVti() == true,
+          "ATC distance map VTI output should be enabled for CGAL fixture");
+  requireCounts(3, 1, 0);
+
+  pe::ConstTriangleMeshID boundaryMesh = findSingleTriangleMesh();
+  require(boundaryMesh->hasDistanceMap(), "Boundary mesh did not build a DistanceMap");
+  require(boundaryMesh->getDistanceMap() != nullptr, "Boundary mesh DistanceMap pointer is null");
+  require(boundaryMesh->getDistanceMap()->getNx() > 0, "DistanceMap has invalid x dimension");
+  require(boundaryMesh->getDistanceMap()->getNy() > 0, "DistanceMap has invalid y dimension");
+  require(boundaryMesh->getDistanceMap()->getNz() > 0, "DistanceMap has invalid z dimension");
+
+  requireFileContains(config.getDomainBoundaryDistanceMapVtiFile(), "<VTKFile");
+  requireFileContains(config.getDomainBoundaryDistanceMapVtiFile(), "ImageData");
+#endif
 }
 
 void runFluidizationSrrFresh() {
@@ -240,6 +352,8 @@ int main(int argc, char** argv) {
       selectConfig(runDir, "atc_external.json");
     } else if (args.caseName == "atc-resume-roundtrip") {
       selectConfig(runDir, "atc_external.json");
+    } else if (args.caseName == "atc-cgal-distancemap") {
+      selectConfig(runDir, "atc_cgal_distancemap.json");
     } else if (args.caseName == "fluidization-srr-fresh") {
       selectConfig(runDir, "fluidization_srr_fresh.json");
     } else if (args.caseName == "fluidization-srr-resume-roundtrip") {
@@ -279,6 +393,8 @@ int main(int argc, char** argv) {
         fail("Unknown test phase: " + args.phase);
       } else if (args.caseName == "atc-external") {
         runAtcExternal();
+      } else if (args.caseName == "atc-cgal-distancemap") {
+        runAtcCgalDistanceMap();
       } else if (args.caseName == "fluidization-srr-fresh") {
         runFluidizationSrrFresh();
       }

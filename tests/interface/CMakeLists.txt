@@ -30,6 +30,12 @@ pe_add_interface_serial_test(
   pe-interface-serial-atc-resume-roundtrip
   atc-resume-roundtrip
 )
+if(CGAL)
+  pe_add_interface_serial_test(
+    pe-interface-serial-atc-cgal-distancemap
+    atc-cgal-distancemap
+  )
+endif()
 pe_add_interface_serial_test(
   pe-interface-serial-fluidization-srr-fresh
   fluidization-srr-fresh
