@@ -1,0 +1,31 @@
+{
+  "timesteps_": 1,
+  "stepsize_": 0.001,
+  "substeps_": 1,
+  "vtk_": false,
+  "useCheckpointer_": false,
+  "resume_": false,
+  "checkpoint_path_": "checkpoints",
+  "benchRadius_": 0.0015,
+  "particleDensity_": 1.0,
+  "fluidViscosity_": 1.0,
+  "fluidDensity_": 1.0,
+  "gravity_": [0.0, 0.0, -9.81],
+  "packingMethod_": "external",
+  "xyzFilePath_": "particles.xyz",
+  "domainBoundary_": {
+    "enabled": true,
+    "file": "domain_boundary.obj",
+    "position": [0.0, 0.0, 0.0],
+    "fixed": true,
+    "visible": true,
+    "distanceMap": {
+      "enabled": true,
+      "resolution": 12,
+      "tolerance": 2,
+      "invertForDomainBoundary": true,
+      "writeVti": true,
+      "vtiFile": "atc_boundary_distancemap.vti"
+    }
+  }
+}
