@@ -30,7 +30,7 @@ The DistanceMap generation creates a 3D regular grid around a triangle mesh, com
 
 ### Implementation Location
 - **Header**: `pe/core/detection/fine/DistanceMap.h`
-- **Implementation**: `src/core/detection/fine/DistanceMap.cpp:47-150`
+- **Implementation**: `src/core/detection/fine/DistanceMap.cpp`
 
 ### Algorithm Steps
 
@@ -129,7 +129,7 @@ std::vector<Vec3> contact_points_;    // Nearest surface points
 
 DistanceMap collision detection is integrated into PE's fine collision detection system via `MaxContacts::collideTMeshTMesh()`.
 
-**Location**: `pe/core/detection/fine/MaxContacts.h:3744-3775`
+**Location**: `pe/core/detection/fine/MaxContacts.h`, `MaxContacts::collideTMeshTMesh`
 
 ### Pipeline Overview
 
@@ -147,7 +147,7 @@ Broad Phase Detection → Fine Collision Detection → Contact Generation
 
 ### DistanceMap Detection Algorithm
 
-**Location**: `pe/core/detection/fine/MaxContacts.h:3877-3975`
+**Location**: `pe/core/detection/fine/MaxContacts.h`, `MaxContacts::collideWithDistanceMap`
 
 #### Step 1: DistanceMap Selection
 
@@ -503,7 +503,7 @@ void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& c
 }
 ```
 
-**DistanceMap Collision Algorithm**: Lines 3877-3975
+**DistanceMap Collision Algorithm**: `MaxContacts::collideWithDistanceMap`
 ```cpp  
 template< typename CC >
 bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, CC& contacts )
@@ -525,7 +525,7 @@ class TriangleMesh : public TriangleMeshTrait<Config>
 {
 public:
     // DistanceMap acceleration
-    void enableDistanceMapAcceleration(pe::real spacing, int resolution = 50, int tolerance = 5);
+    void enableDistanceMapAcceleration(int resolution = 50, int tolerance = 5);
     bool hasDistanceMap() const;
     const DistanceMap* getDistanceMap() const;
     
@@ -549,7 +549,8 @@ target_link_libraries(mesh_simulation PRIVATE ${GMP_LIBRARIES})
 target_include_directories(mesh_simulation PRIVATE ${CGAL_INCLUDE_DIR})
 ```
 
-**Conditional Compilation**: Code protected by `#ifdef PE_USE_CGAL`
+Build DistanceMap support with the public CMake option `-DCGAL=ON`. The build
+system defines `PE_USE_CGAL` for source-level conditional compilation.
 
 ### Usage Examples
 
@@ -559,7 +560,7 @@ target_include_directories(mesh_simulation PRIVATE ${CGAL_INCLUDE_DIR})
 ```cpp
 // Load triangle mesh with DistanceMap acceleration
 TriangleMeshID mesh = createTriangleMesh(id, position, "mesh.obj", material, false, true);
-mesh->enableDistanceMapAcceleration(0.1, 30, 3);  // spacing, resolution, tolerance
+mesh->enableDistanceMapAcceleration(30, 3);  // resolution, tolerance
 
 // DistanceMap automatically used in collision detection
 world->simulationStep(timestep);
@@ -573,7 +574,7 @@ world->simulationStep(timestep);
 TriangleMeshID referenceMesh = createTriangleMesh(1, Vec3(0,0,0), "reference.obj", material1);
 TriangleMeshID testMesh = createTriangleMesh(2, Vec3(0.5,0.5,0.5), "test.obj", material2);
 
-referenceMesh->enableDistanceMapAcceleration(0.1, 50, 5);
+referenceMesh->enableDistanceMapAcceleration(50, 5);
 
 // Direct collision testing
 ContactVector contacts;
@@ -584,21 +585,22 @@ MaxContacts::collideTMeshTMesh(referenceMesh, testMesh, contacts);
 
 #### DistanceMap Parameters
 
-- **spacing**: Grid cell size (controls accuracy vs. memory)
 - **resolution**: Cells along largest dimension (typically 30-100)  
 - **tolerance**: Padding cells around mesh (typically 3-10)
+
+Grid spacing is derived from the mesh bounding box and the requested resolution.
 
 #### Performance Tuning
 
 ```cpp
 // High accuracy (large memory usage)
-mesh->enableDistanceMapAcceleration(0.05, 100, 10);
+mesh->enableDistanceMapAcceleration(100, 10);
 
 // Balanced (recommended)
-mesh->enableDistanceMapAcceleration(0.1, 50, 5);
+mesh->enableDistanceMapAcceleration(50, 5);
 
 // Fast (lower accuracy)  
-mesh->enableDistanceMapAcceleration(0.2, 30, 3);
+mesh->enableDistanceMapAcceleration(30, 3);
 ```
 
 ## Performance Characteristics

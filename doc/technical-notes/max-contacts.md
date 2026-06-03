@@ -140,7 +140,8 @@ This provides fast allocation/deallocation for the frequently created and destro
 
 ### Configuration
 
-MaxContacts is configured as the default fine collision detector:
+`MaxContacts` is the standard fine collision detector selected by this repo's
+`pe/config/Collisions.h` configuration:
 
 ```cpp
 // In pe/config/Collisions.h

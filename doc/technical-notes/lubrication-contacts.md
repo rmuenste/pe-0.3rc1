@@ -3,6 +3,8 @@
 Status
 - Canonical implementation: HardContactLubricated
 - Deprecated (to be removed next version): HardContactAndFluidWithLubrication, HardContactFluidLubrication
+- Solver selection is compile-time configuration in `pe/config/Collisions.h`;
+  this note describes the lubrication/contact stack, not a universal default.
 
 ## Overview
 - Introduces a lubrication interaction regime between “no contact” and “hard contact”.

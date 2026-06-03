@@ -2,11 +2,15 @@
 
 ## Analysis of Hard Contact Relaxation Models
 
-Based on the analysis of `pe/core/collisionsystem/HardContactAndFluid.h`:
+Based on the analysis of the hard-contact relaxation implementations in
+`pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h` and
+related solver paths such as `pe/core/collisionsystem/HardContactAndFluid.h`.
+Solver selection is compile-time configuration in `pe/config/Collisions.h`;
+this note does not describe a universal PE default solver.
 
 ### 1. Inelasticity of Models
 **Yes, the models are completely inelastic.**
-The relaxation models available in the `HardContactAndFluid` solver (and similar hard contact solvers) are designed to be completely inelastic.
+The relaxation models available in the semi-implicit hard-contact solvers are designed to be completely inelastic.
 - **Mechanism:** The solver explicitly computes impulses to drive the relative velocity at the contact point to **zero** (`v_rel = 0`).
 - **Code Evidence:** In the relaxation loop (e.g., `relaxApproximateInelasticCoulombContactsByDecoupling`), the impulse is calculated as:
   ```cpp

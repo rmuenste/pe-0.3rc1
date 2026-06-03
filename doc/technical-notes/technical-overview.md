@@ -20,7 +20,7 @@ PE employs a **template-based configuration system** that allows compile-time sp
 The entire physics engine is configured through a single template structure:
 
 ```cpp
-// File: pe/core/Configuration.h:87-91
+// pe/core/Configuration.h
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR  // Broad-phase algorithm
                      , pe_FINE_COLLISION_DETECTOR    // Contact generation
                      , pe_BATCH_GENERATOR            // Parallelization strategy  
@@ -33,18 +33,22 @@ typedef Configuration< pe_COARSE_COLLISION_DETECTOR  // Broad-phase algorithm
 Algorithms are selected via macros in `pe/config/Collisions.h`:
 
 ```cpp
-// File: pe/config/Collisions.h:35
 #define pe_COARSE_COLLISION_DETECTOR  pe::detection::coarse::HashGrids
 
-// File: pe/config/Collisions.h:48  
 #define pe_FINE_COLLISION_DETECTOR    pe::detection::fine::MaxContacts
 
-// File: pe/config/Collisions.h:62
 #define pe_BATCH_GENERATOR            pe::batches::UnionFind
 
-// File: pe/config/Collisions.h:85
-#define pe_CONSTRAINT_SOLVER          pe::response::HardContactAndFluid
+// Solver choice is compile-time configuration. Users choose the response solver
+// in pe/config/Collisions.h before building.
+#define pe_CONSTRAINT_SOLVER          pe::response::HardContactSemiImplicitTimesteppingSolvers
 ```
+
+There is no runtime solver default. If a baseline hard-contact solver is needed,
+`HardContactSemiImplicitTimesteppingSolvers` is the oldest and most robust
+non-fluid-coupled option. Fluid-coupled builds use dedicated solver paths such as
+`HardContactAndFluid`; the currently configured value in `pe/config/Collisions.h`
+may differ for a particular branch or experiment.
 
 ## Simulation Workflow
 
@@ -72,7 +76,7 @@ The simulation follows a standard rigid body physics pipeline with PE-specific o
 **Purpose**: Central container managing all simulation entities
 
 **Key Files**:
-- `pe/core/World.h:61-100` - Main World class definition
+- `pe/core/World.h` - Main World class definition
 - `pe/core/BodyManager.h` - Body lifecycle management
 - `pe/core/rigidbody/BodyStorage.h` - Efficient body container
 
@@ -128,13 +132,12 @@ BoxID box = createBox(id, x, y, z, lx, ly, lz, material);
 **Purpose**: Generate precise contact information for potentially colliding pairs
 
 **Primary Implementation**:
-- **MaxContacts**: `pe/core/detection/fine/MaxContacts.h:84-145`
+- **MaxContacts**: `pe/core/detection/fine/MaxContacts.h`
 - **GJK Algorithm**: `pe/core/detection/fine/GJK.h`
 - **EPA Algorithm**: `pe/core/detection/fine/EPA.h`
 
 **Contact Generation Process**:
 ```cpp
-// File: pe/core/detection/fine/MaxContacts.h:99
 template<typename CC> 
 static void collide(BodyID b1, BodyID b2, CC& contacts);
 
@@ -146,7 +149,7 @@ collideMeshMesh()        // GJK/EPA for complex shapes
 ```
 
 **Contact Data Structure**:
-- **Contact Class**: `pe/core/contact/Contact.h:68`
+- **Contact Class**: `pe/core/contact/Contact.h`
 - **Properties**: Position, normal, penetration depth, edge vectors
 - **Memory Management**: Pool-based allocation for performance
 
@@ -155,12 +158,11 @@ collideMeshMesh()        // GJK/EPA for complex shapes
 **Purpose**: Group contacts into independent sets for parallel processing
 
 **Available Algorithms**:
-- **UnionFind**: `pe/core/batches/UnionFind.h:50-83`
-- **SingleBatch**: `pe/core/batches/SingleBatch.h:48-77`
+- **UnionFind**: `pe/core/batches/UnionFind.h`
+- **SingleBatch**: `pe/core/batches/SingleBatch.h`
 
 **Parallelization Strategy**:
 ```cpp
-// File: pe/core/batches/UnionFind.h:107-165
 // Creates independent contact groups using graph connectivity
 // - Each batch contains contacts that don't influence each other
 // - Enables thread-level parallelism within each MPI process
@@ -168,7 +170,7 @@ collideMeshMesh()        // GJK/EPA for complex shapes
 ```
 
 **Data Structures**:
-- **BatchVector**: `pe/core/batches/BatchVector.h:47-100`
+- **BatchVector**: `pe/core/batches/BatchVector.h`
 - **Contact Containers**: Template-based for flexibility
 
 #### Stage 5: Constraint Solving (Physics Response)
@@ -176,21 +178,28 @@ collideMeshMesh()        // GJK/EPA for complex shapes
 **Purpose**: Compute forces and impulses to resolve contacts and maintain constraints
 
 **Available Solvers**:
+- **HardContactSemiImplicitTimesteppingSolvers**: `pe/core/response/HardContactSemiImplicitTimesteppingSolvers.h`
 - **HardContactAndFluid**: `pe/core/response/HardContactAndFluid.h`
+- **HardContactEulerLagrange**: `pe/core/response/HardContactEulerLagrange.h`
+- **HardContactLubricated**: `pe/core/response/HardContactLubricated.h`
 - **DEMSolver**: `pe/core/response/DEMSolver.h`
 - **FrictionlessSolver**: `pe/core/response/FrictionlessSolver.h`
 - **BoxFrictionSolver**: `pe/core/response/BoxFrictionSolver.h`
 
 **Collision System Integration**:
-- **Specializations**: `pe/core/collisionsystem/HardContactAndFluid.h`
-- **Configuration**: `pe/core/configuration/HardContactAndFluid.h`
+- **Specializations**: `pe/core/collisionsystem/<Solver>.h`
+- **Configuration**: `pe/core/configuration/<Solver>.h`
 
 **Solver Characteristics**:
 ```cpp
-// HardContactAndFluid: Production solver for most applications
-// - Handles both collision and fluid coupling
-// - Supports friction models
-// - Iterative constraint resolution
+// HardContactSemiImplicitTimesteppingSolvers: robust baseline hard-contact solver
+// - Oldest and most robust hard-contact path
+// - Iterative relaxation over contacts
+// - Does not support coupling to a fluid solver
+
+// HardContactAndFluid: fluid-coupled hard-contact path
+// - Used when the simulation needs PE/fluid coupling
+// - Not the general default for all builds
 
 // DEMSolver: Discrete Element Method
 // - Specialized for granular materials
@@ -248,7 +257,7 @@ BodyID superBody_;  // For hierarchical bodies
 
 ### Contacts
 
-**Contact Representation**: `pe/core/contact/Contact.h:55-100`
+**Contact Representation**: `pe/core/contact/Contact.h`
 
 **Key Information**:
 ```cpp
@@ -374,7 +383,7 @@ PE employs a hierarchical parallelization strategy:
 
 **Object Pools**: Efficient allocation for frequently created objects
 - **Body Pool**: `pe/core/rigidbody/BodyStorage.h`
-- **Contact Pool**: `pe/core/contact/Contact.h:76`
+- **Contact Pool**: `pe/core/contact/Contact.h`
 
 **Template Optimizations**: Compile-time algorithm selection eliminates runtime overhead
 

@@ -29,7 +29,7 @@ contacts.addVertexFaceContact( s1, s2, contactPoint, normal, penetration );
 PE uses **negative penetration depths** to indicate colliding contacts:
 
 ```cpp
-// Fallback plane-mesh collision (MaxContacts.h line 3283):
+// Fallback plane-mesh collision in MaxContacts.h:
 contacts.addVertexFaceContact( mesh, plane, contactPoint, plane->getNormal(), -penetrationDepth );
 //                                                                              ^^^^ NEGATIVE
 ```
@@ -162,9 +162,9 @@ Contact 0 (colliding): gdot_n=-0.589, dist=-0.000166, force=<0.062,-0.219,1.074>
 ## References
 
 - `pe/core/detection/fine/MaxContacts.h`: Contact detection algorithms
-- `pe/core/collisionsystem/HardContactAndFluid.h`: Contact resolution
-- Fallback plane-mesh collision (MaxContacts.h line 3283): Reference implementation
-- DistanceMap plane collision (MaxContacts.h line 4429): Fixed implementation
+- `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`: baseline hard-contact resolution
+- `pe/core/collisionsystem/HardContactAndFluid.h`: fluid-coupled contact resolution
+- `pe/core/detection/fine/MaxContacts.h`: fallback and DistanceMap plane-mesh contact generation
 
 ---
 *This documentation was created after resolving the DistanceMap collision detection issue where incorrect penetration depth signs caused gradual object sinking.*

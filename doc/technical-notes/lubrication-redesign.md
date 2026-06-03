@@ -1,22 +1,25 @@
 # Lubrication Response Redesign
 
-This document tracks the migration from the legacy lubrication-capable solver stacks
-(`HardContactAndFluidWithLubrication`, `HardContactFluidLubrication`) to the new
-`HardContactLubricated` implementation introduced in commit `f23c5712`.
+This document tracks the migration from the legacy lubrication-capable solver
+stacks (`HardContactAndFluidWithLubrication`,
+`HardContactFluidLubrication`) to the canonical `HardContactLubricated`
+implementation.
 
 ## Overview
 
 The HardContactLubricated stack provides a dedicated collision system specialization and
 rigid-body trait wiring for lubrication-heavy setups. It is intended to replace the older,
-hybrid `HardContactAndFluid*` solvers and to deliver cleaner configuration, improved
+hybrid legacy solver stacks and to deliver cleaner configuration, improved
 contact preprocessing, and easier debugging.
 
 ## Changes Implemented (Nov 2025)
 
-### Default Solver Selection
+### Solver Selection
 
-- `pe/config/Collisions.h` now sets `pe_CONSTRAINT_SOLVER` to
-  `pe::response::HardContactLubricated` so all builds pick up the new stack by default.
+- Solver selection is compile-time configuration in `pe/config/Collisions.h`.
+- Use `pe::response::HardContactLubricated` for lubrication/contact builds.
+- The robust baseline non-fluid hard-contact solver remains
+  `HardContactSemiImplicitTimesteppingSolvers`; it does not support fluid coupling.
 
 ### Numerical Threshold Updates
 

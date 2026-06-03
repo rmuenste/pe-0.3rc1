@@ -258,9 +258,9 @@ Vec3 TriangleMesh::supportContactThreshold(const Vec3& d) const;
 ### Collision System Integration
 
 Triangle meshes are integrated into multiple collision system configurations:
-- **HardContactAndFluid**: Standard rigid body dynamics
-- **HardContactFluidLubrication**: With lubrication forces
-- **HardContactSemiImplicitTimesteppingSolvers**: Semi-implicit time integration
+- **HardContactSemiImplicitTimesteppingSolvers**: robust baseline hard-contact dynamics without fluid coupling
+- **HardContactAndFluid**: hard-contact dynamics with fluid-coupling support
+- **HardContactLubricated**: canonical lubrication/contact implementation
 - **DEMSolver**: Discrete element method
 - **OpenCLSolver**: GPU-accelerated collision detection
 

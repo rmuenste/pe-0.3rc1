@@ -14,7 +14,7 @@ PE's plane conventions are **NOT standard** and require careful attention when i
 
 ### PE's Plane Equation
 
-From `pe/core/rigidbody/Plane.h` (line 75):
+From `pe/core/rigidbody/Plane.h`:
 
 ```
 ax + by + cz = d
@@ -40,7 +40,7 @@ ax + by + cz + d = 0    or equivalently    n·p + d = 0
 
 ## Inside vs. Outside Semantics
 
-### Definition (from Plane.h lines 67-72)
+### Definition
 
 > "The plane geometry is an infinite rigid body dividing the global space in two half spaces. One of these half spaces is considered to be inside the plane. The normal vector points to the OUTSIDE of a plane."
 
@@ -53,7 +53,7 @@ A point `p` is:
 
 ### Interpretation of Displacement Parameter `d`
 
-From Plane.h (lines 79-82):
+From `pe/core/rigidbody/Plane.h`:
 
 > "d is the distance/displacement from the origin of the global world frame to the plane. A positive value of d indicates that the origin of the global world frame is inside the plane, whereas a negative value of d indicates that the origin is outside the plane."
 
@@ -63,7 +63,7 @@ From Plane.h (lines 79-82):
 
 ## The getDepth() Function
 
-### Definition (Plane.h line 339-342)
+### Definition
 
 ```cpp
 inline real Plane::getDepth(const Vec3& gpos) const

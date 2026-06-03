@@ -27,7 +27,7 @@ The PE physics engine employs a sophisticated domain decomposition system with t
 
 ### Current Implementation
 
-**Ownership Determination Logic (from `HardContactAndFluid.h:3199`):**
+**Ownership Determination Logic (representative hard-contact collision-system path):**
 ```cpp
 if( domain_.ownsPoint( gpos ) ) {
     // Body still is locally owned after position update.
@@ -41,7 +41,7 @@ if( domain_.ownsPoint( gpos ) ) {
 - Migration occurs during synchronization when bodies move between domains
 - Current system handles up to 5 intersected geometries efficiently
 
-**Migration Process (from `HardContactAndFluid.h:3223-3280`):**
+**Migration Process:**
 - Bodies that no longer belong to their current domain are migrated
 - Migration notifications sent to target processes
 - Shadow copies maintained for bodies near boundaries
@@ -156,8 +156,9 @@ struct CollisionSystemConfig;
 ```
 
 **Current Specializations:**
-- `HardContactAndFluid`: Standard rigid body dynamics
-- `HardContactFluidLubrication`: With lubrication forces
+- `HardContactSemiImplicitTimesteppingSolvers`: robust baseline hard-contact dynamics without fluid coupling
+- `HardContactAndFluid`: hard-contact dynamics with fluid-coupling support
+- `HardContactLubricated`: canonical lubrication/contact implementation
 - `DEMSolver`: Discrete element method
 - `OpenCLSolver`: GPU-accelerated version
 

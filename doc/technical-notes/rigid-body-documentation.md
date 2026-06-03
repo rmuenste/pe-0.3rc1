@@ -31,9 +31,9 @@ The `RigidBodyTrait<Config>` template parameter allows different collision respo
 - **Default**: Basic rigid body functionality
 - **FFDSolver**: Fast domain decomposition solver traits
 - **DEMSolver**: Discrete Element Method solver traits  
-- **HardContactSemiImplicitTimesteppingSolvers**: Semi-implicit timestepping for hard contacts
-- **HardContactAndFluid**: Combined hard contact and fluid dynamics
-- **HardContactFluidLubrication**: Lubrication effects in fluid-solid interactions
+- **HardContactSemiImplicitTimesteppingSolvers**: robust baseline hard-contact dynamics without fluid coupling
+- **HardContactAndFluid**: hard-contact dynamics with fluid-coupling support
+- **HardContactLubricated**: canonical lubrication/contact implementation
 
 ### Trait Files Location
 - Base trait: `pe/core/rigidbody/rigidbodytrait/Default.h`

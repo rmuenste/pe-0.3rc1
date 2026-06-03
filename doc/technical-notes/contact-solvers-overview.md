@@ -1,53 +1,191 @@
-Here’s a focused comparison grounded in the code.
+# Contact Solver Overview
 
-**Core Differences (Algorithm + Integration)**
-- FFD: per‑body QP solve (normal then friction) using Goldfarb‑Idnani, with half‑step/half‑step integration around contact resolution. See `pe/core/collisionsystem/FFDSolver.h` and `pe/core/response/FFDSolver.h`.
-- HardContact: semi‑implicit timestepping with iterative relaxation over all contacts (mixture of nonlinear Gauss‑Seidel/Jacobi) for a fixed number of iterations and selectable relaxation model. See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-- FFD computes restitution from constraint violation statistics (`weightedCV/CV`) and updates velocities once per body; HardContact is inelastic timestepping with ERP/Baumgarte stabilization and no explicit restitution term in the flow. See `pe/core/response/FFDSolver.h` and `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-- FFD friction is a sampled cone (multiple tangential “bounds”) solved via a second QP in a friction basis; HardContact friction is handled by iterative models (decoupling, orthogonal projections, generalized max dissipation). See `pe/core/response/FFDSolver.h` and `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-- FFD has no batch generation or global contact iteration; HardContact is a global iterative solver with configurable max iterations and under‑relaxation. See `pe/core/collisionsystem/FFDSolver.h` and `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
+PE selects its collision response solver at compile time through
+`pe_CONSTRAINT_SOLVER` in `pe/config/Collisions.h`. There is no runtime solver
+switch in the shared command-line interface. This note gives a short overview
+of the main response families that are present in the codebase and the practical
+tradeoffs between them.
 
-**HardContact is Sequential‑Impulses‑like**
-- The code explicitly describes the solver as a mixture of nonlinear Gauss‑Seidel and Jacobi and applies under‑relaxation (`setRelaxationParameter`) and multiple iterations (`setMaxIterations`). See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
+## Hard-Contact Timestepping
 
-**Advantages / Disadvantages**
+Primary files:
 
-FFD (QP per body)
-- Advantages:
-  - Deterministic per‑body solve without global iteration tuning; often fewer “solver knobs.” See `pe/core/response/FFDSolver.h`.
-  - Explicit restitution handling based on accumulated constraint violation. See `pe/core/response/FFDSolver.h`.
-  - Friction handled in a principled QP framework (cone sampling + basis). See `pe/core/response/FFDSolver.h`.
-- Disadvantages:
-  - Per‑body QP ignores cross‑body coupling beyond shared constraints; can be less globally consistent for large stacks or tightly coupled systems. See `pe/core/response/FFDSolver.h`.
-  - QP cost grows with per‑body constraint count; friction cone sampling increases problem size. See `pe/core/response/FFDSolver.h`.
-  - Sampling‑based friction can under‑resolve anisotropic friction unless `frictionSamples` is high. See `pe/core/response/FFDSolver.h`.
+- `pe/core/response/HardContactSemiImplicitTimesteppingSolvers.h`
+- `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`
 
-HardContact Semi‑Implicit Timestepping (iterative relaxation)
-- Advantages:
-  - Global iterative relaxation captures multi‑contact coupling and tends to handle large stacks and dense contact graphs more robustly. See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-  - Multiple friction models (decoupling, orthogonal projections, generalized max dissipation) let you trade speed vs. accuracy. See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-  - ERP and adaptive Baumgarte capping provide explicit penetration correction controls. See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-- Disadvantages:
-  - Requires tuning `maxIterations`, relaxation parameter, ERP/capping; convergence and results can be order‑dependent. See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-  - More iteration‑heavy; runtime scales with iterations × contacts. See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
-  - Primarily inelastic; restitution effects need to be modeled indirectly (not explicit like FFD). See `pe/core/collisionsystem/HardContactSemiImplicitTimesteppingSolvers.h`.
+This is the classic hard-contact solver family in PE. It uses semi-implicit
+timestepping and iterative relaxation over the global contact set. The code
+describes the relaxation as a mixture of nonlinear Gauss-Seidel and Jacobi
+updates, with configurable maximum iterations, relaxation parameter, error
+reduction, and friction model.
 
-If you want, I can add a short “when to use which” decision guide and a parameter‑tuning cheat sheet.
+Strengths:
 
-**DEMSolver vs DEMSolverObsolete**
+- Good baseline choice for dense contact graphs, stacks, and multi-contact
+  coupling.
+- Several friction relaxation models are available, including decoupled,
+  orthogonal-projection, and generalized maximum-dissipation variants.
+- Penetration correction is explicit through ERP/Baumgarte-style controls.
 
-DEMSolver overview
-- Collision system does: detect contacts, per-contact DEM force response, synchronize forces, integrate bodies, synchronize bodies. It uses shadow copies and a notification-based MPI sync path. See `pe/core/collisionsystem/DEMSolver.h`.
-- Response implements a linear spring-dashpot normal force plus Haff-Werner tangential damping capped by Coulomb friction. It includes explicit MPI ownership/acceptance logic for local/global/remote contacts. See `pe/core/response/DEMSolver.h`.
+Limitations:
 
-DEMSolverObsolete overview
-- Collision system follows the older DEM pipeline: detect, resolve contacts, sync forces (firstCommunication), integrate, migrate bodies (secondCommunication). It uses the older MPI encoder/decoder flow. See `pe/core/collisionsystem/DEMSolverObsolete.h`.
-- Response supports both linear spring-dashpot and Hertzian normal force models (if `dem::forceModel == dem::hertz` and the contact has an effective radius). Tangential force is Haff-Werner. Domain ownership is checked only by `domain_.ownsPoint(...)`. See `pe/core/response/DEMSolverObsolete.h`.
+- Results depend on iteration count and relaxation parameters.
+- Runtime scales with contacts times iterations.
+- It is a hard-contact solver, not a fluid-coupled solver.
 
-Core differences
-- Contact ownership and MPI filtering: DEMSolver has explicit local/global/remote acceptance logic; DEMSolverObsolete only checks domain ownership. See `pe/core/response/DEMSolver.h` vs `pe/core/response/DEMSolverObsolete.h`.
-- Force model: DEMSolverObsolete supports Hertzian normal force; DEMSolver uses linear spring-dashpot only. See `pe/core/response/DEMSolverObsolete.h` vs `pe/core/response/DEMSolver.h`.
-- MPI/sync architecture: DEMSolver uses shadow copies and notification-based synchronization; DEMSolverObsolete uses first/second communication with body migration and manual cleanup. See `pe/core/collisionsystem/DEMSolver.h` vs `pe/core/collisionsystem/DEMSolverObsolete.h`.
+If a "default-like" baseline solver is needed for hard-contact-only work, this
+is the oldest and most robust family to look at. The actual solver is still the
+one selected by the user in `pe/config/Collisions.h` before compilation.
 
-Is the obsolete one really obsolete?
-- The name and TODO comments indicate legacy status. It is still wired into traits/configs, but the newer DEMSolver has the modern MPI/contact ownership logic and is likely the intended default. See `pe/core/collisionsystem/DEMSolver.h` and `pe/core/response/DEMSolverObsolete.h`.
+## Hard-Contact With Lubrication
+
+Primary files:
+
+- `pe/core/response/HardContactLubricated.h`
+- `pe/core/collisionsystem/HardContactLubricated.h`
+- `pe/core/lubrication/Params.h`
+
+`HardContactLubricated` extends the hard-contact timestepping path with
+lubrication-aware contact handling. It keeps hard contacts in the iterative
+constraint solve and applies lubrication corrections for contacts that are
+tagged as lubrication contacts. Runtime parameters include lubrication
+threshold, lubrication hysteresis, minimum lubrication gap regularization, and
+an impulse cap.
+
+Strengths:
+
+- Canonical path for current lubrication work.
+- Preserves the hard-contact solver structure while adding near-contact
+  lubrication effects.
+- Exposes runtime controls for contact/lubrication blending and regularization.
+
+Limitations:
+
+- More specialized than the baseline hard-contact solver.
+- Requires the build and examples to be configured consistently for
+  `HardContactLubricated`.
+- The lubrication path is focused on supported pair types and current
+  integration experiments, not a general fluid solver.
+
+Deprecated or legacy lubrication stacks such as `HardContactAndFluid` should not
+be used as the target for new work unless a specific historical comparison is
+being made.
+
+## Short-Range Repulsion
+
+Primary files:
+
+- `pe/core/response/ShortRangeRepulsion.h`
+- `pe/core/collisionsystem/ShortRangeRepulsion.h`
+
+`ShortRangeRepulsion` is a force-based response model rather than a hard-contact
+constraint solver. It applies a soft repulsive force inside a security zone
+before or near contact, following the Pan et al. formulation documented in the
+header. The collision-system specialization supports subcycling and force
+synchronization.
+
+Strengths:
+
+- Useful for soft pre-contact repulsion experiments and particle-wall or
+  particle-particle separation control.
+- Has a small parameter set: particle-particle stiffness, particle-wall
+  stiffness, security-zone width, and optional normal damping.
+- Avoids solving a global hard-contact complementarity problem.
+
+Limitations:
+
+- It is not a hard non-penetration constraint solver.
+- Parameter choices strongly affect stiffness and timestep requirements.
+- It should be considered a different physical model from the hard-contact
+  solver families, not a drop-in equivalent.
+
+## FFD Solver
+
+Primary files:
+
+- `pe/core/response/FFDSolver.h`
+- `pe/core/collisionsystem/FFDSolver.h`
+
+The FFD solver uses per-body quadratic programs. It solves normal contact
+constraints and friction using Goldfarb-Idnani QP solves, with a half-step /
+half-step integration structure around contact resolution.
+
+Strengths:
+
+- More direct per-body solve structure with fewer global iteration knobs.
+- Explicit restitution handling based on accumulated constraint violation.
+- Friction is handled in a principled QP framework with sampled friction cones.
+
+Limitations:
+
+- Per-body QP solves do not capture global contact coupling as directly as the
+  hard-contact iterative solver.
+- Cost grows with the number of constraints per body.
+- Friction cone sampling can under-resolve friction unless enough samples are
+  used.
+
+## DEM Solvers
+
+Primary files:
+
+- `pe/core/response/DEMSolver.h`
+- `pe/core/collisionsystem/DEMSolver.h`
+- `pe/core/response/DEMSolverObsolete.h`
+- `pe/core/collisionsystem/DEMSolverObsolete.h`
+
+The DEM solvers are force-based discrete element methods. They compute contact
+forces and then integrate the bodies, rather than solving hard-contact
+constraints.
+
+`DEMSolver` uses a linear spring-dashpot normal force and Haff-Werner
+tangential damping capped by Coulomb friction. It has the newer MPI/contact
+ownership logic with shadow copies and notification-based synchronization.
+
+`DEMSolverObsolete` follows the older DEM pipeline. It still exists in the
+tree, uses the older MPI encoder/decoder communication path, and supports both
+linear spring-dashpot and Hertzian normal force models.
+
+Practical distinction:
+
+- Use `DEMSolver` as the modern DEM implementation when the newer
+  synchronization and ownership logic matters.
+- Treat `DEMSolverObsolete` as legacy code unless its Hertzian force model or
+  historical behavior is specifically required.
+
+## Complementarity And Friction Solver Classes
+
+Primary files:
+
+- `pe/core/response/FrictionlessSolver.h`
+- `pe/core/response/BoxFrictionSolver.h`
+- `pe/core/response/ConeFrictionSolver.h`
+- `pe/core/response/PolyhedralFrictionSolver.h`
+- `pe/core/response/OpenCLSolver.h`
+- `pe/core/response/ContactSolver.h`
+
+These classes are lower-level contact solver families built around
+complementarity/friction formulations. They are parameterized by configured LCP
+or friction subsolvers and are distinct from the newer hard-contact
+timestepping collision-system specializations.
+
+They are useful to understand when reading older configurations or
+solver-specific contact traits, but most current hard-contact discussion should
+start with `HardContactSemiImplicitTimesteppingSolvers` or
+`HardContactLubricated`.
+
+## Choosing A Solver Family
+
+| Need | Solver family to inspect first |
+|------|--------------------------------|
+| Robust hard-contact-only rigid-body dynamics | `HardContactSemiImplicitTimesteppingSolvers` |
+| Hard contact plus current lubrication experiments | `HardContactLubricated` |
+| Soft near-contact repulsion without hard constraints | `ShortRangeRepulsion` |
+| Per-body QP contact response with explicit restitution | `FFDSolver` |
+| Force-based particle contact dynamics | `DEMSolver` |
+| Legacy DEM behavior or Hertzian DEM comparison | `DEMSolverObsolete` |
+
+The selected solver affects configuration traits, body/contact traits, collision
+system specialization, communication behavior, and available runtime controls.
+When changing `pe_CONSTRAINT_SOLVER`, check the corresponding
+`pe/core/configuration/`, `pe/core/collisionsystem/`, and `pe/core/response/`
+files together.
