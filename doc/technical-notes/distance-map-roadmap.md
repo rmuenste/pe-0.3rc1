@@ -1,6 +1,6 @@
 # DistanceMap Future Improvements & Roadmap
 
-> **Note**: For current implementation details, see [DistanceMap_Implementation.md](DistanceMap_Implementation.md)
+> **Note**: For current implementation details, see [distance-map-implementation.md](distance-map-implementation.md)
 
 This document outlines planned enhancements and future work for the DistanceMap collision detection system.
 

@@ -173,7 +173,7 @@ Most simulations need to:
 ## API References
 
 ### Vector and Matrix API
-- Full documentation for `Vec3` and `Mat3` API usage can be found in `doc/Vec3_Mat3_Documentation.md`
+- Full documentation for `Vec3` and `Mat3` API usage can be found in `doc/technical-notes/vec3-mat3-documentation.md`
 - Covers vector operations, matrix operations, transformations, and mathematical utilities
 
 ### RigidBody Rotation Interface

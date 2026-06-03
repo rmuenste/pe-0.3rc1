@@ -11,7 +11,7 @@ A major fix was implemented for collisions involving "Kinematic Bodies" (bodies 
     - **Kinematic Detection:** The solver now detects bodies with `invMass=0` (translation-fixed) but `|angular_velocity| > 0`.
     - **Dynamic Friction Forcing:** For these contacts, the solver **skips the static friction attempt** and forces the **dynamic friction (sliding)** path.
     - **Baumgarte Disabled:** Baumgarte stabilization is now **disabled** for contacts where both bodies have zero translational DOF (`invMass=0`), as they cannot separate to resolve penetration.
-- **Reference:** `@doc/collision_response_analysis-final.md`
+- **Reference:** `@doc/technical-notes/collision-response-analysis-final.md`
 
 ### 2. Lubrication Model Changes
 - **Canonical Implementation:** `HardContactLubricated` is the new standard.

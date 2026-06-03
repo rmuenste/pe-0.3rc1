@@ -1,116 +1,148 @@
-This is a fork of the pe (Physics Engine)
-The pe has the following dependencies:
+# PE Physics Engine fork
 
-Build-time dependencies:
-   CMake >= 2.8.6
+This repository is a fork of the PE (Physics Engine) project. The original
+project record is available through FAU CRIS:
 
-Run-time dependencies:
-   Boost >= 1.46.1
-   Irrlicht >= 1.7.9          (optional unless visualization is needed)
-   MPI e.g. OpenMPI >= 1.4.3  (optional unless MPI parallelization is needed)
-   OpenCL                     (optional unless GPGPU support is needed)
-   gpusolve >= r304           (optional unless GPGPU support is needed)
+https://cris.fau.de/projects/213447149/
 
-Documentation dependencies:
-   doxygen >= 1.7.5.1
-   graphviz >= 2.28.0
+This fork keeps the original rigid-body simulation core and adds current work
+around triangle meshes, CGAL-backed geometry operations, DistanceMap-accelerated
+collision queries, and interface tests.
 
+## Requirements
 
-In order to build the pe library two build systems can be used. The first one is a custom
-configure script accepting a configuration file as an optional parameter. The configuration
-options are described in ConfigFile which can be used as a template for your own
-configuration. Thus building with a configuration file might work as follows:
+Required:
 
-cat > config-$HOST.txt <<EOF
-   VERSION="debug"
-   LIBRARY="static"
-   COMPILER="gcc"
-   PREPROCESSOR_FLAGS=
-   COMPILER_FLAGS=
-   LINKER_FLAGS=
-   BLAS="no"
-   IRRLICHT="yes"
-   OPENCL="no"
-   MPI="yes"
-   MPI_INCLUDE_PATH=/usr/lib64/mpi/gcc/openmpi/include/
-   MPI_LIBRARY_PATH=/usr/lib64/mpi/gcc/openmpi/lib64/
-   MPI_LIBRARY="mpi_cxx mpi"
-   MPI_PREINCLUDE="no"
-EOF
-./configure config-$HOST.txt
+- CMake >= 3.15
+- Boost >= 1.68, including thread, system, filesystem, program_options, and random
+
+Optional:
+
+- Eigen, enabled by default
+- nlohmann/json, enabled by default when available
+- CGAL, needed for DistanceMap and CGAL mesh examples
+- MPI, for distributed examples
+- Irrlicht, for visualization examples
+- OpenCL, for GPGPU support
+- Doxygen and Graphviz, for generated documentation
+
+## Building
+
+CMake is the recommended build path:
+
+```bash
+mkdir build
+cd build
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DLIBRARY_TYPE=STATIC ..
 make
+```
 
+Common CMake options:
 
-After building the library will be located in the lib/ subdirectory. The configure script also
-supports out-of-source builds using BUILD_DIRECTORY configuration option in order to avoid
-cluttering of the source tree.
-If you need custom preprocessor, compiler or linker flags you can use the configuration
-options PREPROCESSOR_FLAGS, COMPILER_FLAGS and LINKER_FLAGS. E.g. for profiling runs compile
-with COMPILER_FLAGS=-pg and LINKER_FLAGS=-pg and COMPILER=gcc.
+- `-DCMAKE_BUILD_TYPE=Release|Debug|RelWithDebInfo|MinSizeRel`
+- `-DLIBRARY_TYPE=STATIC|SHARED|BOTH`
+- `-DEXAMPLES=ON|OFF`
+- `-DPE_BUILD_INTERFACE_TESTS=ON|OFF`
+- `-DEIGEN=ON|OFF`
+- `-DUSE_JSON=ON|OFF`
+- `-DCGAL=ON|OFF`
+- `-DMPI=ON|OFF`
+- `-DIRRLICHT=ON|OFF`
+- `-DOPENCL=ON|OFF`
+- `-DBLAS=ON|OFF`
 
-An alternative build system working on Unix as well as on Windows is a CMake based build.
-CMake supports various generators. On Unix it can generate Makefiles for instance. The
-configuration options can be specified on the command line of the CMake call:
+For example, to build the examples and CGAL/DistanceMap support:
 
-mkdir build
-cd build
-CXX=g++ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE:STRING=RELEASE -DLIBRARY_TYPE:STRING=STATIC -DBLAS:BOOL=OFF -DMPI:BOOL=OFF -DMPI_PREINCLUDE:BOOL=OFF -DOPENCL:BOOL=OFF -DIRRLICHT:BOOL=OFF -DEXAMPLES:BOOL=OFF -DBoost_USE_STATIC_LIBS:BOOL=OFF ..
-make VERBOSE=1
+```bash
+mkdir build-cgal
+cd build-cgal
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DEXAMPLES=ON -DCGAL=ON ..
+make
+```
 
+The legacy `./configure` build still exists for compatibility with older PE
+workflows. New development should prefer CMake.
 
-Specifying options on the command line is good for automating but is cumbersome otherwise. CMake
-also supports configuration files:
+## Running Examples
 
-cat > cache-$HOST.txt <<EOF
-   set( CMAKE_BUILD_TYPE RELEASE CACHE STRING "" )
-   set( LIBRARY_TYPE STATIC CACHE STRING "" )
-   set( BLAS OFF CACHE BOOL "" )
-   set( MPI ON CACHE BOOL "" )
-   set( MPI_PREINCLUDE OFF CACHE BOOL "" )
-   set( OPENCL OFF CACHE BOOL "" )
-   set( IRRLICHT ON CACHE BOOL "" )
-   set( EXAMPLES OFF CACHE BOOL "" )
-   set( Boost_USE_STATIC_LIBS OFF CACHE BOOL "" )
-   set( PREPROCESSOR_FLAGS "" CACHE STRING "" )
-   set( COMPILER_FLAGS "" CACHE STRING "" )
-   set( LINKER_FLAGS "" CACHE STRING "" )
-EOF
-mkdir build
-cd build
-CXX=g++ cmake -G "Unix Makefiles" -C../cache-$HOST.txt ..
-make VERBOSE=1
+Example binaries are generated under the build tree when `-DEXAMPLES=ON` is
+enabled. Typical runs:
 
+```bash
+./build/examples/boxstack/boxstack
+mpirun -np 4 ./build/examples/mpicube/mpicube
+```
 
-On Windows CMake also supports generating Visual Studio project files:
+CGAL and DistanceMap examples are in `examples/cgal_examples`:
 
-mkdir build
-cd build
-cmake -G "Visual Studio 10 Win64" -C../cache-$HOST.txt ..
+```bash
+./build/examples/cgal_examples/mesh_collision_test reference.obj output test_sphere.obj
+./build/examples/cgal_examples/mesh_simulation --mesh1 mesh1.obj --mesh2 mesh2.obj
+```
 
-where cache-$HOST.txt might look like this:
+`mesh_simulation` also supports pose controls such as `--mesh2-position` and
+`--mesh2-euler`, which are useful when reproducing mesh collisions.
 
-set( CMAKE_BUILD_TYPE RELEASE CACHE STRING "" )
-set( LIBRARY_TYPE STATIC CACHE STRING "" )
-set( BLAS OFF CACHE BOOL "" )
-set( MPI ON CACHE BOOL "" )
-set( OPENCL OFF CACHE BOOL "" )
-set( IRRLICHT OFF CACHE BOOL "" )
-set( EXAMPLES ON CACHE BOOL "" )
-set( Boost_USE_STATIC_LIBS ON CACHE BOOL "" )
-set( BOOST_INCLUDEDIR "C:/Program Files/boost/boost_1_49_0/include" )
-set( BOOST_LIBRARYDIR "C:/Program Files/boost/boost_1_49_0/lib64" )
-set( PREPROCESSOR_FLAGS "" CACHE STRING "" )
-set( COMPILER_FLAGS "" CACHE STRING "" )
-set( LINKER_FLAGS "" CACHE STRING "" )
+## DistanceMap and CGAL
 
-On Windows CMake also offers a convenient GUI for settings configuration options and generating
-project files. On Unix a Curses based interface for CMake exists (ccmake).
+DistanceMap acceleration is integrated into the fine collision detection path for
+triangle meshes. It is available when the project is built with `-DCGAL=ON`.
 
+The main entry point is:
 
-Notes
------
-- OpenMPI 1.5.4 offers a binary installer on Windows
-- dynamically linking boost libraries currently does not work on Windows
-- the MPI configuration options should be determined by inspecting the output of
-  "mpicc -showme:compile" and "mpicc -showme:link" and assigning the options to
-  the correct configuration variables.
+```cpp
+#include <pe/core/detection/fine/DistanceMap.h>
+
+TriangleMeshID mesh = createTriangleMesh(id, position, "mesh.obj", material, false, true);
+mesh->enableDistanceMapAcceleration(resolution, tolerance);
+```
+
+DistanceMap queries are performed in the local mesh coordinate system and
+transformed back into world coordinates for collision response. Related
+implementation and examples live in:
+
+- `pe/core/detection/fine/DistanceMap.h`
+- `src/core/detection/fine/DistanceMap.cpp`
+- `pe/core/detection/fine/MaxContacts.h`
+- `examples/cgal_examples/`
+
+## Tests
+
+Interface smoke tests can be enabled through CMake:
+
+```bash
+mkdir build-interface-tests
+cd build-interface-tests
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DPE_BUILD_INTERFACE_TESTS=ON ..
+make
+ctest --output-on-failure
+```
+
+Additional project-specific validation notes are kept in `tests/interface`.
+
+## Documentation
+
+The `doc` directory contains two kinds of documentation:
+
+- Markdown technical notes under `doc/technical-notes`, such as
+  `technical-overview.md`, `distance-map-implementation.md`, and
+  `new-collision-system-implementation-guide.md`. These explain architecture,
+  design decisions, algorithms, and implementation context beyond what is
+  visible from the API alone.
+- Legacy API documentation material, including `Doxyfile` and the image assets
+  under `doc/pics`, used by the original Doxygen-based documentation flow.
+
+Keeping these as separate documentation layers is intentional: the Markdown
+files are the best starting point for understanding the current fork, while the
+legacy API documentation remains useful as reference material for the original
+engine interfaces.
+
+## Repository Layout
+
+- `pe/`: public headers and core library interfaces
+- `src/`: library implementation files
+- `examples/`: serial, MPI, mesh, CGAL, and visualization examples
+- `tests/`: interface and utility tests
+- `doc/technical-notes/`: current Markdown technical notes
+- `doc/`: legacy API documentation config and assets
+- `tutorial/`: legacy PE tutorial material

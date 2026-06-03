@@ -228,8 +228,8 @@ When testing with a plane at `y = 3` (normal `(0,-1,0)`, `d = -3`), the mesh wou
 ## See Also
 
 - `pe/core/rigidbody/Plane.h` - Complete Plane class API
-- `doc/CollisionDetectionConventions.md` - General collision detection conventions in PE
-- `doc/MaxContacts.md` - Fine collision detection implementation details
+- `collision-detection-conventions.md` - General collision detection conventions in PE
+- `max-contacts.md` - Fine collision detection implementation details
 
 ---
 
