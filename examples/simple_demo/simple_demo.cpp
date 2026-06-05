@@ -37,7 +37,6 @@
 #include <sstream>
 #include <pe/core.h>
 #include <pe/support.h>
-#include <pe/povray.h>
 #include <pe/vtk.h>
 #include <pe/util.h>
 #include <pe/core/rigidbody/TriangleMesh.h>
@@ -45,19 +44,6 @@
 #include <pe/core/Types.h>
 
 using namespace pe;
-using namespace pe::povray;
-
-
-//*************************************************************************************************
-// Irrlicht includes
-//*************************************************************************************************
-
-#include <pe/irrlicht.h>
-#if HAVE_IRRLICHT
-using namespace pe::irrlicht;
-#endif
-
-
 
 
 //=================================================================================================
@@ -97,7 +83,7 @@ int main( int argc, char* argv[] )
 {
    // Constants and variables
    const unsigned int timesteps ( 100 );  // Total number of time steps
-   const unsigned int visspacing(   30 );  // Spacing between two visualizations (POV-Ray & Irrlicht)
+   const unsigned int visspacing(   30 );  // Spacing between two VTK outputs
    const unsigned int H ( 4 );              // Height of the box stack
          unsigned int id( 0 );              // User-specific ID counter
 

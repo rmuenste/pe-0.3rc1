@@ -42,7 +42,6 @@
 #include <pe/vtk.h>
 using namespace pe;
 using namespace pe::timing;
-using namespace pe::povray;
 
 
 
@@ -98,9 +97,8 @@ int main( int argc, char** argv )
 
    const size_t seed      ( 12345 );  // Seed for the random number generation
 
-   bool   povray    ( false );        // Switches the POV-Ray visualization on and off
    bool   vtk( true );
-   const size_t visspacing(    10 );  // Number of time steps inbetween two POV-Ray files
+   const size_t visspacing(    10 );  // Number of time steps between two VTK outputs
 
    const bool   strong    ( false );  // Compile time switch between strong and weak scaling
 
@@ -125,8 +123,8 @@ int main( int argc, char** argv )
    cli.parse( argc, argv );
    cli.evaluateOptions();
    variables_map& vm = cli.getVariablesMap();
-   if( vm.count( "no-povray" ) > 0 )
-      povray = false;
+   if( vm.count( "no-vtk" ) > 0 )
+      vtk = false;
 
    const int nx( vm[ "particles" ].as< std::vector<int> >()[0] );
    const int ny( vm[ "particles" ].as< std::vector<int> >()[1] );
@@ -510,34 +508,6 @@ int main( int argc, char** argv )
    if( vtk ) {
       vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
    }
-
-   /////////////////////////////////////////////////////
-   // Setup of the POV-Ray visualization
-
-   WriterID pov;
-
-   if( povray )
-   {
-      const Vec3 location( real(0.5)*lx, -real(0.5)*lx/0.65, real(0.5)*lz );
-      const Vec3 focus   ( real(0.5)*lx,  real(0.5)*ly     , real(0.5)*lz );
-
-      pov = activateWriter();
-      pov->setSpacing( visspacing );
-      pov->setFilename( "video/pic%.pov" );
-      pov->setBackground( Color( 0, 0, 0 ) );
-      pov->include( "settings.inc" );
-
-      pov->addLightSource( PointLight( location, Color( 1, 1, 1 ) ) );
-
-      CameraID camera = theCamera();
-      camera->setLocation( location );
-      camera->setFocus   ( focus    );
-
-      std::ostringstream texture;
-      texture << "Texture" << theMPISystem()->getRank()%13;
-      pov->setTexturePolicy( DefaultTexture( CustomTexture( texture.str() ) ) );
-   }
-
 
    /////////////////////////////////////////////////////
    // Setup of the simulation domain

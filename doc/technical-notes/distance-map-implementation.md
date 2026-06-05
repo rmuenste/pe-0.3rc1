@@ -2,7 +2,7 @@
 
 ## Overview
 
-The DistanceMap collision detection system provides efficient mesh-to-mesh collision detection using 3D signed distance fields (SDF). This approach accelerates collision queries between triangle meshes by precomputing a regular grid of signed distances, enabling fast interpolated queries during simulation.
+The DistanceMap collision detection system provides efficient mesh-to-mesh and plane-to-mesh collision detection using 3D signed distance fields (SDF). This is the preferred collision path for `TriangleMesh` objects in PE, especially for non-convex or complex meshes. GJK/EPA remains available as a fallback for convex meshes or meshes that do not have DistanceMap acceleration enabled.
 
 ### Key Features
 
@@ -10,7 +10,7 @@ The DistanceMap collision detection system provides efficient mesh-to-mesh colli
 - **CGAL Integration**: Leverages CGAL's robust geometric algorithms for mesh processing
 - **Coordinate Transformation**: Handles arbitrary mesh positions and orientations
 - **Multi-Contact Manifolds**: Generates stable contact manifolds with clustering and extremal point selection
-- **Non-Convex Mesh Support**: No fallback to GJK/EPA for meshes with DistanceMap (designed for non-convex geometry)
+- **Non-Convex Mesh Support**: No mesh-to-mesh fallback to GJK/EPA when a DistanceMap is present (designed for non-convex geometry)
 - **PE Integration**: Fully integrated into PE's collision detection pipeline
 
 ### Motivation
@@ -18,7 +18,7 @@ The DistanceMap collision detection system provides efficient mesh-to-mesh colli
 Traditional mesh-to-mesh collision detection using GJK/EPA can be computationally expensive for complex meshes. DistanceMap acceleration provides:
 
 1. **O(1) Distance Queries**: Constant-time distance lookups via interpolation
-2. **Smooth Gradients**: Continuous normals from SDF gradients
+2. **Interpolated Normals and Contact Points**: Surface normals and nearest-surface points are precomputed per grid point and interpolated at query time
 3. **Robust Inside/Outside**: CGAL-based spatial classification
 4. **Precomputed Optimization**: Front-loads computation during mesh creation
 
@@ -65,9 +65,10 @@ origin_.set(bbox.xmin() - tolerance * h,
 ```
 
 **Parameters:**
-- `spacing`: Target grid cell size
-- `resolution`: Number of cells along largest dimension  
+- `resolution`: Number of cells along largest dimension
 - `tolerance`: Number of padding cells around mesh
+
+The actual grid spacing is derived as `max(dx, dy, dz) / resolution`.
 
 #### 3. Signed Distance Field Computation
 
@@ -90,15 +91,17 @@ sdf_[index] = signed_distance;
 - **Negative**: Inside the mesh (occupied space)
 - **Zero**: On the mesh surface
 
-#### 4. Gradient and Normal Computation
+#### 4. Normal Computation
 
-Surface normals are computed from SDF gradients using finite differences:
+Surface normals are computed from the nearest surface point to the query grid point. The stored normal points outward from the mesh surface:
 
 ```cpp
-// Gradient computation for normals (conceptual)
-Vec3 gradient = computeGradient(i, j, k);
-Vec3 normal = gradient.getNormalized();
-normals_[index] = normal;
+Vec3 offset = query - closest;
+if (query_is_inside_mesh) {
+    normals_[index] = -offset.getNormalized();
+} else {
+    normals_[index] = offset.getNormalized();
+}
 ```
 
 #### 5. Contact Point Calculation
@@ -118,10 +121,17 @@ The DistanceMap stores data in linear arrays with 3D indexing:
 int index = i + nx_ * j + nx_ * ny_ * k;
 
 std::vector<pe::real> sdf_;           // Signed distances
-std::vector<pe::real> alpha_;         // Alpha values for interpolation
+std::vector<int> alpha_;              // Containment flags used by interpolateAlpha()
 std::vector<Vec3> normals_;           // Surface normals
 std::vector<Vec3> contact_points_;    // Nearest surface points
 ```
+
+### Coordinate Transformations
+
+DistanceMap collision detection properly handles coordinate transformations:
+- Query vertices transformed from world coordinates to reference mesh local coordinates
+- Distance queries performed in local coordinate system where DistanceMap is defined
+- Results (normals, contact points) transformed back to world coordinates for collision response
 
 ## Collision Detection Pipeline
 
@@ -138,12 +148,12 @@ Broad Phase Detection → Fine Collision Detection → Contact Generation
                            ↓
                     DistanceMap Available?
                            ↓
-                    [Yes] → DistanceMap Path (no fallback for non-convex meshes)
+                    [Yes] → DistanceMap Path (no mesh-to-mesh fallback)
                            ↓
                     [No]  → GJK/EPA (for convex or meshes without DistanceMap)
 ```
 
-**Important**: When a DistanceMap is present, the system does NOT fall back to GJK/EPA, as meshes using DistanceMap are typically non-convex and unsuitable for GJK/EPA.
+**Important**: For mesh-to-mesh contact generation, when either mesh has a DistanceMap, the system uses the DistanceMap path and returns without falling back to GJK/EPA. Meshes using DistanceMap are typically non-convex and unsuitable for GJK/EPA. Plane-to-mesh contact generation tries the DistanceMap path first when available, then can continue to the existing support-based path if the DistanceMap path does not produce contacts.
 
 ### DistanceMap Detection Algorithm
 
@@ -211,62 +221,49 @@ pe::real DistanceMap::interpolateDistance(pe::real x, pe::real y, pe::real z) co
 }
 ```
 
-#### Step 4: Contact Classification and Generation
+#### Step 4: Contact Candidate Collection
 
 ```cpp
-// Check for contact/penetration using contact threshold
 if (distance < contactThreshold) {
-    hasContact = true;
-    
-    if (distance < minDistance) {
-        minDistance = distance;
-        
-        // Transform results back to world coordinates for collision response
-        Vec3 worldNormal = referenceMesh->vectorFromBFtoWF(localNormal);
-        Vec3 worldContactPoint = referenceMesh->pointFromBFtoWF(localContactPoint);
-        
-        // Store deepest contact information
-        minPenetrationNormal = worldNormal;
-        deepestContactPoint = worldContactPoint;
+    Vec3 localNormal = distMap->interpolateNormal(localPoint[0], localPoint[1], localPoint[2]);
+    Vec3 localContactPoint = distMap->interpolateContactPoint(localPoint[0], localPoint[1], localPoint[2]);
+
+    Vec3 worldNormal = referenceMesh->vectorFromBFtoWF(localNormal);
+    Vec3 worldContactPoint = referenceMesh->pointFromBFtoWF(localContactPoint);
+    real penetration = std::max(real(0), -distance);
+
+    candidates.emplace_back(queryPoint, worldNormal, penetration, worldContactPoint);
+}
+```
+
+#### Step 5: Contact Manifold Creation
+
+```cpp
+for (const ContactCluster& cluster : clusters) {
+    for (size_t representative : selectRepresentatives(cluster)) {
+        const ContactCandidate& candidate = candidates[representative];
+        contacts.addVertexFaceContact(queryMesh, referenceMesh,
+                                      candidate.contactPoint,
+                                      candidate.worldNormal,
+                                      -candidate.penetration);
     }
 }
 ```
 
-#### Step 5: Contact Creation
+### Candidate Sampling Strategy
+
+**Current Implementation**: Complete vertex, edge-midpoint, and face-barycenter sampling.
 
 ```cpp
-// Create contact if penetration was found
-if (hasContact && minDistance < contactThreshold) {
-    // Ensure proper normal direction (pointing from reference to query mesh)
-    if (referenceMesh == mB) {
-        minPenetrationNormal = -minPenetrationNormal;
-    }
-    
-    contacts.addVertexFaceContact(queryMesh, referenceMesh, 
-                                 deepestContactPoint, minPenetrationNormal, minDistance);
+for (const Vec3& vertex : queryVertices) {
+    processQueryPoint(vertex);
 }
+
+// Edge midpoints and face barycenters are also sampled to catch edge-face
+// and face-face contacts that may not produce penetrating vertices.
 ```
 
-### Vertex Sampling Strategy
-
-**Current Implementation**: Complete vertex enumeration (no sampling)
-
-```cpp
-// Use all vertices for comprehensive testing (sampling disabled)
-size_t sampleStep = 1; // Process every vertex (no sampling)
-
-for (size_t i = 0; i < queryVertices.size(); i += sampleStep) {
-    // Process vertex[i]
-}
-```
-
-**Performance Note**: Sampling was disabled to ensure comprehensive collision detection for small test meshes. For production use with large meshes, sampling can be re-enabled:
-
-```cpp
-// Re-enable sampling for performance if needed:
-size_t sampleSize = 100UL; // Sample up to 100 points
-size_t sampleStep = std::max(size_t(1), queryVertices.size() / sampleSize);
-```
+**Performance Note**: The current implementation favors comprehensive candidate collection over sparse vertex sampling. It processes all query vertices, unique edge midpoints, and face barycenters, then limits the final manifold to at most six contacts per mesh pair.
 
 ### GJK/EPA for Non-DistanceMap Meshes
 
@@ -293,7 +290,7 @@ void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& c
 }
 ```
 
-**Critical Design Decision**: The system explicitly does NOT fall back from DistanceMap to GJK/EPA when a DistanceMap is present, as meshes using DistanceMap are typically non-convex and unsuitable for GJK/EPA collision detection.
+**Critical Design Decision**: Mesh-to-mesh collision explicitly does NOT fall back from DistanceMap to GJK/EPA when a DistanceMap is present, as meshes using DistanceMap are typically non-convex and unsuitable for GJK/EPA collision detection.
 
 ## Multi-Contact Manifold Generation
 
@@ -301,7 +298,7 @@ void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& c
 
 The DistanceMap collision detection system implements a **multi-contact manifold approach** that generates stable contact sets with intelligent clustering and representative selection.
 
-**Location**: `pe/core/detection/fine/MaxContacts.h` (lines ~4038-4320)
+**Location**: `pe/core/detection/fine/MaxContacts.h`, `MaxContacts::collideWithDistanceMap`
 
 ### Algorithm Overview
 
@@ -456,21 +453,31 @@ class DistanceMap {
 public:
     // Factory methods
     static std::unique_ptr<DistanceMap> createFromFile(
-        const std::string& meshFile, pe::real spacing, int resolution, int tolerance);
-    static std::unique_ptr<DistanceMap> createFromTriangleMesh(
-        const TriangleMesh& mesh, pe::real spacing, int resolution, int tolerance);
+        const std::string& meshFile, int resolution = 50, int tolerance = 5);
+    static std::unique_ptr<DistanceMap> create(
+        const pe::TriangleMeshID& mesh, int resolution = 50, int tolerance = 5);
+    static std::unique_ptr<DistanceMap> createFromData(
+        const std::vector<pe::real>& sdfData,
+        const std::vector<int>& alphaData,
+        const std::vector<pe::Vec3>& normalData,
+        const std::vector<pe::Vec3>& contactPointData,
+        int nx, int ny, int nz,
+        pe::real spacing,
+        const pe::Vec3& origin);
     
     // Query interface
     pe::real interpolateDistance(pe::real x, pe::real y, pe::real z) const;
     Vec3 interpolateNormal(pe::real x, pe::real y, pe::real z) const;
     Vec3 interpolateContactPoint(pe::real x, pe::real y, pe::real z) const;
+    pe::real interpolateAlpha(pe::real x, pe::real y, pe::real z) const;
+    void invertForDomainBoundary();
     
     // Grid properties
-    int getNx() const { return pImpl_->nx_; }
-    int getNy() const { return pImpl_->ny_; }
-    int getNz() const { return pImpl_->nz_; }
-    pe::real getSpacing() const { return pImpl_->spacing_; }
-    const Vec3& getOrigin() const { return pImpl_->origin_; }
+    int getNx() const;
+    int getNy() const;
+    int getNz() const;
+    pe::real getSpacing() const;
+    pe::Vec3 getOrigin() const;
 };
 ```
 
@@ -486,16 +493,15 @@ Key components:
 #### 3. MaxContacts Integration
 **File**: `pe/core/detection/fine/MaxContacts.h`
 
-**Triangle Mesh Collision Entry Point**: Lines 3744-3775
+**Triangle Mesh Collision Entry Point**: `MaxContacts::collideTMeshTMesh`
 ```cpp
 template< typename CC >
 void MaxContacts::collideTMeshTMesh( TriangleMeshID mA, TriangleMeshID mB, CC& contacts )
 {
-    // Try DistanceMap-based collision detection first
+    // Try DistanceMap-based collision detection first.
     if (mA->hasDistanceMap() || mB->hasDistanceMap()) {
-        if (collideWithDistanceMap(mA, mB, contacts)) {
-            return; // DistanceMap collision successful
-        }
+        collideWithDistanceMap(mA, mB, contacts);
+        return; // Do not fall back to GJK/EPA when a DistanceMap is present.
     }
     
     // GJK/EPA fallback
@@ -526,13 +532,17 @@ class TriangleMesh : public TriangleMeshTrait<Config>
 public:
     // DistanceMap acceleration
     void enableDistanceMapAcceleration(int resolution = 50, int tolerance = 5);
+    void disableDistanceMapAcceleration();
     bool hasDistanceMap() const;
     const DistanceMap* getDistanceMap() const;
+    DistanceMap* getDistanceMap();
     
 private:
     std::unique_ptr<DistanceMap> distanceMap_;
 };
 ```
+
+DistanceMap data and rebuild parameters are also serialized for MPI shadow copies and checkpoint/restart flows when CGAL support is enabled. Shadow copies are reconstructed via `DistanceMap::createFromData()`.
 
 ### Build System Integration
 
@@ -609,25 +619,25 @@ mesh->enableDistanceMapAcceleration(30, 3);
 
 - **DistanceMap Creation**: O(n × log(m)) where n = grid points, m = mesh triangles
 - **Single Distance Query**: O(1) via trilinear interpolation
-- **Collision Detection**: O(v) where v = query mesh vertices  
-- **Coordinate Transformation**: O(1) per vertex
+- **Mesh-Mesh Collision Detection**: O(v + e + f + c²) where v = query mesh vertices, e = unique query edges, f = query faces, and c = collected contact candidates
+- **Coordinate Transformation**: O(1) per sampled point
 
 ### Memory Usage
 
 Grid memory scales as:
 ```
 Memory = nx × ny × nz × (sizeof(sdf_) + sizeof(alpha_) + sizeof(normals_) + sizeof(contact_points_))
-       = nx × ny × nz × (8 + 8 + 24 + 24) bytes
-       ≈ nx × ny × nz × 64 bytes (for double precision)
+       = nx × ny × nz × (8 + 4 + 24 + 24) bytes
+       ≈ nx × ny × nz × 56 bytes (for double precision, before container overhead)
 ```
 
 **Storage per voxel**:
 - `sdf_`: 8 bytes (double)
-- `alpha_`: 8 bytes (double, interpolation weights)
+- `alpha_`: 4 bytes (int containment flag, interpolated as a scalar)
 - `normals_`: 24 bytes (3 doubles)
 - `contact_points_`: 24 bytes (3 doubles)
 
-**Example**: 50³ grid = 125,000 voxels × 64 bytes ≈ 8MB per DistanceMap
+**Example**: 50³ grid = 125,000 voxels × ~56 bytes ≈ 7MB per DistanceMap in double precision, before vector/container overhead.
 
 ### Performance Comparison
 
@@ -635,7 +645,7 @@ Memory = nx × ny × nz × (sizeof(sdf_) + sizeof(alpha_) + sizeof(normals_) + s
 |--------|--------------|-----------|---------|----------|
 | GJK/EPA | None | O(k) iterations | Minimal | High |
 | DistanceMap | O(n×log(m)) | O(1) | O(n) grid | High |
-| Hybrid | O(n×log(m)) | O(1) + fallback | O(n) | High |
+| Plane + DistanceMap | O(n×log(m)) | O(samples) | O(n) grid | Grid-dependent |
 
 ### Scalability Considerations
 
@@ -729,7 +739,7 @@ Look for:
 
 ## Conclusion
 
-The DistanceMap mesh-to-mesh collision detection system provides an efficient acceleration structure for collision detection between triangle meshes. The multi-contact manifold system with intelligent clustering generates physically meaningful contact sets that capture the geometric structure of complex collisions.
+The DistanceMap collision detection system provides an efficient acceleration structure for collision detection involving triangle meshes. The mesh-to-mesh multi-contact manifold system with intelligent clustering generates physically meaningful contact sets that capture the geometric structure of complex collisions.
 
 Key capabilities:
 - **Non-convex mesh support**: Designed specifically for meshes unsuitable for GJK/EPA
@@ -737,4 +747,4 @@ Key capabilities:
 - **Comprehensive sampling**: Vertex, edge, and face sampling ensures no contact misses
 - **Efficient queries**: O(1) distance lookups enable real-time collision detection
 
-The system's integration with PE's collision detection pipeline ensures correct handling of arbitrary mesh orientations through proper coordinate transformations, with no fallback to GJK/EPA for meshes with DistanceMap enabled.
+The system's integration with PE's collision detection pipeline ensures correct handling of arbitrary mesh orientations through proper coordinate transformations. For mesh-to-mesh contact generation, a present DistanceMap is authoritative and the code does not fall back to GJK/EPA.

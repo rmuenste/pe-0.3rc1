@@ -1,71 +1,28 @@
 # AGENTS.md
 
-This file provides guidance to OpenAI Agents (e.g., ChatGPT in the Codex CLI) when working with code in this repository.
-
-## Recent Updates (Nov 2025)
-
-- HardContactLubricated now exposes lightweight runtime controls for contact/lubrication blending (`pe/core/lubrication/Params.*`). `MaxContacts` queries these globals instead of walking through `CollisionSystem`, so remember to seed them in new entry points.
-- DistanceMap fine detection recently gained stricter validation and CLI pose controls in `examples/cgal_examples/mesh_simulation.cpp`; leverage `--mesh2-position` / `--mesh2-euler` when reproducing collisions.
-- `set_lubrication_threshold` is available via the C interface, and `sim_setup_serial` positions the validation sphere at `(0.05, 0.05, 0.02)` for the latest lubrication experiments.
+This file provides guidance to Agents.
 
 ## Build System
 
-The PE (Physics Engine) has two build systems:
+For normal builds, build variants, target-specific builds, CGAL/DistanceMap builds, examples, and Ninja usage, see `doc/technical-notes/build-with-cmake.md`.
 
-1. Custom configure script (see ConfigFile for options)
-   ```bash
-   ./configure config-file.txt
-   make
-   ```
+Legacy note: the repository still contains the old custom `./configure` flow and `ConfigFile`, but new work should prefer CMake.
 
-2. CMake-based build (recommended)
-   ```bash
-   mkdir build
-   cd build
-   cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DLIBRARY_TYPE=STATIC ..
-   make
-   ```
+## Smoke Tests
 
-### Common CMake Options
-
-- `-DCMAKE_BUILD_TYPE=Release|Debug`: Set build type (default: Release)
-- `-DLIBRARY_TYPE=STATIC|SHARED|BOTH`: Build type of library (default: STATIC)
-- `-DBLAS=ON|OFF`: Build support for BLAS (default: OFF)
-- `-DMPI=ON|OFF`: Build support for MPI parallelization (default: OFF)
-- `-DOPENCL=ON|OFF`: Build support for OpenCL (default: OFF)
-- `-DIRRLICHT=ON|OFF`: Build support for Irrlicht visualization (default: OFF)
-- `-DEXAMPLES=ON|OFF`: Build examples (default: OFF)
-- `-DEIGEN=ON|OFF`: Build with Eigen library support (default: ON)
-- `-DCGAL=ON|OFF`: Build with CGAL library support (default: OFF)
-- `-DUSE_JSON=ON|OFF`: Build with JSON support (default: ON)
-
-### Running Examples
-
-After building with `-DEXAMPLES=ON`, the example binaries are located in `build/examples/*/`:
-
-```bash
-# Run a single-process example
-./build/examples/boxstack/boxstack
-
-# Run an MPI example with multiple processes
-mpirun -np 4 ./build/examples/mpicube/mpicube
-
-# Run CGAL-enabled examples (requires -DCGAL=ON)
-./build/examples/cgal_examples/mesh_simulation --mesh1 mesh1.obj --mesh2 mesh2.obj
-./build/examples/cgal_examples/mesh_collision_test reference.obj output test_sphere.obj
-```
+The main lightweight smoke test is `tests/interface/pe_interface_smoke_serial.cpp`, exposed as the `pe_interface_smoke_serial` target and `pe-interface-serial-*` CTest cases. See `tests/interface/README.md` for harness details and `doc/technical-notes/build-with-cmake.md` for configure/build/run commands.
 
 ## Dependencies
 
 ### Required
-- Boost >= 1.46.1 (thread, system, filesystem, program_options)
+- Boost >= 1.68 (thread, system, filesystem, program_options)
 - CMake >= 3.15
 
 ### Optional
-- Irrlicht >= 1.7.9 (for visualization)
 - MPI (for parallel execution)
-- OpenCL (for GPGPU support)
 - CGAL (for computational geometry)
+- OpenCL (for GPGPU support) (maybe outdated, no active usage since 2022)
+- Irrlicht >= 1.7.9 (for visualization) (deprecated, project is not actively maintained)
 
 ## Architecture Overview
 
@@ -86,42 +43,77 @@ PE is a physics engine for rigid body dynamics simulation with the following mai
 - Box, Sphere, Capsule, Cylinder, Plane
 - Triangle meshes and unions of primitives
 
-### Visualization Modules
-- `pe/irrlicht`: Irrlicht-based real-time visualization
-- `pe/povray`: POV-Ray scene export
-- `pe/vtk`, `pe/opendx`: Additional visualization formats
-
 ### Parallelization
 - MPI-based domain decomposition for distributed memory parallelism
 - Thread-based parallelism for shared memory systems
 - Optional GPGPU support via OpenCL
 
+### Visualization Modules
+- `pe/vtk`, `pe/opendx`: VTK is the main visualization mode now (actively maintained)
+- `pe/povray`: POV-Ray scene export (old, but it still works)
+- `pe/irrlicht`: Irrlicht-based real-time visualization (deprecated, not actively maintained)
+
 ### External Integration
 - `pe/interface`: C/C++ interface for integration with other software
 
-## Library Structure
+## Repo Structure
 
-The library is structured as a header-only interface with implementation in source files:
+This repo is organized like a C++ physics engine with public API headers, implementation files, examples, docs, and generated build trees.
 
-- `pe/*.h`: Main include headers
-- `pe/*/`: Component-specific headers
-- `src/*/`: Implementation files
+### Top Level
 
-Most simulations need to:
-1. Create a World object
-2. Add bodies with physical properties
-3. Configure collision detection
-4. Set up response/solver methods
-5. Run the time stepping loop
+- `pe/`: Public headers and most of the engine's API surface.
+- `src/`: Implementation `.cpp` files corresponding to the modules under `pe/`.
+- `examples/`: Runnable sample simulations and demos.
+- `tests/`: Test code, currently small and mostly interface/math focused. The main smoke-test entry point is `tests/interface/pe_interface_smoke_serial.cpp`.
+- `doc/`: Documentation, especially technical notes about collision detection, solvers, DistanceMap, lubrication, MPI, and related engine topics.
+- `tutorial/`: Tutorial header files for guided examples.
+- `cmake/`: Custom CMake helper modules and config templates.
+- `media/`: Small bundled assets used by examples or visualization.
+- Root build/config files include `CMakeLists.txt`, `CMakePresets.json`, `configure` (legacy, deprecated), and `ConfigFile` (legacy, deprecated).
+
+### Core Source Layout
+
+`pe/` is the main public include tree:
+
+- `pe/core/`: Main simulation engine: bodies, collision systems, contacts, detection, domain decomposition, responses, lubrication, joints, notifications, and IO.
+- `pe/core/rigidbody/`: Shape/body classes, their base classes, customization header. The base classes for shapes/rigid bodies RigidBody.h, RigidBodyBase.h contain most of the functions we can call from objects that inherit from them.
+- `pe/math/`: Vectors, matrices, constraints, expressions, solvers, sparse math, and type traits.
+- `pe/util/`: General utilities: logging, timing, threading, singleton/policy helpers, and traits.
+- `pe/config/`: Compile-time configuration headers.
+- `pe/interface/`: C/C++ integration interface.
+-  `pe/vtk/`, `pe/irrlicht/`, `pe/povray/`, `pe/opendx/`: Visualization/export integrations.
+- `pe/support/`, `pe/system/`: Support and system-level helpers.
+
+`src/` mirrors much of that structure with compiled implementation files:
+
+- `src/core/`: Runtime implementation for the physics core.
+- `src/core/detection/fine/`: Fine collision detection implementation, including DistanceMap.
+- `src/core/lubrication/`: Lubrication runtime implementation.
+- `src/math/`, `src/util/`, `src/interface/`: Implementations for math, utilities, and external interface.
+- `src/irrlicht/`, `src/povray/`, `src/vtk/`, `src/opendx/`: Visualization/export implementations.
+
+### Examples
+
+`examples/` contains many standalone demos grouped by scenario:
+
+- Basic rigid body demos: `boxstack`, `cradle`, `domino`, `well`, `chain`, `cylinder`, and similar folders.
+- Geometry/collision demos: `detection`, `convex_hull`, `triangle_mesh`, `kdop_example`, and `trimeshdop_demo`.
+- Lubrication demos: `basic_lubrication`, `lubrication_demo`, and `sphere_column_serial_hcl`.
+- MPI/distributed examples: many `mpi*` folders such as `mpicube`, `mpigranular`, `mpiperiodic`, and `mpispheres`.
+- CGAL/DistanceMap examples: `examples/cgal_examples/`, including mesh collision tests, mesh simulation, DistanceMap debug tools, and VTK output helpers.
+
+### Docs
+
+`doc/technical-notes/` is the best place for design-level explanations. Start with `doc/technical-notes/README.md` to choose the right note; the directory covers topics like simulation setup examples, DistanceMap, collision conventions, contact solvers, batch generation, domain decomposition, lubrication contacts, rigid bodies, and MPI synchronization.
+
+Simulation setup note:
+- For concrete serial and MPI setup patterns, see `doc/technical-notes/simulation-setup-examples.md`.
+- In short, serial simulations usually get `WorldID` via `theWorld()`, create bodies/materials, then advance with `world->simulationStep(dt)` or `world->run(...)`. MPI simulations must initialize MPI, define the local domain, connect neighboring remote domains, create bodies on the owning process, synchronize, and then step/run.
 
 ## Development Notes
 
 The PE library can be built as static (default) or shared library. The library name is "pe" and will be found in the `build/lib` directory.
-
-Deprecation notice (lubrication stacks)
-- The canonical lubrication implementation is `HardContactLubricated`.
-- `HardContactAndFluidWithLubrication` and `HardContactFluidLubrication` are deprecated and will be removed in the next version.
-- New work and integrations should target `HardContactLubricated` only.
 
 When extending the codebase:
 - Prefer adding to existing modules over creating new ones
@@ -129,89 +121,9 @@ When extending the codebase:
 - Use templates for performance-critical code
 - Implement new geometries by extending the existing base classes
 
-## Creating a New Specialized CollisionSystem
+Specialized implementation guides:
+- For creating a new `CollisionSystem` specialization, see `doc/technical-notes/new-collision-system-implementation-guide.md`.
 
-PE uses a template-based design to specialize the collision system for different physical models. To create a new specialized CollisionSystem:
-
-1. Create a response class in `pe/core/response/YourSpecialization.h`:
-   ```cpp
-   template< typename C, typename U1=NullType, typename U2=NullType >
-   class YourSpecialization : private NonCopyable
-   {
-   public:
-      pe_CONSTRAINT_MUST_BE_SAME_TYPE( U1, NullType );
-      pe_CONSTRAINT_MUST_BE_SAME_TYPE( U2, NullType );
-   };
-   ```
-
-2. Create a configuration file in `pe/core/configuration/YourSpecialization.h`:
-   ```cpp
-   template< template<typename> class CD, typename FD, template<typename> class BG, template<typename,typename,typename> class CR >
-   struct YourSpecializationConfig { /*...configuration details...*/ };
-   
-   typedef YourSpecializationConfig< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::YourSpecialization >  YSConfig;
-   ```
-
-3. Create a specialization of the CollisionSystem in `pe/core/collisionsystem/YourSpecialization.h`:
-   ```cpp
-   template< template<typename> class CD, typename FD, template<typename> class BG, template< template<typename> class, typename, template<typename> class, template<typename,typename,typename> class > class C >
-   class CollisionSystem< C<CD,FD,BG,response::YourSpecialization> >
-   { /*...implementation details...*/ };
-   ```
-
-4. Include the new specialization in `pe/core/CollisionSystem.h`:
-   ```cpp
-   #include <pe/core/collisionsystem/YourSpecialization.h>
-   ```
-
-5. To use the new specialization, modify `pe/config/Collisions.h`:
-   ```cpp
-   #define pe_CONSTRAINT_SOLVER  pe::response::YourSpecialization
-   ```
-
-6. Note on legacy examples: older documentation may refer to `HardContactAndFluidWithLubrication` or `HardContactFluidLubrication` trait specializations. These are deprecated; prefer creating specializations that use `response::HardContactLubricated`.
-
-## DistanceMap Integration
-
-DistanceMap acceleration has been integrated into the PE core library as a fine collision detection algorithm alongside GJK and EPA. This provides 3D signed distance field-based collision detection for triangle meshes.
-
-### Usage
-
-```cpp
-#include <pe/core/detection/fine/DistanceMap.h>
-
-// Create triangle mesh with DistanceMap acceleration
-TriangleMeshID mesh = createTriangleMesh(id, position, "mesh.obj", material, false, true);
-mesh->enableDistanceMapAcceleration(resolution, tolerance);  // resolution=50, tolerance=5 (defaults)
-
-// DistanceMap will be automatically used in collision detection
-```
-
-### File Structure
-
-- **Header**: `pe/core/detection/fine/DistanceMap.h` - Co-located with GJK/EPA algorithms
-- **Implementation**: `src/core/detection/fine/DistanceMap.cpp` - Included in PE library
-- **Integration**: `pe/core/detection/fine/MaxContacts.h` - Collision detection pipeline
-
-### CGAL Examples
-
-The `examples/cgal_examples/` directory contains examples demonstrating CGAL and DistanceMap functionality:
-
-- **`mesh_simulation.cpp`**: Complete physics simulation with two meshes, ground plane, and DistanceMap acceleration
-- **`mesh_collision_test.cpp`**: Collision detection testing with DistanceMap validation
-- **`cgal_box.cpp`**: Basic CGAL integration example
-
-### Coordinate Transformations
-
-DistanceMap collision detection properly handles coordinate transformations:
-- Query vertices transformed from world coordinates to reference mesh local coordinates
-- Distance queries performed in local coordinate system where DistanceMap is defined
-- Results (normals, contact points) transformed back to world coordinates for collision response
-
-### Current State
-
-- ✅ DistanceMap fully integrated into PE core library
-- ✅ Coordinate transformations implemented for proper mesh-to-mesh collision
-- ✅ Sampling disabled for comprehensive vertex testing
-- ✅ Examples updated with proper simulation loops and physics integration
-- ✅ Build system configured for CGAL examples
+DistanceMap note:
+- DistanceMap is the preferred collision path for `TriangleMesh` use in PE, especially for non-convex or complex meshes. GJK/EPA remains available as a fallback for convex meshes or meshes without DistanceMap acceleration.
+- For implementation details, usage, and tuning, see `doc/technical-notes/distance-map-implementation.md`.
