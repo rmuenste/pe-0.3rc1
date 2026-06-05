@@ -4,6 +4,7 @@
  *  \brief Example file for the pe physics engine
  *
  *  Copyright (C) 2009 Klaus Iglberger
+ *                2023 Raphael Münster
  *
  *  This file is part of pe.
  *
@@ -182,7 +183,6 @@ int main( int argc, char* argv[] )
       // Setting the sphere texture
       //pov->setTexture( s, CustomTexture( "T_Chrome_1A" ) );
    }
-   // 1447, 1527, 1499
    // Simulation loop
    std::cout << "\n--" << pe_BROWN << "RIGID BODY SIMULATION" << pe_OLDCOLOR
              << "---------------------------------------------------------" << std::endl;
