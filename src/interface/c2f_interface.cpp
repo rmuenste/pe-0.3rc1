@@ -503,6 +503,11 @@ extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   pe::setupATCSerial(*remoteRank);
 }
 
+extern "C" void commf2c_span_complex_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Span complex setup
+  pe::setupSpanComplexSerial(*remoteRank);
+}
+
 extern "C" void commf2c_rotation_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Rotation setup
   pe::setupRotationSerial(*remoteRank);

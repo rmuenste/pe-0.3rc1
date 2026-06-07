@@ -52,6 +52,12 @@ set( PREPROCESSOR_FLAGS ""    CACHE STRING   "Additional preprocessor flags."   
 set( COMPILER_FLAGS   ""      CACHE STRING   "Additional compiler flags."                               )
 set( LINKER_FLAGS     ""      CACHE STRING   "Additional linker flags when linking the examples."       )
 set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support."                         )
+option(USE_CGAL "Deprecated alias for CGAL" OFF)
+
+if(USE_CGAL AND NOT CGAL)
+  message(DEPRECATION "USE_CGAL is deprecated; use CGAL instead.")
+  set(CGAL ON CACHE BOOL "Build with CGAL library support." FORCE)
+endif()
 
 # Option to enable/disable JSON support
 option(USE_JSON "Use nlohmann/json library" ON)
@@ -239,16 +245,9 @@ list(APPEND PE_THIRD_PARTY_LIBS
   Boost::random
 )
 
-if(USE_CGAL)
-  LINK_LIBRARIES(
-    Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
-    ${GMP_LIBRARIES} ${MPFR_LIBRARIES}
-  )
-else()
-  LINK_LIBRARIES(
-    Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
-  )
-endif()
+LINK_LIBRARIES(
+  Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
+)
 
 # Disable Boost auto-linking since it conflicts with cmake:
 ADD_DEFINITIONS    ( -DBOOST_ALL_NO_LIB    )
@@ -293,7 +292,6 @@ endif()
 #============================================================================
 # NEW APPROACH TO ADD CGAL
 #============================================================================
-# In subproject's CMakeLists.txt
 if(CGAL)
   # Try to find an existing CGAL installation first
   find_package(CGAL QUIET HINTS
@@ -302,61 +300,31 @@ if(CGAL)
   )
 
   if(CGAL_FOUND)
-    #message(STATUS "Found existing CGAL installation")
-    # Use the found CGAL
-    include(${CGAL_USE_FILE})
+    message(STATUS "Found existing CGAL installation")
 
-    # Only create target if it doesn't already exist (avoid collision with parent project)
-    if(NOT TARGET cgal)
-      add_custom_target(cgal)
+    if(CGAL_INCLUDE_DIRS)
+      set(CGAL_INCLUDE_DIR ${CGAL_INCLUDE_DIRS})
     endif()
   else()
-    # message(STATUS "Building CGAL from source")
-    # Your existing ExternalProject_Add code for CGAL
-    set(CGAL_INSTALL_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install)
-    set(CGAL_STAMP_DIR ${CMAKE_BINARY_DIR}/extern/cgal/src/cgal-stamp)
+    message(STATUS "CGAL installation not found; cloning CGAL")
+    FetchContent_Declare(
+      cgal
+      GIT_REPOSITORY https://github.com/CGAL/cgal.git
+      GIT_TAG v5.3.2
+    )
+    FetchContent_Populate(cgal)
 
-    # Check if the install stamp file exists
-    if(EXISTS "${CGAL_STAMP_DIR}/cgal-install")
-      # Only create target if it doesn't already exist (avoid collision with parent project)
-      if(NOT TARGET cgal)
-        add_custom_target(cgal)
-      endif()
-    else()
-      # Only create target if it doesn't already exist (avoid collision with parent project)
-      if(NOT TARGET cgal)
-        ExternalProject_Add(
-          cgal
-          GIT_REPOSITORY https://github.com/CGAL/cgal.git
-          GIT_TAG v5.3.2
-          PREFIX ${CMAKE_BINARY_DIR}/extern/cgal
-          CMAKE_ARGS
-            -DCMAKE_INSTALL_PREFIX=${CGAL_INSTALL_DIR}
-            -DWITH_CGAL_ImageIO=OFF
-            -DWITH_CGAL_Qt5=OFF
-          TEST_COMMAND ""
-        )
-      endif()
-    endif()
-
-    # Set CGAL include directory
-    set(CGAL_INCLUDE_DIR ${CMAKE_BINARY_DIR}/extern/cgal/install/include)
-    include_directories(SYSTEM ${CGAL_INCLUDE_DIR})
+    file(GLOB CGAL_PACKAGE_INCLUDE_DIRS "${cgal_SOURCE_DIR}/*/include")
+    set(CGAL_INCLUDE_DIR ${CGAL_PACKAGE_INCLUDE_DIRS})
   endif()
 
-  # Add definition to enable CGAL
-  add_definitions(-DPE_USE_CGAL)
+  if(NOT TARGET CGAL::CGAL AND NOT CGAL_INCLUDE_DIR)
+    message(FATAL_ERROR "CGAL support is enabled, but no CGAL target or include directory is available")
+  endif()
+
   set(DEFINES "${DEFINES} PE_USE_CGAL=1")
 else()
   set(DEFINES "${DEFINES} PE_USE_CGAL=0")
-endif()
-#============================================================================
-
-if(USE_CGAL)
-  message(STATUS "CGAL will be installed to: ${CGAL_INSTALL_DIR}")
-  SET(CGAL ON CACHE BOOL "Use CGAL library" FORCE)
-  # Add definition to enable CGAL
-  add_definitions(-DPE_USE_CGAL)
 endif()
 #============================================================================
 # Update library and linking settings for CGAL
@@ -364,21 +332,26 @@ if( CGAL )
     message(STATUS "CGAL support is enabled in pe.")
     # Add a compiler define if CGAL is true
     set( DEFINES "${DEFINES} HAVE_CGAL=1" )
-    
-    # Add CGAL-related libraries to the third-party libraries
-    find_package(GMP QUIET)
-    find_package(MPFR QUIET)
-    
-    if(GMP_FOUND)
-        list(APPEND PE_THIRD_PARTY_LIBS ${GMP_LIBRARIES})
+
+    add_library(pe_cgal INTERFACE)
+
+    # PE public headers include CGAL headers, expose CGAL types, and instantiate
+    # CGAL templates. Consumers therefore need CGAL's complete usage requirements
+    # and the same PE_USE_CGAL header configuration, not only PE's private link.
+    target_compile_definitions(pe_cgal INTERFACE PE_USE_CGAL)
+
+    if(TARGET CGAL::CGAL)
+        target_link_libraries(pe_cgal INTERFACE CGAL::CGAL)
+    else()
+        target_include_directories(pe_cgal SYSTEM INTERFACE ${CGAL_INCLUDE_DIR})
+
+        # The repository's FindMPFR module includes GMP in MPFR_LIBRARIES.
+        # CGAL::CGAL provides these transitive dependencies when that target exists.
+        find_package(MPFR QUIET)
+        if(MPFR_FOUND)
+            target_link_libraries(pe_cgal INTERFACE ${MPFR_LIBRARIES})
+        endif()
     endif()
-    
-    if(MPFR_FOUND)
-        list(APPEND PE_THIRD_PARTY_LIBS ${MPFR_LIBRARIES})
-    endif()
-    
-    # Add CGAL include directories
-    list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${CGAL_INCLUDE_DIR})
 else()
     message(STATUS "CGAL support is disabled in pe.")
     # Add a compiler define if CGAL is false
@@ -570,6 +543,9 @@ if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
    set_target_properties( pe_static PROPERTIES PREFIX "lib" )
    target_link_libraries(pe_static PRIVATE ${PE_THIRD_PARTY_LIBS})
    target_include_directories(pe_static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS})
+   if(TARGET pe_cgal)
+      target_link_libraries(pe_static PUBLIC pe_cgal)
+   endif()
 endif()
 
 if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
@@ -586,6 +562,9 @@ if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
    set_target_properties( pe_shared PROPERTIES OUTPUT_NAME pe )
    target_link_libraries(pe_shared PRIVATE ${PE_THIRD_PARTY_LIBS})
    target_include_directories(pe_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS})
+   if(TARGET pe_cgal)
+      target_link_libraries(pe_shared PUBLIC pe_cgal)
+   endif()
    target_compile_definitions(pe_shared PUBLIC PE_SHARED_LIB_SELECT_EXPORTS)
    add_dependencies(pe_static eigen)
 endif()

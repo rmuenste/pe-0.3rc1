@@ -27,6 +27,7 @@
 //   CTest
 //    ├── pe_interface_smoke_serial --case atc-external           → fresh process → setupATCSerial → exit
 //    ├── pe_interface_smoke_serial --case atc-cgal-distancemap   → fresh process → setupATCSerial → exit
+//    ├── pe_interface_smoke_serial --case span-complex-distancemaps → fresh process → setupSpanComplexSerial → exit
 //    ├── pe_interface_smoke_serial --case fluidization-srr-fresh → fresh process → setupFluidizationSRRSerial → exit
 //    ├── pe_interface_smoke_serial --case atc-resume-roundtrip   → fresh process
 //    │     ├── forks seed child  → child process → setupATCSerial → writes checkpoint → exit
@@ -318,6 +319,50 @@ void runAtcCgalDistanceMap() {
 #endif
 }
 
+void runSpanComplexDistanceMaps() {
+#ifndef PE_USE_CGAL
+  fail("Span complex DistanceMap test requires PE_USE_CGAL");
+#else
+  const auto estimateMemoryBytes = [](const pe::DistanceMap& dm) -> size_t {
+    return dm.getSdfData().size() * sizeof(pe::real) +
+           dm.getAlphaData().size() * sizeof(int) +
+           dm.getNormalData().size() * sizeof(pe::Vec3) +
+           dm.getContactPointData().size() * sizeof(pe::Vec3);
+  };
+
+  pe::setupSpanComplexSerial(1);
+  requireCommonConfig(false, pe::SimulationConfig::None);
+  requireCounts(0, 3, 0);
+
+  size_t distanceMaps = 0;
+  size_t totalMemoryBytes = 0;
+  const auto& storage = pe::theCollisionSystem()->getBodyStorage();
+  for (auto it = storage.begin(); it != storage.end(); ++it) {
+    if ((*it)->getType() != pe::triangleMeshType) {
+      continue;
+    }
+
+    pe::ConstTriangleMeshID mesh = static_cast<pe::ConstTriangleMeshID>(*it);
+    require(mesh->isFixed(), "Span complex mesh should be fixed");
+    require(mesh->hasDistanceMap(), "Span complex mesh did not build a DistanceMap");
+    const pe::DistanceMap* dm = mesh->getDistanceMap();
+    require(dm != nullptr, "Span complex DistanceMap pointer is null");
+    require(dm->getNx() > 0, "Span complex DistanceMap has invalid x dimension");
+    require(dm->getNy() > 0, "Span complex DistanceMap has invalid y dimension");
+    require(dm->getNz() > 0, "Span complex DistanceMap has invalid z dimension");
+
+    const size_t bytes = estimateMemoryBytes(*dm);
+    require(bytes > 0, "Span complex DistanceMap memory estimate is zero");
+    totalMemoryBytes += bytes;
+    ++distanceMaps;
+  }
+
+  require(distanceMaps == 3,
+          "Expected three Span complex DistanceMaps, got " + std::to_string(distanceMaps));
+  require(totalMemoryBytes > 0, "Total Span complex DistanceMap memory estimate is zero");
+#endif
+}
+
 void runFluidizationSrrFresh() {
   pe::setupFluidizationSRRSerial(1);
   requireCommonConfig(false, pe::SimulationConfig::Grid);
@@ -354,6 +399,8 @@ int main(int argc, char** argv) {
       selectConfig(runDir, "atc_external.json");
     } else if (args.caseName == "atc-cgal-distancemap") {
       selectConfig(runDir, "atc_cgal_distancemap.json");
+    } else if (args.caseName == "span-complex-distancemaps") {
+      selectConfig(runDir, "span_complex_distancemaps.json");
     } else if (args.caseName == "fluidization-srr-fresh") {
       selectConfig(runDir, "fluidization_srr_fresh.json");
     } else if (args.caseName == "fluidization-srr-resume-roundtrip") {
@@ -395,6 +442,8 @@ int main(int argc, char** argv) {
         runAtcExternal();
       } else if (args.caseName == "atc-cgal-distancemap") {
         runAtcCgalDistanceMap();
+      } else if (args.caseName == "span-complex-distancemaps") {
+        runSpanComplexDistanceMaps();
       } else if (args.caseName == "fluidization-srr-fresh") {
         runFluidizationSrrFresh();
       }

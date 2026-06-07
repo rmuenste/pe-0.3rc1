@@ -84,6 +84,3 @@ target_link_libraries(inverted_distancemap_simulation PRIVATE
   $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
   $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
 )
-
-# Add CGAL dependency
-#add_dependencies(cgal_box cgal)

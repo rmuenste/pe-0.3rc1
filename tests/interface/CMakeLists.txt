@@ -35,6 +35,10 @@ if(CGAL)
     pe-interface-serial-atc-cgal-distancemap
     atc-cgal-distancemap
   )
+  pe_add_interface_serial_test(
+    pe-interface-serial-span-complex-distancemaps
+    span-complex-distancemaps
+  )
 endif()
 pe_add_interface_serial_test(
   pe-interface-serial-fluidization-srr-fresh

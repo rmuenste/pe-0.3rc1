@@ -35,9 +35,13 @@ ctest --test-dir build-interface-tests -R pe-interface-serial --output-on-failur
 ```
 
 When PE is configured with `-DCGAL=ON`, the serial test set also includes
-`pe-interface-serial-atc-cgal-distancemap`. That case enables the ATC domain
-boundary DistanceMap and verifies that `DistanceMapWriter` writes the configured
-VTI file. The CGAL case is intentionally absent from CTest when `CGAL=OFF`.
+`pe-interface-serial-atc-cgal-distancemap` and
+`pe-interface-serial-span-complex-distancemaps`. The ATC case enables the ATC
+domain boundary DistanceMap and verifies that `DistanceMapWriter` writes the
+configured VTI file. The SpanComplex case calls `setupSpanComplexSerial`, builds
+DistanceMaps for the tool, chip, and workpiece OBJ fixtures, and verifies the
+three generated maps. These CGAL cases are intentionally absent from CTest when
+`CGAL=OFF`.
 
 ```bash
 cmake -S . -B build-interface-tests-cgal \
@@ -47,7 +51,6 @@ cmake -S . -B build-interface-tests-cgal \
   -DEIGEN=ON \
   -DCGAL=ON
 
-cmake --build build-interface-tests-cgal --target cgal
 cmake --build build-interface-tests-cgal --target pe_interface_smoke_serial
 ctest --test-dir build-interface-tests-cgal \
   -R pe-interface-serial-atc-cgal-distancemap \

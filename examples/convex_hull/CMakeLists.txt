@@ -21,9 +21,6 @@ if(CGAL)
     target_include_directories(convex_hull PRIVATE ${CGAL_INCLUDE_DIR})
   endif()
   
-  # Add CGAL dependency
-  add_dependencies(convex_hull cgal)
-  
   message(STATUS "convex_hull example configured with CGAL support")
 else()
   message(STATUS "convex_hull example configured without CGAL support (will demonstrate fallback behavior)")
