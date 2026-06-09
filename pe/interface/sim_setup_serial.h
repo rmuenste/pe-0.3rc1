@@ -18,6 +18,8 @@
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/sim_setup_serial_features.h>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <deque>
 #include <map>
 #include <algorithm>
@@ -31,25 +33,38 @@
 
 namespace pe {
 
-// Apply lubrication/contact hysteresis parameters only if the active collision system
-// exposes the corresponding setters (e.g., HardContactLubricated). This avoids build
-// failures for solvers that don't implement these knobs.
-template <typename CollisionSystemT>
-inline auto applyOptionalLubricationParams(CollisionSystemT& cs, const SimulationConfig& config)
-    -> decltype(cs.setContactHysteresisDelta(real{}),
-                cs.setLubricationHysteresisDelta(real{}),
-                cs.setAlphaImpulseCap(real{}),
-                cs.setMinEpsLub(real{}),
-                void()) {
-  cs.setContactHysteresisDelta(config.getContactHysteresisDelta());
-  cs.setLubricationHysteresisDelta(config.getLubricationHysteresisDelta());
-  cs.setAlphaImpulseCap(config.getAlphaImpulseCap());
-  cs.setMinEpsLub(config.getMinEpsLub());
-}
+// Detect whether the active (compile-time selected) collision system exposes the
+// lubrication/contact-hysteresis setters. Only HardContactLubricated provides them.
+template <typename CollisionSystemT, typename = void>
+struct HasLubricationParamSetters : std::false_type {};
 
 template <typename CollisionSystemT>
-inline void applyOptionalLubricationParams(CollisionSystemT&, const SimulationConfig&) {
-  // Constraint solver does not expose lubrication/hysteresis controls
+struct HasLubricationParamSetters<CollisionSystemT, std::void_t<
+    decltype(std::declval<CollisionSystemT&>().setContactHysteresisDelta(real{})),
+    decltype(std::declval<CollisionSystemT&>().setLubricationHysteresisDelta(real{})),
+    decltype(std::declval<CollisionSystemT&>().setAlphaImpulseCap(real{})),
+    decltype(std::declval<CollisionSystemT&>().setMinEpsLub(real{}))>>
+    : std::true_type {};
+
+// Apply lubrication/contact hysteresis parameters only if the active collision system
+// exposes the corresponding setters (e.g., HardContactLubricated). This avoids build
+// failures for solvers that don't implement these knobs. A single `if constexpr`
+// function is used deliberately: a two-overload SFINAE pair with identical parameter
+// lists is ambiguous whenever both candidates are viable (i.e. exactly the lubricated
+// solver this is meant to support), which would break the build it is supposed to keep
+// compiling.
+template <typename CollisionSystemT>
+inline void applyOptionalLubricationParams(CollisionSystemT& cs, const SimulationConfig& config) {
+  if constexpr (HasLubricationParamSetters<CollisionSystemT>::value) {
+    cs.setContactHysteresisDelta(config.getContactHysteresisDelta());
+    cs.setLubricationHysteresisDelta(config.getLubricationHysteresisDelta());
+    cs.setAlphaImpulseCap(config.getAlphaImpulseCap());
+    cs.setMinEpsLub(config.getMinEpsLub());
+  } else {
+    // Constraint solver does not expose lubrication/hysteresis controls; nothing to do.
+    (void)cs;
+    (void)config;
+  }
 }
 
 inline unsigned int effectiveCheckpointSpacing(const SimulationConfig& config) {

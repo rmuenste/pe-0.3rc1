@@ -54,7 +54,8 @@ PE is a physics engine for rigid body dynamics simulation with the following mai
 - `pe/irrlicht`: Irrlicht-based real-time visualization (deprecated, not actively maintained)
 
 ### External Integration
-- `pe/interface`: C/C++ interface for integration with other software
+- `pe/interface`: C/C++ interface for integration with other software (e.g. the FeatFloWer CFD solver).
+- PE can be driven from a CFD solver in two distinct ways with separate interface functions: normal parallel/domain-decomposition mode, and `PE_SERIAL_MODE` (each CFD rank runs its own full serial PE instance, used mainly for debugging/bring-up). For the `PE_SERIAL_MODE` concept, the `commf2c_*` Fortran/C entry-point convention, the representative-rank I/O pattern, force synchronization, and how to add a new interface setup function, see `doc/technical-notes/pe-interface-serial-mode.md`.
 
 ## Repo Structure
 

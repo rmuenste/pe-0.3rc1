@@ -40,6 +40,10 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [short-range-rep-forces.md](short-range-rep-forces.md): Robust implementation plan for short-range repulsive forces in narrow-gap scenarios.
 - [srr-implementation-lessons.md](srr-implementation-lessons.md): Lessons learned from implementing the short-range repulsion solver.
 
+## Integration and Coupling
+
+- [pe-interface-serial-mode.md](pe-interface-serial-mode.md): `PE_SERIAL_MODE` vs normal parallel mode, the `commf2c_*` Fortran/C entry-point convention, the representative-rank pattern, CFD force synchronization, and how to write a new interface setup function.
+
 ## Domain Decomposition and MPI
 
 - [domain-decomposition-geometries-and-definition.md](domain-decomposition-geometries-and-definition.md): Process/domain geometries, local/remote domain definitions, and CFD coupling implications.
