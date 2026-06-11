@@ -71,10 +71,11 @@ struct FrozenFieldTraceResult {
 /*!
  * Collective operation on MPI_COMM_WORLD.
  *
- * MPI must already be initialized. Each rank supplies seed points owned by that rank and the same
- * surface mesh. The function loads example.json into SimulationConfig, decomposes the unit cube,
- * creates a global fixed TriangleMesh with an inverted DistanceMap, and advances passive tracer
- * spheres for exactly SimulationConfig::getTimesteps() main steps.
+ * MPI must already be initialized. Each rank supplies the same complete seed-point list and the
+ * same surface mesh. The function loads example.json into SimulationConfig, decomposes the unit
+ * cube, creates only the tracer spheres owned by each rank, creates a global fixed TriangleMesh
+ * with an inverted DistanceMap, and advances passive tracer spheres for exactly
+ * SimulationConfig::getTimesteps() main steps.
  *
  * The callback is invoked once before the first step and once after every main step. Its vertices
  * input contains 3*numVertices doubles, and it must write the same number of velocity components.
@@ -83,7 +84,7 @@ struct FrozenFieldTraceResult {
  * The returned exits and survivors are rank-local.
  */
 PE_PUBLIC FrozenFieldTraceResult runFrozenFieldTrace(
-   const std::vector<std::array<double, 3> >& localSeeds,
+   const std::vector<std::array<double, 3> >& seeds,
    const SurfaceMeshInput& surface,
    const VelocityCallback& callback );
 

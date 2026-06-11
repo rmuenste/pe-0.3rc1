@@ -71,10 +71,8 @@ int main( int argc, char** argv )
       surface = pe::ObjMeshFile{ argv[2] };
 
    std::vector<std::array<double, 3> > seeds;
-   if( rank == 0 )
-      seeds.push_back( {{ 0.25, 0.25, 0.25 }} );
-   else
-      seeds.push_back( {{ 0.75, 0.75, 0.75 }} );
+   seeds.push_back( {{ 0.25, 0.25, 0.25 }} );
+   seeds.push_back( {{ 0.75, 0.75, 0.75 }} );
 
    int callbackCalls = 0;
    const auto callback = [&callbackCalls]( const double* vertices, double* velocities,
@@ -115,6 +113,7 @@ int main( int argc, char** argv )
          const pe::TracerSurvivor& survivor = result.survivors.front();
          valid = valid &&
             survivor.tracer.originRank == 1 &&
+            survivor.tracer.originLocalIndex == 1 &&
             survivor.ownerRank == 1 &&
             near( survivor.position[0], 0.75 ) &&
             near( survivor.position[1], 0.75 ) &&

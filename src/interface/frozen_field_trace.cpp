@@ -1,5 +1,6 @@
 #include <pe/interface/frozen_field_trace.h>
-
+#define HAVE_MPI 1
+#define PE_USE_CGAL 1
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -235,6 +236,27 @@ std::uint64_t hashMesh( const ParsedMesh& mesh )
    return hash;
 }
 
+std::uint64_t hashPoints( const std::vector<Point>& points )
+{
+   std::uint64_t hash = UINT64_C(1469598103934665603);
+   const auto mix = [&hash]( std::uint64_t value ) {
+      for( int byte = 0; byte < 8; ++byte ) {
+         hash ^= ( value >> ( byte * 8 ) ) & UINT64_C(0xff);
+         hash *= UINT64_C(1099511628211);
+      }
+   };
+
+   mix( points.size() );
+   for( const Point& point : points ) {
+      for( double coordinate : point ) {
+         std::uint64_t bits = 0;
+         std::memcpy( &bits, &coordinate, sizeof( bits ) );
+         mix( bits );
+      }
+   }
+   return hash;
+}
+
 double signedVolumeTimesSix( const ParsedMesh& mesh )
 {
    double volume = 0.0;
@@ -308,6 +330,17 @@ void validateEquivalentMeshes( MPI_Comm comm, const ParsedMesh& mesh )
    MPI_Allreduce( &localHash, &maximumHash, 1, MPI_UINT64_T, MPI_MAX, comm );
    if( minimumHash != maximumHash )
       collectiveAbort( comm, "surface mesh differs between ranks" );
+}
+
+void validateEquivalentSeeds( MPI_Comm comm, const std::vector<Point>& seeds )
+{
+   const std::uint64_t localHash = hashPoints( seeds );
+   std::uint64_t minimumHash = 0;
+   std::uint64_t maximumHash = 0;
+   MPI_Allreduce( &localHash, &minimumHash, 1, MPI_UINT64_T, MPI_MIN, comm );
+   MPI_Allreduce( &localHash, &maximumHash, 1, MPI_UINT64_T, MPI_MAX, comm );
+   if( minimumHash != maximumHash )
+      collectiveAbort( comm, "seed points differ between ranks" );
 }
 
 Point meshCenterOfMass( const ParsedMesh& mesh )
@@ -523,7 +556,7 @@ bool removeExitingTracers( MPI_Comm comm, WorldID world, const ParsedMesh& mesh,
 } // namespace
 
 FrozenFieldTraceResult runFrozenFieldTrace(
-   const std::vector<std::array<double, 3> >& localSeeds,
+   const std::vector<std::array<double, 3> >& seeds,
    const SurfaceMeshInput& surface,
    const VelocityCallback& callback )
 {
@@ -625,27 +658,29 @@ FrozenFieldTraceResult runFrozenFieldTrace(
       boundary->getDistanceMap()->invertForDomainBoundary();
    }
 
-   if( localSeeds.size() > UINT32_MAX )
-      collectiveAbort( cartComm, "a rank supplied more than UINT32_MAX seed points" );
+   if( seeds.size() > UINT32_MAX )
+      collectiveAbort( cartComm, "more than UINT32_MAX seed points were supplied" );
    localError.clear();
-   for( std::size_t i = 0; i < localSeeds.size(); ++i ) {
-      const Point& seed = localSeeds[i];
+   std::vector<Point> parsedSeeds;
+   parsedSeeds.reserve( seeds.size() );
+   for( std::size_t i = 0; i < seeds.size(); ++i ) {
+      const Point seed{{ seeds[i][0], seeds[i][1], seeds[i][2] }};
       if( !finitePoint( seed ) || outsideUnitCube( seed ) ) {
          localError = "seed point is non-finite or outside the unit cube";
          break;
       }
-      if( !world->ownsPoint( toVec3( seed ) ) ) {
-         localError = "seed point is not owned by the rank that supplied it";
-         break;
-      }
+      parsedSeeds.push_back( seed );
    }
    collectiveCheck( cartComm, localError );
+   validateEquivalentSeeds( cartComm, parsedSeeds );
 
-   for( std::size_t i = 0; i < localSeeds.size(); ++i ) {
+   for( std::size_t i = 0; i < parsedSeeds.size(); ++i ) {
+      if( !world->ownsPoint( toVec3( parsedSeeds[i] ) ) )
+         continue;
       const std::uint64_t globalId =
          ( static_cast<std::uint64_t>( static_cast<std::uint32_t>( rank ) ) << 32 ) |
          static_cast<std::uint32_t>( i );
-      SphereID tracer = createSphere( static_cast<id_t>( globalId ), toVec3( localSeeds[i] ),
+      SphereID tracer = createSphere( static_cast<id_t>( globalId ), toVec3( parsedSeeds[i] ),
                                       config.getBenchRadius(), tracerMaterial, true );
       tracer->setCollisionEnabled( false );
       tracer->setLinearVel( 0.0, 0.0, 0.0 );

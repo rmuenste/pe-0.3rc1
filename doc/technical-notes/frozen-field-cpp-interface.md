@@ -5,7 +5,7 @@ tracing:
 
 ```cpp
 pe::FrozenFieldTraceResult pe::runFrozenFieldTrace(
-    const std::vector<std::array<double, 3>>& localSeeds,
+    const std::vector<std::array<double, 3>>& seeds,
     const pe::SurfaceMeshInput& surface,
     const pe::VelocityCallback& callback);
 ```
@@ -19,9 +19,10 @@ pe::FrozenFieldTraceResult pe::runFrozenFieldTrace(
 - `example.json` must be available in the process working directory.
 - `processesX_ * processesY_ * processesZ_` must equal the communicator size.
 
-The unit cube is decomposed uniformly using the configured process grid. Each seed is supplied by
-the rank that owns it. `benchRadius_`, `stepsize_`, `substeps_`, and `timesteps_` control the tracer
-spheres and loop.
+The unit cube is decomposed uniformly using the configured process grid. Every rank supplies the
+same complete seed list; PE validates that list collectively and each rank creates only the tracer
+spheres for points it owns. `benchRadius_`, `stepsize_`, `substeps_`, and `timesteps_` control the
+tracer spheres and loop.
 
 ## Surface Input
 
