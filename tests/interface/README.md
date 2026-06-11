@@ -63,6 +63,19 @@ The generated VTI file is written in the case-local run directory, for example:
 build-interface-tests-cgal/tests/interface/serial-runs/atc-cgal-distancemap/atc_boundary_distancemap.vti
 ```
 
+## Parallel Frozen-Field Tracer
+
+With MPI and CGAL enabled, `pe_frozen_field_trace_mpi` registers two-rank OFF and OBJ cases. They
+verify callback-driven passive advection, rank migration, exact unit-cube exit attribution, and
+survivor reporting:
+
+```bash
+cmake -S . -B build-interface-mpi -G Ninja \
+  -DLIBRARY_TYPE=STATIC -DBUILD_TESTING=ON -DMPI=ON -DCGAL=ON -DUSE_JSON=ON
+cmake --build build-interface-mpi --target pe_frozen_field_trace_mpi
+ctest --test-dir build-interface-mpi -R pe-interface-frozen-field --output-on-failure
+```
+
 ## Adding Tests
 
 Add new interface coverage as a new CTest case, not as another setup call inside
