@@ -1,6 +1,4 @@
 #include <pe/interface/frozen_field_trace.h>
-#define HAVE_MPI 1
-#define PE_USE_CGAL 1
 #include <algorithm>
 #include <array>
 #include <cmath>
