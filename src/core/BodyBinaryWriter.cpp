@@ -96,7 +96,7 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
 
       // write header
       const byte fileFormatVersionMajor( 0 );
-      const byte fileFormatVersionMinor( 1 );
+      const byte fileFormatVersionMinor( 2 );
       header_ << static_cast<byte>('P') << static_cast<byte>('E') << fileFormatVersionMajor << fileFormatVersionMinor;
 
       // table of data type sizes

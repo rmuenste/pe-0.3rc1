@@ -187,6 +187,7 @@ inline void marshal( Buffer& buffer, const RigidBody& obj ) {
    buffer << obj.getID();
    buffer << obj.isVisible();
    buffer << obj.isFixed();
+   buffer << obj.isCollisionEnabled();
    marshal( buffer, obj.getPosition() );
    if( obj.hasSuperBody() )
       marshal( buffer, obj.getRelPosition() );
@@ -261,6 +262,7 @@ inline void unmarshal( Buffer& buffer, RigidBody::Parameters& objparam, bool has
    buffer >> objparam.uid_;
    buffer >> objparam.visible_;
    buffer >> objparam.fixed_;
+   buffer >> objparam.collisionEnabled_;
    unmarshal( buffer, objparam.gpos_ );
    /*
    std::cout << "hasSuperBody: " << hasSuperBody << std::endl;

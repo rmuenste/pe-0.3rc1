@@ -359,6 +359,9 @@ inline bool MaxContacts::gjkEPAcollide(Type geom, TriangleMeshID mesh, Vec3& nor
 template< typename CC >  // Type of the contact container
 void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
 {
+   if( !b1->isCollisionEnabled() || !b2->isCollisionEnabled() )
+      return;
+
    // Performing a collision test between the two rigid bodies
    switch( b1->getType() )
    {

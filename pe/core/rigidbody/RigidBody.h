@@ -101,7 +101,7 @@ public:
    typedef Bodies::ConstIterator       ConstAttachedBodyIterator;  //!< ConstIterator over the currently attached rigid bodies.
    typedef CCDBT::AABB                 AABB;                       //!< Bounding volume of the rigid body.
    struct Parameters {
-      bool visible_, fixed_;
+      bool visible_, fixed_, collisionEnabled_;
       id_t sid_, uid_;
       Vec3 gpos_, rpos_, v_, w_;
       Quat q_;
@@ -141,6 +141,7 @@ public:
    inline bool           isFixed()           const;
    inline bool           isTranslationFixed() const;
    inline bool           isVisible()         const;
+   inline bool           isCollisionEnabled() const;
    inline GeomType       getType()           const;
    inline id_t           getSystemID()       const;
    inline id_t           getID()             const;
@@ -182,6 +183,7 @@ public:
    //@{
            void setFixed      ( bool fixed );
            void setTranslationFixed( bool fixed );
+   inline  void setCollisionEnabled( bool enabled );
    virtual void setVisible    ( bool visible ) = 0;
    virtual void setPosition   ( real px, real py, real pz ) = 0;
    virtual void setPosition   ( const Vec3& gpos ) = 0;
@@ -419,6 +421,7 @@ protected:
                                    an MPI parallel simulation. Since global rigid bodies are always
                                    fixed and known on all MPI processes they are not participating
                                    in any communication process. */
+   bool collisionEnabled_;    //!< Whether this body participates in collision detection.
    id_t sid_;                 //!< The unique system-specific body ID.
    id_t uid_;                 //!< The user-specific body ID.
    Contacts contacts_;        //!< Vector for the currently attached contacts.
@@ -692,6 +695,29 @@ inline id_t RigidBody::getSystemID() const
 inline id_t RigidBody::getID() const
 {
    return uid_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether this rigid body participates in collision detection.
+ */
+inline bool RigidBody::isCollisionEnabled() const
+{
+   return collisionEnabled_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables or disables collision generation for this rigid body.
+ *
+ * Disabled bodies remain in the world and continue to move and migrate, but fine collision
+ * detection does not generate contacts involving them.
+ */
+inline void RigidBody::setCollisionEnabled( bool enabled )
+{
+   collisionEnabled_ = enabled;
 }
 //*************************************************************************************************
 

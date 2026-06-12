@@ -48,3 +48,29 @@ pe_add_interface_serial_test(
   pe-interface-serial-fluidization-srr-resume-roundtrip
   fluidization-srr-resume-roundtrip
 )
+
+if(MPI AND CGAL)
+  add_executable(pe_frozen_field_trace_mpi
+    pe_frozen_field_trace_mpi.cpp
+  )
+  target_link_libraries(pe_frozen_field_trace_mpi PRIVATE pe_static MPI::MPI_CXX)
+
+  set(PE_FROZEN_FIELD_FIXTURE_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/frozen-field")
+
+  foreach(mesh_format IN ITEMS off obj)
+    add_test(
+      NAME pe-interface-frozen-field-${mesh_format}
+      COMMAND
+        ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+        ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_frozen_field_trace_mpi>
+        ${mesh_format}
+        "${PE_FROZEN_FIELD_FIXTURE_DIR}/cube.obj"
+        ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-interface-frozen-field-${mesh_format} PROPERTIES
+      WORKING_DIRECTORY "${PE_FROZEN_FIELD_FIXTURE_DIR}"
+    )
+  endforeach()
+endif()
