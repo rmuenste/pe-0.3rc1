@@ -72,7 +72,7 @@ singletons, so each scenario needs its own process.
 1. Add or reuse fixture files under `fixtures/serial`.
 2. Add a `pe_add_interface_serial_test(<ctest-name>, <case-name>)` entry in
    `tests/interface/CMakeLists.txt`. Wrap it in the relevant feature gate, such
-   as `if(CGAL)`, when the case requires an optional dependency.
+   as `if(PE_USE_CGAL)`, when the case requires an optional dependency.
 3. Update `pe_interface_smoke_serial.cpp` so `main()` maps `<case-name>` to the
    fixture config copied to `example.json`.
 4. Implement a focused helper that calls exactly one setup function and checks

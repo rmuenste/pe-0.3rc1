@@ -20,15 +20,15 @@ add_subdirectory(sphere_column_serial)  # Serial sphere column with ShortRangeRe
 add_subdirectory(sphere_column_serial_hcl)  # Serial sphere column with HardContactLubricated solver
 
 # CGAL Examples
-if( CGAL )
+if( PE_USE_CGAL )
     add_subdirectory(cgal_examples)  # Example showing CGAL oriented bounding box functionality
     add_subdirectory(convex_hull)  # Example showing CGAL convex hull computation for triangle meshes
     add_subdirectory(atc)  # ATC (Annular Tube Configuration) standalone example with timing
     add_subdirectory(mesh_spin)  # Example showing mesh rotation with DistanceMap collision detection
-endif( CGAL )
+endif( PE_USE_CGAL )
 
 # MPI Examples
-if( MPI )
+if( PE_USE_MPI )
     add_subdirectory(decomposition_geometry)
     add_subdirectory(mpi3periodic)
     add_subdirectory(mpibench)
@@ -43,4 +43,4 @@ if( MPI )
     add_subdirectory(mpiunion)
     add_subdirectory(rectigrid_demo)
     add_subdirectory(trimeshdop_demo) # TriMeshDopBoundary example using OBJ files for domain decomposition
-endif( MPI )
+endif( PE_USE_MPI )

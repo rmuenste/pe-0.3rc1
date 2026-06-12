@@ -33,30 +33,30 @@ CMake is the recommended build path:
 ```bash
 mkdir build
 cd build
-cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DLIBRARY_TYPE=STATIC ..
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC ..
 make
 ```
 
 Common CMake options:
 
 - `-DCMAKE_BUILD_TYPE=Release|Debug|RelWithDebInfo|MinSizeRel`
-- `-DLIBRARY_TYPE=STATIC|SHARED|BOTH`
-- `-DEXAMPLES=ON|OFF`
+- `-DPE_LIBRARY_TYPE=STATIC|SHARED|BOTH`
+- `-DPE_BUILD_EXAMPLES=ON|OFF`
 - `-DPE_BUILD_INTERFACE_TESTS=ON|OFF`
-- `-DEIGEN=ON|OFF`
-- `-DUSE_JSON=ON|OFF`
-- `-DCGAL=ON|OFF`
-- `-DMPI=ON|OFF`
-- `-DIRRLICHT=ON|OFF`
-- `-DOPENCL=ON|OFF`
-- `-DBLAS=ON|OFF`
+- `-DPE_USE_EIGEN=ON|OFF`
+- `-DPE_USE_JSON=ON|OFF`
+- `-DPE_USE_CGAL=ON|OFF`
+- `-DPE_USE_MPI=ON|OFF`
+- `-DPE_USE_IRRLICHT=ON|OFF`
+- `-DPE_USE_OPENCL=ON|OFF`
+- `-DPE_USE_BLAS=ON|OFF`
 
 For example, to build the examples and CGAL/DistanceMap support:
 
 ```bash
 mkdir build-cgal
 cd build-cgal
-cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DEXAMPLES=ON -DCGAL=ON ..
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DPE_BUILD_EXAMPLES=ON -DPE_USE_CGAL=ON ..
 make
 ```
 
@@ -65,7 +65,7 @@ workflows. New development should prefer CMake.
 
 ## Running Examples
 
-Example binaries are generated under the build tree when `-DEXAMPLES=ON` is
+Example binaries are generated under the build tree when `-DPE_BUILD_EXAMPLES=ON` is
 enabled. Typical runs:
 
 ```bash
@@ -86,7 +86,7 @@ CGAL and DistanceMap examples are in `examples/cgal_examples`:
 ## DistanceMap and CGAL
 
 DistanceMap acceleration is integrated into the fine collision detection path for
-triangle meshes. It is available when the project is built with `-DCGAL=ON`.
+triangle meshes. It is available when the project is built with `-DPE_USE_CGAL=ON`.
 
 The main entry point is:
 

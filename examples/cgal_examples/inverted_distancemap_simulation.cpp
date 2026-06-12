@@ -293,7 +293,7 @@ int main( int argc, char* argv[] )
    std::cout << "\nUse ParaView to visualize the DistanceMaps and compare the sign convention." << std::endl;
 
 #else
-   std::cout << "This example requires CGAL support. Please rebuild PE with -DCGAL=ON" << std::endl;
+   std::cout << "This example requires CGAL support. Please rebuild PE with -DPE_USE_CGAL=ON" << std::endl;
    return 1;
 #endif
 

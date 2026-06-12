@@ -230,7 +230,7 @@ int main(int argc, char* argv[]) {
     }
 
 #else
-    std::cout << "This example requires CGAL support. Please rebuild with CGAL=ON" << std::endl;
+    std::cout << "This example requires CGAL support. Please rebuild with -DPE_USE_CGAL=ON" << std::endl;
 #endif
 
     return 0;
