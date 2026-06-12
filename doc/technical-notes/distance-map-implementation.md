@@ -559,7 +559,7 @@ target_link_libraries(mesh_simulation PRIVATE ${GMP_LIBRARIES})
 target_include_directories(mesh_simulation PRIVATE ${CGAL_INCLUDE_DIR})
 ```
 
-Build DistanceMap support with the public CMake option `-DCGAL=ON`. The build
+Build DistanceMap support with the public CMake option `-DPE_USE_CGAL=ON`. The build
 system defines `PE_USE_CGAL` for source-level conditional compilation.
 
 ### Usage Examples

@@ -9,15 +9,15 @@
             "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "LIBRARY_TYPE": "STATIC",
-                "MPI": "OFF",
-                "BLAS": "OFF",
-                "OPENCL": "OFF",
-                "IRRLICHT": "OFF",
-                "EXAMPLES": "ON",
-                "EIGEN": "ON",
-                "CGAL": "OFF",
-                "USE_JSON": "ON"
+                "PE_LIBRARY_TYPE": "STATIC",
+                "PE_USE_MPI": "OFF",
+                "PE_USE_BLAS": "OFF",
+                "PE_USE_OPENCL": "OFF",
+                "PE_USE_IRRLICHT": "OFF",
+                "PE_BUILD_EXAMPLES": "ON",
+                "PE_USE_EIGEN": "ON",
+                "PE_USE_CGAL": "OFF",
+                "PE_USE_JSON": "ON"
             }
         },
         {
@@ -28,15 +28,15 @@
             "binaryDir": "${sourceDir}/build-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "LIBRARY_TYPE": "STATIC",
-                "MPI": "OFF",
-                "BLAS": "OFF",
-                "OPENCL": "OFF",
-                "IRRLICHT": "OFF",
-                "EXAMPLES": "ON",
-                "EIGEN": "ON",
-                "CGAL": "OFF",
-                "USE_JSON": "ON"
+                "PE_LIBRARY_TYPE": "STATIC",
+                "PE_USE_MPI": "OFF",
+                "PE_USE_BLAS": "OFF",
+                "PE_USE_OPENCL": "OFF",
+                "PE_USE_IRRLICHT": "OFF",
+                "PE_BUILD_EXAMPLES": "ON",
+                "PE_USE_EIGEN": "ON",
+                "PE_USE_CGAL": "OFF",
+                "PE_USE_JSON": "ON"
             }
         }
     ],

@@ -35,45 +35,42 @@ include(FetchContent)
 #
 #==================================================================================================
 
-set( CMAKE_BUILD_TYPE RELEASE CACHE STRING   "The default build type for the whole project is RELEASE." )
-set( LIBRARY_TYPE     STATIC  CACHE STRING   "Build type of library (STATIC/SHARED/BOTH)."              )
-set( BLAS             OFF     CACHE BOOL     "Build support for BLAS."                                  )
-set( MPI              OFF     CACHE BOOL     "Build support for MPI."                                   )
-set( MPI_PREINCLUDE   OFF     CACHE BOOL     "Include mpi.h ahead of all other headers."                )
-set( OPENCL           OFF     CACHE BOOL     "Build support for OpenCL."                                )
-set( IRRLICHT         OFF     CACHE BOOL     "Build support for Irrlicht engine."                       )
-set( EXAMPLES         OFF     CACHE BOOL     "Build examples."                                          )
-set( EIGEN            ON      CACHE BOOL     "Build with Eigen library support."                        )
-set( PACKAGE_NAME     pe                                                                                )
-set( PACKAGE_VERSION  trunk                                                                             )
-set( BOOST_INCLUDEDIR ""      CACHE PATH     "The boost include directory."                             )
-set( BOOST_LIBRARYDIR ""      CACHE PATH     "The boost library directory."                             )
-set( PREPROCESSOR_FLAGS ""    CACHE STRING   "Additional preprocessor flags."                           )
-set( COMPILER_FLAGS   ""      CACHE STRING   "Additional compiler flags."                               )
-set( LINKER_FLAGS     ""      CACHE STRING   "Additional linker flags when linking the examples."       )
-set( CGAL             OFF     CACHE BOOL     "Build with CGAL library support."                         )
-option(USE_CGAL "Deprecated alias for CGAL" OFF)
-
-if(USE_CGAL AND NOT CGAL)
-  message(DEPRECATION "USE_CGAL is deprecated; use CGAL instead.")
-  set(CGAL ON CACHE BOOL "Build with CGAL library support." FORCE)
-endif()
+set( CMAKE_BUILD_TYPE  RELEASE CACHE STRING  "The default build type for the whole project is RELEASE." )
+set( PE_LIBRARY_TYPE   STATIC  CACHE STRING  "Build type of library (STATIC/SHARED/BOTH)."              )
+set( PE_USE_BLAS       OFF     CACHE BOOL    "Build support for BLAS."                                  )
+set( PE_USE_MPI        OFF     CACHE BOOL    "Build support for MPI."                                   )
+set( PE_MPI_PREINCLUDE OFF     CACHE BOOL    "Include mpi.h ahead of all other headers."                )
+set( PE_USE_OPENCL     OFF     CACHE BOOL    "Build support for OpenCL."                                )
+set( PE_USE_IRRLICHT   OFF     CACHE BOOL    "Build support for Irrlicht engine."                       )
+set( PE_BUILD_EXAMPLES OFF     CACHE BOOL    "Build examples."                                          )
+set( PE_USE_EIGEN      ON      CACHE BOOL    "Build with Eigen library support."                        )
+set( PACKAGE_NAME      pe                                                                               )
+set( PACKAGE_VERSION   trunk                                                                            )
+set( BOOST_INCLUDEDIR  ""      CACHE PATH    "The boost include directory."                             )
+set( BOOST_LIBRARYDIR  ""      CACHE PATH    "The boost library directory."                             )
+set( PE_PREPROCESSOR_FLAGS "" CACHE STRING  "Additional preprocessor flags."                           )
+set( PE_COMPILER_FLAGS ""      CACHE STRING  "Additional compiler flags."                               )
+set( PE_LINKER_FLAGS   ""      CACHE STRING  "Additional linker flags when linking the examples."       )
+set( PE_USE_CGAL       OFF     CACHE BOOL    "Build with CGAL library support."                         )
 
 # Option to enable/disable JSON support
-option(USE_JSON "Use nlohmann/json library" ON)
+option(PE_USE_JSON "Use nlohmann/json library" ON)
 
 option(PE_BUILD_INTERFACE_TESTS
        "Build lightweight PE interface smoke tests when BUILD_TESTING is enabled"
        ${BUILD_TESTING})
 
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
-option(USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: OFF)" OFF)
+# NOTE: the option is PE_-namespaced, but the compile define it sets
+# (USE_ACCELERATED_POINT_QUERY) is kept unprefixed because the C++ sources test it.
+option(PE_USE_ACCELERATED_POINT_QUERY "Use HashGrid spatial hashing for accelerated point queries (default: OFF)" OFF)
 
 # Option to enable verification of HashGrid results against baseline linear search
-option(VERIFY_HASHGRID "Enable runtime verification of HashGrid results against baseline (default: OFF)" OFF)
+# NOTE: same convention as above; the compile define VERIFY_HASHGRID stays unprefixed.
+option(PE_VERIFY_HASHGRID "Enable runtime verification of HashGrid results against baseline (default: OFF)" OFF)
 
 # Add compile definition for accelerated point query
-if(USE_ACCELERATED_POINT_QUERY)
+if(PE_USE_ACCELERATED_POINT_QUERY)
   add_compile_definitions(USE_ACCELERATED_POINT_QUERY=1)
   message(STATUS "Accelerated point query (HashGrid spatial hashing) is ENABLED")
 else()
@@ -82,9 +79,9 @@ else()
 endif()
 
 # Add compile definition for HashGrid verification
-if(VERIFY_HASHGRID)
-  if(NOT USE_ACCELERATED_POINT_QUERY)
-    message(WARNING "VERIFY_HASHGRID is enabled but USE_ACCELERATED_POINT_QUERY is OFF. Verification requires acceleration to be enabled.")
+if(PE_VERIFY_HASHGRID)
+  if(NOT PE_USE_ACCELERATED_POINT_QUERY)
+    message(WARNING "PE_VERIFY_HASHGRID is enabled but PE_USE_ACCELERATED_POINT_QUERY is OFF. Verification requires acceleration to be enabled.")
   endif()
   add_compile_definitions(VERIFY_HASHGRID)
   message(STATUS "HashGrid verification is ENABLED - will compare accelerated vs baseline for every query")
@@ -159,18 +156,18 @@ else()
 endif()
 
 # Setting user compiler and linker flags
-if(PREPROCESSOR_FLAGS)
-  separate_arguments(PREPROCESSOR_FLAGS)
-  list(APPEND PE_CXX_FLAGS ${PREPROCESSOR_FLAGS})
+if(PE_PREPROCESSOR_FLAGS)
+  separate_arguments(PE_PREPROCESSOR_FLAGS)
+  list(APPEND PE_CXX_FLAGS ${PE_PREPROCESSOR_FLAGS})
 endif()
 
-if(COMPILER_FLAGS)
-  separate_arguments(COMPILER_FLAGS)
-  list(APPEND PE_CXX_FLAGS ${COMPILER_FLAGS})
+if(PE_COMPILER_FLAGS)
+  separate_arguments(PE_COMPILER_FLAGS)
+  list(APPEND PE_CXX_FLAGS ${PE_COMPILER_FLAGS})
 endif()
 
 # Assert that static library is built
-if ( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
+if ( PE_LIBRARY_TYPE STREQUAL SHARED OR PE_LIBRARY_TYPE STREQUAL BOTH )
    set( PE_SHARED_LIB_BUILD BOOL ON )
    set( DEFINES "${DEFINES} PE_SHARED_LIB_BUILD=1" )
    message( WARNING ": Shared library builds are currently experimental." )
@@ -253,13 +250,13 @@ LINK_LIBRARIES(
 ADD_DEFINITIONS    ( -DBOOST_ALL_NO_LIB    )
 
 # Configuration of the BLAS library
-if( BLAS )
-   set( BLAS_INCLUDE_DIR "" CACHE STRING "BLAS include path." )
-   set( BLAS_LIBRARY_1   "" CACHE STRING "BLAS library 1."    )
-   set( BLAS_LIBRARY_2   "" CACHE STRING "BLAS library 2."    )
-   set( BLAS_LIBRARY_3   "" CACHE STRING "BLAS library 3."    )
-   INCLUDE_DIRECTORIES( SYSTEM ${BLAS_INCLUDE_DIR} )
-   LINK_LIBRARIES     ( ${BLAS_LIBRARY_1} ${BLAS_LIBRARY_2} ${BLAS_LIBRARY_3} )
+if( PE_USE_BLAS )
+   set( PE_BLAS_INCLUDE_DIR "" CACHE STRING "BLAS include path." )
+   set( PE_BLAS_LIBRARY_1   "" CACHE STRING "BLAS library 1."    )
+   set( PE_BLAS_LIBRARY_2   "" CACHE STRING "BLAS library 2."    )
+   set( PE_BLAS_LIBRARY_3   "" CACHE STRING "BLAS library 3."    )
+   INCLUDE_DIRECTORIES( SYSTEM ${PE_BLAS_INCLUDE_DIR} )
+   LINK_LIBRARIES     ( ${PE_BLAS_LIBRARY_1} ${PE_BLAS_LIBRARY_2} ${PE_BLAS_LIBRARY_3} )
    set( HAVE_BLAS BOOL ON )
    set( DEFINES "${DEFINES} HAVE_BLAS=1" )
 else()
@@ -268,7 +265,7 @@ endif()
 
 # Configuration of the Eigen library
 #============================================================================
-if( EIGEN )
+if( PE_USE_EIGEN )
   include(FetchContent)
   FetchContent_Declare(
     eigen
@@ -292,7 +289,7 @@ endif()
 #============================================================================
 # NEW APPROACH TO ADD CGAL
 #============================================================================
-if(CGAL)
+if(PE_USE_CGAL)
   # Try to find an existing CGAL installation first
   find_package(CGAL QUIET HINTS
     ${CGAL_DIR}                               # If passed from parent
@@ -328,7 +325,7 @@ else()
 endif()
 #============================================================================
 # Update library and linking settings for CGAL
-if( CGAL )
+if( PE_USE_CGAL )
     message(STATUS "CGAL support is enabled in pe.")
     # Add a compiler define if CGAL is true
     set( DEFINES "${DEFINES} HAVE_CGAL=1" )
@@ -362,7 +359,7 @@ endif()
 
 # Configuration of the Irrlicht library
 #==============================================================================
-if( IRRLICHT )
+if( PE_USE_IRRLICHT )
    find_package( Irrlicht REQUIRED )
 
    if( NOT IRRLICHT_FOUND )
@@ -382,8 +379,8 @@ endif()
 
 # Configuration of the Json library
 #==============================================================================
-if(USE_JSON)
-    
+if(PE_USE_JSON)
+
     # Set custom download directory
     set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/external" CACHE PATH "Directory for downloaded dependencies")
     
@@ -418,7 +415,7 @@ endif()
 
 
 # Configuration of the MPI library
-if( MPI )
+if( PE_USE_MPI )
    find_package( MPI REQUIRED)
    if( MPI_FOUND )
 
@@ -438,7 +435,7 @@ else()
 endif()
 
 # Configuration of the OpenCL library
-if( OPENCL )
+if( PE_USE_OPENCL )
    set( OPENCL_KERNEL_PATH "${PROJECT_SOURCE_DIR}/src/core/opencl/" )
    set( HAVE_OPENCL BOOL ON )
    set( DEFINES "${DEFINES} PE_OPENCL_KERNEL_PATH=${OPENCL_KERNEL_PATH} HAVE_OPENCL=1" )
@@ -448,7 +445,7 @@ endif()
 
 # Create config.h from template and force inclusion
 configure_file( ${pe_SOURCE_DIR}/cmake/config.h.in ${PROJECT_BINARY_DIR}/config.h )
-if( MPI AND MPI_PREINCLUDE )
+if( PE_USE_MPI AND PE_MPI_PREINCLUDE )
 	file( APPEND ${PROJECT_BINARY_DIR}/config.h "#include <mpi.h>" )
 endif()
 if ( MSVC )
@@ -517,7 +514,7 @@ endif()
 set( PE_SOURCES ${CONFIG_SOURCES} ${CORE_SOURCES} ${MATH_SOURCES} ${OPENDX_SOURCES} ${POVRAY_SOURCES} ${UTIL_SOURCES} ${SUPPORT_SOURCES} ${VTK_SOURCES} ${INTF_SOURCES})
 set( PE_HEADERS ${PE_HEADERS} ${CONFIG_HEADERS} ${CORE_HEADERS} ${MATH_HEADERS} ${OPENDX_HEADERS} ${POVRAY_HEADERS} ${UTIL_HEADERS} ${SUPPORT_HEADERS} ${SYSTEM_HEADERS} ${VTK_HEADERS} ${INTF_HEADERS})
 
-if( IRRLICHT )
+if( PE_USE_IRRLICHT )
    set( PE_SOURCES ${PE_SOURCES} ${IRRLICHT_SOURCES} )
    set( PE_HEADERS ${PE_HEADERS} ${IRRLICHT_HEADERS} )
 endif()
@@ -531,7 +528,7 @@ set( PE_ALL ${PE_SOURCES} ${PE_HEADERS} )
 # CONFIGURATION OF THE pe_static AND pe_shared LIBRARIES
 #
 #=================================================================================================
-if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
+if( PE_LIBRARY_TYPE STREQUAL STATIC OR PE_LIBRARY_TYPE STREQUAL BOTH )
    add_library( pe_static STATIC ${PE_ALL} )
    message(STATUS "cmake: ${CMAKE_CXX_FLAGS}")
    target_compile_options(pe_static PUBLIC ${PE_CXX_FLAGS})
@@ -548,7 +545,7 @@ if( LIBRARY_TYPE STREQUAL STATIC OR LIBRARY_TYPE STREQUAL BOTH )
    endif()
 endif()
 
-if( LIBRARY_TYPE STREQUAL SHARED OR LIBRARY_TYPE STREQUAL BOTH )
+if( PE_LIBRARY_TYPE STREQUAL SHARED OR PE_LIBRARY_TYPE STREQUAL BOTH )
    add_library( pe_shared SHARED ${PE_ALL} )
    target_compile_options(pe_shared PUBLIC ${PE_CXX_FLAGS})
    if( CMAKE_COMPILER_IS_GNUCXX OR ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
@@ -588,13 +585,13 @@ endif()
 set(PE_EXAMPLES_LIBS)
 set(PE_EXAMPLES_INCLUDE_DIRS)
 
-if( EXAMPLES )
+if( PE_BUILD_EXAMPLES )
    message(STATUS "Building PE examples")
 
    list(APPEND PE_EXAMPLES_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
    list(APPEND PE_EXAMPLES_INCLUDE_DIRS ${MPI_CXX_INCLUDE_DIRS})
 
-   if( IRRLICHT )
+   if( PE_USE_IRRLICHT )
       LINK_LIBRARIES( Irrlicht GLU Xxf86vm Xext X11 )
    endif()
 
@@ -605,9 +602,9 @@ if( EXAMPLES )
          OUTPUT_NAME ${target})
       target_include_directories(${target} PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
       target_link_libraries(${target} PRIVATE
-         $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-         $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-         $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+         $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+         $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+         $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
       )
    endfunction()
 
@@ -634,7 +631,7 @@ if( EXAMPLES )
    endforeach()
 
 
-   if( MPI AND MPI_CXX_FOUND )
+   if( PE_USE_MPI AND MPI_CXX_FOUND )
       set(PE_MPI_EXAMPLES
          mpicube "examples/mpicube/MPICube.cpp"
          mpigranular "examples/mpigranular/MPIGranular.cpp"

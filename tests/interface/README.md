@@ -27,29 +27,29 @@ needed:
 cmake -S . -B build-interface-tests \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON \
-  -DUSE_JSON=ON \
-  -DEIGEN=ON
+  -DPE_USE_JSON=ON \
+  -DPE_USE_EIGEN=ON
 
 cmake --build build-interface-tests --target pe_interface_smoke_serial
 ctest --test-dir build-interface-tests -R pe-interface-serial --output-on-failure
 ```
 
-When PE is configured with `-DCGAL=ON`, the serial test set also includes
+When PE is configured with `-DPE_USE_CGAL=ON`, the serial test set also includes
 `pe-interface-serial-atc-cgal-distancemap` and
 `pe-interface-serial-span-complex-distancemaps`. The ATC case enables the ATC
 domain boundary DistanceMap and verifies that `DistanceMapWriter` writes the
 configured VTI file. The SpanComplex case calls `setupSpanComplexSerial`, builds
 DistanceMaps for the tool, chip, and workpiece OBJ fixtures, and verifies the
 three generated maps. These CGAL cases are intentionally absent from CTest when
-`CGAL=OFF`.
+`PE_USE_CGAL=OFF`.
 
 ```bash
 cmake -S . -B build-interface-tests-cgal \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON \
-  -DUSE_JSON=ON \
-  -DEIGEN=ON \
-  -DCGAL=ON
+  -DPE_USE_JSON=ON \
+  -DPE_USE_EIGEN=ON \
+  -DPE_USE_CGAL=ON
 
 cmake --build build-interface-tests-cgal --target pe_interface_smoke_serial
 ctest --test-dir build-interface-tests-cgal \

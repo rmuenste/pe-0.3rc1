@@ -178,8 +178,8 @@ Basic CGAL integration example.
 
 ## Requirements
 
-- PE compiled with CGAL support (`-DCGAL=ON`)
-- Examples enabled (`-DEXAMPLES=ON`) 
+- PE compiled with CGAL support (`-DPE_USE_CGAL=ON`)
+- Examples enabled (`-DPE_BUILD_EXAMPLES=ON`) 
 - Input mesh files in .obj or .off format
 
 ## Test Meshes

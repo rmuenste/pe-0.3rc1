@@ -24,7 +24,7 @@ PE can be driven from an external CFD solver in two different ways. They use
 ### What `PE_SERIAL_MODE` is, and why it exists
 
 In `PE_SERIAL_MODE` each CFD rank runs its **own independent, serial PE
-instance**, built with `MPI=OFF`. There is no domain decomposition *inside* PE:
+instance**, built with `PE_USE_MPI=OFF`. There is no domain decomposition *inside* PE:
 every PE instance creates and simulates the full set of rigid bodies.
 
 This exists primarily as a **debugging and bring-up aid**. Chasing a
