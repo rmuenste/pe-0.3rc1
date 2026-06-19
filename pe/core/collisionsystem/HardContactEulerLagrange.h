@@ -4297,7 +4297,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::initiali
 {
    if( body->awake_ ) {
       if( !body->isFixed() ) {
-         dv = ( body->getInvMass() * dt ) * body->getForce();
+         if( body->hasEulerLagrangeHydroState() ) {
+            const real mass = body->getMass();
+            const real dragB = body->getEulerLagrangeDragB();
+            const Vec3 uold = body->getLinearVel();
+            const Vec3 numerator = uold + ( dt / mass ) *
+               ( dragB * body->getEulerLagrangeCarrierVelocity() +
+                 body->getEulerLagrangeOtherForce() );
+            const Vec3 unew = numerator / ( real(1) + dt * dragB / mass );
+            dv = unew - uold;
+         }
+         else {
+            dv = ( body->getInvMass() * dt ) * body->getForce();
+         }
 //         std::cout << "Force: " << (body->getForce()) << std::endl;
          dw = dt * ( body->getInvInertia() * body->getTorque() );
       }

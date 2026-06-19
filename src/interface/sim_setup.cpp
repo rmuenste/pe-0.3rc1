@@ -364,13 +364,10 @@ void stepELFrozenTrace() {
   const int substeps = std::max(1, config.getSubsteps());
   const real fullStepSize = config.getStepsize();
   const real substepSize = fullStepSize / static_cast<real>(substeps);
-  const real alpha = real(0.35);
 
   const int localBefore = countELFrozenTraceLocalParticles();
   int globalBefore = 0;
   MPI_Reduce(&localBefore, &globalBefore, 1, MPI_INT, MPI_SUM, 0, cartcomm);
-
-  applyELFrozenTraceFluidForces(fullStepSize, alpha);
 
   TimeStep::stepsize(substepSize);
   for (int istep = 0; istep < substeps; ++istep) {

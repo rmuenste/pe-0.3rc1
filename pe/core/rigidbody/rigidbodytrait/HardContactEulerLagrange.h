@@ -62,6 +62,10 @@ class RigidBodyTrait< C<CD,FD,BG,response::HardContactEulerLagrange> > : public 
 private:
     // Private member variable
     Vec3 tempForce_;
+    Vec3 elCarrierVelocity_;
+    Vec3 elOtherForce_;
+    real elDragB_;
+    bool elHydroActive_;
 
 protected:
    //**Constructor*********************************************************************************
@@ -89,6 +93,30 @@ public:
         return tempForce_;
     }
 
+    void setEulerLagrangeHydroState(real dragB, const Vec3& carrierVelocity,
+                                    const Vec3& otherForce, bool active) {
+        elDragB_ = dragB;
+        elCarrierVelocity_ = carrierVelocity;
+        elOtherForce_ = otherForce;
+        elHydroActive_ = active;
+    }
+
+    bool hasEulerLagrangeHydroState() const {
+        return elHydroActive_;
+    }
+
+    real getEulerLagrangeDragB() const {
+        return elDragB_;
+    }
+
+    const Vec3& getEulerLagrangeCarrierVelocity() const {
+        return elCarrierVelocity_;
+    }
+
+    const Vec3& getEulerLagrangeOtherForce() const {
+        return elOtherForce_;
+    }
+
    size_t index_;
    int wallContact_;
    real contactDistance_;
@@ -112,6 +140,10 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 RigidBodyTrait< C<CD,FD,BG,response::HardContactEulerLagrange> >::RigidBodyTrait( BodyID body )
    : MPIRigidBodyTrait( body )  // Initialization of the parent class
+   , elCarrierVelocity_( 0, 0, 0 )
+   , elOtherForce_( 0, 0, 0 )
+   , elDragB_( 0 )
+   , elHydroActive_( false )
    , index_( 0 )
    , wallContact_( 0 )
    , contactDistance_( 0.0 )
