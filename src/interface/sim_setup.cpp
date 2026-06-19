@@ -310,7 +310,32 @@ void applyELFrozenTraceFluidForces(const real fullStepSize, const real alpha) {
     if (body->isFixed()) {
       continue;
     }
+    // Bodies carrying an Euler-Lagrange hydro state (q2p1_el_pipeflow) are
+    // advanced by the unconditionally stable semi-implicit drag update inside
+    // initializeVelocityCorrections; applying the legacy under-relaxed fluid
+    // force here as well would double-count their forcing. The relaxed kick is
+    // therefore restricted to non-hydro bodies (q2p1_el_frozen_trace), which
+    // still rely on it to damp the explicit-coupling time-Nyquist mode.
+    if (body->hasEulerLagrangeHydroState()) {
+      continue;
+    }
     body->applyFluidForces(fullStepSize, alpha);
+  }
+}
+
+// Clear the Euler-Lagrange hydro state on every local body. Called once at the
+// end of a PE step so that the semi-implicit drag state lives for exactly one
+// PE step (all of its substeps) and never persists into a step in which the
+// CFD driver did not re-arm the body. Without this, a body that stops being
+// updated (ELApplyParticleForces=No after being on, ownership migration, a
+// particle leaving the active region) would keep being integrated with stale
+// carrier velocity / drag, producing silent, physically wrong motion.
+void clearELHydroStates() {
+  for (auto it = theCollisionSystem()->getBodyStorage().begin();
+       it != theCollisionSystem()->getBodyStorage().end(); ++it) {
+    BodyID body = *it;
+    body->setEulerLagrangeHydroState(real(0), Vec3(0, 0, 0), Vec3(0, 0, 0),
+                                     false);
   }
 }
 
@@ -369,11 +394,21 @@ void stepELFrozenTrace() {
   int globalBefore = 0;
   MPI_Reduce(&localBefore, &globalBefore, 1, MPI_INT, MPI_SUM, 0, cartcomm);
 
+  // Under-relaxed fluid-force kick for frozen-trace (non-hydro) bodies only.
+  // Hydro bodies (el_pipeflow) are skipped here and advanced semi-implicitly.
+  const real alpha = real(0.35);
+  applyELFrozenTraceFluidForces(fullStepSize, alpha);
+
   TimeStep::stepsize(substepSize);
   for (int istep = 0; istep < substeps; ++istep) {
     world->simulationStep(substepSize);
   }
   TimeStep::stepsize(fullStepSize);
+
+  // The semi-implicit hydro state is valid for exactly this PE step (all
+  // substeps above consumed the same frozen carrier state). Clear it now so it
+  // cannot leak into a later step that did not re-arm the body.
+  clearELHydroStates();
 
   const int localRemoved = cullELFrozenTraceLocalParticles(config.getCfdDomainMin(),
                                                           config.getCfdDomainMax());

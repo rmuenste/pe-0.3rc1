@@ -12,6 +12,18 @@ target_include_directories(pe_interface_smoke_serial PRIVATE
 )
 target_link_libraries(pe_interface_smoke_serial PRIVATE pe_static)
 
+# Pure-arithmetic unit test for the Euler-Lagrange semi-implicit drag update.
+# Needs only the header-only helper + Vec3; no world/MPI setup, so it is a plain
+# add_test rather than a --case of the smoke harness.
+add_executable(pe_el_semi_implicit_drag_test
+  pe_el_semi_implicit_drag_test.cpp
+)
+target_link_libraries(pe_el_semi_implicit_drag_test PRIVATE pe_static)
+add_test(
+  NAME pe-el-semi-implicit-drag
+  COMMAND pe_el_semi_implicit_drag_test
+)
+
 function(pe_add_interface_serial_test test_name case_name)
   add_test(
     NAME ${test_name}

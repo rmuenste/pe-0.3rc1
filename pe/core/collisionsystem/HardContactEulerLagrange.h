@@ -54,6 +54,7 @@
 #include <pe/core/MPITag.h>
 #include <pe/core/MPITrait.h>
 #include <pe/core/ProfilingSection.h>
+#include <pe/core/collisionsystem/ELSemiImplicitDrag.h>
 #include <pe/core/response/HardContactEulerLagrange.h>
 #include <pe/core/response/MPIDecoder.h>
 #include <pe/core/response/MPIEncoder.h>
@@ -4298,13 +4299,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::initiali
    if( body->awake_ ) {
       if( !body->isFixed() ) {
          if( body->hasEulerLagrangeHydroState() ) {
-            const real mass = body->getMass();
-            const real dragB = body->getEulerLagrangeDragB();
             const Vec3 uold = body->getLinearVel();
-            const Vec3 numerator = uold + ( dt / mass ) *
-               ( dragB * body->getEulerLagrangeCarrierVelocity() +
-                 body->getEulerLagrangeOtherForce() );
-            const Vec3 unew = numerator / ( real(1) + dt * dragB / mass );
+            const Vec3 unew = elSemiImplicitVelocity(
+               uold, body->getMass(), body->getEulerLagrangeDragB(),
+               body->getEulerLagrangeCarrierVelocity(),
+               body->getEulerLagrangeOtherForce(), dt );
             dv = unew - uold;
          }
          else {
