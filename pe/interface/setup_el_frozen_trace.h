@@ -8,6 +8,7 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
+#include <pe/interface/geometry_utils.h>
 
 void setupELFrozenTrace(MPI_Comm ex0,
                         pe::real xmin, pe::real xmax,
@@ -90,6 +91,8 @@ void setupELFrozenTrace(MPI_Comm ex0,
   const real rhoParticle(config.getParticleDensity());
   const real particleDiameter(real(0.01));
   const real particleRadius(real(0.5) * particleDiameter);
+  const real externalParticleRadius(config.getBenchRadius());
+  const Vec3 initialParticleVelocity(config.getInitialParticleVelocity());
   const real cylinderCenterX(real(0.5));
   const real cylinderCenterY(real(0.2));
   const real cylinderCenterZ(real(0.205));
@@ -144,24 +147,55 @@ void setupELFrozenTrace(MPI_Comm ex0,
   int particlesCreatedLocal = 0;
   int particlesSkippedByCylinderLocal = 0;
 
-  for (int iz = 0; iz < nz; ++iz) {
-    const real z = latticeCoord(iz, zSeedMin);
-    for (int iy = 0; iy < ny; ++iy) {
-      const real y = latticeCoord(iy, ySeedMin);
-      for (int ix = 0; ix < nx; ++ix, ++globalLatticeId) {
-        const real x = latticeCoord(ix, xSeedMin);
-        const real cx = x - cylinderCenterX;
-        const real cy = y - cylinderCenterY;
-        const real radialDistance = std::sqrt(cx * cx + cy * cy);
+  if (config.getPackingMethod() == SimulationConfig::PackingMethod::External) {
+    if (externalParticleRadius <= real(0)) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "Frozen trace external packing requires benchRadius_ > 0.\n";
+      }
+      MPI_Abort(cartcomm, 1);
+    }
 
-        if (radialDistance <= cylinderRadius + particleRadius) {
-          if (world->ownsPoint(Vec3(x, y, z))) ++particlesSkippedByCylinderLocal;
-          continue;
-        }
+    std::vector<Vec3> spherePositions = readVectorsFromFile(config.getXyzFilePath().string());
+    if (spherePositions.empty()) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "Frozen trace external packing read no positions from "
+                  << config.getXyzFilePath().string() << ".\n";
+      }
+      MPI_Abort(cartcomm, 1);
+    }
 
-        if (world->ownsPoint(Vec3(x, y, z))) {
-          createSphere(globalLatticeId, Vec3(x, y, z), particleRadius, tracerMaterial, true);
-          ++particlesCreatedLocal;
+    for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+      const Vec3 pos = spherePositions[i];
+      if (world->ownsPoint(pos)) {
+        SphereID sphere = createSphere(static_cast<int>(i), pos,
+                                       externalParticleRadius, tracerMaterial,
+                                       true);
+        sphere->setLinearVel(initialParticleVelocity);
+        ++particlesCreatedLocal;
+      }
+    }
+  } else {
+    for (int iz = 0; iz < nz; ++iz) {
+      const real z = latticeCoord(iz, zSeedMin);
+      for (int iy = 0; iy < ny; ++iy) {
+        const real y = latticeCoord(iy, ySeedMin);
+        for (int ix = 0; ix < nx; ++ix, ++globalLatticeId) {
+          const real x = latticeCoord(ix, xSeedMin);
+          const real cx = x - cylinderCenterX;
+          const real cy = y - cylinderCenterY;
+          const real radialDistance = std::sqrt(cx * cx + cy * cy);
+
+          if (radialDistance <= cylinderRadius + particleRadius) {
+            if (world->ownsPoint(Vec3(x, y, z))) ++particlesSkippedByCylinderLocal;
+            continue;
+          }
+
+          if (world->ownsPoint(Vec3(x, y, z))) {
+            SphereID sphere = createSphere(globalLatticeId, Vec3(x, y, z),
+                                           particleRadius, tracerMaterial, true);
+            sphere->setLinearVel(initialParticleVelocity);
+            ++particlesCreatedLocal;
+          }
         }
       }
     }
