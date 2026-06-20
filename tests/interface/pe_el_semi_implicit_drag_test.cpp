@@ -13,6 +13,7 @@
 //   * stiff stability (tau_p << dt): no overshoot, monotone contraction
 //   * pure-forcing limit (B = 0)
 //   * convergence to the exact exponential solution as dt -> 0
+//   * nonzero F_other equilibrium and first-order temporal EOC
 
 #include <pe/core/collisionsystem/ELSemiImplicitDrag.h>
 
@@ -123,6 +124,47 @@ int main() {
       prevErr = err;
     }
     check(prevErr < real(1e-4), "exponential: converged at finest dt");
+  }
+
+  // ---- 5. Nonzero forcing equilibrium: u_eq = u_f + F_other / B ----
+  {
+    const Vec3 uf(0.2, -0.1, 0.4);
+    const Vec3 fother(0.3, -0.6, 0.9);
+    const real mass = 1.7;
+    const real B = 2.5;
+    const real dt = 0.37;
+    const Vec3 ueq = uf + fother / B;
+    const Vec3 unew = elSemiImplicitVelocity(ueq, mass, B, uf, fother, dt);
+    check(vclose(unew, ueq, tol), "F_other equilibrium fixed point");
+  }
+
+  // ---- 6. Measured first-order temporal EOC for F_other != 0 ----
+  // ODE equilibrium is u_eq = u_f + F/B, so
+  // u(T) = u_eq + (u0 - u_eq) exp(-(B/m) T).
+  {
+    const Vec3 u0(-0.4, 0.2, 0.1);
+    const Vec3 uf(0.5, -0.25, 0.0);
+    const Vec3 fother(0.2, 0.1, -0.3);
+    const real mass = 1.2;
+    const real B = 3.0;
+    const real T = 0.8;
+    const Vec3 ueq = uf + fother / B;
+    const Vec3 exact = ueq + std::exp(-(B / mass) * T) * (u0 - ueq);
+    real prevErr = real(-1);
+    for (int n = 20; n <= 640; n *= 2) {
+      const real dt = T / real(n);
+      Vec3 u = u0;
+      for (int i = 0; i < n; ++i) {
+        u = elSemiImplicitVelocity(u, mass, B, uf, fother, dt);
+      }
+      const real err = (u - exact).length();
+      if (prevErr > real(0)) {
+        const real order = std::log(prevErr / err) / std::log(real(2));
+        check(order > real(0.85) && order < real(1.15), "F_other EOC is first order");
+      }
+      prevErr = err;
+    }
+    check(prevErr < real(5e-4), "F_other EOC finest error bounded");
   }
 
   if (failures == 0) {
