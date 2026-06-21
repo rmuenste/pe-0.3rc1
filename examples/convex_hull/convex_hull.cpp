@@ -196,7 +196,7 @@ int main(int argc, char** argv) {
             std::cerr << "This could be due to insufficient points or CGAL computation errors." << std::endl;
 #else
             std::cout << "Convex hull computation returned false (expected - CGAL not available)" << std::endl;
-            std::cout << "To enable CGAL functionality, build with -DCGAL=ON" << std::endl;
+            std::cout << "To enable CGAL functionality, build with -DPE_USE_CGAL=ON" << std::endl;
 #endif
         }
         
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
         
 #else
         std::cout << "\nCGAL support is DISABLED - distance computation functionality not available" << std::endl;
-        std::cout << "To enable CGAL distance queries, build with -DCGAL=ON" << std::endl;
+        std::cout << "To enable CGAL distance queries, build with -DPE_USE_CGAL=ON" << std::endl;
         
         // Test the fallback behavior
         std::cout << "\nTesting fallback behavior (should return default values):" << std::endl;
@@ -327,7 +327,7 @@ int main(int argc, char** argv) {
 #else
         std::cout << "\nCGAL support is DISABLED - point containment returns false (conservative)" << std::endl;
         std::cout << "Signed distance returns 0.0 as fallback when CGAL is not available" << std::endl;
-        std::cout << "To enable full point containment functionality, build with -DCGAL=ON" << std::endl;
+        std::cout << "To enable full point containment functionality, build with -DPE_USE_CGAL=ON" << std::endl;
 #endif
         
         std::cout << "\nExample completed!" << std::endl;

@@ -70,6 +70,7 @@ SimulationConfig::SimulationConfig()
     , benchRadius_(0.0015)
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
+    , initialParticleVelocity_(0.0, 0.0, 0.0)
     , domainBoundaryEnabled_(true)
     , domainBoundaryFilePath_("atc_boundary_param_zero.obj")
     , domainBoundaryPosition_(0.000006, -2.25096, 0.08719)
@@ -242,6 +243,16 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
                                    j["benchStartPosition_"][1].get<real>(),
                                    j["benchStartPosition_"][2].get<real>());
             config.setBenchStartPosition(benchStartPosition);
+        }
+    }
+
+    if (j.contains("initialParticleVelocity_")) {
+        if (j["initialParticleVelocity_"].is_array() &&
+            j["initialParticleVelocity_"].size() == 3) {
+            Vec3 initialParticleVelocity(j["initialParticleVelocity_"][0].get<real>(),
+                                         j["initialParticleVelocity_"][1].get<real>(),
+                                         j["initialParticleVelocity_"][2].get<real>());
+            config.setInitialParticleVelocity(initialParticleVelocity);
         }
     }
 

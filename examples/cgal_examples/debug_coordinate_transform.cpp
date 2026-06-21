@@ -157,7 +157,7 @@ int main(int argc, char* argv[]) {
     return 0;
     
 #else
-    std::cout << "ERROR: This debug test requires CGAL support. Please compile with -DCGAL=ON" << std::endl;
+    std::cout << "ERROR: This debug test requires CGAL support. Please compile with -DPE_USE_CGAL=ON" << std::endl;
     return 1;
 #endif
 }

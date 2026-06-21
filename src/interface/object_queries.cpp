@@ -45,6 +45,37 @@ void get_pe_timestep_(double *dTime) {
   *dTime = static_cast<double>(TimeStep::size());
 }
 
+extern "C"
+void set_el_hydro_state(const short int bytes[8],
+                        const double *dragB,
+                        const double carrierVelocity[3],
+                        const double otherForce[3],
+                        const int *active) {
+  if (bytes == nullptr || dragB == nullptr || carrierVelocity == nullptr ||
+      otherForce == nullptr || active == nullptr) {
+    return;
+  }
+
+  short int localBytes[8];
+  for (int i = 0; i < 8; ++i) {
+    localBytes[i] = bytes[i];
+  }
+  boost::uint64_t id = ByteArrayToUint64(localBytes);
+  pe::World::Iterator fid = theCollisionSystem()->getBodyStorage().find(id);
+  if (fid == theCollisionSystem()->getBodyStorage().end()) {
+    std::stringstream msg;
+    msg << "Could not find E-L hydro state body with system id: " << id << ".\n";
+    throw std::logic_error(msg.str());
+  }
+
+  BodyID body = *fid;
+  body->setEulerLagrangeHydroState(
+    static_cast<real>(*dragB),
+    Vec3(carrierVelocity[0], carrierVelocity[1], carrierVelocity[2]),
+    Vec3(otherForce[0], otherForce[1], otherForce[2]),
+    (*active != 0));
+}
+
 
 /*
  * This is is build in the pointInsideParticles function. It serves to 

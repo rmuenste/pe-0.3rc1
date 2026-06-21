@@ -30,7 +30,7 @@ The PE (Physics Engine) has several build systems, with Ninja being preferred fo
 1. **CMake with Ninja (Recommended for Speed/CGAL)**
    ```bash
    mkdir build_ninja_cgal && cd build_ninja_cgal
-   cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCGAL=ON -DEXAMPLES=ON ..
+   cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DPE_USE_CGAL=ON -DPE_BUILD_EXAMPLES=ON ..
    ninja cgal
    # Build all CGAL examples:
    ninja cgal_box mesh_collision_test mesh_simulation mesh_distancemap_debug mesh_containspoint_test mesh_grid_test plane_mesh_test debug_coordinate_transform inverted_distancemap_simulation
@@ -39,7 +39,7 @@ The PE (Physics Engine) has several build systems, with Ninja being preferred fo
 2. **CMake with Make**
    ```bash
    mkdir build && cd build
-   cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DLIBRARY_TYPE=STATIC ..
+   cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC ..
    make
    ```
 
@@ -50,10 +50,10 @@ The PE (Physics Engine) has several build systems, with Ninja being preferred fo
 
 ### Common CMake Options
 - `-DCMAKE_BUILD_TYPE=Release|Debug`: (default: Release)
-- `-DLIBRARY_TYPE=STATIC|SHARED|BOTH`: (default: STATIC)
-- `-DMPI=ON|OFF`: Build MPI support (default: OFF)
-- `-DCGAL=ON|OFF`: Build CGAL support (required for DistanceMap examples) (default: OFF)
-- `-DEXAMPLES=ON|OFF`: Build examples (default: OFF)
+- `-DPE_LIBRARY_TYPE=STATIC|SHARED|BOTH`: (default: STATIC)
+- `-DPE_USE_MPI=ON|OFF`: Build MPI support (default: OFF)
+- `-DPE_USE_CGAL=ON|OFF`: Build CGAL support (required for DistanceMap examples) (default: OFF)
+- `-DPE_BUILD_EXAMPLES=ON|OFF`: Build examples (default: OFF)
 
 ### Running Examples
 Binaries are in `build/examples/*/`.
@@ -64,7 +64,7 @@ Binaries are in `build/examples/*/`.
 # MPI
 mpirun -np 4 ./build/examples/mpicube/mpicube
 
-# CGAL/DistanceMap (requires -DCGAL=ON)
+# CGAL/DistanceMap (requires -DPE_USE_CGAL=ON)
 ./build/examples/cgal_examples/mesh_simulation --mesh1 mesh1.obj --mesh2 mesh2.obj
 ```
 

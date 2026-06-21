@@ -145,7 +145,7 @@ int main( int argc, char* argv[] )
    return 0;
 
 #else
-   std::cerr << "ERROR: This example requires PE to be built with CGAL support (-DCGAL=ON)" << std::endl;
+   std::cerr << "ERROR: This example requires PE to be built with CGAL support (-DPE_USE_CGAL=ON)" << std::endl;
    return 1;
 #endif
 }

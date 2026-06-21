@@ -23,7 +23,7 @@ The test is built as part of the examples when MPI support is enabled:
 
 ```bash
 mkdir build && cd build
-cmake -DMPI=ON -DEXAMPLES=ON ..
+cmake -DPE_USE_MPI=ON -DPE_BUILD_EXAMPLES=ON ..
 make domain_decomposition_test
 ```
 
@@ -93,7 +93,7 @@ The test verifies domain decomposition correctness by:
 
 Common issues and solutions:
 
-- **"MPI not available"**: Ensure PE was built with MPI support (`-DMPI=ON`)
+- **"MPI not available"**: Ensure PE was built with MPI support (`-DPE_USE_MPI=ON`)
 - **Process count mismatch**: Use process counts that match the test configurations (powers of 2 work well)
 - **Compilation errors**: Ensure all required PE headers are available and MPI is properly configured
 

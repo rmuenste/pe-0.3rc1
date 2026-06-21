@@ -195,6 +195,8 @@ public:
     void setFluidizationSpacingFactor(real value) { fluidizationSpacingFactor_ = value; }
     const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
     void setBenchStartPosition(const Vec3& value) { benchStartPosition_ = value; }
+    const Vec3& getInitialParticleVelocity() const { return initialParticleVelocity_; }
+    void setInitialParticleVelocity(const Vec3& value) { initialParticleVelocity_ = value; }
     //@}
     //**************************************************************************************
 
@@ -338,6 +340,7 @@ private:
     real benchRadius_;           //!< Radius of the benchmark geometry
     real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
+    Vec3 initialParticleVelocity_; //!< Optional initial velocity assigned to created particles
 
     // Domain boundary parameters
     bool domainBoundaryEnabled_; //!< Enable ATC triangle mesh domain boundary setup

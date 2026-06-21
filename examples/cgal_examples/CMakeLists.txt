@@ -32,55 +32,55 @@ target_include_directories(debug_coordinate_transform PRIVATE ${PE_EXAMPLES_INCL
 target_include_directories(inverted_distancemap_simulation PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS} ${CGAL_INCLUDE_DIR})
 
 target_link_libraries(cgal_box PRIVATE 
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(mesh_collision_test PRIVATE 
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(mesh_simulation PRIVATE
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(mesh_distancemap_debug PRIVATE
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(mesh_containspoint_test PRIVATE 
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(mesh_grid_test PRIVATE
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(plane_mesh_test PRIVATE
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(debug_coordinate_transform PRIVATE
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 target_link_libraries(inverted_distancemap_simulation PRIVATE
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )

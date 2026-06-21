@@ -47,7 +47,7 @@
 // 1. Add or reuse fixture files under fixtures/serial.
 // 2. Add a CTest entry in tests/interface/CMakeLists.txt with
 //    pe_add_interface_serial_test(<ctest-name>, <case-name>). Gate it with the
-//    required feature option, for example if(CGAL), when the case needs an
+//    required feature option, for example if(PE_USE_CGAL), when the case needs an
 //    optional dependency.
 // 3. Teach main() to map <case-name> to the fixture config that should be
 //    copied to example.json.

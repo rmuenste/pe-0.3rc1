@@ -5,13 +5,13 @@ target_include_directories(convex_hull PRIVATE ${PE_EXAMPLES_INCLUDE_DIRS})
 
 # Link with PE library
 target_link_libraries(convex_hull PRIVATE 
-  $<$<STREQUAL:${LIBRARY_TYPE},STATIC>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},BOTH>:pe_static>
-  $<$<STREQUAL:${LIBRARY_TYPE},SHARED>:pe_shared>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},STATIC>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},BOTH>:pe_static>
+  $<$<STREQUAL:${PE_LIBRARY_TYPE},SHARED>:pe_shared>
 )
 
 # CGAL-specific configuration (only if CGAL is enabled)
-if(CGAL)
+if(PE_USE_CGAL)
   # Find required CGAL dependencies
   find_package(GMP REQUIRED)
   target_link_libraries(convex_hull PRIVATE ${GMP_LIBRARIES})

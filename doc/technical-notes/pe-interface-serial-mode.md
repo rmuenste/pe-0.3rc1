@@ -16,7 +16,7 @@ PE can be driven from an external CFD solver in two different ways. They use
 
 | | Normal (parallel) mode | `PE_SERIAL_MODE` |
 |---|---|---|
-| Build flag | `MPI=ON` (`HAVE_MPI=1`) | `MPI=OFF` (`HAVE_MPI=0`) + `PE_SERIAL_MODE` |
+| Build flag | `PE_USE_MPI=ON` (`HAVE_MPI=1`) | `PE_USE_MPI=OFF` (`HAVE_MPI=0`) + `PE_SERIAL_MODE` |
 | Domain decomposition in PE | Yes — bodies are distributed across MPI processes | No — every PE instance holds **all** bodies |
 | Setup functions | `setupXxx(MPI_Comm)` in `pe/interface/sim_setup.h` (e.g. [setup_atc.h](../../pe/interface/setup_atc.h)) | `setupXxxSerial(int cfd_rank)` in [sim_setup_serial.h](../../pe/interface/sim_setup_serial.h) |
 | Body ownership | A body is owned by one process; remote copies are synchronized via PE's MPI layer | No ownership concept; each instance simulates everything |
@@ -24,7 +24,7 @@ PE can be driven from an external CFD solver in two different ways. They use
 ### What `PE_SERIAL_MODE` is, and why it exists
 
 In `PE_SERIAL_MODE` each CFD rank runs its **own independent, serial PE
-instance**, built with `MPI=OFF`. There is no domain decomposition *inside* PE:
+instance**, built with `PE_USE_MPI=OFF`. There is no domain decomposition *inside* PE:
 every PE instance creates and simulates the full set of rigid bodies.
 
 This exists primarily as a **debugging and bring-up aid**. Chasing a

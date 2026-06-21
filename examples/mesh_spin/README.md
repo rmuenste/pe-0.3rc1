@@ -16,14 +16,14 @@ Both meshes are positioned such that Mesh 1's rotation will cause it to collide 
 
 ## Requirements
 
-- PE built with CGAL support (`-DCGAL=ON`)
+- PE built with CGAL support (`-DPE_USE_CGAL=ON`)
 - Triangle mesh files (`cylinder.obj` or fallback to `cube.obj`)
 
 ## Building
 
 ```bash
 cd build
-cmake -DCGAL=ON -DEXAMPLES=ON ..
+cmake -DPE_USE_CGAL=ON -DPE_BUILD_EXAMPLES=ON ..
 make mesh_spin
 ```
 

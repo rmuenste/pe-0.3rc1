@@ -255,7 +255,7 @@ int main( int argc, char* argv[] )
    }
 
 #else
-   std::cout << "This test requires CGAL support. Please rebuild PE with -DCGAL=ON" << std::endl;
+   std::cout << "This test requires CGAL support. Please rebuild PE with -DPE_USE_CGAL=ON" << std::endl;
    return 1;
 #endif
 
