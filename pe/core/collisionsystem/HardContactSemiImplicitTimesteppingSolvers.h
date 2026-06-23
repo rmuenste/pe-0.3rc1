@@ -3470,6 +3470,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
                      Sphere::Parameters subobjparam;
                      unmarshal( buffer, subobjparam, false );
                      obj = instantiateSphere( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+                     obj->setCollisionEnabled( subobjparam.collisionEnabled_ );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
                      obj->setOwner( process->getRank(), *process );

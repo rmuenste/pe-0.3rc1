@@ -74,6 +74,7 @@ RigidBody::RigidBody( GeomType type, bool finite, bool visible, id_t sid, id_t u
    , visible_(visible)  // Visibility flag
    , remote_ (false)    // Remote flag
    , global_ (false)    // Global flag
+   , collisionEnabled_(true) // Collision participation flag
    , sid_    (sid)      // System-specific body index
    , uid_    (uid)      // User-specific body ID
    , contacts_()        // Vector of the currently attached contacts

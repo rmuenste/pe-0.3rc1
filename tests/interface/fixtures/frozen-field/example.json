@@ -1,0 +1,18 @@
+{
+  "timesteps_": 5,
+  "stepsize_": 0.2,
+  "substeps_": 2,
+  "processesX_": 2,
+  "processesY_": 1,
+  "processesZ_": 1,
+  "vtk_": false,
+  "useCheckpointer_": false,
+  "benchRadius_": 0.01,
+  "particleDensity_": 1.0,
+  "domainBoundary_": {
+    "distanceMap": {
+      "resolution": 24,
+      "tolerance": 3
+    }
+  }
+}

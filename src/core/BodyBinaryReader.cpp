@@ -108,7 +108,7 @@ void BodyBinaryReader::readFile( const char* filename ) {
    if( magicNumber1 != 'P' || magicNumber2 != 'E' )
       throw std::runtime_error( "Invalid file format." );
 
-   if( fileFormatVersionMajor != 0 || fileFormatVersionMinor != 1 )
+   if( fileFormatVersionMajor != 0 || fileFormatVersionMinor != 2 )
       throw std::runtime_error( "Unsupported file format version." );
 
    // read table of data type sizes
@@ -525,6 +525,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                if( reassignSystemID )
                   objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
                SphereID obj = instantiateSphere( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.radius_, objparam.material_, objparam.visible_, objparam.fixed_, false );
+               obj->setCollisionEnabled( objparam.collisionEnabled_ );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
                obj->setRemote( false );
