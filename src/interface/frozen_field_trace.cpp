@@ -27,6 +27,7 @@
 #include <pe/core/rigidbody/TriangleMesh.h>
 #include <pe/core/rigidbody/TriangleMeshTypes.h>
 #include <pe/engine.h>
+#include <pe/vtk/Writer.h>
 #include <pe/interface/decompose.h>
 #endif
 
@@ -692,6 +693,16 @@ FrozenFieldTraceResult runFrozenFieldTrace(
 
    const double mainStepSize = config.getStepsize();
    const double substepSize = mainStepSize / config.getSubsteps();
+
+   // Optional VTK visualization of the tracer spheres and boundary mesh. The
+   // writer is a Visualization/Trigger and writes all visible bodies on every
+   // simulation step, so a spacing of 1 yields one frame per substep. Output is
+   // MPI-aware; each rank writes its own pieces under ./paraview.
+   if( config.getVtk() ) {
+      const unsigned int totalSubsteps =
+         static_cast<unsigned int>( config.getTimesteps() * config.getSubsteps() );
+      vtk::activateWriter( "./paraview", 1, 0, totalSubsteps + 1, true, true );
+   }
    for( std::size_t step = 1; step <= config.getTimesteps(); ++step ) {
       const bool removedLocal =
          removeExitingTracers( cartComm, world, parsedMesh, mainStepSize, step, result.exits );
