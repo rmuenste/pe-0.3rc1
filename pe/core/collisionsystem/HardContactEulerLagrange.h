@@ -3900,8 +3900,16 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
          if( body->isGlobal() )
             continue;
 
-         v_[i] += relaxationParam_*dv_[i];
-         w_[i] += relaxationParam_*dw_[i];
+         // Euler-Lagrange hydro bodies carry an unconditionally-stable
+         // semi-implicit drag correction in dv_ (see initializeVelocityCorrections
+         // / elSemiImplicitVelocity). It must be applied in FULL: the 0.9 contact
+         // under-relaxation is only meant for hard-contact PGS corrections, and
+         // leaking it into the hydro update changes the particle drag (~0.9x) and
+         // breaks momentum balance with the fluid feedback (issue D). Ordinary
+         // contact corrections keep relaxationParam_.
+         const real elRelax = body->hasEulerLagrangeHydroState() ? real(1) : relaxationParam_;
+         v_[i] += elRelax*dv_[i];
+         w_[i] += elRelax*dw_[i];
          dv_[i] = Vec3();
          dw_[i] = Vec3();
 

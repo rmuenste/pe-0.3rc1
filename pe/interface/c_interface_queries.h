@@ -1,4 +1,5 @@
 
+#include <pe/config/SimulationConfig.h>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -58,6 +59,23 @@ extern "C" int getNumParticles() {
 // source/src_particles/dem_query.f90 line 56
 extern "C" int getNumRemParticles() {
   return getNumRemParts();
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Returns the configured PE sub-step count (n_sub = max(1, substeps_)).
+ *
+ * Single source of truth for the Euler-Lagrange feedback: the Fortran side
+ * reproduces PE's sub-cycled semi-implicit drag (n_sub steps of dt/n_sub on the
+ * frozen hydro state, see sim_setup.cpp) to spread the drag impulse PE actually
+ * applies. Exporting n_sub here keeps the two sides from drifting apart.
+ */
+// Bound to Fortran function getElSubsteps() in source/src_particles/dem_query.f90
+extern "C" int getElSubsteps() {
+  const int s = pe::SimulationConfig::getInstance().getSubsteps();
+  return s > 1 ? s : 1;
 }
 
 //=================================================================================================
