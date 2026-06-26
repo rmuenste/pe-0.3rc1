@@ -262,6 +262,35 @@ extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
 
 
 //=================================================================================================
+extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
+                                              double *xmin, double *xmax,
+                                              double *ymin, double *ymax,
+                                              double *zmin, double *zmax)
+{
+  int remRank = *remoteRank;
+
+  if (remRank != 0) {
+    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0);
+    int rank = 0;
+    int size = 0;
+    MPI_Comm_rank(CcommEx0, &rank);
+    MPI_Comm_size(CcommEx0, &size);
+
+    if (rank == 0) {
+      printf("%d> C) Configuration E-L terminal velocity with %d PE processes.\n", remRank, size);
+    }
+    if (CcommEx0 == MPI_COMM_NULL) {
+      printf("%d> C) Error converting Fortran communicator for E-L terminal velocity.\n", remRank);
+      return;
+    }
+
+    setupELTerminalVelocity(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+  }
+}
+//=================================================================================================
+
+
+//=================================================================================================
 extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
   int remRank = *remoteRank;

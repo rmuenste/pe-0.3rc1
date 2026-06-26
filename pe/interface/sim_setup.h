@@ -32,6 +32,10 @@ void setupELFrozenTrace(MPI_Comm ex0,
                         pe::real xmin, pe::real xmax,
                         pe::real ymin, pe::real ymax,
                         pe::real zmin, pe::real zmax);
+void setupELTerminalVelocity(MPI_Comm ex0,
+                             pe::real xmin, pe::real xmax,
+                             pe::real ymin, pe::real ymax,
+                             pe::real zmin, pe::real zmax);
 
 
 #endif

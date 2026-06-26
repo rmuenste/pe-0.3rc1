@@ -283,6 +283,7 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_drill.h>
 #include <pe/interface/setup_atc.h>
 #include <pe/interface/setup_el_frozen_trace.h>
+#include <pe/interface/setup_el_terminal_velocity.h>
 
 namespace {
 

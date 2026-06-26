@@ -10,4 +10,8 @@ extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
                                          double *xmin, double *xmax,
                                          double *ymin, double *ymax,
                                          double *zmin, double *zmax);
+extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
+                                              double *xmin, double *xmax,
+                                              double *ymin, double *ymax,
+                                              double *zmin, double *zmax);
 #endif
