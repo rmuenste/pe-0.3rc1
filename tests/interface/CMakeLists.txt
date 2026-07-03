@@ -24,6 +24,54 @@ add_test(
   COMMAND pe_el_semi_implicit_drag_test
 )
 
+# Pure-arithmetic unit test for the pairwise lubrication model (Kroupa et al. 2016).
+# Header-only physics + Vec3; no world/MPI setup, so it is a plain add_test rather
+# than a --case of the smoke harness.
+add_executable(pe_lubrication_model_test
+  pe_lubrication_model_test.cpp
+)
+target_link_libraries(pe_lubrication_model_test PRIVATE pe_static)
+add_test(
+  NAME pe-lubrication-model
+  COMMAND pe_lubrication_model_test
+)
+
+# Bit-for-bit regression gate: lubricationModel_="legacy" + lubricationCutoffFactor_=0
+# must reproduce the pre-Kroupa-2016 solver trajectories exactly. Needs a build with
+# pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated (see the test file header);
+# under any other solver the test self-reports as SKIPPED via exit code 77.
+add_executable(pe_lubrication_legacy_regression_test
+  pe_lubrication_legacy_regression_test.cpp
+)
+target_link_libraries(pe_lubrication_legacy_regression_test PRIVATE pe_static)
+add_test(
+  NAME pe-lubrication-legacy-regression
+  COMMAND pe_lubrication_legacy_regression_test
+)
+set_tests_properties(pe-lubrication-legacy-regression PROPERTIES SKIP_RETURN_CODE 77)
+
+# Level 1 lubrication validation (Kroupa-2016 model through the full solver pipeline).
+# Both need the HardContactLubricated solver and self-report as SKIPPED otherwise.
+add_executable(pe_lubrication_two_sphere_approach_test
+  pe_lubrication_two_sphere_approach_test.cpp
+)
+target_link_libraries(pe_lubrication_two_sphere_approach_test PRIVATE pe_static)
+add_test(
+  NAME pe-lubrication-two-sphere-approach
+  COMMAND pe_lubrication_two_sphere_approach_test
+)
+set_tests_properties(pe-lubrication-two-sphere-approach PROPERTIES SKIP_RETURN_CODE 77)
+
+add_executable(pe_lubrication_bounce_stokes_test
+  pe_lubrication_bounce_stokes_test.cpp
+)
+target_link_libraries(pe_lubrication_bounce_stokes_test PRIVATE pe_static)
+add_test(
+  NAME pe-lubrication-bounce-stokes
+  COMMAND pe_lubrication_bounce_stokes_test
+)
+set_tests_properties(pe-lubrication-bounce-stokes PROPERTIES SKIP_RETURN_CODE 77)
+
 function(pe_add_interface_serial_test test_name case_name)
   add_test(
     NAME ${test_name}

@@ -82,6 +82,9 @@ SphereBase::SphereBase( id_t sid, id_t uid, const Vec3& gpos,
    // Calculating the moment of inertia
    calcInertia();
 
+   // Registering the radius for lubrication AABB padding of radius-less bodies (planes)
+   lubrication::registerSphereRadius( radius );
+
    // Setting the axis-aligned bounding box
    SphereBase::calcBoundingBox();
 }

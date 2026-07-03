@@ -94,6 +94,21 @@ SimulationConfig::SimulationConfig()
     , contactHysteresisDelta_(1e-9)
     , alphaImpulseCap_(1.0)
     , minEpsLub_(1e-8)
+    // Production defaults: Kroupa-2016 model with the relative outer cutoff. Pin
+    // lubricationModel_="legacy" + lubricationCutoffFactor_=0 to reproduce the
+    // pre-2026 behavior (see doc/technical-notes/lubrication-production-design.md §5).
+    , lubricationEnabled_(true)
+    , lubricationModel_("kroupa2016")
+    , lubricationIntegration_("semi-implicit")
+    , lubricationTangential_(true)
+    , lubricationTwisting_(true)
+    , lubricationSlipCorrection_(true)
+    , lubricationOnSeparation_(true)
+    , lubricationWallTerms_(true)
+    , lubricationEpsCritical_(0.1)
+    , lubricationCutoffFactor_(0.5)
+    , lubricationMeshClampFactor_(0.0)
+    , lubricationAabbInflation_(true)
     , restitution_(0.0)
     , staticFriction_(0.1)
     , dynamicFriction_(0.05)
@@ -355,6 +370,44 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set lubrication gap regularization
     if (j.contains("minEpsLub_"))
         config.setMinEpsLub(j["minEpsLub_"].get<real>());
+
+    // Lubrication model switches and parameters
+    // (setters of the string enums validate and throw on unknown values)
+    if (j.contains("lubricationEnabled_"))
+        config.setLubricationEnabled(j["lubricationEnabled_"].get<bool>());
+
+    if (j.contains("lubricationModel_"))
+        config.setLubricationModel(j["lubricationModel_"].get<std::string>());
+
+    if (j.contains("lubricationIntegration_"))
+        config.setLubricationIntegration(j["lubricationIntegration_"].get<std::string>());
+
+    if (j.contains("lubricationTangential_"))
+        config.setLubricationTangential(j["lubricationTangential_"].get<bool>());
+
+    if (j.contains("lubricationTwisting_"))
+        config.setLubricationTwisting(j["lubricationTwisting_"].get<bool>());
+
+    if (j.contains("lubricationSlipCorrection_"))
+        config.setLubricationSlipCorrection(j["lubricationSlipCorrection_"].get<bool>());
+
+    if (j.contains("lubricationOnSeparation_"))
+        config.setLubricationOnSeparation(j["lubricationOnSeparation_"].get<bool>());
+
+    if (j.contains("lubricationWallTerms_"))
+        config.setLubricationWallTerms(j["lubricationWallTerms_"].get<bool>());
+
+    if (j.contains("lubricationEpsCritical_"))
+        config.setLubricationEpsCritical(j["lubricationEpsCritical_"].get<real>());
+
+    if (j.contains("lubricationCutoffFactor_"))
+        config.setLubricationCutoffFactor(j["lubricationCutoffFactor_"].get<real>());
+
+    if (j.contains("lubricationMeshClampFactor_"))
+        config.setLubricationMeshClampFactor(j["lubricationMeshClampFactor_"].get<real>());
+
+    if (j.contains("lubricationAabbInflation_"))
+        config.setLubricationAabbInflation(j["lubricationAabbInflation_"].get<bool>());
 
     if (j.contains("restitution_"))
         config.setRestitution(j["restitution_"].get<real>());

@@ -16,6 +16,7 @@
 #include <pe/config/SimulationConfig.h>
 #include <pe/util/Checkpointer.h>
 #include <pe/interface/geometry_utils.h>
+#include <pe/interface/setup_optional_collision_params.h>
 #include <pe/interface/sim_setup_serial_features.h>
 #include <string>
 #include <type_traits>
@@ -32,40 +33,6 @@
 #include <iostream>
 
 namespace pe {
-
-// Detect whether the active (compile-time selected) collision system exposes the
-// lubrication/contact-hysteresis setters. Only HardContactLubricated provides them.
-template <typename CollisionSystemT, typename = void>
-struct HasLubricationParamSetters : std::false_type {};
-
-template <typename CollisionSystemT>
-struct HasLubricationParamSetters<CollisionSystemT, std::void_t<
-    decltype(std::declval<CollisionSystemT&>().setContactHysteresisDelta(real{})),
-    decltype(std::declval<CollisionSystemT&>().setLubricationHysteresisDelta(real{})),
-    decltype(std::declval<CollisionSystemT&>().setAlphaImpulseCap(real{})),
-    decltype(std::declval<CollisionSystemT&>().setMinEpsLub(real{}))>>
-    : std::true_type {};
-
-// Apply lubrication/contact hysteresis parameters only if the active collision system
-// exposes the corresponding setters (e.g., HardContactLubricated). This avoids build
-// failures for solvers that don't implement these knobs. A single `if constexpr`
-// function is used deliberately: a two-overload SFINAE pair with identical parameter
-// lists is ambiguous whenever both candidates are viable (i.e. exactly the lubricated
-// solver this is meant to support), which would break the build it is supposed to keep
-// compiling.
-template <typename CollisionSystemT>
-inline void applyOptionalLubricationParams(CollisionSystemT& cs, const SimulationConfig& config) {
-  if constexpr (HasLubricationParamSetters<CollisionSystemT>::value) {
-    cs.setContactHysteresisDelta(config.getContactHysteresisDelta());
-    cs.setLubricationHysteresisDelta(config.getLubricationHysteresisDelta());
-    cs.setAlphaImpulseCap(config.getAlphaImpulseCap());
-    cs.setMinEpsLub(config.getMinEpsLub());
-  } else {
-    // Constraint solver does not expose lubrication/hysteresis controls; nothing to do.
-    (void)cs;
-    (void)config;
-  }
-}
 
 inline unsigned int effectiveCheckpointSpacing(const SimulationConfig& config) {
   // Trigger::triggerAll() runs per substep; scale spacing to keep main-step cadence.
@@ -401,11 +368,7 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   const real gammaSRR ( real(0.5)     );  // velocity damping         [dyne·s/cm]
   const size_t nSubcycles = 5000;
 
-  cs->getContactSolver().setRho  ( rhoSRR  );
-  cs->getContactSolver().setEpsP ( epsSRR  );
-  cs->getContactSolver().setEpsW ( epsSRR  );
-  cs->getContactSolver().setGamma( gammaSRR );
-  cs->setNumSubcycles( nSubcycles );
+  applyOptionalSRRParams( *cs, rhoSRR, epsSRR, epsSRR, gammaSRR, nSubcycles );
 
   // Inflate the lubrication threshold so that the fine collision detector
   // generates contacts at distances up to rho (the SRR security zone width).
@@ -989,8 +952,8 @@ inline void setupATCSerial(int cfd_rank) {
   CollisionSystemID cs = theCollisionSystem();
   applyOptionalLubricationParams(*cs, config);
 
-  // Enable adaptive Baumgarte capping for contact stabilization
-  theCollisionSystem()->setAdaptiveBaumgarteCapping(true, 50.0);
+  // Enable adaptive Baumgarte capping for contact stabilization (EL solver only)
+  setOptionalAdaptiveBaumgarteCapping(theCollisionSystem(), true, real(50.0));
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );

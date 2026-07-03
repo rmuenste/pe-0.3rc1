@@ -14,6 +14,7 @@
 #include <pe/core/domaindecomp/Process.h>
 #include <pe/core/domaindecomp/RectilinearGrid.h>
 #include <pe/engine.h>
+#include <pe/interface/el_hydro_compat.h>
 #include <pe/support.h>
 
 #if HAVE_JSON
@@ -317,7 +318,7 @@ void applyELFrozenTraceFluidForces(const real fullStepSize, const real alpha) {
     // force here as well would double-count their forcing. The relaxed kick is
     // therefore restricted to non-hydro bodies (q2p1_el_frozen_trace), which
     // still rely on it to damp the explicit-coupling time-Nyquist mode.
-    if (body->hasEulerLagrangeHydroState()) {
+    if (bodyHasELHydroState(body)) {
       continue;
     }
     body->applyFluidForces(fullStepSize, alpha);
@@ -335,8 +336,7 @@ void clearELHydroStates() {
   for (auto it = theCollisionSystem()->getBodyStorage().begin();
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
-    body->setEulerLagrangeHydroState(real(0), Vec3(0, 0, 0), Vec3(0, 0, 0),
-                                     false);
+    trySetELHydroState(body, real(0), Vec3(0, 0, 0), Vec3(0, 0, 0), false);
   }
 }
 

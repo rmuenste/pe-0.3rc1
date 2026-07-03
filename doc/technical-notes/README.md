@@ -37,6 +37,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 ## Lubrication and Short-Range Forces
 
 - [lubrication-contacts.md](lubrication-contacts.md): Lubrication contact design and integration, centered on `HardContactLubricated`.
+- [lubrication-production-design.md](lubrication-production-design.md): Design draft for the production lubrication component (Kroupa et al. 2016 model: full resistance set, slip-length regularization, runtime switches via `SimulationConfig`, validation plan).
 - [lubrication-redesign.md](lubrication-redesign.md): Migration notes from deprecated lubrication solver stacks to `HardContactLubricated`.
 - [short-range-rep-forces.md](short-range-rep-forces.md): Robust implementation plan for short-range repulsive forces in narrow-gap scenarios.
 - [srr-implementation-lessons.md](srr-implementation-lessons.md): Lessons learned from implementing the short-range repulsion solver.
