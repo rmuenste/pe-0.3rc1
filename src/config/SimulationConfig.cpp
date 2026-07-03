@@ -68,6 +68,8 @@ SimulationConfig::SimulationConfig()
     , resumeCheckpointFile_("../start.1")
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
+    , seedMode_("file")
+    , seedMinGap_(-1.0)
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
     , initialParticleVelocity_(0.0, 0.0, 0.0)
@@ -92,6 +94,9 @@ SimulationConfig::SimulationConfig()
     , contactHysteresisDelta_(1e-9)
     , alphaImpulseCap_(1.0)
     , minEpsLub_(1e-8)
+    , restitution_(0.0)
+    , staticFriction_(0.1)
+    , dynamicFriction_(0.05)
     , serialEnableEscapeReinsertion_(false)
     , serialEnableStuckDiagnostics_(false)
     , serialReinsertionSafetyMargin_(0.02)
@@ -233,6 +238,12 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     if (j.contains("benchRadius_"))
         config.setBenchRadius(j["benchRadius_"].get<real>());
 
+    if (j.contains("seedMode_"))
+        config.setSeedMode(j["seedMode_"].get<std::string>());
+
+    if (j.contains("seedMinGap_"))
+        config.setSeedMinGap(j["seedMinGap_"].get<real>());
+
     if (j.contains("fluidizationSpacingFactor_"))
         config.setFluidizationSpacingFactor(j["fluidizationSpacingFactor_"].get<real>());
 
@@ -344,6 +355,15 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set lubrication gap regularization
     if (j.contains("minEpsLub_"))
         config.setMinEpsLub(j["minEpsLub_"].get<real>());
+
+    if (j.contains("restitution_"))
+        config.setRestitution(j["restitution_"].get<real>());
+
+    if (j.contains("staticFriction_"))
+        config.setStaticFriction(j["staticFriction_"].get<real>());
+
+    if (j.contains("dynamicFriction_"))
+        config.setDynamicFriction(j["dynamicFriction_"].get<real>());
 
     if (j.contains("serialEnableEscapeReinsertion_"))
         config.setSerialEnableEscapeReinsertion(j["serialEnableEscapeReinsertion_"].get<bool>());

@@ -191,6 +191,10 @@ public:
     void setVolumeFraction(real value) { volumeFraction_ = value; }
     real getBenchRadius() const { return benchRadius_; }
     void setBenchRadius(real value) { benchRadius_ = value; }
+    const std::string& getSeedMode() const { return seedMode_; }
+    void setSeedMode(const std::string& value) { seedMode_ = value; }
+    real getSeedMinGap() const { return seedMinGap_; }
+    void setSeedMinGap(real value) { seedMinGap_ = value; }
     real getFluidizationSpacingFactor() const { return fluidizationSpacingFactor_; }
     void setFluidizationSpacingFactor(real value) { fluidizationSpacingFactor_ = value; }
     const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
@@ -257,6 +261,12 @@ public:
     void setAlphaImpulseCap(real value) { alphaImpulseCap_ = value; }
     real getMinEpsLub() const { return minEpsLub_; }
     void setMinEpsLub(real value) { minEpsLub_ = value; }
+    real getRestitution() const { return restitution_; }
+    void setRestitution(real value) { restitution_ = value; }
+    real getStaticFriction() const { return staticFriction_; }
+    void setStaticFriction(real value) { staticFriction_ = value; }
+    real getDynamicFriction() const { return dynamicFriction_; }
+    void setDynamicFriction(real value) { dynamicFriction_ = value; }
     //@}
     //**************************************************************************************
 
@@ -338,6 +348,8 @@ private:
     // Simulation parameters
     real volumeFraction_;        //!< Volume fraction for particle packing
     real benchRadius_;           //!< Radius of the benchmark geometry
+    std::string seedMode_;       //!< EL validation seeding mode: file or random
+    real seedMinGap_;            //!< Minimum surface-to-surface seed gap; negative means setup default
     real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
     Vec3 initialParticleVelocity_; //!< Optional initial velocity assigned to created particles
@@ -368,6 +380,9 @@ private:
     real contactHysteresisDelta_; //!< Half-width of contact blend band
     real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
     real minEpsLub_;             //!< Regularization epsilon for lubrication gap
+    real restitution_;           //!< Contact material restitution coefficient
+    real staticFriction_;        //!< Contact material static friction coefficient
+    real dynamicFriction_;       //!< Contact material dynamic friction coefficient
 
     // Serial post-step features
     bool serialEnableEscapeReinsertion_; //!< Enable domain escape handling and reinsertion in serial stepping

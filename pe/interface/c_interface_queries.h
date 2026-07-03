@@ -1,5 +1,6 @@
 
 #include <pe/config/SimulationConfig.h>
+#include <pe/core/CollisionSystem.h>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -76,6 +77,36 @@ extern "C" int getNumRemParticles() {
 extern "C" int getElSubsteps() {
   const int s = pe::SimulationConfig::getInstance().getSubsteps();
   return s > 1 ? s : 1;
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Returns the configured PE macro timestep.
+ *
+ * The Euler-Lagrange CFD step must match this macro step exactly; substeps only
+ * subdivide PE integration internally.
+ */
+extern "C" double getElStepsize() {
+  return static_cast<double>(pe::SimulationConfig::getInstance().getStepsize());
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Returns the number of PE contacts from the last collision response.
+ */
+extern "C" int getElContactCount() {
+  return static_cast<int>(pe::theCollisionSystem()->getNumberOfContacts());
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Returns the maximum penetration from the last PE collision response.
+ */
+extern "C" double getElMaxPenetration() {
+  return static_cast<double>(pe::theCollisionSystem()->getMaximumPenetration());
 }
 
 //=================================================================================================

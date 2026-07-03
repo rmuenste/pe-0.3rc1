@@ -123,11 +123,20 @@ void setupELFrozenTrace(MPI_Comm ex0,
   };
 
   MaterialID tracerMaterial = createMaterial("frozen_trace_particle", rhoParticle,
-                                             0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+                                             config.getRestitution(),
+                                             config.getStaticFriction(),
+                                             config.getDynamicFriction(),
+                                             0.2, 80, 100, 10, 11);
   MaterialID wallMaterial = createMaterial("frozen_trace_wall", real(1.0),
-                                           0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+                                           config.getRestitution(),
+                                           config.getStaticFriction(),
+                                           config.getDynamicFriction(),
+                                           0.2, 80, 100, 10, 11);
   MaterialID obstacleMaterial = createMaterial("frozen_trace_cylinder", real(1.0),
-                                               0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+                                               config.getRestitution(),
+                                               config.getStaticFriction(),
+                                               config.getDynamicFriction(),
+                                               0.2, 80, 100, 10, 11);
 
   pe_GLOBAL_SECTION {
     int planeIds = 12000;
