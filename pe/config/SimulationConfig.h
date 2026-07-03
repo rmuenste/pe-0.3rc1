@@ -195,6 +195,14 @@ public:
     void setSeedMode(const std::string& value) { seedMode_ = value; }
     real getSeedMinGap() const { return seedMinGap_; }
     void setSeedMinGap(real value) { seedMinGap_ = value; }
+    const std::string& getSeedDomain() const { return seedDomain_; }
+    void setSeedDomain(const std::string& value) { seedDomain_ = value; }
+    const Vec3& getSeedCylinderCenter() const { return seedCylinderCenter_; }
+    void setSeedCylinderCenter(const Vec3& value) { seedCylinderCenter_ = value; }
+    real getSeedCylinderRadius() const { return seedCylinderRadius_; }
+    void setSeedCylinderRadius(real value) { seedCylinderRadius_ = value; }
+    const std::string& getSeedCylinderAxis() const { return seedCylinderAxis_; }
+    void setSeedCylinderAxis(const std::string& value) { seedCylinderAxis_ = value; }
     real getFluidizationSpacingFactor() const { return fluidizationSpacingFactor_; }
     void setFluidizationSpacingFactor(real value) { fluidizationSpacingFactor_ = value; }
     const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
@@ -350,6 +358,10 @@ private:
     real benchRadius_;           //!< Radius of the benchmark geometry
     std::string seedMode_;       //!< EL validation seeding mode: file or random
     real seedMinGap_;            //!< Minimum surface-to-surface seed gap; negative means setup default
+    std::string seedDomain_;     //!< Random seed support domain: box or cylinder
+    Vec3 seedCylinderCenter_;    //!< Center point for cylindrical random seed support
+    real seedCylinderRadius_;    //!< Radius for cylindrical random seed support
+    std::string seedCylinderAxis_; //!< Axis for cylindrical random seed support
     real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
     Vec3 initialParticleVelocity_; //!< Optional initial velocity assigned to created particles

@@ -1,6 +1,7 @@
 #ifndef _PE_SETUP_EL_TERMINAL_VELOCITY_H_
 #define _PE_SETUP_EL_TERMINAL_VELOCITY_H_
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -40,12 +41,74 @@ pe::real elTerminalMinPairGap(const std::vector<pe::Vec3>& positions, pe::real d
   return minGap;
 }
 
+int elTerminalAxisIndex(const std::string& axis) {
+  const std::string a = elTerminalLower(axis);
+  if (a == "x") return 0;
+  if (a == "y") return 1;
+  if (a == "z") return 2;
+  throw std::runtime_error("seedCylinderAxis_ must be x, y, or z");
+}
+
+pe::real elTerminalSeedDomainVolume(pe::real xmin, pe::real xmax,
+                                    pe::real ymin, pe::real ymax,
+                                    pe::real zmin, pe::real zmax,
+                                    const std::string& seedDomain,
+                                    const pe::Vec3& cylinderCenter,
+                                    pe::real cylinderRadius,
+                                    const std::string& cylinderAxis) {
+  using namespace pe;
+
+  const std::string domain = elTerminalLower(seedDomain);
+  if (domain == "box") {
+    return (xmax - xmin) * (ymax - ymin) * (zmax - zmin);
+  }
+  if (domain != "cylinder") {
+    throw std::runtime_error("seedDomain_ must be box or cylinder");
+  }
+  if (cylinderRadius <= real(0)) {
+    throw std::runtime_error("seedCylinderRadius_ must be positive for seedDomain_=cylinder");
+  }
+  const int axis = elTerminalAxisIndex(cylinderAxis);
+  const real length = axis == 0 ? xmax - xmin : axis == 1 ? ymax - ymin : zmax - zmin;
+  (void)cylinderCenter;
+  return std::acos(real(-1)) * cylinderRadius * cylinderRadius * length;
+}
+
+bool elTerminalInsideSeedDomain(const pe::Vec3& pos,
+                                const std::string& seedDomain,
+                                const pe::Vec3& cylinderCenter,
+                                pe::real cylinderRadius,
+                                const std::string& cylinderAxis,
+                                pe::real inset) {
+  using namespace pe;
+
+  const std::string domain = elTerminalLower(seedDomain);
+  if (domain == "box") {
+    return true;
+  }
+  if (domain != "cylinder") {
+    throw std::runtime_error("seedDomain_ must be box or cylinder");
+  }
+
+  const int axis = elTerminalAxisIndex(cylinderAxis);
+  const int a = (axis + 1) % 3;
+  const int b = (axis + 2) % 3;
+  const real da = pos[a] - cylinderCenter[a];
+  const real db = pos[b] - cylinderCenter[b];
+  const real radial = std::sqrt(da * da + db * db);
+  return radial <= cylinderRadius - inset;
+}
+
 std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
                                             pe::real ymin, pe::real ymax,
                                             pe::real zmin, pe::real zmax,
                                             pe::real radius, pe::real seedMinGap,
                                             pe::real volumeFraction,
-                                            std::size_t seed) {
+                                            std::size_t seed,
+                                            const std::string& seedDomain,
+                                            const pe::Vec3& seedCylinderCenter,
+                                            pe::real seedCylinderRadius,
+                                            const std::string& seedCylinderAxis) {
   using namespace pe;
 
   const real diameter = real(2) * radius;
@@ -61,7 +124,9 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
     throw std::runtime_error("random seeding domain is smaller than particle diameter plus seed gap");
   }
 
-  const real domainVolume = (xmax - xmin) * (ymax - ymin) * (zmax - zmin);
+  const real domainVolume = elTerminalSeedDomainVolume(xmin, xmax, ymin, ymax, zmin, zmax,
+                                                       seedDomain, seedCylinderCenter,
+                                                       seedCylinderRadius, seedCylinderAxis);
   const real particleVolume = real(4) * std::acos(real(-1)) * radius * radius * radius / real(3);
   const std::size_t targetCount = static_cast<std::size_t>(
     std::llround(std::max(real(0), volumeFraction) * domainVolume / particleVolume));
@@ -69,34 +134,39 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
     return std::vector<Vec3>();
   }
 
-  std::mt19937_64 rng(static_cast<std::uint64_t>(seed));
-  std::uniform_real_distribution<real> rx(x0, x1);
-  std::uniform_real_distribution<real> ry(y0, y1);
-  std::uniform_real_distribution<real> rz(z0, z1);
+  const int nx = static_cast<int>(std::floor((x1 - x0) / spacing)) + 1;
+  const int ny = static_cast<int>(std::floor((y1 - y0) / spacing)) + 1;
+  const int nz = static_cast<int>(std::floor((z1 - z0) / spacing)) + 1;
+  if (nx <= 0 || ny <= 0 || nz <= 0) {
+    throw std::runtime_error("random seeding has no admissible grid cells");
+  }
 
-  std::vector<Vec3> positions;
-  positions.reserve(targetCount);
-  const std::size_t maxAttempts = std::max<std::size_t>(100000, targetCount * 5000);
-  std::size_t attempts = 0;
-  while (positions.size() < targetCount && attempts < maxAttempts) {
-    ++attempts;
-    const Vec3 pos(rx(rng), ry(rng), rz(rng));
-    bool accepted = true;
-    for (std::size_t i = 0; i < positions.size(); ++i) {
-      const Vec3 d = pos - positions[i];
-      if (d.length() < spacing) {
-        accepted = false;
-        break;
+  std::vector<Vec3> candidates;
+  candidates.reserve(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny) *
+                     static_cast<std::size_t>(nz));
+  for (int iz = 0; iz < nz; ++iz) {
+    for (int iy = 0; iy < ny; ++iy) {
+      for (int ix = 0; ix < nx; ++ix) {
+        const Vec3 pos(x0 + static_cast<real>(ix) * spacing,
+                       y0 + static_cast<real>(iy) * spacing,
+                       z0 + static_cast<real>(iz) * spacing);
+        if (elTerminalInsideSeedDomain(pos, seedDomain, seedCylinderCenter,
+                                       seedCylinderRadius, seedCylinderAxis, inset)) {
+          candidates.push_back(pos);
+        }
       }
     }
-    if (accepted) {
-      positions.push_back(pos);
-    }
   }
 
-  if (positions.size() != targetCount) {
-    throw std::runtime_error("random seeding could not place all requested particles");
+  if (candidates.size() < targetCount) {
+    const real maxPhi = static_cast<real>(candidates.size()) * particleVolume / domainVolume;
+    throw std::runtime_error("random seeding grid cannot reach requested volumeFraction_; "
+                             "maximum grid phi is " + std::to_string(maxPhi));
   }
+
+  std::mt19937_64 rng(static_cast<std::uint64_t>(seed));
+  std::shuffle(candidates.begin(), candidates.end(), rng);
+  std::vector<Vec3> positions(candidates.begin(), candidates.begin() + targetCount);
   return positions;
 }
 
@@ -214,7 +284,11 @@ void setupELTerminalVelocity(MPI_Comm ex0,
         spherePositions = elTerminalRandomSeeds(xmin, xmax, ymin, ymax, zmin, zmax,
                                                 sphereRadius, seedMinGap,
                                                 config.getVolumeFraction(),
-                                                config.getSeed());
+                                                config.getSeed(),
+                                                config.getSeedDomain(),
+                                                config.getSeedCylinderCenter(),
+                                                config.getSeedCylinderRadius(),
+                                                config.getSeedCylinderAxis());
       } catch (const std::exception& ex) {
         std::cerr << "EL terminal-velocity random seeding failed: " << ex.what() << "\n";
         MPI_Abort(cartcomm, 1);
@@ -264,7 +338,11 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   unsigned long globalParticles = 0;
   MPI_Reduce(&localParticles, &globalParticles, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
   const real minPairGap = elTerminalMinPairGap(spherePositions, diameter);
-  const real domainVolume = (xmax - xmin) * (ymax - ymin) * (zmax - zmin);
+  const real domainVolume = elTerminalSeedDomainVolume(xmin, xmax, ymin, ymax, zmin, zmax,
+                                                       config.getSeedDomain(),
+                                                       config.getSeedCylinderCenter(),
+                                                       config.getSeedCylinderRadius(),
+                                                       config.getSeedCylinderAxis());
   const real particleVolume = real(4) * std::acos(real(-1)) * sphereRadius * sphereRadius *
                               sphereRadius / real(3);
   const real achievedPhi = spherePositions.empty()
@@ -292,6 +370,7 @@ void setupELTerminalVelocity(MPI_Comm ex0,
       std::cout << "EL terminal-velocity setup: " << globalParticles
                 << " free sphere(s) created (r=" << sphereRadius
                 << ", rho=" << rhoParticle << ", seedMode=" << seedMode
+                << ", seedDomain=" << elTerminalLower(config.getSeedDomain())
                 << ", seedMinGap=" << seedMinGap << ", achieved phi=" << achievedPhi
                 << "), PE decomposition " << px << "x" << py << "x" << pz << ".\n";
     }

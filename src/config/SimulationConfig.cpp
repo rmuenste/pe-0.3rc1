@@ -70,6 +70,10 @@ SimulationConfig::SimulationConfig()
     , benchRadius_(0.0015)
     , seedMode_("file")
     , seedMinGap_(-1.0)
+    , seedDomain_("box")
+    , seedCylinderCenter_(0.0, 0.0, 0.0)
+    , seedCylinderRadius_(-1.0)
+    , seedCylinderAxis_("z")
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
     , initialParticleVelocity_(0.0, 0.0, 0.0)
@@ -243,6 +247,25 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("seedMinGap_"))
         config.setSeedMinGap(j["seedMinGap_"].get<real>());
+
+    if (j.contains("seedDomain_"))
+        config.setSeedDomain(j["seedDomain_"].get<std::string>());
+
+    if (j.contains("seedCylinderCenter_")) {
+        if (j["seedCylinderCenter_"].is_array() &&
+            j["seedCylinderCenter_"].size() == 3) {
+            Vec3 seedCylinderCenter(j["seedCylinderCenter_"][0].get<real>(),
+                                    j["seedCylinderCenter_"][1].get<real>(),
+                                    j["seedCylinderCenter_"][2].get<real>());
+            config.setSeedCylinderCenter(seedCylinderCenter);
+        }
+    }
+
+    if (j.contains("seedCylinderRadius_"))
+        config.setSeedCylinderRadius(j["seedCylinderRadius_"].get<real>());
+
+    if (j.contains("seedCylinderAxis_"))
+        config.setSeedCylinderAxis(j["seedCylinderAxis_"].get<std::string>());
 
     if (j.contains("fluidizationSpacingFactor_"))
         config.setFluidizationSpacingFactor(j["fluidizationSpacingFactor_"].get<real>());
