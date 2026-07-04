@@ -181,7 +181,11 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  *   - creates free mobile spheres from particles.xyz or deterministic random seeding,
  *   - uses the GENERAL decomposeDomain so the PE decomposition follows whatever axis the CFD
  *     mesh is partitioned on (driven by processesX_/Y_/Z_ in example.json). For the z-split
- *     QBOX9Z3 mesh this means processesZ_=3, so PE and CFD own the same spatial slabs,
+ *     QBOX9Z3 mesh this means processesZ_=3, so PE and CFD own the same spatial slabs.
+ *     With periodicZ_=true (json) the decomposition switches to decomposePeriodicZ3D:
+ *     bottom/top wrap-around connections shift bodies by +-lz across the z-periodic plane
+ *     (matching the CFD SimPar@PeriodicAxis=z setup); requires processesZ_ >= 3 and the
+ *     MPI PE build (PE_SERIAL_MODE has no periodic connectivity),
  *   - adds NO obstacle cylinder and NO boundary walls (the particle stays in the interior for
  *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow).
  */
@@ -221,8 +225,17 @@ void setupELTerminalVelocity(MPI_Comm ex0,
     MPI_Abort(ex0, 1);
   }
 
+  const bool periodicZ = config.getPeriodicZ();
+  if (periodicZ && pz < 3) {
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cerr << "EL terminal-velocity setup: periodicZ_ requires processesZ_ >= 3 "
+                << "(distinct bottom/top wrap neighbors), got " << pz << ".\n";
+    }
+    MPI_Abort(ex0, 1);
+  }
+
   int dims[]    = {px, py, pz};
-  int periods[] = {false, false, false};
+  int periods[] = {false, false, periodicZ};
   int reorder   = false;
   MPI_Comm cartcomm;
   MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
@@ -240,7 +253,16 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   const real dx = (xmax - xmin) / static_cast<real>(px);
   const real dy = (ymax - ymin) / static_cast<real>(py);
   const real dz = (zmax - zmin) / static_cast<real>(pz);
-  decomposeDomain(center, xmin, ymin, zmin, dx, dy, dz, px, py, pz);
+  if (periodicZ) {
+    decomposePeriodicZ3D(center, xmin, ymin, zmin, dx, dy, dz,
+                         xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: z-periodic PE decomposition, lz="
+                << (zmax - zmin) << "\n";
+    }
+  } else {
+    decomposeDomain(center, xmin, ymin, zmin, dx, dy, dz, px, py, pz);
+  }
   theMPISystem()->checkProcesses();
 
   const real sphereRadius = config.getBenchRadius();

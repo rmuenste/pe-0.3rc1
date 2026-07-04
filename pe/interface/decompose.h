@@ -2122,6 +2122,360 @@ void decomposePeriodicX3D(int center[],
    }
 }
 
+//*************************************************************************************************
+/*!\brief Domain decomposition with periodic boundaries in Z direction only.
+ *
+ * \param center Array containing the 3D coordinates [x,y,z] of the current process in the MPI Cartesian grid
+ * \param bx Lower bound of the global domain in X direction
+ * \param by Lower bound of the global domain in Y direction
+ * \param bz Lower bound of the global domain in Z direction
+ * \param dx Size of each domain cell in X direction
+ * \param dy Size of each domain cell in Y direction
+ * \param dz Size of each domain cell in Z direction
+ * \param lx Total length of the global domain in X direction (used for verification)
+ * \param ly Total length of the global domain in Y direction (used for verification)
+ * \param lz Total length of the global domain in Z direction
+ * \param px Total number of processes in X direction
+ * \param py Total number of processes in Y direction
+ * \param pz Total number of processes in Z direction
+ *
+ * Exact Z-axis analogue of decomposePeriodicX3D(): periodic wraparound connections in the
+ * Z direction (bottom/top always connected, with a +-lz shift applied to bodies crossing the
+ * wrap), standard non-periodic neighbor connections in X and Y. Used for axially periodic
+ * pipe/channel flows decomposed along the flow axis (e.g. the Euler-Lagrange z-periodic pipe).
+ *
+ * \note Requires MPI support and an MPI Cartesian communicator created with periods[2] = true,
+ *       otherwise MPI_Cart_rank cannot resolve the wrapped bottom/top coordinates.
+ * \note Requires pz >= 3 for distinct bottom/top neighbor ranks (pz == 2 would connect the
+ *       same rank twice, pz == 1 would self-connect); callers must enforce this.
+ */
+void decomposePeriodicZ3D(int center[],
+                          real bx, real by, real bz,
+                          real dx, real dy, real dz,
+                          real lx, real ly, real lz,
+                          int px, int py, int pz) {
+
+   int west           [] = { center[0]-1, center[1]  , center[2]   };
+   int east           [] = { center[0]+1, center[1]  , center[2]   };
+   int south          [] = { center[0]  , center[1]-1, center[2]   };
+   int north          [] = { center[0]  , center[1]+1, center[2]   };
+   int southwest      [] = { center[0]-1, center[1]-1, center[2]   };
+   int southeast      [] = { center[0]+1, center[1]-1, center[2]   };
+   int northwest      [] = { center[0]-1, center[1]+1, center[2]   };
+   int northeast      [] = { center[0]+1, center[1]+1, center[2]   };
+
+   int bottom         [] = { center[0]  , center[1]  , center[2]-1 };
+   int bottomwest     [] = { center[0]-1, center[1]  , center[2]-1 };
+   int bottomeast     [] = { center[0]+1, center[1]  , center[2]-1 };
+   int bottomsouth    [] = { center[0]  , center[1]-1, center[2]-1 };
+   int bottomnorth    [] = { center[0]  , center[1]+1, center[2]-1 };
+   int bottomsouthwest[] = { center[0]-1, center[1]-1, center[2]-1 };
+   int bottomsoutheast[] = { center[0]+1, center[1]-1, center[2]-1 };
+   int bottomnorthwest[] = { center[0]-1, center[1]+1, center[2]-1 };
+   int bottomnortheast[] = { center[0]+1, center[1]+1, center[2]-1 };
+
+   int top            [] = { center[0]  , center[1]  , center[2]+1 };
+   int topwest        [] = { center[0]-1, center[1]  , center[2]+1 };
+   int topeast        [] = { center[0]+1, center[1]  , center[2]+1 };
+   int topsouth       [] = { center[0]  , center[1]-1, center[2]+1 };
+   int topnorth       [] = { center[0]  , center[1]+1, center[2]+1 };
+   int topsouthwest   [] = { center[0]-1, center[1]-1, center[2]+1 };
+   int topsoutheast   [] = { center[0]+1, center[1]-1, center[2]+1 };
+   int topnorthwest   [] = { center[0]-1, center[1]+1, center[2]+1 };
+   int topnortheast   [] = { center[0]+1, center[1]+1, center[2]+1 };
+
+   MPISystemID mpisystem = theMPISystem();
+   MPI_Comm cartcomm = mpisystem->getComm();
+   int rank = mpisystem->getRank();
+
+   // Specify local domain. The definitions are based on absolute coordinates.
+   // Periodicity is handled by offsets in the connect() calls.
+   defineLocalDomain( intersect(
+      intersect(
+      HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+      HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ),
+      HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+      HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
+      HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+      HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
+
+   // Connecting the bottom neighbor (Periodic)
+   {
+      const Vec3 offset( 0, 0, ( ( bottom[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottom, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ), offset );
+   }
+
+   // Connecting the top neighbor (Periodic)
+   {
+      const Vec3 offset( 0, 0, ( ( top[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, top, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,+1), +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ), offset );
+   }
+
+   // Connecting the west neighbor (Non-periodic)
+   if( west[0] >= 0 ) {
+      const Vec3 offset(0, 0, 0);
+      MPI_Cart_rank( cartcomm, west, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the east neighbor (Non-periodic)
+   if( east[0] < px ) {
+      const Vec3 offset(0, 0, 0);
+      MPI_Cart_rank( cartcomm, east, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the south neighbor (Non-periodic)
+   if( south[1] >= 0 ) {
+      const Vec3 offset(0, 0, 0);
+      MPI_Cart_rank( cartcomm, south, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the north neighbor (Non-periodic)
+   if( north[1] < py ) {
+      const Vec3 offset(0, 0, 0);
+      MPI_Cart_rank( cartcomm, north, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the bottom-west neighbor (Mixed: Periodic Z, Non-periodic X)
+   if( bottomwest[0] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( bottomwest[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomwest, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ), offset );
+   }
+
+   // Connecting the bottom-east neighbor (Mixed: Periodic Z, Non-periodic X)
+   if( bottomeast[0] < px ) {
+      const Vec3 offset( 0, 0, ( ( bottomeast[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomeast, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ), offset );
+   }
+
+   // Connecting the top-west neighbor (Mixed: Periodic Z, Non-periodic X)
+   if( topwest[0] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( topwest[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topwest, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,+1), +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ), offset );
+   }
+
+   // Connecting the top-east neighbor (Mixed: Periodic Z, Non-periodic X)
+   if( topeast[0] < px ) {
+      const Vec3 offset( 0, 0, ( ( topeast[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topeast, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,+1), +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ), offset );
+   }
+
+   // Connecting the bottom-south neighbor (Mixed: Periodic Z, Non-periodic Y)
+   if( bottomsouth[1] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( bottomsouth[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomsouth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
+   // Connecting the bottom-north neighbor (Mixed: Periodic Z, Non-periodic Y)
+   if( bottomnorth[1] < py ) {
+      const Vec3 offset( 0, 0, ( ( bottomnorth[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomnorth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
+   // Connecting the top-south neighbor (Mixed: Periodic Z, Non-periodic Y)
+   if( topsouth[1] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( topsouth[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topsouth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,+1), +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
+   // Connecting the top-north neighbor (Mixed: Periodic Z, Non-periodic Y)
+   if( topnorth[1] < py ) {
+      const Vec3 offset( 0, 0, ( ( topnorth[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topnorth, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(0,0,+1), +(bz+top[2]*dz   ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
+         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ), offset );
+   }
+
+   // Connecting the south-west neighbor (Non-periodic XY)
+   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, southwest, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the south-east neighbor (Non-periodic XY)
+   if( southeast[0] < px && southeast[1] >= 0 ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, southeast, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the north-west neighbor (Non-periodic XY)
+   if( northwest[0] >= 0 && northwest[1] < py ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, northwest, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the north-east neighbor (Non-periodic XY)
+   if( northeast[0] < px && northeast[1] < py ) {
+      const Vec3 offset( 0, 0, 0 );
+      MPI_Cart_rank( cartcomm, northeast, &rank );
+      connect( rank, intersect(
+         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
+         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
+         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
+         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the bottom-south-west neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( bottomsouthwest[0] >= 0 && bottomsouthwest[1] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( bottomsouthwest[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomsouthwest, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+                               HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+                               HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ), offset );
+   }
+
+   // Connecting the bottom-south-east neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( bottomsoutheast[0] < px && bottomsoutheast[1] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( bottomsoutheast[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomsoutheast, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
+                               HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+                               HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ), offset );
+   }
+
+   // Connecting the bottom-north-west neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( bottomnorthwest[0] >= 0 && bottomnorthwest[1] < py ) {
+      const Vec3 offset( 0, 0, ( ( bottomnorthwest[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomnorthwest, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+                               HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
+                               HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ), offset );
+   }
+
+   // Connecting the bottom-north-east neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( bottomnortheast[0] < px && bottomnortheast[1] < py ) {
+      const Vec3 offset( 0, 0, ( ( bottomnortheast[2] < 0 ) ? ( lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, bottomnortheast, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
+                               HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
+                               HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ), offset );
+   }
+
+   // Connecting the top-south-west neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( topsouthwest[0] >= 0 && topsouthwest[1] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( topsouthwest[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topsouthwest, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+                               HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+                               HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the top-south-east neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( topsoutheast[0] < px && topsoutheast[1] >= 0 ) {
+      const Vec3 offset( 0, 0, ( ( topsoutheast[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topsoutheast, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
+                               HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
+                               HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the top-north-west neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( topnorthwest[0] >= 0 && topnorthwest[1] < py ) {
+      const Vec3 offset( 0, 0, ( ( topnorthwest[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topnorthwest, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
+                               HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
+                               HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ) ), offset );
+   }
+
+   // Connecting the top-north-east neighbor (Mixed: Periodic Z, Non-periodic XY)
+   if( topnortheast[0] < px && topnortheast[1] < py ) {
+      const Vec3 offset( 0, 0, ( ( topnortheast[2] == pz ) ? ( -lz ) : ( 0 ) ) );
+      MPI_Cart_rank( cartcomm, topnortheast, &rank );
+      connect( rank, intersect( HalfSpace( Vec3(1,0,0), +(bx+east[0]*dx ) ),
+                               HalfSpace( Vec3(0,1,0), +(by+north[1]*dy) ),
+                               HalfSpace( Vec3(0,0,1), +(bz+top[2]*dz  ) ) ), offset );
+   }
+}
+
 }
 
 
