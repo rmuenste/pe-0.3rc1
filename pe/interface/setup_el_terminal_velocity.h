@@ -335,6 +335,11 @@ void setupELTerminalVelocity(MPI_Comm ex0,
 
   world->synchronize();
 
+  if (g_vtk) {
+    vtk::activateWriter("./paraview", config.getVisspacing(), 0,
+                        config.getTimesteps(), false);
+  }
+
   unsigned long localParticles  = static_cast<unsigned long>(createdLocal);
   unsigned long globalParticles = 0;
   MPI_Reduce(&localParticles, &globalParticles, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
