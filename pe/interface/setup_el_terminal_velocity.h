@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <random>
@@ -367,6 +368,13 @@ void setupELTerminalVelocity(MPI_Comm ex0,
                 << " by more than 2%.\n";
       MPI_Abort(cartcomm, 1);
     } else {
+      for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+        std::cout << std::setprecision(17)
+                  << "EL_SEED_POS id= " << i
+                  << " x= " << spherePositions[i][0]
+                  << " y= " << spherePositions[i][1]
+                  << " z= " << spherePositions[i][2] << "\n";
+      }
       std::cout << "EL terminal-velocity setup: " << globalParticles
                 << " free sphere(s) created (r=" << sphereRadius
                 << ", rho=" << rhoParticle << ", seedMode=" << seedMode
