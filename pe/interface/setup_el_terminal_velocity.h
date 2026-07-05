@@ -182,10 +182,12 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  *   - uses the GENERAL decomposeDomain so the PE decomposition follows whatever axis the CFD
  *     mesh is partitioned on (driven by processesX_/Y_/Z_ in example.json). For the z-split
  *     QBOX9Z3 mesh this means processesZ_=3, so PE and CFD own the same spatial slabs.
- *     With periodicZ_=true (json) the decomposition switches to decomposePeriodicZ3D:
- *     bottom/top wrap-around connections shift bodies by +-lz across the z-periodic plane
- *     (matching the CFD SimPar@PeriodicAxis=z setup); requires processesZ_ >= 3 and the
- *     MPI PE build (PE_SERIAL_MODE has no periodic connectivity),
+ *     With periodicX_/periodicY_/periodicZ_ (json) the decomposition switches to the
+ *     matching decomposePeriodic* variant (supported combinations: X, Z, XY, XYZ);
+ *     wrap-around connections shift bodies by +-l_axis across the periodic planes
+ *     (matching the CFD SimPar@PeriodicAxis setup); each periodic axis requires
+ *     processes >= 3 on that axis and the MPI PE build (PE_SERIAL_MODE has no
+ *     periodic connectivity),
  *   - adds NO obstacle cylinder and NO boundary walls (the particle stays in the interior for
  *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow).
  */
@@ -225,17 +227,41 @@ void setupELTerminalVelocity(MPI_Comm ex0,
     MPI_Abort(ex0, 1);
   }
 
+  // Per-axis periodic wrap (json periodicX_/periodicY_/periodicZ_). The
+  // decompose.h library provides the combinations none / X / XY / XYZ / Z;
+  // other combinations have no decomposition function yet.
+  const bool periodicX = config.getPeriodicX();
+  const bool periodicY = config.getPeriodicY();
   const bool periodicZ = config.getPeriodicZ();
-  if (periodicZ && pz < 3) {
-    pe_EXCLUSIVE_SECTION(0) {
-      std::cerr << "EL terminal-velocity setup: periodicZ_ requires processesZ_ >= 3 "
-                << "(distinct bottom/top wrap neighbors), got " << pz << ".\n";
+  {
+    const int  paxis[3] = {px, py, pz};
+    const bool pflag[3] = {periodicX, periodicY, periodicZ};
+    const char axname[3] = {'x', 'y', 'z'};
+    for (int ax = 0; ax < 3; ++ax) {
+      if (pflag[ax] && paxis[ax] < 3) {
+        pe_EXCLUSIVE_SECTION(0) {
+          std::cerr << "EL terminal-velocity setup: periodic" << axname[ax]
+                    << "_ requires processes" << axname[ax]
+                    << "_ >= 3 (distinct wrap neighbors), got " << paxis[ax] << ".\n";
+        }
+        MPI_Abort(ex0, 1);
+      }
     }
-    MPI_Abort(ex0, 1);
+    const bool supported =
+      (!periodicX && !periodicY) ||                 // none or Z-only
+      (periodicX && periodicY) ||                   // XY or XYZ
+      (periodicX && !periodicY && !periodicZ);      // X-only
+    if (!supported) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "EL terminal-velocity setup: unsupported periodic axis "
+                  << "combination (available: none, X, Z, XY, XYZ).\n";
+      }
+      MPI_Abort(ex0, 1);
+    }
   }
 
   int dims[]    = {px, py, pz};
-  int periods[] = {false, false, periodicZ};
+  int periods[] = {periodicX, periodicY, periodicZ};
   int reorder   = false;
   MPI_Comm cartcomm;
   MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
@@ -253,7 +279,27 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   const real dx = (xmax - xmin) / static_cast<real>(px);
   const real dy = (ymax - ymin) / static_cast<real>(py);
   const real dz = (zmax - zmin) / static_cast<real>(pz);
-  if (periodicZ) {
+  if (periodicX && periodicY && periodicZ) {
+    decomposePeriodic3D(center, xmin, ymin, zmin, dx, dy, dz,
+                        xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: fully periodic PE decomposition, l=("
+                << (xmax - xmin) << "," << (ymax - ymin) << "," << (zmax - zmin) << ")\n";
+    }
+  } else if (periodicX && periodicY) {
+    decomposePeriodicXY3D(center, xmin, ymin, zmin, dx, dy, dz,
+                          xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: xy-periodic PE decomposition\n";
+    }
+  } else if (periodicX) {
+    decomposePeriodicX3D(center, xmin, ymin, zmin, dx, dy, dz,
+                         xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: x-periodic PE decomposition, lx="
+                << (xmax - xmin) << "\n";
+    }
+  } else if (periodicZ) {
     decomposePeriodicZ3D(center, xmin, ymin, zmin, dx, dy, dz,
                          xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
     pe_EXCLUSIVE_SECTION(0) {

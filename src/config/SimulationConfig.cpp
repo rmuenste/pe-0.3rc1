@@ -74,6 +74,8 @@ SimulationConfig::SimulationConfig()
     , seedCylinderCenter_(0.0, 0.0, 0.0)
     , seedCylinderRadius_(-1.0)
     , seedCylinderAxis_("z")
+    , periodicX_(false)
+    , periodicY_(false)
     , periodicZ_(false)
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
@@ -267,6 +269,12 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("seedCylinderAxis_"))
         config.setSeedCylinderAxis(j["seedCylinderAxis_"].get<std::string>());
+
+    if (j.contains("periodicX_"))
+        config.setPeriodicX(j["periodicX_"].get<bool>());
+
+    if (j.contains("periodicY_"))
+        config.setPeriodicY(j["periodicY_"].get<bool>());
 
     if (j.contains("periodicZ_"))
         config.setPeriodicZ(j["periodicZ_"].get<bool>());

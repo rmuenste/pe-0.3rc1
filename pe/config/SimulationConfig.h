@@ -203,6 +203,10 @@ public:
     void setSeedCylinderRadius(real value) { seedCylinderRadius_ = value; }
     const std::string& getSeedCylinderAxis() const { return seedCylinderAxis_; }
     void setSeedCylinderAxis(const std::string& value) { seedCylinderAxis_ = value; }
+    bool getPeriodicX() const { return periodicX_; }
+    void setPeriodicX(bool value) { periodicX_ = value; }
+    bool getPeriodicY() const { return periodicY_; }
+    void setPeriodicY(bool value) { periodicY_ = value; }
     bool getPeriodicZ() const { return periodicZ_; }
     void setPeriodicZ(bool value) { periodicZ_ = value; }
     real getFluidizationSpacingFactor() const { return fluidizationSpacingFactor_; }
@@ -360,6 +364,8 @@ private:
     real benchRadius_;           //!< Radius of the benchmark geometry
     std::string seedMode_;       //!< EL validation seeding mode: file or random
     real seedMinGap_;            //!< Minimum surface-to-surface seed gap; negative means setup default
+    bool periodicX_;             //!< Periodic wrap-around domain connectivity in x (MPI build only)
+    bool periodicY_;             //!< Periodic wrap-around domain connectivity in y (MPI build only)
     bool periodicZ_;             //!< Periodic wrap-around domain connectivity in z (MPI build only)
     std::string seedDomain_;     //!< Random seed support domain: box or cylinder
     Vec3 seedCylinderCenter_;    //!< Center point for cylindrical random seed support
