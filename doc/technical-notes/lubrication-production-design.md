@@ -390,6 +390,53 @@ Layered; each level gates the next. Levels 0–2 become CTest targets next to
 the existing `pe-interface-serial-*` cases; level 3 runs in the FeatFloWer
 coupling.
 
+### Running the Level 0–2 tests
+
+The World-based tests (Level 1) require the lubricated constraint solver. Either
+set `pe_CONSTRAINT_SOLVER` to `pe::response::HardContactLubricated` in
+`pe/config/Collisions.h` (the current repository default), or override it per
+build without touching the header:
+
+```bash
+cmake -S . -B build-interface-tests-hcl -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC \
+      -DBUILD_TESTING=ON -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON \
+      -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated"
+cmake --build build-interface-tests-hcl -j
+```
+
+Under any other solver the Level 1 tests self-report as SKIPPED (exit code 77);
+the Level 0 test runs in every build.
+
+```bash
+# Level 0 (pure math) + Level 1 gates:
+ctest --test-dir build-interface-tests-hcl -R pe-lubrication --output-on-failure
+#   pe-lubrication-model                (Level 0)
+#   pe-lubrication-legacy-regression   (bit-for-bit legacy gate)
+#   pe-lubrication-two-sphere-approach (Level 1.1/1.3: Fig. 7, suction switch)
+#   pe-lubrication-bounce-stokes       (Level 1.2/1.4/1.5: impact, dt sweep, tangential)
+
+# Plot data (PE_LUB_CSV=1 makes the Level 1 binaries emit CSV on stdout):
+PE_LUB_CSV=1 ./build-interface-tests-hcl/tests/interface/pe_lubrication_two_sphere_approach_test > approach.csv
+./tests/interface/plot_two_sphere_approach.py approach.csv             # pair curves, zoomed
+./tests/interface/plot_two_sphere_approach.py approach.csv 5000 wall   # the paper's exact Fig. 7 frame
+PE_LUB_CSV=1 ./build-interface-tests-hcl/tests/interface/pe_lubrication_bounce_stokes_test > bounce.csv
+```
+
+Level 2 (shear-cell skeleton; needs an examples build, named target only —
+never build the full examples tree):
+
+```bash
+cmake -S . -B build-examples -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC \
+      -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON -DPE_BUILD_EXAMPLES=ON
+cmake --build build-examples -j --target shear_cell_kroupa
+./build-examples/examples/shear_cell_kroupa/shear_cell_kroupa 0.3 2000 100   # phi, steps, gammaDot
+# one shear_cell_eta.csv per phi, then:
+./examples/shear_cell_kroupa/evaluate_viscosity.py run_phi*.csv   # eta(phi) vs Krieger-Dougherty
+```
+
+The plotting scripts need matplotlib (e.g. `python3 -m venv venv && venv/bin/pip
+install matplotlib`; the system Python is PEP-668-managed).
+
 ### Level 0 — unit tests (pure math, no World)
 
 - Each resistance term against hand-evaluated reference values at several `ε`
@@ -411,6 +458,25 @@ coupling.
    no-slip line, the `f*` departure, and the plateau at saturation. This
    directly validates the divergence treatment against the paper and,
    qualitatively, the Bonaccurso AFM data.
+
+   > **Geometry caveat (found during implementation).** The paper's Fig. 7
+   > caption says "approach of two spheres", but the plotted curves are the
+   > **particle–wall** resistance set (eq 16, leading `ε⁻¹`) — the paper treats
+   > "the wall as particle j with velocity and rotation rate equal to zero" for
+   > the comparison with Bonaccurso's sphere-on-flat AFM data. The equal-sphere
+   > pair set (eq 12, leading `¼ε⁻¹`) sits a factor ≈ 4 lower (3.7–4.0 including
+   > log terms); no reading of "approach velocity" (relative → 1×, single-particle
+   > → 2×) reconciles the pair coefficients with the figure. Verified: with the
+   > wall set our plateaus land at 405/805/1605/3202 for
+   > `ε_c = 0.02/0.01/0.005/0.0025` vs ≈ 400/800/1600/3200 in the figure, and the
+   > no-slip slope is `6π` (exits their 0–5000 frame at `R_p/h ≈ 265`).
+   > `pe_lubrication_two_sphere_approach_test` therefore emits **both**
+   > configurations in CSV mode (pair curves and `wall …` curves); use
+   > `plot_two_sphere_approach.py approach.csv 5000 wall` to reproduce the
+   > figure literally. Also note the two calibrations live in different
+   > geometries: Fig. 7's slip lengths (`ε_c` ~ 0.0025–0.02) are the AFM/wall
+   > context, while the production default `lubricationEpsCritical_ = 0.1`
+   > follows the bulk-rheology fit (Fig. 3, genuine sphere–sphere pairs).
 2. **Immersed normal bounce (Gondret/Joseph benchmark).** Sphere falling onto
    a plane in quiescent fluid (PE-only: gravity + Stokes drag + lubrication;
    later repeated CFD-coupled): effective restitution vs Stokes number must
