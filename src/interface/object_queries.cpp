@@ -74,6 +74,12 @@ void set_el_hydro_state(const short int bytes[8],
     Vec3(carrierVelocity[0], carrierVelocity[1], carrierVelocity[2]),
     Vec3(otherForce[0], otherForce[1], otherForce[2]),
     (*active != 0));
+  // Arm the free-flight reference velocity of the semi-implicit drag
+  // sub-cycling with the pre-step body velocity. The CFD driver charges the
+  // fluid the mirrored FREE-FLIGHT sub-cycled drag impulse (issue D); the PE
+  // side advances this reference trajectory (not the actual, possibly
+  // contact-perturbed velocity) so the body receives exactly that impulse.
+  body->setEulerLagrangeRefVelocity(body->getLinearVel());
 }
 
 

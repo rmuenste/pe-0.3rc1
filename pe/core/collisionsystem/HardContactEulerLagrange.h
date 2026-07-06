@@ -1925,6 +1925,28 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
             v_[j] = body->getLinearVel();
             w_[j] = body->getAngularVel();
          }
+
+         // Euler-Lagrange hydro bodies: fold the unconditionally-stable
+         // semi-implicit hydro velocity correction (elSemiImplicitVelocity, see
+         // initializeVelocityCorrections) into the cached velocity HERE - in
+         // full and exactly once - instead of leaving it in dv_/dw_. The first
+         // synchronizeVelocities() below then broadcasts the post-hydro
+         // velocity to all shadow copies, so every rank resolves contacts
+         // against identical post-hydro velocities. From this point on dv_/dw_
+         // carry only hard-contact PGS corrections, which must be folded with
+         // the uniform under-relaxation relaxationParam_ on BOTH sides of each
+         // contact pair (see synchronizeVelocities); applying the full hydro
+         // correction through the per-iteration fold instead (the previous
+         // elRelax = 1 special case) scaled the locally-owned side of every
+         // cross-rank contact impulse by 1.0 while the shadow side was relayed
+         // to its owner with relaxationParam_, violating Newton's third law by
+         // (1 - relaxationParam_) * impulse per iteration.
+         if( body->hasEulerLagrangeHydroState() ) {
+            v_[j] += dv_[j];
+            w_[j] += dw_[j];
+            dv_[j] = Vec3();
+            dw_[j] = Vec3();
+         }
       }
 
       for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body, ++j ) {
@@ -3345,6 +3367,22 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
             // Set new owner and transform to shadow copy
             b->setOwner( p->getRank(), p );
             b->setRemote( true );
+
+            // Capture the hydro state for the migration payload before it is
+            // cleared on demotion.
+            const real elMigDragB   = b->getEulerLagrangeDragB();
+            const Vec3 elMigCarrier = b->getEulerLagrangeCarrierVelocity();
+            const Vec3 elMigOther   = b->getEulerLagrangeOtherForce();
+            const Vec3 elMigRefVel  = b->getEulerLagrangeRefVelocity();
+            const bool elMigActive  = b->hasEulerLagrangeHydroState();
+
+            // The Euler-Lagrange hydro state is owner-only per-step forcing
+            // data (armed by the CFD driver on the owner before each PE step
+            // and cleared from OWNED bodies at the end of the step). Clear it
+            // on demotion so the shadow copy never carries a stale armed
+            // state; the current state is handed over to the new owner in the
+            // migration notification payload below.
+            b->setEulerLagrangeHydroState( real(0), Vec3(), Vec3(), false );
 #ifndef NDEBUG
             b->debugFlag_ = true;
 #endif
@@ -3389,6 +3427,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
 
                marshal( buffer, notificationType<RigidBodyMigrationNotification>() );
                marshal( buffer, RigidBodyMigrationNotification( *b, reglist ) );
+
+               // Euler-Lagrange extension: hand the per-step hydro state over
+               // to the new owner. Ownership can migrate in the middle of a PE
+               // step (between substeps, migration runs in synchronize() after
+               // each substep) while the CFD driver arms the hydro state only
+               // once per PE step on the then-owner. Without this handover the
+               // new owner would integrate the remaining substeps without the
+               // semi-implicit drag/buoyancy forcing, breaking the momentum
+               // balance with the fluid (EL_NEWTON_PAIR audit).
+               buffer << elMigDragB;
+               marshal( buffer, elMigCarrier );
+               marshal( buffer, elMigOther );
+               marshal( buffer, elMigRefVel );
+               buffer << static_cast<byte>( elMigActive ? 1 : 0 );
 
                // Note: The new owner misses shadow copies of all attached bodies. Since we do not have an up to date view
                // we need to relay them later.
@@ -3612,6 +3664,25 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
 
                b->setOwner( myRank, 0 );
                b->setRemote( false );
+
+               // Euler-Lagrange extension: take over the per-step hydro state
+               // from the previous owner (see the matching marshal in the
+               // migration send path) so that PE substeps after a mid-step
+               // ownership migration keep integrating the semi-implicit
+               // drag/buoyancy forcing of this body.
+               {
+                  real elMigDragB;
+                  Vec3 elMigCarrier, elMigOther, elMigRefVel;
+                  byte elMigActive;
+                  buffer >> elMigDragB;
+                  unmarshal( buffer, elMigCarrier );
+                  unmarshal( buffer, elMigOther );
+                  unmarshal( buffer, elMigRefVel );
+                  buffer >> elMigActive;
+                  b->setEulerLagrangeHydroState( elMigDragB, elMigCarrier, elMigOther, elMigActive != 0 );
+                  b->setEulerLagrangeRefVelocity( elMigRefVel );
+               }
+
                b->clearProcesses();
                for( std::size_t i = 0; i < objparam.reglist_.size(); ++i ) {
                   ProcessIterator it( processstorage_.find( objparam.reglist_[i] ) );
@@ -3796,8 +3867,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
       for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body, ++i ) {
          pe_INTERNAL_ASSERT( body->index_ == i, "Invalid body index." );
 
-         if( dv_[i] == Vec3() && dw_[i] == Vec3() ) {
-            // If we did not apply any corrections do not send anything.
+         // If we did not apply any corrections do not send anything.
+         //
+         // NOTE: this must be an EXACT zero test. Vec3::operator== compares
+         // through pe::equal (|a-b| < 1e-8), so it would classify small but
+         // nonzero corrections as "zero" and silently drop them, while the
+         // owner-side fold in this function applies dv_ unconditionally. For
+         // a cross-rank contact the PGS convergence tail (impulse updates
+         // below 1e-8) would then be applied to the locally-owned body but
+         // never delivered to the remote partner, breaking the antisymmetry
+         // of the contact impulses (Newton's third law) at the ~1e-8 level
+         // per iteration (measured as an O(1e-12) per-step momentum leak in
+         // the Euler-Lagrange Newton-pair audit).
+         if( dv_[i][0] == real(0) && dv_[i][1] == real(0) && dv_[i][2] == real(0) &&
+             dw_[i][0] == real(0) && dw_[i][1] == real(0) && dw_[i][2] == real(0) ) {
             continue;
          }
 
@@ -3900,16 +3983,17 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
          if( body->isGlobal() )
             continue;
 
-         // Euler-Lagrange hydro bodies carry an unconditionally-stable
-         // semi-implicit drag correction in dv_ (see initializeVelocityCorrections
-         // / elSemiImplicitVelocity). It must be applied in FULL: the 0.9 contact
-         // under-relaxation is only meant for hard-contact PGS corrections, and
-         // leaking it into the hydro update changes the particle drag (~0.9x) and
-         // breaks momentum balance with the fluid feedback (issue D). Ordinary
-         // contact corrections keep relaxationParam_.
-         const real elRelax = body->hasEulerLagrangeHydroState() ? real(1) : relaxationParam_;
-         v_[i] += elRelax*dv_[i];
-         w_[i] += elRelax*dw_[i];
+         // NOTE (issue D / Newton-pair audit): the Euler-Lagrange semi-implicit
+         // hydro correction is NOT part of dv_/dw_ here - it is folded into the
+         // cached velocity v_/w_ in full, exactly once, at body-caching time in
+         // resolveContacts() before the first synchronizeVelocities(). At this
+         // point dv_/dw_ contain only hard-contact PGS corrections, which MUST
+         // be folded with the same relaxationParam_ that is applied to the
+         // corrections relayed from shadow copies above; any per-body factor
+         // difference breaks the antisymmetry of cross-rank contact impulses
+         // (Newton's third law) and leaks momentum.
+         v_[i] += relaxationParam_*dv_[i];
+         w_[i] += relaxationParam_*dw_[i];
          dv_[i] = Vec3();
          dw_[i] = Vec3();
 
@@ -4307,13 +4391,33 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::initiali
 {
    if( body->awake_ ) {
       if( !body->isFixed() ) {
-         if( body->hasEulerLagrangeHydroState() ) {
-            const Vec3 uold = body->getLinearVel();
+         // The Euler-Lagrange semi-implicit hydro update is applied by the
+         // OWNER of a body, exactly once. Shadow copies must never compute a
+         // hydro velocity correction: their dv_ is relayed to the owner as a
+         // contact-correction message during synchronizeVelocities(), so an
+         // armed shadow copy (e.g. a stale hydro state surviving an ownership
+         // migration that demoted the body to a shadow copy) would make the
+         // owner apply the hydro forcing a second time (under-relaxed by
+         // relaxationParam_), i.e. ~1.9x gravity/drag per step (measured).
+         if( body->hasEulerLagrangeHydroState() && !body->isRemote() ) {
+            // Advance the FREE-FLIGHT reference velocity of the drag
+            // sub-cycling, not the actual body velocity: contacts occurring
+            // between substeps perturb the actual velocity, and computing the
+            // hydro increment from it would make the total drag impulse the
+            // particle receives deviate from the mirrored free-flight impulse
+            // the CFD driver charged to the fluid (the deviations of a contact
+            // pair do not cancel when the two bodies have different drag
+            // coefficients), leaking momentum. The reference trajectory is
+            // armed with the pre-step velocity (equal to the actual velocity
+            // while no contact impulses act, so contact-free behaviour is
+            // bit-identical) and reproduces the audited impulse exactly.
+            const Vec3 uref = body->getEulerLagrangeRefVelocity();
             const Vec3 unew = elSemiImplicitVelocity(
-               uold, body->getMass(), body->getEulerLagrangeDragB(),
+               uref, body->getMass(), body->getEulerLagrangeDragB(),
                body->getEulerLagrangeCarrierVelocity(),
                body->getEulerLagrangeOtherForce(), dt );
-            dv = unew - uold;
+            dv = unew - uref;
+            body->setEulerLagrangeRefVelocity( unew );
          }
          else {
             dv = ( body->getInvMass() * dt ) * body->getForce();

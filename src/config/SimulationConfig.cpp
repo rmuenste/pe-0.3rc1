@@ -70,6 +70,7 @@ SimulationConfig::SimulationConfig()
     , benchRadius_(0.0015)
     , seedMode_("file")
     , seedMinGap_(-1.0)
+    , seedAllowContact_(false)
     , seedDomain_("box")
     , seedCylinderCenter_(0.0, 0.0, 0.0)
     , seedCylinderRadius_(-1.0)
@@ -250,6 +251,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("seedMinGap_"))
         config.setSeedMinGap(j["seedMinGap_"].get<real>());
+
+    if (j.contains("seedAllowContact_"))
+        config.setSeedAllowContact(j["seedAllowContact_"].get<bool>());
 
     if (j.contains("seedDomain_"))
         config.setSeedDomain(j["seedDomain_"].get<std::string>());

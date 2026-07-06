@@ -429,7 +429,8 @@ void setupELTerminalVelocity(MPI_Comm ex0,
                 << " spheres, created " << globalParticles
                 << " (check that seed positions lie inside the domain).\n";
       MPI_Abort(cartcomm, 1);
-    } else if (spherePositions.size() > 1 && minPairGap + real(1e-12) < seedMinGap) {
+    } else if (spherePositions.size() > 1 && !config.getSeedAllowContact() &&
+               minPairGap + real(1e-12) < seedMinGap) {
       std::cerr << "EL terminal-velocity setup: minimum seed gap " << minPairGap
                 << " is below seedMinGap_ " << seedMinGap << ".\n";
       MPI_Abort(cartcomm, 1);

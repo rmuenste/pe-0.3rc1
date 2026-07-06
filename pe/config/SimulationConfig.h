@@ -195,6 +195,8 @@ public:
     void setSeedMode(const std::string& value) { seedMode_ = value; }
     real getSeedMinGap() const { return seedMinGap_; }
     void setSeedMinGap(real value) { seedMinGap_ = value; }
+    bool getSeedAllowContact() const { return seedAllowContact_; }
+    void setSeedAllowContact(bool value) { seedAllowContact_ = value; }
     const std::string& getSeedDomain() const { return seedDomain_; }
     void setSeedDomain(const std::string& value) { seedDomain_ = value; }
     const Vec3& getSeedCylinderCenter() const { return seedCylinderCenter_; }
@@ -364,6 +366,7 @@ private:
     real benchRadius_;           //!< Radius of the benchmark geometry
     std::string seedMode_;       //!< EL validation seeding mode: file or random
     real seedMinGap_;            //!< Minimum surface-to-surface seed gap; negative means setup default
+    bool seedAllowContact_;      //!< Allow intentionally touching/overlapping seeds (skips the min-gap guard; test cases)
     bool periodicX_;             //!< Periodic wrap-around domain connectivity in x (MPI build only)
     bool periodicY_;             //!< Periodic wrap-around domain connectivity in y (MPI build only)
     bool periodicZ_;             //!< Periodic wrap-around domain connectivity in z (MPI build only)

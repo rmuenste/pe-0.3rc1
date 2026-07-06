@@ -64,6 +64,7 @@ private:
     Vec3 tempForce_;
     Vec3 elCarrierVelocity_;
     Vec3 elOtherForce_;
+    Vec3 elRefVelocity_;
     real elDragB_;
     bool elHydroActive_;
 
@@ -117,6 +118,22 @@ public:
         return elOtherForce_;
     }
 
+    // Free-flight reference velocity of the semi-implicit Euler-Lagrange drag
+    // sub-cycling. Armed to the body velocity at the start of the PE step and
+    // advanced by elSemiImplicitVelocity once per substep. The hydro velocity
+    // increments are computed from THIS trajectory (not from the actual,
+    // possibly contact-perturbed body velocity) so that the total momentum the
+    // body receives from the hydro forcing equals bit-exactly the mirrored
+    // free-flight impulse the CFD driver charged to the fluid (issue-D
+    // design), independent of contacts occurring between substeps.
+    const Vec3& getEulerLagrangeRefVelocity() const {
+        return elRefVelocity_;
+    }
+
+    void setEulerLagrangeRefVelocity(const Vec3& uref) {
+        elRefVelocity_ = uref;
+    }
+
    size_t index_;
    int wallContact_;
    real contactDistance_;
@@ -142,6 +159,7 @@ RigidBodyTrait< C<CD,FD,BG,response::HardContactEulerLagrange> >::RigidBodyTrait
    : MPIRigidBodyTrait( body )  // Initialization of the parent class
    , elCarrierVelocity_( 0, 0, 0 )
    , elOtherForce_( 0, 0, 0 )
+   , elRefVelocity_( 0, 0, 0 )
    , elDragB_( 0 )
    , elHydroActive_( false )
    , index_( 0 )
