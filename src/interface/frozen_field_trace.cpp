@@ -384,6 +384,47 @@ std::vector<BodyID> localTracers()
    return tracers;
 }
 
+/*!
+ * Pushes every local tracer whose clearance from the domain boundary dropped below the tracer
+ * radius back to exactly one radius of clearance, along the inward surface normal of the
+ * inverted DistanceMap. This is the wall-contact safety net against tracers drifting through
+ * the boundary due to integration or field-interpolation error: the true streamline of such a
+ * tracer runs parallel to the wall, and a pure position projection reproduces that without any
+ * contact dynamics (the velocity is re-sampled from the field at the corrected position by the
+ * following callback invocation). Exits through the surface are unaffected because the
+ * predictive check in removeExitingTracers fires while the tracer is still up to one main step
+ * ahead of the wall, well outside the projection range.
+ *
+ * Returns the number of projected tracers. Purely rank-local, no communication.
+ */
+std::size_t projectTracersOntoDomain( TriangleMeshID boundary, real radius )
+{
+   const DistanceMap* distanceMap = boundary->getDistanceMap();
+   std::size_t projected = 0;
+
+   for( BodyID tracer : localTracers() ) {
+      const Vec3 worldPosition = tracer->getPosition();
+      const Vec3 localPosition = boundary->pointFromWFtoBF( worldPosition );
+      // Inverted map: positive distance = clearance inside the domain. The out-of-grid
+      // sentinel is large and positive, so it never triggers a projection here.
+      const real clearance = distanceMap->interpolateDistance(
+         localPosition[0], localPosition[1], localPosition[2] );
+      if( clearance >= radius )
+         continue;
+
+      Vec3 normal = boundary->vectorFromBFtoWF( distanceMap->interpolateNormal(
+         localPosition[0], localPosition[1], localPosition[2] ) );
+      const real length = normal.length();
+      if( length <= real(0) )
+         continue;
+      normal /= length;
+
+      tracer->setPosition( worldPosition + ( radius - clearance ) * normal );
+      ++projected;
+   }
+   return projected;
+}
+
 void applyVelocityCallback( MPI_Comm comm, const VelocityCallback& callback )
 {
    std::vector<BodyID> tracers = localTracers();
@@ -648,6 +689,12 @@ FrozenFieldTraceResult runFrozenFieldTrace(
       boundary = createTriangleMesh( kBoundaryUserId, toVec3( center ), peVertices, peFaces,
                                      boundaryMaterial, true, true );
       boundary->setFixed( true );
+      // Collision stays disabled: PE generates contacts only between pairs of
+      // collision-enabled bodies, so enabling it here would also enable
+      // tracer<->tracer contacts, and passive tracers on convergent
+      // trajectories would stack on each other instead of sampling the field
+      // independently. Wall penetration is prevented by the explicit
+      // DistanceMap projection in projectTracersOntoDomain instead.
       boundary->setCollisionEnabled( false );
       boundary->enableDistanceMapAcceleration(
          config.getDomainBoundaryDistanceMapResolution(),
@@ -712,10 +759,16 @@ FrozenFieldTraceResult runFrozenFieldTrace(
       if( removedAny )
          world->synchronize();
 
+      // Re-sample the field after every substep, not just once per main step:
+      // with the velocity held piecewise constant, the effective integrator is
+      // explicit Euler with the substep as its step size. The wall projection
+      // runs before the re-sampling so the field is evaluated at the
+      // corrected position.
       for( int substep = 0; substep < config.getSubsteps(); ++substep ) {
          world->simulationStep( substepSize );
+         result.wallProjections += projectTracersOntoDomain( boundary, config.getBenchRadius() );
+         applyVelocityCallback( cartComm, callback );
       }
-      applyVelocityCallback( cartComm, callback );
    }
    TimeStep::stepsize( mainStepSize );
 

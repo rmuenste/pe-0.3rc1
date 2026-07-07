@@ -66,6 +66,17 @@ if(MPI AND CGAL)
     pe_frozen_field_trace_mpi.cpp
   )
   target_link_libraries(pe_frozen_field_trace_mpi PRIVATE pe_static MPI::MPI_CXX)
+  # pe_static references CGAL's exact-arithmetic backend (__gmp*/__mpfr* symbols
+  # from TriangleMesh.cpp); those do not propagate through pe_static in embedded
+  # builds, so link GMP/MPFR explicitly (same fix as the coupled FEAT3 app).
+  find_library(PE_TEST_GMP_LIBRARY NAMES gmp)
+  find_library(PE_TEST_MPFR_LIBRARY NAMES mpfr)
+  if(PE_TEST_GMP_LIBRARY)
+    target_link_libraries(pe_frozen_field_trace_mpi PRIVATE ${PE_TEST_GMP_LIBRARY})
+  endif()
+  if(PE_TEST_MPFR_LIBRARY)
+    target_link_libraries(pe_frozen_field_trace_mpi PRIVATE ${PE_TEST_MPFR_LIBRARY})
+  endif()
 
   set(PE_FROZEN_FIELD_FIXTURE_DIR
       "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/frozen-field")

@@ -89,7 +89,8 @@ int main( int argc, char** argv )
    const pe::FrozenFieldTraceResult result =
       pe::runFrozenFieldTrace( seeds, surface, callback );
 
-   bool valid = callbackCalls == 6;
+   // 1 initial call + timesteps_ (5) * substeps_ (2) per-substep calls.
+   bool valid = callbackCalls == 11;
    if( rank == 0 ) {
       valid = valid && result.exits.empty() && result.survivors.empty();
    }

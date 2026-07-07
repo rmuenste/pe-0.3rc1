@@ -66,6 +66,9 @@ struct TracerSurvivor {
 struct FrozenFieldTraceResult {
    std::vector<TracerExit> exits;
    std::vector<TracerSurvivor> survivors;
+   //! Rank-local count of wall-projection events: how often a tracer had to be
+   //! pushed back to one radius of clearance from the domain boundary.
+   std::size_t wallProjections = 0u;
 };
 
 /*!
