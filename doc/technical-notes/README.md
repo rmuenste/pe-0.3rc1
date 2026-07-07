@@ -13,6 +13,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [technical-overview.md](technical-overview.md): Broad architecture guide for PE's simulation workflow and main implementation areas.
 - [simulation-setup-examples.md](simulation-setup-examples.md): Concrete serial and MPI simulation setup patterns, with references to repository examples.
 - [frozen-field-cpp-interface.md](frozen-field-cpp-interface.md): Collective callback-driven tracer interface, global TriangleMesh/DistanceMap setup, and exit attribution.
+- [feat3-pe-frozen-field-coupling.md](feat3-pe-frozen-field-coupling.md): FEAT3+PE combined build, detailed compile/run instructions, and the `dbg-parti-velocity-eval` coupled debug app.
 - [rigid-body-documentation.md](rigid-body-documentation.md): `RigidBody` base class, common rigid-body API, and inheritance model.
 - [triangle-mesh.md](triangle-mesh.md): `TriangleMesh` hierarchy, related types, implementation details, and ecosystem notes.
 - [vec3-mat3-documentation.md](vec3-mat3-documentation.md): Usage and conventions for `Vec3` and `Mat3`.
