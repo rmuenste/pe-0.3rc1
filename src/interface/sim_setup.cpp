@@ -400,6 +400,10 @@ void stepELFrozenTrace() {
   const real alpha = real(0.35);
   applyELFrozenTraceFluidForces(fullStepSize, alpha);
 
+  // Lubrication impulse-virial accumulates over the substeps of this macro
+  // step; reset here so the CFD-side query reads exactly one step's worth.
+  theCollisionSystem()->resetElLubricationVirial();
+
   TimeStep::stepsize(substepSize);
   for (int istep = 0; istep < substeps; ++istep) {
     world->simulationStep(substepSize);

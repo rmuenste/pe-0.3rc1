@@ -62,6 +62,9 @@
 #include <pe/core/rigidbody/BodyStorage.h>
 #include <pe/core/rigidbody/BodyCast.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/Settings.h>
+#include <pe/config/SimulationConfig.h>
+#include <cmath>
 #include <pe/core/rigidbody/MPIRigidBodyTrait.h>
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/notifications/NotificationType.h>
@@ -212,6 +215,11 @@ public:
    inline const Domain&   getDomain()             const;
    inline real            getMaximumPenetration() const;
    inline size_t          getNumberOfContacts()   const;
+   inline void            getElLubricationVirial( real* sigma ) const
+      { for( int k=0; k<9; ++k ) sigma[k] = lubricationVirial_[k]; }
+   inline size_t          getElLubricationPairs() const { return lubricationPairs_; }
+   inline void            resetElLubricationVirial()
+      { for( int k=0; k<9; ++k ) lubricationVirial_[k] = real(0); lubricationPairs_ = 0; }
    //@}
    //**********************************************************************************************
 
@@ -290,6 +298,7 @@ private:
    //@{
    inline void clear();
    inline void clearContacts();
+          void applyELLubrication( real dt );
           bool checkUpdateFlags();
    inline real getCharacteristicLength( ConstBodyID body ) const;
    //@}
@@ -320,6 +329,8 @@ private:
    real relaxationParam_;     //!< Parameter specifying underrelaxation of velocity corrections for boundary bodies.
    real maximumPenetration_;
    size_t numContacts_;
+   real lubricationVirial_[9];   //!< Rank-local impulse virial of pairwise lubrication, Sum w*dt*F (x) r12 over substeps (row-major); stress = -virial/(dt_macro*V) after MPI sum.
+   size_t lubricationPairs_;     //!< Rank-local lubrication pair evaluations with a locally-owned member (accumulated over substeps).
    MPITag lastSyncTag_;
 
    // bodies
@@ -440,6 +451,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , relaxationParam_  ( 0.9 )
    , maximumPenetration_ ( 0.0 )
    , numContacts_      ( 0 )
+   , lubricationVirial_()
+   , lubricationPairs_ ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
 {
@@ -793,6 +806,167 @@ template< template<typename> class CD                           // Type of the c
 inline size_t CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::getNumberOfContacts() const
 {
    return numContacts_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief All-pairs pairwise lubrication for the Euler-Lagrange solver.
+ *
+ * Kroupa/Vonka/Soos/Kosek, Langmuir 32 (2016) 8451: normal squeeze (eq 12),
+ * sliding force (eq 13) and sliding torque (eq 14), with the Vinogradova
+ * slip correction f* (eq 20) and the h < h_c substitution rule. Twisting
+ * (eq 15) is omitted (negligible per the paper). The pair search is a plain
+ * all-pairs sweep over local + shadow-copy spheres - no involvement of the
+ * collision detection pipeline; the shadow-copy margin
+ * (pe::lubrication::setShadowCopyMargin, set by the EL setup to the cutoff)
+ * guarantees every pair with surface gap below the cutoff is visible on the
+ * ranks owning either member.
+ *
+ * Velocities are read from the synchronized post-hydro v_/w_ caches (NEVER
+ * from dv_/dw_, which differ between owner and shadow ranks), so both ranks
+ * of a cross-boundary pair compute identical forces; each rank folds only
+ * its locally-owned bodies at full weight (fold-once). The caller must run
+ * a synchronizeVelocities() afterwards.
+ *
+ * The impulse virial Sum w*dt*F (x) r12 is accumulated with weight 0.5 per
+ * locally-owned member (1.0 when both are local), so the MPI-summed tensor
+ * counts every pair exactly once; particle-phase stress follows as
+ * sigma = -virial/(dt_macro*V).
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELLubrication( real dt )
+{
+   const SimulationConfig& cfg( SimulationConfig::getInstance() );
+   const real cutoff( cfg.getLubricationCutoff() );
+   if( cutoff <= real(0) || dt <= real(0) )
+      return;
+
+   const real hc( cfg.getLubricationSlipLength() );
+   const real hmin( std::max( cfg.getMinEpsLub(), real(1e-300) ) );
+   const real mu( Settings::liquidViscosity() );
+   const real alphaCap( cfg.getAlphaImpulseCap() );
+
+   // Collect spheres once: locally-owned bodies first, then shadow copies.
+   struct LubEntry {
+      SphereID s;
+      size_t   idx;
+      bool     local;
+   };
+   std::vector<LubEntry> spheres;
+   spheres.reserve( bodystorage_.size() + bodystorageShadowCopies_.size() );
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
+      if( body->getType() != sphereType || body->isFixed() || body->isGlobal() )
+         continue;
+      LubEntry e = { static_body_cast<Sphere>( *body ), body->index_, true };
+      spheres.push_back( e );
+   }
+   for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body ) {
+      if( body->getType() != sphereType || body->isFixed() )
+         continue;
+      LubEntry e = { static_body_cast<Sphere>( *body ), body->index_, false };
+      spheres.push_back( e );
+   }
+
+   const size_t n( spheres.size() );
+   for( size_t a = 0; a + 1 < n; ++a ) {
+      for( size_t b = a + 1; b < n; ++b ) {
+         // Pairs with no locally-owned member are handled by the owner ranks.
+         if( !spheres[a].local && !spheres[b].local )
+            continue;
+
+         SphereID s1( spheres[a].s );
+         SphereID s2( spheres[b].s );
+         const Vec3 r12( s1->getPosition() - s2->getPosition() );
+         const real dist( r12.length() );
+         const real gap( dist - s1->getRadius() - s2->getRadius() );
+         if( gap >= cutoff || dist <= real(1e-300) )
+            continue;
+
+         // Kroupa slip procedure: below h_c evaluate all expressions at h_c
+         // (also covers contact overlap, gap <= 0, where the PGS solver owns
+         // the interaction and lubrication contributes capped dissipation).
+         const real Rp( real(0.5) * ( s1->getRadius() + s2->getRadius() ) );
+         const real hfloor( hc > real(0) ? hc : hmin );
+         const real h( gap > hfloor ? gap : hfloor );
+         const real eps( h / Rp );
+         const real leps( std::log( eps ) );
+
+         // Vinogradova slip correction f* (eq 20); -> 1 for hc -> 0.
+         real fstar( real(1) );
+         if( hc > real(0) ) {
+            const real x( h / ( real(6) * hc ) );
+            fstar = h / ( real(3) * hc ) * ( ( real(1) + x ) * std::log( real(1) + real(1) / x ) - real(1) );
+         }
+
+         // Unit normal from particle 1 (i) to particle 2 (j), Kroupa convention.
+         const Vec3 nvec( -r12 / dist );
+         const Vec3 v1( v_[ spheres[a].idx ] );
+         const Vec3 v2( v_[ spheres[b].idx ] );
+         const Vec3 w1( w_[ spheres[a].idx ] );
+         const Vec3 w2( w_[ spheres[b].idx ] );
+         const Vec3 vr( v1 - v2 );
+         const real vrn( trans(nvec) * vr );
+
+         // Normal squeeze (eq 12): resists approach AND recession (the full
+         // dissipative cycle; the approach-only variant elsewhere in pe is a
+         // coagulation-stability choice, not a rheology one).
+         const real Cn( real(0.25) / eps - real(9.0/40.0) * leps - real(3.0/112.0) * eps * leps );
+         Vec3 F( ( -real(6) * M_PI * mu * Rp * fstar * Cn * vrn ) * nvec );
+
+         // Sliding force (eq 13): translational (vs) and rotational (vcs)
+         // surface sliding, r_i = Rp*n, r_j = -Rp*n.
+         const Vec3 vs( vr - vrn * nvec );
+         const Vec3 vcs( ( w1 % (  Rp * nvec ) ) - ( w2 % ( -Rp * nvec ) ) );
+         const real Cs1( -real(1.0/6.0) * leps );
+         const real Cs2( -real(1.0/6.0) * leps - real(1.0/12.0) * eps * leps );
+         F += ( -real(6) * M_PI * mu * Rp * fstar ) * ( Cs1 * vs + Cs2 * vcs );
+
+         // Impulse cap (both signs), pattern of the lubricated solver: the
+         // pair impulse may not exceed alphaCap * m_eff * relative speed.
+         if( alphaCap > real(0) ) {
+            const real meff( real(1) / ( s1->getInvMass() + s2->getInvMass() ) );
+            const real vscale( vr.length() + vcs.length() );
+            const real J( F.length() * dt );
+            const real Jcap( alphaCap * meff * vscale );
+            if( J > Jcap && J > real(0) )
+               F *= Jcap / J;
+         }
+
+         // Sliding torque (eq 14); identical on both members (truncated
+         // two-sphere resistance expressions, equal radii).
+         const Vec3 Msl( ( -real(8) * M_PI * mu * Rp * Rp * fstar ) *
+                         ( ( nvec % vs  ) * ( -real(1.0/6.0) * leps - real(1.0/12.0)   * eps * leps )
+                         + ( nvec % vcs ) * ( -real(1.0/5.0) * leps - real(47.0/250.0) * eps * leps ) ) );
+
+         // Fold-once: full-weight velocity fold on locally-owned bodies only.
+         if( spheres[a].local ) {
+            v_[ spheres[a].idx ] += ( s1->getInvMass() * dt ) * F;
+            w_[ spheres[a].idx ] += dt * ( s1->getInvInertia() * Msl );
+         }
+         if( spheres[b].local ) {
+            v_[ spheres[b].idx ] -= ( s2->getInvMass() * dt ) * F;
+            w_[ spheres[b].idx ] += dt * ( s2->getInvInertia() * Msl );
+         }
+
+         // Impulse virial, half per locally-owned member (F is the force on
+         // particle 1, r12 = x1 - x2).
+         real wgt( real(0) );
+         if( spheres[a].local ) wgt += real(0.5);
+         if( spheres[b].local ) wgt += real(0.5);
+         for( int row = 0; row < 3; ++row )
+            for( int col = 0; col < 3; ++col )
+               lubricationVirial_[ 3*row + col ] += wgt * dt * F[row] * r12[col];
+         ++lubricationPairs_;
+      }
+   }
 }
 //*************************************************************************************************
 
@@ -1963,6 +2137,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
       }
 
       synchronizeVelocities();
+
+      // Pairwise lubrication (all-pairs, re-evaluated every substep since
+      // resolveContacts runs once per simulationStep): folded at FULL weight
+      // into v_/w_ of locally-owned bodies from the just-synchronized
+      // post-hydro state, then re-broadcast so the PGS loop sees
+      // lubrication-corrected velocities on every rank. Fold-once across
+      // ranks: both sides of a cross-boundary pair run identical arithmetic
+      // on identical synced v_/w_, each folding only its own bodies, so
+      // Newton antisymmetry is exact without any relayed corrections (and
+      // without the relaxationParam_ fold that dv_/dw_ relays get).
+      if( SimulationConfig::getInstance().getLubricationEnabled() ) {
+         applyELLubrication( dt );
+         synchronizeVelocities();
+      }
    }
 
    pe_PROFILING_SECTION {

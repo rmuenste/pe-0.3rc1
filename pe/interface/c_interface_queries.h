@@ -112,6 +112,27 @@ extern "C" double getElMaxPenetration() {
 //=================================================================================================
 
 /*
+ *!\brief Rank-local lubrication impulse virial of the current macro step
+ * (9 components, row-major): Sum w*dt*F (x) r12 over pairs and substeps,
+ * weight 0.5 per locally-owned pair member so the MPI sum counts each pair
+ * once. Particle-phase stress: sigma = -virial/(dt_macro*V).
+ */
+extern "C" void getElLubricationVirial(double *sigma) {
+  pe::theCollisionSystem()->getElLubricationVirial(sigma);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local count of lubrication pair evaluations this macro step.
+ */
+extern "C" int getElLubricationPairs() {
+  return static_cast<int>(pe::theCollisionSystem()->getElLubricationPairs());
+}
+
+//=================================================================================================
+
+/*
  *!\brief The function returns the radius the particle idx
  * \param idx The index of the particle
  */
