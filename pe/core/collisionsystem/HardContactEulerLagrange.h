@@ -875,6 +875,15 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
       spheres.push_back( e );
    }
 
+   // Jacobi accumulation: every pair force is computed from the FROZEN
+   // synchronized v_/w_ state and folded only after the sweep. Folding
+   // inside the loop (Gauss-Seidel) would let later pairs on the owner rank
+   // read already-updated velocities that the partner's owner rank (which
+   // never applied that update) cannot see - breaking the bitwise
+   // cross-rank antisymmetry of the pair forces.
+   std::vector<Vec3> dvl( v_.size(), Vec3() );
+   std::vector<Vec3> dwl( w_.size(), Vec3() );
+
    const size_t n( spheres.size() );
    for( size_t a = 0; a + 1 < n; ++a ) {
       for( size_t b = a + 1; b < n; ++b ) {
@@ -946,14 +955,15 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
                          ( ( nvec % vs  ) * ( -real(1.0/6.0) * leps - real(1.0/12.0)   * eps * leps )
                          + ( nvec % vcs ) * ( -real(1.0/5.0) * leps - real(47.0/250.0) * eps * leps ) ) );
 
-         // Fold-once: full-weight velocity fold on locally-owned bodies only.
+         // Fold-once: accumulate for locally-owned bodies only (applied after
+         // the sweep, full weight).
          if( spheres[a].local ) {
-            v_[ spheres[a].idx ] += ( s1->getInvMass() * dt ) * F;
-            w_[ spheres[a].idx ] += dt * ( s1->getInvInertia() * Msl );
+            dvl[ spheres[a].idx ] += ( s1->getInvMass() * dt ) * F;
+            dwl[ spheres[a].idx ] += dt * ( s1->getInvInertia() * Msl );
          }
          if( spheres[b].local ) {
-            v_[ spheres[b].idx ] -= ( s2->getInvMass() * dt ) * F;
-            w_[ spheres[b].idx ] += dt * ( s2->getInvInertia() * Msl );
+            dvl[ spheres[b].idx ] -= ( s2->getInvMass() * dt ) * F;
+            dwl[ spheres[b].idx ] += dt * ( s2->getInvInertia() * Msl );
          }
 
          // Impulse virial, half per locally-owned member (F is the force on
@@ -966,6 +976,13 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
                lubricationVirial_[ 3*row + col ] += wgt * dt * F[row] * r12[col];
          ++lubricationPairs_;
       }
+   }
+
+   for( size_t a = 0; a < n; ++a ) {
+      if( !spheres[a].local )
+         continue;
+      v_[ spheres[a].idx ] += dvl[ spheres[a].idx ];
+      w_[ spheres[a].idx ] += dwl[ spheres[a].idx ];
    }
 }
 //*************************************************************************************************
