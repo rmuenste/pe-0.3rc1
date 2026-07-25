@@ -25,6 +25,14 @@ void setLubricationHysteresisDelta( real delta );
 real getLubricationThreshold();
 void setLubricationThreshold( real threshold );
 
+// Getter/setter pair for the domain-decomposition shadow-copy margin.
+// Default 0 (no behavior change). When pairwise lubrication is enabled the
+// EL setup sets this to the lubrication cutoff so that any pair with a
+// surface gap below the cutoff has both partners shadow-copied across the
+// process boundary (HalfSpace::intersectsWith adds it to the overlap test).
+real getShadowCopyMargin();
+void setShadowCopyMargin( real margin );
+
 } // namespace lubrication
 } // namespace pe
 

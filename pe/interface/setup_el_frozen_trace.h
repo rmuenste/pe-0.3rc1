@@ -9,6 +9,7 @@
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
 #include <pe/interface/geometry_utils.h>
+#include <pe/core/lubrication/Params.h>
 
 void setupELFrozenTrace(MPI_Comm ex0,
                         pe::real xmin, pe::real xmax,
@@ -29,6 +30,12 @@ void setupELFrozenTrace(MPI_Comm ex0,
   world->setViscosity(config.getFluidViscosity());
   world->setDamping(1.0);
   world->setAutoForceReset(true);
+
+  // Pairwise lubrication (EL solver): widen the shadow-copy overlap test so
+  // cross-boundary pairs within the surface-gap cutoff are visible on both
+  // ranks. No-op (margin 0) when lubrication is disabled.
+  if (config.getLubricationEnabled())
+    pe::lubrication::setShadowCopyMargin(config.getLubricationCutoff());
   TimeStep::stepsize(config.getStepsize());
 
   MPISystemID mpisystem = theMPISystem();

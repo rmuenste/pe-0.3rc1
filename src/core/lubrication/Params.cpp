@@ -14,6 +14,7 @@ namespace {
 real contactHystDelta  = real(0);
 real lubricationHystDelta = real(0);
 real lubricationThresh = real(1E-2);  // Default matches Thresholds.h
+real shadowCopyMargin  = real(0);     // Off unless lubrication setup enables it
 }  // namespace
 
 real getContactHysteresisDelta()
@@ -44,6 +45,16 @@ real getLubricationThreshold()
 void setLubricationThreshold( real threshold )
 {
    lubricationThresh = threshold;
+}
+
+real getShadowCopyMargin()
+{
+   return shadowCopyMargin;
+}
+
+void setShadowCopyMargin( real margin )
+{
+   shadowCopyMargin = margin;
 }
 
 } // namespace lubrication

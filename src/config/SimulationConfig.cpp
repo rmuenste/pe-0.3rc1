@@ -102,6 +102,9 @@ SimulationConfig::SimulationConfig()
     , contactHysteresisDelta_(1e-9)
     , alphaImpulseCap_(1.0)
     , minEpsLub_(1e-8)
+    , lubricationEnabled_(false)
+    , lubricationCutoff_(0.0)
+    , lubricationSlipLength_(0.0)
     , restitution_(0.0)
     , staticFriction_(0.1)
     , dynamicFriction_(0.05)
@@ -394,6 +397,14 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set lubrication gap regularization
     if (j.contains("minEpsLub_"))
         config.setMinEpsLub(j["minEpsLub_"].get<real>());
+
+    // Pairwise lubrication in the EL solver (surface-gap trigger + slip length)
+    if (j.contains("lubricationEnabled_"))
+        config.setLubricationEnabled(j["lubricationEnabled_"].get<bool>());
+    if (j.contains("lubricationCutoff_"))
+        config.setLubricationCutoff(j["lubricationCutoff_"].get<real>());
+    if (j.contains("lubricationSlipLength_"))
+        config.setLubricationSlipLength(j["lubricationSlipLength_"].get<real>());
 
     if (j.contains("restitution_"))
         config.setRestitution(j["restitution_"].get<real>());
