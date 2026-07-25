@@ -213,10 +213,17 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   world->setAutoForceReset(true);
 
   // Pairwise lubrication (EL solver): widen the shadow-copy overlap test so
-  // cross-boundary pairs within the surface-gap cutoff are visible on both
-  // ranks. No-op (margin 0) when lubrication is disabled.
+  // cross-boundary pairs within the surface-gap cutoff are visible on BOTH
+  // owner ranks. The margin must be sphereRadius + cutoff: for a pair
+  // (A owned by r1, B owned by r2) with gap < cutoff, r2 sees A iff
+  // dist(A_center, r2_box) <= R_A + margin, and that distance can reach
+  // R_A + R_B + cutoff when B's center sits on r2's boundary — so
+  // margin >= R_B + cutoff (monodisperse: benchRadius). A cutoff-only
+  // margin leaves one-sided pairs and a measurable Newton-pair violation.
+  // No-op (margin 0) when lubrication is disabled.
   if (config.getLubricationEnabled())
-    pe::lubrication::setShadowCopyMargin(config.getLubricationCutoff());
+    pe::lubrication::setShadowCopyMargin(config.getLubricationCutoff() +
+                                         config.getBenchRadius());
   TimeStep::stepsize(config.getStepsize());
 
   MPISystemID mpisystem = theMPISystem();
