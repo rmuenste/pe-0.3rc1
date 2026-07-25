@@ -405,7 +405,7 @@ void setupELTerminalVelocity(MPI_Comm ex0,
 
   if (g_vtk) {
     vtk::activateWriter("./paraview", config.getVisspacing(), 0,
-                        config.getTimesteps(), false);
+                        config.getTimesteps(), false, true);
   }
 
   unsigned long localParticles  = static_cast<unsigned long>(createdLocal);

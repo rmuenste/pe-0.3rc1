@@ -264,7 +264,7 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
 
       // write filenames of datasets
       int timeCount=0;  // for numbering of the files
-      for(unsigned int t=tstart_; t<=tend_; t+=tspacing_,timeCount++)
+      for(unsigned int t=tstart_; t<tend_; t+=tspacing_,timeCount++)
       {
          for(int proc=0; proc<MPISettings::size(); proc++)
          {
@@ -315,7 +315,7 @@ Writer::Writer( const std::string& filename, unsigned int spacing, unsigned int 
 
       // write filenames of datasets
       int timeCount=0;  // for numbering of the files
-      for(unsigned int t=tstart_; t<=tend_; t+=tspacing_,timeCount++)
+      for(unsigned int t=tstart_; t<tend_; t+=tspacing_,timeCount++)
       {
          for(int proc=0; proc<MPISettings::size(); proc++)
          {
