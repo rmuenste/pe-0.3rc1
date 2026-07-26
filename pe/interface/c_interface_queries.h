@@ -133,6 +133,16 @@ extern "C" int getElLubricationPairs() {
 //=================================================================================================
 
 /*
+ *!\brief Rank-local NET momentum folded by the lubrication sweep this macro
+ * step; the MPI sum across ranks measures pair one-sidedness (must be ~0).
+ */
+extern "C" void getElLubricationImpulse(double *dp) {
+  pe::theCollisionSystem()->getElLubricationImpulse(dp);
+}
+
+//=================================================================================================
+
+/*
  *!\brief The function returns the radius the particle idx
  * \param idx The index of the particle
  */

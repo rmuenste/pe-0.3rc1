@@ -219,7 +219,11 @@ public:
       { for( int k=0; k<9; ++k ) sigma[k] = lubricationVirial_[k]; }
    inline size_t          getElLubricationPairs() const { return lubricationPairs_; }
    inline void            resetElLubricationVirial()
-      { for( int k=0; k<9; ++k ) lubricationVirial_[k] = real(0); lubricationPairs_ = 0; }
+      { for( int k=0; k<9; ++k ) lubricationVirial_[k] = real(0);
+        for( int k=0; k<3; ++k ) lubricationImpulse_[k] = real(0);
+        lubricationPairs_ = 0; }
+   inline void            getElLubricationImpulse( real* dp ) const
+      { for( int k=0; k<3; ++k ) dp[k] = lubricationImpulse_[k]; }
    //@}
    //**********************************************************************************************
 
@@ -331,6 +335,7 @@ private:
    size_t numContacts_;
    real lubricationVirial_[9];   //!< Rank-local impulse virial of pairwise lubrication, Sum w*dt*F (x) r12 over substeps (row-major); stress = -virial/(dt_macro*V) after MPI sum.
    size_t lubricationPairs_;     //!< Rank-local lubrication pair evaluations with a locally-owned member (accumulated over substeps).
+   real lubricationImpulse_[3];  //!< Rank-local NET momentum folded by the lubrication sweep; the MPI sum measures pair one-sidedness and must be zero.
    MPITag lastSyncTag_;
 
    // bodies
@@ -453,6 +458,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , numContacts_      ( 0 )
    , lubricationVirial_()
    , lubricationPairs_ ( 0 )
+   , lubricationImpulse_()
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
 {
@@ -880,21 +886,32 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
       spheres.push_back( e );
    }
 
-   // Jacobi accumulation: every pair force is computed from the FROZEN
-   // synchronized v_/w_ state and folded only after the sweep. Folding
-   // inside the loop (Gauss-Seidel) would let later pairs on the owner rank
-   // read already-updated velocities that the partner's owner rank (which
-   // never applied that update) cannot see - breaking the bitwise
-   // cross-rank antisymmetry of the pair forces.
-   std::vector<Vec3> dvl( v_.size(), Vec3() );
-   std::vector<Vec3> dwl( w_.size(), Vec3() );
+   // Designated-treater scheme (the same structure that makes the PGS
+   // contact relay Newton-exact): each pair is evaluated by exactly ONE
+   // rank - the owner of the member with the smaller system ID - which
+   // applies the corrections to BOTH members through dv_/dw_. The following
+   // synchronizeVelocities() folds the local side and relays the shadow
+   // side to its owner, both with the uniform relaxationParam_ fold, so the
+   // corrections are pre-divided by relaxationParam_ to land at full
+   // weight. This requires NO symmetric cross-rank pair visibility and NO
+   // bitwise cross-rank determinism: an earlier fold-once variant (both
+   // ranks independently updating their own member) leaked momentum
+   // whenever visibility was one-sided (EL_NEWTON_PAIR bursts up to 5.8e-6
+   // matching the folded net impulse digit-for-digit). If the designated
+   // owner does not see the pair it is skipped for one substep - a missed
+   // micro-interaction, not a momentum leak. Forces read only the
+   // synchronized v_/w_, never dv_/dw_.
+   const real relaxInv( real(1) / relaxationParam_ );
 
    const size_t n( spheres.size() );
    for( size_t a = 0; a + 1 < n; ++a ) {
       for( size_t b = a + 1; b < n; ++b ) {
-         // Pairs with no locally-owned member are handled by the owner ranks.
-         if( !spheres[a].local && !spheres[b].local )
-            continue;
+         // Designated treater: the owner of the smaller system ID.
+         {
+            const bool aFirst( spheres[a].s->getSystemID() < spheres[b].s->getSystemID() );
+            if( aFirst ? !spheres[a].local : !spheres[b].local )
+               continue;
+         }
 
          SphereID s1( spheres[a].s );
          SphereID s2( spheres[b].s );
@@ -960,34 +977,24 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
                          ( ( nvec % vs  ) * ( -real(1.0/6.0) * leps - real(1.0/12.0)   * eps * leps )
                          + ( nvec % vcs ) * ( -real(1.0/5.0) * leps - real(47.0/250.0) * eps * leps ) ) );
 
-         // Fold-once: accumulate for locally-owned bodies only (applied after
-         // the sweep, full weight).
-         if( spheres[a].local ) {
-            dvl[ spheres[a].idx ] += ( s1->getInvMass() * dt ) * F;
-            dwl[ spheres[a].idx ] += dt * ( s1->getInvInertia() * Msl );
-         }
-         if( spheres[b].local ) {
-            dvl[ spheres[b].idx ] -= ( s2->getInvMass() * dt ) * F;
-            dwl[ spheres[b].idx ] += dt * ( s2->getInvInertia() * Msl );
-         }
+         // Apply to BOTH members via dv_/dw_ (local or shadow alike); the
+         // sync relays shadow corrections to their owners. Pre-divide by
+         // relaxationParam_ so the uniform 0.9 fold lands at full weight.
+         dv_[ spheres[a].idx ] += ( s1->getInvMass() * dt * relaxInv ) * F;
+         dw_[ spheres[a].idx ] += ( dt * relaxInv ) * ( s1->getInvInertia() * Msl );
+         dv_[ spheres[b].idx ] -= ( s2->getInvMass() * dt * relaxInv ) * F;
+         dw_[ spheres[b].idx ] += ( dt * relaxInv ) * ( s2->getInvInertia() * Msl );
+         // Net folded momentum is structurally zero under single-rank
+         // treatment; lubricationImpulse_ is retained as a regression guard
+         // and must read 0 (the EL_NEWTON_PAIR audit is the real gate).
 
-         // Impulse virial, half per locally-owned member (F is the force on
-         // particle 1, r12 = x1 - x2).
-         real wgt( real(0) );
-         if( spheres[a].local ) wgt += real(0.5);
-         if( spheres[b].local ) wgt += real(0.5);
+         // Impulse virial, full weight on the (unique) treating rank
+         // (F is the force on particle 1, r12 = x1 - x2).
          for( int row = 0; row < 3; ++row )
             for( int col = 0; col < 3; ++col )
-               lubricationVirial_[ 3*row + col ] += wgt * dt * F[row] * r12[col];
+               lubricationVirial_[ 3*row + col ] += dt * F[row] * r12[col];
          ++lubricationPairs_;
       }
-   }
-
-   for( size_t a = 0; a < n; ++a ) {
-      if( !spheres[a].local )
-         continue;
-      v_[ spheres[a].idx ] += dvl[ spheres[a].idx ];
-      w_[ spheres[a].idx ] += dwl[ spheres[a].idx ];
    }
 }
 //*************************************************************************************************
