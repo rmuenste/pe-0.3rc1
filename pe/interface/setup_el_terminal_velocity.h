@@ -213,17 +213,36 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   world->setAutoForceReset(true);
 
   // Pairwise lubrication (EL solver): widen the shadow-copy overlap test so
-  // cross-boundary pairs within the surface-gap cutoff are visible on BOTH
-  // owner ranks. The margin must be sphereRadius + cutoff: for a pair
-  // (A owned by r1, B owned by r2) with gap < cutoff, r2 sees A iff
-  // dist(A_center, r2_box) <= R_A + margin, and that distance can reach
-  // R_A + R_B + cutoff when B's center sits on r2's boundary — so
-  // margin >= R_B + cutoff (monodisperse: benchRadius). A cutoff-only
-  // margin leaves one-sided pairs and a measurable Newton-pair violation.
-  // No-op (margin 0) when lubrication is disabled.
-  if (config.getLubricationEnabled())
-    pe::lubrication::setShadowCopyMargin(config.getLubricationCutoff() +
-                                         config.getBenchRadius());
+  // cross-boundary pairs within the surface-gap cutoff are visible to the
+  // designated treating rank. The full-visibility margin is
+  // sphereRadius + cutoff: for a pair (A owned by r1, B owned by r2) with
+  // gap < cutoff, r1 sees B iff dist(B_center, r1_box) <= R_B + margin, and
+  // that distance can reach R_A + R_B + cutoff when A's center sits on r1's
+  // boundary. The margin is CLAMPED so the total shadow reach
+  // (radius + margin) stays below the thinnest decomposed subdomain extent:
+  // pe cannot register shadow copies beyond direct neighbors ("Registering
+  // distant processes is not yet implemented"). Under the designated-treater
+  // relay a clamped margin is momentum-safe — a pair the treater cannot see
+  // is skipped for a substep, never applied one-sided; only extremal
+  // near-cutoff pairs are affected. No-op (margin 0) when disabled.
+  if (config.getLubricationEnabled()) {
+    real lubMargin = config.getLubricationCutoff() + config.getBenchRadius();
+    real minExt = std::numeric_limits<real>::max();
+    if (config.getProcessesX() > 1)
+      minExt = std::min(minExt, (xmax - xmin) / config.getProcessesX());
+    if (config.getProcessesY() > 1)
+      minExt = std::min(minExt, (ymax - ymin) / config.getProcessesY());
+    if (config.getProcessesZ() > 1)
+      minExt = std::min(minExt, (zmax - zmin) / config.getProcessesZ());
+    const real reachCap = real(0.99) * minExt - config.getBenchRadius();
+    if (lubMargin > reachCap) {
+      std::cout << "EL lubrication: shadow margin clamped " << lubMargin
+                << " -> " << reachCap << " (subdomain extent " << minExt
+                << "); near-cutoff cross-rank pairs may be skipped.\n";
+      lubMargin = reachCap;
+    }
+    pe::lubrication::setShadowCopyMargin(std::max(lubMargin, real(0)));
+  }
   TimeStep::stepsize(config.getStepsize());
 
   MPISystemID mpisystem = theMPISystem();
