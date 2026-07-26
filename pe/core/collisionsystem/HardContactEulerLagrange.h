@@ -865,7 +865,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
    for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
       if( body->getType() != sphereType || body->isFixed() || body->isGlobal() )
          continue;
-      LubEntry e = { static_body_cast<Sphere>( *body ), body->index_, true };
+      // Ownership must be the isRemote() flag, NOT bodystorage_ membership:
+      // during a migration handover a body can sit in bodystorage_ on two
+      // ranks, and treating both as local double-applies every pair force it
+      // participates in (intermittent Newton-pair bursts at high phi). The
+      // hydro fold in initializeVelocityCorrections guards the same way.
+      LubEntry e = { static_body_cast<Sphere>( *body ), body->index_, !body->isRemote() };
       spheres.push_back( e );
    }
    for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body ) {
