@@ -283,6 +283,12 @@ public:
     void setLubricationCutoff(real value) { lubricationCutoff_ = value; }
     real getLubricationSlipLength() const { return lubricationSlipLength_; }
     void setLubricationSlipLength(real value) { lubricationSlipLength_ = value; }
+    bool getZWallsEnabled() const { return zWallsEnabled_; }
+    void setZWallsEnabled(bool value) { zWallsEnabled_ = value; }
+    real getZWallVelocityTop() const { return zWallVelocityTop_; }
+    void setZWallVelocityTop(real value) { zWallVelocityTop_ = value; }
+    real getZWallVelocityBottom() const { return zWallVelocityBottom_; }
+    void setZWallVelocityBottom(real value) { zWallVelocityBottom_ = value; }
     real getRestitution() const { return restitution_; }
     void setRestitution(real value) { restitution_ = value; }
     real getStaticFriction() const { return staticFriction_; }
@@ -413,6 +419,9 @@ private:
     bool lubricationEnabled_;    //!< Pairwise lubrication forces in the EL solver
     real lubricationCutoff_;     //!< Surface-gap trigger distance for lubrication pairs
     real lubricationSlipLength_; //!< Slip length h_c of the Vinogradova f* correction
+    bool zWallsEnabled_;         //!< Create global z-planes (Couette walls) in the EL setup
+    real zWallVelocityTop_;      //!< x-velocity of the top wall (z = zmax)
+    real zWallVelocityBottom_;   //!< x-velocity of the bottom wall (z = zmin)
     real restitution_;           //!< Contact material restitution coefficient
     real staticFriction_;        //!< Contact material static friction coefficient
     real dynamicFriction_;       //!< Contact material dynamic friction coefficient

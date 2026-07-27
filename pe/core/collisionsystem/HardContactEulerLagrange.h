@@ -223,12 +223,23 @@ public:
         for( int k=0; k<3; ++k ) lubricationImpulse_[k] = real(0);
         lubricationPairs_ = 0;
         for( int k=0; k<9; ++k ) contactVirial_[k] = real(0);
-        contactVirialPairs_ = 0; }
+        contactVirialPairs_ = 0;
+        for( int w=0; w<2; ++w )
+           for( int k=0; k<3; ++k ) {
+              wallLubImpulse_[w][k] = real(0);
+              wallContactImpulse_[w][k] = real(0);
+           }
+        wallLubPairs_ = 0; }
    inline void            getElLubricationImpulse( real* dp ) const
       { for( int k=0; k<3; ++k ) dp[k] = lubricationImpulse_[k]; }
    inline void            getElContactVirial( real* sigma ) const
       { for( int k=0; k<9; ++k ) sigma[k] = contactVirial_[k]; }
    inline size_t          getElContactVirialPairs() const { return contactVirialPairs_; }
+   inline void            getElWallLubImpulse( int wall, real* dp ) const
+      { for( int k=0; k<3; ++k ) dp[k] = wallLubImpulse_[wall][k]; }
+   inline void            getElWallContactImpulse( int wall, real* dp ) const
+      { for( int k=0; k<3; ++k ) dp[k] = wallContactImpulse_[wall][k]; }
+   inline size_t          getElWallLubPairs() const { return wallLubPairs_; }
    //@}
    //**********************************************************************************************
 
@@ -308,6 +319,7 @@ private:
    inline void clear();
    inline void clearContacts();
           void applyELLubrication( real dt );
+          void applyELWallLubrication( real dt );
           bool checkUpdateFlags();
    inline real getCharacteristicLength( ConstBodyID body ) const;
    //@}
@@ -343,6 +355,9 @@ private:
    real lubricationImpulse_[3];  //!< Rank-local NET momentum folded by the lubrication sweep; the MPI sum measures pair one-sidedness and must be zero.
    real contactVirial_[9];       //!< Rank-local impulse virial of sphere-sphere PGS contacts, Sum p (x) r12 over substeps (row-major); the contact-filtering mask already treats each contact on exactly one rank, so the MPI sum counts each contact once.
    size_t contactVirialPairs_;   //!< Rank-local sphere-sphere contacts accumulated into contactVirial_ (over substeps).
+   real wallLubImpulse_[2][3];   //!< Rank-local impulse Sum dt*F the SPHERES exert on each z-wall via wall lubrication (0 = bottom, 1 = top); spheres are owner-local, so the MPI sum counts each once.
+   real wallContactImpulse_[2][3]; //!< Rank-local converged PGS contact impulse ON each z-wall (0 = bottom, 1 = top); local-global contacts are treated once (sphere-owner rank).
+   size_t wallLubPairs_;         //!< Rank-local sphere-wall lubrication evaluations (over substeps).
    MPITag lastSyncTag_;
 
    // bodies
@@ -468,6 +483,9 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , lubricationImpulse_()
    , contactVirial_()
    , contactVirialPairs_ ( 0 )
+   , wallLubImpulse_()
+   , wallContactImpulse_()
+   , wallLubPairs_     ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
 {
@@ -1003,6 +1021,134 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELL
             for( int col = 0; col < 3; ++col )
                lubricationVirial_[ 3*row + col ] += dt * F[row] * r12[col];
          ++lubricationPairs_;
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sphere-wall lubrication (Kroupa et al. 2016 eqs 16-19, twisting eq 19 omitted).
+ *
+ * Sweeps LOCAL spheres against the global z-wall planes (Couette walls). The
+ * wall is treated as "particle j" with the plane's cached velocity (moving
+ * wall) and zero rotation; closures are the sphere-plane coefficient set,
+ * eps = h/R_p with the same h_c substitution, f* slip correction and impulse
+ * cap as the pair sweep. Corrections go to the sphere only (the plane has
+ * zero inverse mass); the reaction impulse is accumulated per wall in
+ * wallLubImpulse_ (0 = bottom, +z normal; 1 = top, -z normal) - this is the
+ * eta_L channel of the Kroupa wall force balance. Spheres are evaluated on
+ * their owner rank only, so the MPI sum counts each interaction once.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELWallLubrication( real dt )
+{
+   const SimulationConfig& cfg( SimulationConfig::getInstance() );
+   const real cutoff( cfg.getLubricationCutoff() );
+   if( cutoff <= real(0) )
+      return;
+   const real hc( cfg.getLubricationSlipLength() );
+   const real hmin( cfg.getMinEpsLub() );
+   const real mu( Settings::liquidViscosity() );
+   const real alphaCap( cfg.getAlphaImpulseCap() );
+   const real relaxInv( real(1) / relaxationParam_ );
+
+   // Collect the z-wall planes (global fixed planes with |n_z| ~ 1).
+   struct WallEntry {
+      PlaneID p;
+      size_t  idx;
+      int     wall;   // 0 = bottom (+z normal), 1 = top (-z normal)
+   };
+   std::vector<WallEntry> walls;
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
+      if( body->getType() != planeType || !body->isGlobal() )
+         continue;
+      PlaneID pl( static_body_cast<Plane>( *body ) );
+      const real nz( pl->getNormal()[2] );
+      if( std::fabs( nz ) < real(0.99) )
+         continue;
+      WallEntry e = { pl, body->index_, nz > real(0) ? 0 : 1 };
+      walls.push_back( e );
+   }
+   if( walls.empty() )
+      return;
+
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
+      if( body->getType() != sphereType || body->isFixed() || body->isGlobal() )
+         continue;
+      if( body->isRemote() )
+         continue;
+      SphereID s( static_body_cast<Sphere>( *body ) );
+      const size_t sidx( body->index_ );
+
+      for( size_t iw = 0; iw < walls.size(); ++iw ) {
+         const Plane* pl( walls[iw].p );
+         // Surface gap: signed distance of the center above the plane minus R.
+         const real gap( trans( pl->getNormal() ) * s->getPosition()
+                         - pl->getDisplacement() - s->getRadius() );
+         if( gap >= cutoff )
+            continue;
+
+         const real Rp( s->getRadius() );
+         const real hfloor( hc > real(0) ? hc : hmin );
+         const real h( gap > hfloor ? gap : hfloor );
+         const real eps( h / Rp );
+         const real leps( std::log( eps ) );
+
+         real fstar( real(1) );
+         if( hc > real(0) ) {
+            const real x( h / ( real(6) * hc ) );
+            fstar = h / ( real(3) * hc ) * ( ( real(1) + x ) * std::log( real(1) + real(1) / x ) - real(1) );
+         }
+
+         // Unit normal from the sphere (particle i) towards the wall
+         // (particle j), Kroupa convention.
+         const Vec3 nvec( -pl->getNormal() );
+         const Vec3 vwall( v_[ walls[iw].idx ] );
+         const Vec3 vr( v_[ sidx ] - vwall );
+         const real vrn( trans(nvec) * vr );
+
+         // Normal squeeze (eq 16), both signs.
+         const real Cn( real(1) / eps - real(1.0/5.0) * leps - real(1.0/21.0) * eps * leps );
+         Vec3 F( ( -real(6) * M_PI * mu * Rp * fstar * Cn * vrn ) * nvec );
+
+         // Sliding force (eq 17): translational and rotational surface
+         // sliding; the wall has zero rotation rate.
+         const Vec3 vs( vr - vrn * nvec );
+         const Vec3 vcs( w_[ sidx ] % ( Rp * nvec ) );
+         const real Cs1( -real(8.0/15.0) * leps - real(64.0/375.0) * eps * leps );
+         const real Cs2( -real(2.0/15.0) * leps - real(86.0/375.0) * eps * leps );
+         F += ( -real(6) * M_PI * mu * Rp * fstar ) * ( Cs1 * vs + Cs2 * vcs );
+
+         if( alphaCap > real(0) ) {
+            const real meff( real(1) / s->getInvMass() );
+            const real vscale( vr.length() + vcs.length() );
+            const real J( F.length() * dt );
+            const real Jcap( alphaCap * meff * vscale );
+            if( J > Jcap && J > real(0) )
+               F *= Jcap / J;
+         }
+
+         // Sliding torque on the sphere (eq 18).
+         const Vec3 Msl( ( -real(8) * M_PI * mu * Rp * Rp * fstar ) *
+                         ( ( nvec % vs  ) * ( -real(2.0/15.0) * leps - real(86.0/375.0) * eps * leps )
+                         + ( nvec % vcs ) * ( -real(2.0/5.0)  * leps - real(66.0/125.0) * eps * leps ) ) );
+
+         dv_[ sidx ] += ( s->getInvMass() * dt * relaxInv ) * F;
+         dw_[ sidx ] += ( dt * relaxInv ) * ( s->getInvInertia() * Msl );
+
+         // Reaction impulse ON the wall (eta_L measurement channel).
+         const int w( walls[iw].wall );
+         for( int k = 0; k < 3; ++k )
+            wallLubImpulse_[w][k] += dt * ( -F[k] );
+         ++wallLubPairs_;
       }
    }
 }
@@ -2187,6 +2333,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
       // without the relaxationParam_ fold that dv_/dw_ relays get).
       if( SimulationConfig::getInstance().getLubricationEnabled() ) {
          applyELLubrication( dt );
+         if( SimulationConfig::getInstance().getZWallsEnabled() )
+            applyELWallLubrication( dt );
          synchronizeVelocities();
       }
    }
@@ -2269,6 +2417,25 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
    // contact-point owner), so no designated-treater logic is needed here.
    // Sphere-sphere only: wall/global-body stress is a separate channel.
    for( size_t i = 0; i < numContactsMasked; ++i ) {
+      // Sphere-wall contacts (Couette z-planes): accumulate the converged
+      // impulse ON the wall. Local-global contacts are treated on exactly
+      // one rank (the sphere's owner), so the MPI sum counts each once.
+      // Impulse convention: +p_[i] acts on body1, -p_[i] on body2.
+      if( body1_[i]->getType() == planeType || body2_[i]->getType() == planeType ) {
+         const bool planeFirst( body1_[i]->getType() == planeType );
+         BodyID pb( planeFirst ? body1_[i] : body2_[i] );
+         BodyID sb( planeFirst ? body2_[i] : body1_[i] );
+         if( pb->isGlobal() && sb->getType() == sphereType ) {
+            const real nz( static_body_cast<Plane>( pb )->getNormal()[2] );
+            if( std::fabs( nz ) >= real(0.99) ) {
+               const int w( nz > real(0) ? 0 : 1 );
+               const real sgn( planeFirst ? real(1) : real(-1) );
+               for( int k = 0; k < 3; ++k )
+                  wallContactImpulse_[w][k] += sgn * p_[i][k];
+            }
+         }
+         continue;
+      }
       if( body1_[i]->getType() != sphereType || body2_[i]->getType() != sphereType )
          continue;
       if( body1_[i]->isFixed() || body2_[i]->isFixed() )

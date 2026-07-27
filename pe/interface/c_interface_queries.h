@@ -164,6 +164,36 @@ extern "C" int getElContactVirialPairs() {
 //=================================================================================================
 
 /*
+ *!\brief Rank-local lubrication impulse the spheres exert on z-wall `wall`
+ * (0 = bottom, 1 = top) this macro step; MPI-SUM counts each sphere once
+ * (owner-only evaluation). Wall shear stress: tau = Sum(dp_x)/(dt_macro*A).
+ */
+extern "C" void getElWallLubImpulse(int wall, double *dp) {
+  pe::theCollisionSystem()->getElWallLubImpulse(wall, dp);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local converged PGS contact impulse ON z-wall `wall`
+ * (0 = bottom, 1 = top) this macro step; each contact counted once.
+ */
+extern "C" void getElWallContactImpulse(int wall, double *dp) {
+  pe::theCollisionSystem()->getElWallContactImpulse(wall, dp);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local count of sphere-wall lubrication evaluations this macro step.
+ */
+extern "C" int getElWallLubPairs() {
+  return static_cast<int>(pe::theCollisionSystem()->getElWallLubPairs());
+}
+
+//=================================================================================================
+
+/*
  *!\brief The function returns the radius the particle idx
  * \param idx The index of the particle
  */

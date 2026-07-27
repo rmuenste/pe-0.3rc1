@@ -366,6 +366,38 @@ void setupELTerminalVelocity(MPI_Comm ex0,
                                              config.getDynamicFriction(),
                                              0.2, 80, 100, 10, 11);
 
+  // Plane-Couette z-walls: two global planes with a prescribed tangential
+  // x-velocity (Kroupa 2016 shear cell; here symmetric +-U/2 by config).
+  // Global planes exist on every rank and are never shadow-copied; the
+  // tangential velocity leaves the plane geometry invariant (d = n*x).
+  // setLinearVel on a fixed body requires MOBILE_INFINITE (GCC build).
+  if (config.getZWallsEnabled()) {
+    if (periodicZ) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "EL terminal-velocity setup: zWallsEnabled_ requires "
+                  << "periodicZ_ = false.\n";
+      }
+      MPI_Abort(ex0, 1);
+    }
+    MaterialID wallMaterial = createMaterial("el_tv_wall", real(1.0),
+                                             config.getRestitution(),
+                                             config.getStaticFriction(),
+                                             config.getDynamicFriction(),
+                                             0.2, 80, 100, 10, 11);
+    pe_GLOBAL_SECTION {
+      PlaneID wallBot = createPlane(12010,  0.0, 0.0,  1.0,  zmin, wallMaterial, true);
+      PlaneID wallTop = createPlane(12011,  0.0, 0.0, -1.0, -zmax, wallMaterial, true);
+      wallBot->setLinearVel(Vec3(config.getZWallVelocityBottom(), 0.0, 0.0));
+      wallTop->setLinearVel(Vec3(config.getZWallVelocityTop(),    0.0, 0.0));
+    }
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: z-walls enabled, "
+                << "u_x(bottom z=" << zmin << ") = " << config.getZWallVelocityBottom()
+                << ", u_x(top z=" << zmax << ") = " << config.getZWallVelocityTop()
+                << ".\n";
+    }
+  }
+
   std::vector<Vec3> spherePositions;
   if (seedMode == "file") {
     spherePositions = readVectorsFromFile(config.getXyzFilePath().string());
