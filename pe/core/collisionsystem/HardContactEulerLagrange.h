@@ -221,9 +221,14 @@ public:
    inline void            resetElLubricationVirial()
       { for( int k=0; k<9; ++k ) lubricationVirial_[k] = real(0);
         for( int k=0; k<3; ++k ) lubricationImpulse_[k] = real(0);
-        lubricationPairs_ = 0; }
+        lubricationPairs_ = 0;
+        for( int k=0; k<9; ++k ) contactVirial_[k] = real(0);
+        contactVirialPairs_ = 0; }
    inline void            getElLubricationImpulse( real* dp ) const
       { for( int k=0; k<3; ++k ) dp[k] = lubricationImpulse_[k]; }
+   inline void            getElContactVirial( real* sigma ) const
+      { for( int k=0; k<9; ++k ) sigma[k] = contactVirial_[k]; }
+   inline size_t          getElContactVirialPairs() const { return contactVirialPairs_; }
    //@}
    //**********************************************************************************************
 
@@ -336,6 +341,8 @@ private:
    real lubricationVirial_[9];   //!< Rank-local impulse virial of pairwise lubrication, Sum w*dt*F (x) r12 over substeps (row-major); stress = -virial/(dt_macro*V) after MPI sum.
    size_t lubricationPairs_;     //!< Rank-local lubrication pair evaluations with a locally-owned member (accumulated over substeps).
    real lubricationImpulse_[3];  //!< Rank-local NET momentum folded by the lubrication sweep; the MPI sum measures pair one-sidedness and must be zero.
+   real contactVirial_[9];       //!< Rank-local impulse virial of sphere-sphere PGS contacts, Sum p (x) r12 over substeps (row-major); the contact-filtering mask already treats each contact on exactly one rank, so the MPI sum counts each contact once.
+   size_t contactVirialPairs_;   //!< Rank-local sphere-sphere contacts accumulated into contactVirial_ (over substeps).
    MPITag lastSyncTag_;
 
    // bodies
@@ -459,6 +466,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , lubricationVirial_()
    , lubricationPairs_ ( 0 )
    , lubricationImpulse_()
+   , contactVirial_()
+   , contactVirialPairs_ ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
 {
@@ -2249,6 +2258,26 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
 #else
       UNUSED( delta_max );
 #endif
+   }
+
+   // Impulse virial of the converged contact impulses: p_[i] is the impulse
+   // on body1 (dv_[body1] += invMass*p in the relaxation apply step), so the
+   // suspension-stress contribution is p (x) r12 with r12 = x1 - x2 =
+   // r2_ - r1_, matching the dt*F (x) r12 convention of the lubrication
+   // virial. The contact-filtering mask above accepts every contact on
+   // exactly one rank globally (local-local at the owner, cross-rank at the
+   // contact-point owner), so no designated-treater logic is needed here.
+   // Sphere-sphere only: wall/global-body stress is a separate channel.
+   for( size_t i = 0; i < numContactsMasked; ++i ) {
+      if( body1_[i]->getType() != sphereType || body2_[i]->getType() != sphereType )
+         continue;
+      if( body1_[i]->isFixed() || body2_[i]->isFixed() )
+         continue;
+      const Vec3 r12( r2_[i] - r1_[i] );
+      for( int row = 0; row < 3; ++row )
+         for( int col = 0; col < 3; ++col )
+            contactVirial_[ 3*row + col ] += p_[i][row] * r12[col];
+      ++contactVirialPairs_;
    }
 
    pe_PROFILING_SECTION {

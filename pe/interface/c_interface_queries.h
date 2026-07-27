@@ -143,6 +143,27 @@ extern "C" void getElLubricationImpulse(double *dp) {
 //=================================================================================================
 
 /*
+ *!\brief Rank-local impulse virial of the converged sphere-sphere PGS contact
+ * impulses this macro step, Sum p (x) r12 (row-major 3x3); same normalization
+ * as the lubrication virial (stress = -virial/(dt_macro*V) after MPI sum).
+ */
+extern "C" void getElContactVirial(double *sigma) {
+  pe::theCollisionSystem()->getElContactVirial(sigma);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local count of sphere-sphere contacts accumulated into the
+ * contact virial this macro step.
+ */
+extern "C" int getElContactVirialPairs() {
+  return static_cast<int>(pe::theCollisionSystem()->getElContactVirialPairs());
+}
+
+//=================================================================================================
+
+/*
  *!\brief The function returns the radius the particle idx
  * \param idx The index of the particle
  */
