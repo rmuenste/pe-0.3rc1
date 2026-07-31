@@ -2,6 +2,21 @@
 
 void setupGeneralInit(MPI_Comm ex0) {
 
+  // Minimal general-purpose PE bootstrap for CFD applications that use the
+  // pe library only passively (queries, force synchronization) without any
+  // benchmark world content. The one thing that MUST happen here is wiring
+  // the PE communicator to the CFD worker communicator (Ex0, which excludes
+  // the CFD master rank 0): PE-side collectives such as the MPI_Barrier in
+  // synchronizeForces() run over MPISettings::comm(), and the CFD master
+  // never participates in them (e.g. GetForcesFC2 is guarded IF myid /= 0).
+  // Leaving the communicator unset makes those collectives span a
+  // communicator that includes the master -> deadlock in the first FBM
+  // force synchronization (observed in q2p1_fc_ext, jobs 137033/137036,
+  // identical on feature branch and master).
+  world = theWorld();
+  mpisystem = theMPISystem();
+  mpisystem->setComm(ex0);
+
 //  world = theWorld();
 //  world->setGravity( 0.0, 0.0, -9.81 );
 //

@@ -15,6 +15,7 @@
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
 #include <pe/interface/geometry_utils.h>
+#include <pe/core/lubrication/Params.h>
 
 namespace {
 
@@ -210,6 +211,38 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   world->setViscosity(config.getFluidViscosity());
   world->setDamping(1.0);
   world->setAutoForceReset(true);
+
+  // Pairwise lubrication (EL solver): widen the shadow-copy overlap test so
+  // cross-boundary pairs within the surface-gap cutoff are visible to the
+  // designated treating rank. The full-visibility margin is
+  // sphereRadius + cutoff: for a pair (A owned by r1, B owned by r2) with
+  // gap < cutoff, r1 sees B iff dist(B_center, r1_box) <= R_B + margin, and
+  // that distance can reach R_A + R_B + cutoff when A's center sits on r1's
+  // boundary. The margin is CLAMPED so the total shadow reach
+  // (radius + margin) stays below the thinnest decomposed subdomain extent:
+  // pe cannot register shadow copies beyond direct neighbors ("Registering
+  // distant processes is not yet implemented"). Under the designated-treater
+  // relay a clamped margin is momentum-safe — a pair the treater cannot see
+  // is skipped for a substep, never applied one-sided; only extremal
+  // near-cutoff pairs are affected. No-op (margin 0) when disabled.
+  if (config.getLubricationEnabled()) {
+    real lubMargin = config.getLubricationCutoff() + config.getBenchRadius();
+    real minExt = std::numeric_limits<real>::max();
+    if (config.getProcessesX() > 1)
+      minExt = std::min(minExt, (xmax - xmin) / config.getProcessesX());
+    if (config.getProcessesY() > 1)
+      minExt = std::min(minExt, (ymax - ymin) / config.getProcessesY());
+    if (config.getProcessesZ() > 1)
+      minExt = std::min(minExt, (zmax - zmin) / config.getProcessesZ());
+    const real reachCap = real(0.99) * minExt - config.getBenchRadius();
+    if (lubMargin > reachCap) {
+      std::cout << "EL lubrication: shadow margin clamped " << lubMargin
+                << " -> " << reachCap << " (subdomain extent " << minExt
+                << "); near-cutoff cross-rank pairs may be skipped.\n";
+      lubMargin = reachCap;
+    }
+    pe::lubrication::setShadowCopyMargin(std::max(lubMargin, real(0)));
+  }
   TimeStep::stepsize(config.getStepsize());
 
   MPISystemID mpisystem = theMPISystem();
@@ -333,6 +366,38 @@ void setupELTerminalVelocity(MPI_Comm ex0,
                                              config.getDynamicFriction(),
                                              0.2, 80, 100, 10, 11);
 
+  // Plane-Couette z-walls: two global planes with a prescribed tangential
+  // x-velocity (Kroupa 2016 shear cell; here symmetric +-U/2 by config).
+  // Global planes exist on every rank and are never shadow-copied; the
+  // tangential velocity leaves the plane geometry invariant (d = n*x).
+  // setLinearVel on a fixed body requires MOBILE_INFINITE (GCC build).
+  if (config.getZWallsEnabled()) {
+    if (periodicZ) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "EL terminal-velocity setup: zWallsEnabled_ requires "
+                  << "periodicZ_ = false.\n";
+      }
+      MPI_Abort(ex0, 1);
+    }
+    MaterialID wallMaterial = createMaterial("el_tv_wall", real(1.0),
+                                             config.getRestitution(),
+                                             config.getStaticFriction(),
+                                             config.getDynamicFriction(),
+                                             0.2, 80, 100, 10, 11);
+    pe_GLOBAL_SECTION {
+      PlaneID wallBot = createPlane(12010,  0.0, 0.0,  1.0,  zmin, wallMaterial, true);
+      PlaneID wallTop = createPlane(12011,  0.0, 0.0, -1.0, -zmax, wallMaterial, true);
+      wallBot->setLinearVel(Vec3(config.getZWallVelocityBottom(), 0.0, 0.0));
+      wallTop->setLinearVel(Vec3(config.getZWallVelocityTop(),    0.0, 0.0));
+    }
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: z-walls enabled, "
+                << "u_x(bottom z=" << zmin << ") = " << config.getZWallVelocityBottom()
+                << ", u_x(top z=" << zmax << ") = " << config.getZWallVelocityTop()
+                << ".\n";
+    }
+  }
+
   std::vector<Vec3> spherePositions;
   if (seedMode == "file") {
     spherePositions = readVectorsFromFile(config.getXyzFilePath().string());
@@ -405,7 +470,7 @@ void setupELTerminalVelocity(MPI_Comm ex0,
 
   if (g_vtk) {
     vtk::activateWriter("./paraview", config.getVisspacing(), 0,
-                        config.getTimesteps(), false);
+                        config.getTimesteps(), false, true);
   }
 
   unsigned long localParticles  = static_cast<unsigned long>(createdLocal);

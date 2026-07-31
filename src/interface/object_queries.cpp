@@ -1,4 +1,5 @@
 #include <pe/interface/object_queries.h>
+#include <pe/interface/el_optional_api.h>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
@@ -69,7 +70,8 @@ void set_el_hydro_state(const short int bytes[8],
   }
 
   BodyID body = *fid;
-  body->setEulerLagrangeHydroState(
+  elSetHydroState(
+    body,
     static_cast<real>(*dragB),
     Vec3(carrierVelocity[0], carrierVelocity[1], carrierVelocity[2]),
     Vec3(otherForce[0], otherForce[1], otherForce[2]),
@@ -79,7 +81,7 @@ void set_el_hydro_state(const short int bytes[8],
   // fluid the mirrored FREE-FLIGHT sub-cycled drag impulse (issue D); the PE
   // side advances this reference trajectory (not the actual, possibly
   // contact-perturbed velocity) so the body receives exactly that impulse.
-  body->setEulerLagrangeRefVelocity(body->getLinearVel());
+  elSetRefVelocity(body, body->getLinearVel());
 }
 
 

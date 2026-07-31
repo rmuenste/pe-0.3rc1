@@ -5,6 +5,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 #include <pe/util/Checkpointer.h>
+#include <pe/interface/el_optional_api.h>
 #include <pe/core/MPISystem.h>
 #include <pe/core/MPISystemID.h>
 #include <pe/core/domaindecomp/DomainDecomposition.h>
@@ -284,6 +285,7 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_atc.h>
 #include <pe/interface/setup_el_frozen_trace.h>
 #include <pe/interface/setup_el_terminal_velocity.h>
+#include <pe/interface/setup_general_init.h>
 
 namespace {
 
@@ -317,7 +319,7 @@ void applyELFrozenTraceFluidForces(const real fullStepSize, const real alpha) {
     // force here as well would double-count their forcing. The relaxed kick is
     // therefore restricted to non-hydro bodies (q2p1_el_frozen_trace), which
     // still rely on it to damp the explicit-coupling time-Nyquist mode.
-    if (body->hasEulerLagrangeHydroState()) {
+    if (elHasHydroState(body)) {
       continue;
     }
     body->applyFluidForces(fullStepSize, alpha);
@@ -335,8 +337,7 @@ void clearELHydroStates() {
   for (auto it = theCollisionSystem()->getBodyStorage().begin();
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
-    body->setEulerLagrangeHydroState(real(0), Vec3(0, 0, 0), Vec3(0, 0, 0),
-                                     false);
+    elSetHydroState(body, real(0), Vec3(0, 0, 0), Vec3(0, 0, 0), false);
   }
 }
 
@@ -399,6 +400,10 @@ void stepELFrozenTrace() {
   // Hydro bodies (el_pipeflow) are skipped here and advanced semi-implicitly.
   const real alpha = real(0.35);
   applyELFrozenTraceFluidForces(fullStepSize, alpha);
+
+  // Lubrication impulse-virial accumulates over the substeps of this macro
+  // step; reset here so the CFD-side query reads exactly one step's worth.
+  elResetLubricationVirial(*theCollisionSystem());
 
   TimeStep::stepsize(substepSize);
   for (int istep = 0; istep < substeps; ++istep) {

@@ -44,6 +44,7 @@
 #include <pe/core/rigidbody/Cylinder.h>
 #include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/domaindecomp/HalfSpace.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/MPI.h>
 #include <pe/core/rigidbody/Sphere.h>
 #include <pe/core/Thresholds.h>
@@ -307,7 +308,9 @@ bool HalfSpace::intersectsWith( ConstSphereID s ) const
 {
    // If the term trans(normal_) * s->getPosition() - d_ 
    // is smaller than -( s->getRadius() + dx_ ), then the sphere is fully on the negative side of the half space.
-   if( trans(normal_) * s->getPosition() - d_ < -( s->getRadius() + dx_ ) ) {
+   // The shadow-copy margin (default 0) widens the test so lubrication pairs
+   // with a positive surface gap are visible across process boundaries.
+   if( trans(normal_) * s->getPosition() - d_ < -( s->getRadius() + dx_ + lubrication::getShadowCopyMargin() ) ) {
      return false;
    }
    else {

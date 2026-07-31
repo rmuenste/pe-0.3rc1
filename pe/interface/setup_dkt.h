@@ -122,7 +122,7 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
 
   // Setup of the VTK visualization
   if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
+     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
   }
 
 //  if(g_povray) {
@@ -196,4 +196,3 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   MPI_Barrier(cartcomm);
    
 }
-
