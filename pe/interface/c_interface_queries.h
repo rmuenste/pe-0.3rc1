@@ -1,6 +1,7 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/CollisionSystem.h>
+#include <pe/interface/el_optional_api.h>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -118,7 +119,7 @@ extern "C" double getElMaxPenetration() {
  * once. Particle-phase stress: sigma = -virial/(dt_macro*V).
  */
 extern "C" void getElLubricationVirial(double *sigma) {
-  pe::theCollisionSystem()->getElLubricationVirial(sigma);
+  pe::elLubricationVirial(*pe::theCollisionSystem(), sigma);
 }
 
 //=================================================================================================
@@ -127,7 +128,7 @@ extern "C" void getElLubricationVirial(double *sigma) {
  *!\brief Rank-local count of lubrication pair evaluations this macro step.
  */
 extern "C" int getElLubricationPairs() {
-  return static_cast<int>(pe::theCollisionSystem()->getElLubricationPairs());
+  return static_cast<int>(pe::elLubricationPairs(*pe::theCollisionSystem()));
 }
 
 //=================================================================================================
@@ -137,7 +138,7 @@ extern "C" int getElLubricationPairs() {
  * step; the MPI sum across ranks measures pair one-sidedness (must be ~0).
  */
 extern "C" void getElLubricationImpulse(double *dp) {
-  pe::theCollisionSystem()->getElLubricationImpulse(dp);
+  pe::elLubricationImpulse(*pe::theCollisionSystem(), dp);
 }
 
 //=================================================================================================
@@ -148,7 +149,7 @@ extern "C" void getElLubricationImpulse(double *dp) {
  * as the lubrication virial (stress = -virial/(dt_macro*V) after MPI sum).
  */
 extern "C" void getElContactVirial(double *sigma) {
-  pe::theCollisionSystem()->getElContactVirial(sigma);
+  pe::elContactVirial(*pe::theCollisionSystem(), sigma);
 }
 
 //=================================================================================================
@@ -158,7 +159,7 @@ extern "C" void getElContactVirial(double *sigma) {
  * contact virial this macro step.
  */
 extern "C" int getElContactVirialPairs() {
-  return static_cast<int>(pe::theCollisionSystem()->getElContactVirialPairs());
+  return static_cast<int>(pe::elContactVirialPairs(*pe::theCollisionSystem()));
 }
 
 //=================================================================================================
@@ -169,7 +170,7 @@ extern "C" int getElContactVirialPairs() {
  * (owner-only evaluation). Wall shear stress: tau = Sum(dp_x)/(dt_macro*A).
  */
 extern "C" void getElWallLubImpulse(int wall, double *dp) {
-  pe::theCollisionSystem()->getElWallLubImpulse(wall, dp);
+  pe::elWallLubImpulse(*pe::theCollisionSystem(), wall, dp);
 }
 
 //=================================================================================================
@@ -179,7 +180,7 @@ extern "C" void getElWallLubImpulse(int wall, double *dp) {
  * (0 = bottom, 1 = top) this macro step; each contact counted once.
  */
 extern "C" void getElWallContactImpulse(int wall, double *dp) {
-  pe::theCollisionSystem()->getElWallContactImpulse(wall, dp);
+  pe::elWallContactImpulse(*pe::theCollisionSystem(), wall, dp);
 }
 
 //=================================================================================================
@@ -188,7 +189,7 @@ extern "C" void getElWallContactImpulse(int wall, double *dp) {
  *!\brief Rank-local count of sphere-wall lubrication evaluations this macro step.
  */
 extern "C" int getElWallLubPairs() {
-  return static_cast<int>(pe::theCollisionSystem()->getElWallLubPairs());
+  return static_cast<int>(pe::elWallLubPairs(*pe::theCollisionSystem()));
 }
 
 //=================================================================================================

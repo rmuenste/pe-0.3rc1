@@ -17,6 +17,7 @@
 #include <pe/util/Checkpointer.h>
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/sim_setup_serial_features.h>
+#include <pe/interface/el_optional_api.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -401,11 +402,8 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   const real gammaSRR ( real(0.5)     );  // velocity damping         [dyne·s/cm]
   const size_t nSubcycles = 5000;
 
-  cs->getContactSolver().setRho  ( rhoSRR  );
-  cs->getContactSolver().setEpsP ( epsSRR  );
-  cs->getContactSolver().setEpsW ( epsSRR  );
-  cs->getContactSolver().setGamma( gammaSRR );
-  cs->setNumSubcycles( nSubcycles );
+  applyOptionalSRRParams( cs->getContactSolver(), rhoSRR, epsSRR, epsSRR, gammaSRR );
+  applyOptionalSubcycles( *cs, nSubcycles );
 
   // Inflate the lubrication threshold so that the fine collision detector
   // generates contacts at distances up to rho (the SRR security zone width).
