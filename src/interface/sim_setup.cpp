@@ -285,6 +285,7 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_atc.h>
 #include <pe/interface/setup_el_frozen_trace.h>
 #include <pe/interface/setup_el_terminal_velocity.h>
+#include <pe/interface/setup_general_init.h>
 
 namespace {
 
