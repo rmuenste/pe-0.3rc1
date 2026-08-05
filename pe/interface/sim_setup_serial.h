@@ -126,6 +126,8 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   real radBench = config.getBenchRadius();
   real rhoParticle( config.getParticleDensity() );
   Vec3 position(-0.0, -0.0, 0.1275);
+  if (config.getBenchUseConfigStart())
+    position = config.getBenchStartPosition();
 
   int particlesCreated = 0;
 
@@ -144,6 +146,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
     MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
     SphereID sphere(nullptr);
     sphere = createSphere(idx, position, radBench, myMaterial, true);
+    sphere->setLinearVel(config.getInitialParticleVelocity());
     ++idx;
     particlesCreated++;
   }

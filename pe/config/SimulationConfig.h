@@ -215,6 +215,8 @@ public:
     void setFluidizationSpacingFactor(real value) { fluidizationSpacingFactor_ = value; }
     const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
     void setBenchStartPosition(const Vec3& value) { benchStartPosition_ = value; }
+    bool getBenchUseConfigStart() const { return benchUseConfigStart_; }
+    void setBenchUseConfigStart(bool value) { benchUseConfigStart_ = value; }
     const Vec3& getInitialParticleVelocity() const { return initialParticleVelocity_; }
     void setInitialParticleVelocity(const Vec3& value) { initialParticleVelocity_ = value; }
     //@}
@@ -388,6 +390,7 @@ private:
     std::string seedCylinderAxis_; //!< Axis for cylindrical random seed support
     real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
+    bool benchUseConfigStart_;   //!< Opt-in: bench setups take the start position from benchStartPosition_ instead of their legacy hard-coded value
     Vec3 initialParticleVelocity_; //!< Optional initial velocity assigned to created particles
 
     // Domain boundary parameters
