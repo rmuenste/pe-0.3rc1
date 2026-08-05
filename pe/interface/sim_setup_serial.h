@@ -1417,8 +1417,12 @@ inline void setupDraftKissTumbSerial(int cfd_rank) {
   MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
 
+  // Contact material from config: restitution_/staticFriction_/dynamicFriction_
+  // json keys (defaults 0.0/0.1/0.05 reproduce the former hard-coded values)
   MaterialID particleMaterial =
-      createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+      createMaterial("Bench", rhoParticle, config.getRestitution(),
+                     config.getStaticFriction(), config.getDynamicFriction(),
+                     0.2, 80, 100, 10, 11);
 
   // Sphere positions are read from the external xyz file
   const std::string xyzPath = config.getXyzFilePath().string();
