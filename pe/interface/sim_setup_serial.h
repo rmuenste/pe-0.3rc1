@@ -1314,6 +1314,38 @@ inline void setupDNSDragSerial(int cfd_rank) {
   const real targetVF = std::max(real(0.0), config.getVolumeFraction());
   const real sphereVol = (4.0 / 3.0) * M_PI * std::pow(radius, 3);
 
+  // Opt-in random-array path (D3.1): when xyzFilePath_ is set, create one
+  // FIXED sphere per line of the file and skip the legacy lattice below.
+  // Overlap/periodic-image validity is the generator's responsibility.
+  const std::string dragXyzPath = config.getXyzFilePath().string();
+  if (!dragXyzPath.empty()) {
+    std::vector<Vec3> positions = readVectorsFromFile(dragXyzPath);
+    if (positions.empty()) {
+      throw std::runtime_error("setupDNSDragSerial: xyzFilePath_ set but no positions read from '" +
+                               dragXyzPath + "'");
+    }
+    MaterialID arrayMaterial = createMaterial(
+        "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    int aidx = 0;
+    for (const auto& pos : positions) {
+      SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
+      sphere->setFixed(true);
+      sphere->setLinearVel(0.0, 0.0, 0.0);
+      sphere->setAngularVel(0.0, 0.0, 0.0);
+    }
+    if (isRepresentative) {
+      std::cout << "\n--DNS DRAG SETUP (random array from file)--------------------\n"
+                << " Position file                           = " << dragXyzPath << "\n"
+                << " Number of spheres                       = " << positions.size() << "\n"
+                << " Radius                                  = " << radius << "\n"
+                << " Achieved volume fraction                = "
+                << positions.size() * sphereVol / domainVolume << "\n"
+                << "-------------------------------------------------------------\n"
+                << std::endl;
+    }
+    return;
+  }
+
   int targetCount = 1;
   if (targetVF > 0.0 && sphereVol > 0.0) {
     targetCount = std::max(1, static_cast<int>(std::round(targetVF * domainVolume / sphereVol)));
