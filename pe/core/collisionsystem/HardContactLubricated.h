@@ -246,6 +246,7 @@ public:
    //**Transition blend parameters*****************************************************************
    /*!\name Transition blend parameters */
    //@{
+   inline real            getErrorReductionParameter() const;
    inline real            getContactHysteresisDelta() const;
    inline real            getLubricationHysteresisDelta() const;
    inline real            getLubricationThreshold() const;
@@ -937,6 +938,28 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setE
    pe_INTERNAL_ASSERT( erp >= 0 && erp <= 1, "Error reduction parameter out of range." );
 
    erp_ = erp;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the currently active error reduction parameter.
+ *
+ * \return The error reduction parameter (0 <= erp <= 1).
+ *
+ * See setErrorReductionParameter() for the meaning of the value.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getErrorReductionParameter() const
+{
+   return erp_;
 }
 //*************************************************************************************************
 

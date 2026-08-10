@@ -68,7 +68,11 @@ bool   stepQueued    = false;   // single-step request, consumed at the top of t
 int    stepsPerFrame = 4;
 double dt            = 5.0e-4;
 double simTime       = 0.0;
-double erpShadow     = 0.05;    // the collision system exposes no ERP getter
+
+// Scenario default error reduction, applied once at startup. Softer than the engine's
+// native 0.7 default: lubrication runs settle better with little constraint stabilization.
+// The GUI slider reads/writes the live engine value from here on.
+const double kScenarioErp = 0.05;
 
 std::vector<SphereID> spheres;
 
@@ -368,11 +372,8 @@ void setupParamRegistry()
 
    viewer::ParamGroup solver{ "Solver" };
    solver.reals.push_back( { "error reduction", 0.0f, 1.0f, false,
-      []() { return erpShadow; },
-      []( double v ) {
-         erpShadow = v;
-         theCollisionSystem()->setErrorReductionParameter( static_cast<real>( v ) );
-      } } );
+      []() { return static_cast<double>( theCollisionSystem()->getErrorReductionParameter() ); },
+      []( double v ) { theCollisionSystem()->setErrorReductionParameter( static_cast<real>( v ) ); } } );
 
    viewer::ParamGroup spring{ "Mouse spring" };
    spring.reals.push_back( { "frequency [1/s]", 1.0f, 300.0f, true,
@@ -548,7 +549,7 @@ int main( int, char** )
    world->setDamping( 1.0 );
 
    lubrication::setEnabled( true );
-   theCollisionSystem()->setErrorReductionParameter( static_cast<real>( erpShadow ) );
+   theCollisionSystem()->setErrorReductionParameter( static_cast<real>( kScenarioErp ) );
 
    polyscope::options::programName = "PE live viewer";
    // The callback opens its own windows; skip the empty wrapper window Polyscope

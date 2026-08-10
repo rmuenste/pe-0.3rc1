@@ -43,6 +43,11 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [short-range-rep-forces.md](short-range-rep-forces.md): Robust implementation plan for short-range repulsive forces in narrow-gap scenarios.
 - [srr-implementation-lessons.md](srr-implementation-lessons.md): Lessons learned from implementing the short-range repulsion solver.
 
+## Developer Tools
+
+- [`tools/lubrication_explorer/`](../../tools/lubrication_explorer/README.md): Zero-build web tool that plots each lubrication force/torque component vs gap and recomputes live as you drag the model knobs (a faithful JS port of `LubricationModel.h`, with a self-check against the Level-0 test values). Opens by double-clicking `index.html`; no build/engine/server.
+- [`tools/live_viewer/`](../../tools/live_viewer/README.md): Interactive Polyscope viewer that runs an actual small lubrication simulation with the runtime knobs as live ImGui widgets (`PE_BUILD_LIVE_VIEWER`).
+
 ## Integration and Coupling
 
 - [pe-interface-serial-mode.md](pe-interface-serial-mode.md): `PE_SERIAL_MODE` vs normal parallel mode, the `commf2c_*` Fortran/C entry-point convention, the representative-rank pattern, CFD force synchronization, and how to write a new interface setup function.

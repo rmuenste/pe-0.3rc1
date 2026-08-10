@@ -42,3 +42,10 @@ Parameters come in two flavors: the **live** groups apply immediately mid-run; t
 - Per-contact lubrication forces in the plots need a small accessor/callback surface on
   `HardContactLubricated`; the current plots use kinematics of the probe sphere plus the
   analytic model curve, which needs no engine changes.
+
+## See also
+
+- `tools/lubrication_explorer/` — a zero-build web sister tool that plots every lubrication
+  force/torque component vs gap for the same knob set (a JS port of the analytic model, no
+  simulation). Good for reasoning about the force laws; this viewer is for watching the
+  dynamics. Open its `index.html` directly — no build required.
