@@ -80,6 +80,7 @@ SimulationConfig::SimulationConfig()
     , periodicZ_(false)
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
+    , benchUseConfigStart_(false)
     , initialParticleVelocity_(0.0, 0.0, 0.0)
     , domainBoundaryEnabled_(true)
     , domainBoundaryFilePath_("atc_boundary_param_zero.obj")
@@ -301,6 +302,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
             config.setBenchStartPosition(benchStartPosition);
         }
     }
+
+    if (j.contains("benchUseConfigStart_"))
+        config.setBenchUseConfigStart(j["benchUseConfigStart_"].get<bool>());
 
     if (j.contains("initialParticleVelocity_")) {
         if (j["initialParticleVelocity_"].is_array() &&
