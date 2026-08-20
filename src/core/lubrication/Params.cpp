@@ -26,7 +26,6 @@ real lubricationThresh = real(1E-2);  // Default matches Thresholds.h
 // PlaneBase for *every* constraint solver) sees before the interface layer pushes
 // the config in via applyOptionalLubricationParams, so it must match
 // SimulationConfig::lubricationEnabled_ or bodies created early get inflated boxes.
-bool enabled          = false;
 int  model            = 0;        // ModelKind: 0 = kroupa2016
 int  scheme           = 0;        // SchemeKind: 0 = semi-implicit
 bool tangential       = true;
@@ -41,9 +40,10 @@ real meshDx           = real(0);
 bool aabbInflation    = true;
 real maxSphereRadius  = real(0);
 real shadowCopyMargin  = real(0);     // Off unless lubrication setup enables it
+bool enabled          = false;
+bool securityZone     = false;        // Set by ShortRangeRepulsion, never from json
 real minGap           = real(1e-8);   // Mirrors SimulationConfig::minEpsLub_
 real alphaImpulseCap  = real(1);      // Mirrors SimulationConfig::alphaImpulseCap_
-bool securityZone     = false;        // Set by ShortRangeRepulsion, never from json
 }  // namespace
 
 real getContactHysteresisDelta()
@@ -144,22 +144,30 @@ real lubricationCutoff( real aRef )
 
 real aabbPadding( real bodyRadius )
 {
-   // A security-zone consumer (ShortRangeRepulsion) needs its absolute rho band
-   // regardless of the lubrication master switch.
-   if( securityZone )
-      return lubricationThresh;
+   // The two consumers are independent and must COMPOSE, not override each other:
+   // a security-zone consumer (ShortRangeRepulsion) needs its absolute rho band
+   // whatever the master switch does, and lubrication needs its effective cutoff
+   // whatever the security zone does. Taking the max is the only choice that keeps
+   // both bands inside the broad phase; an early return for either one silently
+   // drops the other's pairs before fine detection ever sees them.
+   real padding = securityZone ? lubricationThresh : real(0);
 
-   if( !enabled || !aabbInflation )
-      return real(0);
-   if( cutoffFactor <= real(0) )
-      return lubricationThresh;
+   if( enabled && aabbInflation ) {
+      real lubBand;
+      if( cutoffFactor <= real(0) ) {
+         lubBand = lubricationThresh;              // legacy absolute cutoff
+      }
+      else {
+         // Track the EFFECTIVE cutoff: when the mesh clamp is armed the force band is
+         // min(cutoffFactor*aRef, meshClampFactor*meshDx), so padding beyond that would
+         // enumerate candidate pairs the model can never act on.
+         lubBand = cutoffFactor * bodyRadius;
+         if( meshClampFactor > real(0) && meshDx > real(0) )
+            lubBand = std::min( lubBand, meshClampFactor * meshDx );
+      }
+      padding = std::max( padding, lubBand );
+   }
 
-   // Track the EFFECTIVE cutoff: when the mesh clamp is armed the force band is
-   // min(cutoffFactor*aRef, meshClampFactor*meshDx), so padding beyond that would
-   // enumerate candidate pairs the model can never act on.
-   real padding = cutoffFactor * bodyRadius;
-   if( meshClampFactor > real(0) && meshDx > real(0) )
-      padding = std::min( padding, meshClampFactor * meshDx );
    return padding;
 }
 

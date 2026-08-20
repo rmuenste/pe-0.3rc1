@@ -182,6 +182,50 @@ int main() {
            "non-vacuity: disabling restores the neutral AABB bitwise");
   }
 
+  //---------------------------------------------------------------------------------
+  // 5. The two padding consumers COMPOSE; neither may override the other
+  //
+  // A security-zone consumer (ShortRangeRepulsion) and lubrication are independent.
+  // An early return for either one silently drops the other's pairs before fine
+  // detection ever sees them -- under-inflation is not a safe failure here, it is a
+  // missing interaction.
+  //---------------------------------------------------------------------------------
+  {
+    const real rho = lubrication::getLubricationThreshold();   // SRR's absolute band
+
+    // Security zone alone: absolute band, regardless of the master switch.
+    lubrication::setEnabled(false);
+    lubrication::setSecurityZone(true);
+    expect(lubrication::aabbPadding(R) == rho,
+           "compose: security zone alone gives the absolute band");
+
+    // Security zone + lubrication with a LARGER relative band -> lubrication wins.
+    lubrication::setEnabled(true);
+    lubrication::setAabbInflation(true);
+    lubrication::setCutoffFactor(real(0.5));
+    const real bigR = real(10.0) * rho;             // 0.5 * bigR = 5*rho > rho
+    expect(lubrication::aabbPadding(bigR) == real(0.5) * bigR,
+           "compose: larger lubrication band is not clipped by the security zone");
+
+    // Security zone + lubrication with a SMALLER relative band -> security zone wins.
+    const real tinyR = rho / real(100);             // 0.5 * tinyR << rho
+    expect(lubrication::aabbPadding(tinyR) == rho,
+           "compose: security-zone band survives a smaller lubrication band");
+
+    // And the mesh clamp must not be able to shrink the security-zone band either.
+    lubrication::setMeshClampFactor(real(2));
+    lubrication::setMeshDx(rho / real(1000));
+    expect(lubrication::aabbPadding(bigR) == rho,
+           "compose: mesh clamp bounds lubrication but never the security zone");
+
+    lubrication::setMeshClampFactor(real(0));
+    lubrication::setMeshDx(real(0));
+    lubrication::setSecurityZone(false);
+    lubrication::setEnabled(false);
+    expect(lubrication::aabbPadding(R) == real(0),
+           "compose: everything off is still exactly zero");
+  }
+
   if (failures == 0) {
     std::cout << "pe-lubrication-aabb-neutrality: all checks passed\n";
     return EXIT_SUCCESS;

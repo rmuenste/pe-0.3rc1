@@ -132,13 +132,14 @@ void registerSphereRadius( real radius );
 //   cutoffFactor == 0: getLubricationThreshold()  (legacy absolute)
 real lubricationCutoff( real aRef );
 
-// AABB padding for a body of the given radius. Tracks the EFFECTIVE cutoff, so coarse
-// detection never inflates by more than the force band the model can actually act on:
-//   getLubricationThreshold()  if a security-zone consumer is active (SRR, absolute rho)
-//   0                          if lubrication disabled or inflation switched off
-//   getLubricationThreshold()  in legacy absolute-cutoff mode (radius ignored)
-//   min( cutoffFactor*bodyRadius, meshClampFactor*meshDx )  when the mesh clamp is armed
-//   cutoffFactor * bodyRadius  otherwise (meshDx unset)
+// AABB padding for a body of the given radius: the MAXIMUM of the bands the active
+// consumers need, so neither can silently drop the other's pairs from the broad phase.
+//   security-zone band : getLubricationThreshold() when a consumer is registered, else 0
+//   lubrication band   : 0 when disabled or inflation off; getLubricationThreshold() in
+//                        legacy absolute-cutoff mode; otherwise the EFFECTIVE cutoff
+//                        min( cutoffFactor*bodyRadius, meshClampFactor*meshDx ), so
+//                        detection never inflates beyond what the model can act on
+// With everything off this is exactly 0 -- see pe_lubrication_aabb_neutrality_test.
 real aabbPadding( real bodyRadius );
 // Getter/setter pair for the domain-decomposition shadow-copy margin.
 // Default 0 (no behavior change). When pairwise lubrication is enabled the
