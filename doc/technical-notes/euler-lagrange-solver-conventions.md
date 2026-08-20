@@ -108,4 +108,11 @@ Two things make this easy to get wrong:
 
 - [contact-solvers-overview.md](contact-solvers-overview.md) — the response solver families and how they are selected.
 - [new-collision-system-implementation-guide.md](new-collision-system-implementation-guide.md) — checklist for wiring a new specialization.
-- [lubrication-contacts.md](lubrication-contacts.md) — lubrication design, centered on `HardContactLubricated`.
+- [lubrication-contacts.md](lubrication-contacts.md) — lubrication design. Note that
+  lubrication is now a **runtime add-on** (`pe/core/lubrication/LubricationStage.h`),
+  not a solver: the dedicated `HardContactLubricated` collision system has been retired.
+  It is switched on via the `lubricationEnabled_` json key / `pe::lubrication::setEnabled()`,
+  defaults to OFF, and requires a stage-capable solver (`pe::response::HardContactAndFluid`
+  or `pe::response::HardContactSemiImplicitTimesteppingSolvers`). `HardContactEulerLagrange`
+  — the default `pe_CONSTRAINT_SOLVER`, and the subject of this note — does **not** run the
+  stage, so enabling lubrication under it throws in `pe::applyOptionalLubricationParams()`.

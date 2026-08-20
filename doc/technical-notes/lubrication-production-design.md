@@ -4,13 +4,30 @@ Status: **implemented — phases 1–4** (July 2026). Deviations from this desig
 `PairWrench` splits `Fn`/`Ft` (semi-implicit scheme integrates the normal mode
 separately); the paper's printed twisting-torque sign is corrected to the dissipative
 form; the sliding-torque exponential guard uses the heuristic `K_s·a_ref²` rotational
-stiffness; the solver-dependent World tests self-SKIP (exit 77) unless built with
-`-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated`; the Level-2 shear cell
+stiffness; the solver-dependent World tests used to self-SKIP (exit 77) unless built
+against the lubricated solver, and now link library variants built with a stage-capable
+`pe_CONSTRAINT_SOLVER` so they always run; the Level-2 shear cell
 measures `η_L` via the bulk lubrication-stress virial instead of the wall force balance
 (PE plane walls carry no measurable reaction force); the Gondret restitution curve is
 deferred because the hard-contact relaxation models are inelastic (see
 `pe_lubrication_bounce_stokes_test.cpp`). MPI-parity test variant and Level 3 (CFD)
-remain open. Original design text below. Target: replace the leading-order,
+remain open.
+
+> **Retired since this design was written.** The dedicated
+> `pe::response::HardContactLubricated` collision system has been removed and the
+> `PE_LUBRICATION_CONTACTS` compile-time macro deleted. Lubrication is now a runtime
+> add-on: `pe/core/lubrication/LubricationStage.h`, invoked by any collision system that
+> advertises `static constexpr bool hasLubricationStage = true;` (today
+> `pe::response::HardContactAndFluid` and
+> `pe::response::HardContactSemiImplicitTimesteppingSolvers`) after its first
+> `synchronizeVelocities()`, and switched on by the `lubricationEnabled_` json key /
+> `pe::lubrication::setEnabled()` — off by default. References to
+> `HardContactLubricated` below are kept for provenance; read them as "the collision
+> system that hosted the lubrication block at the time", i.e. today's
+> `LubricationStage.h`. See [lubrication-contacts.md](lubrication-contacts.md) for the
+> current build/enable recipe.
+
+Original design text below. Target: replace the leading-order,
 normal-only lubrication force in `HardContactLubricated` with the full pairwise
 resistance model of Kroupa, Vonka, Soos & Kosek, *Utilizing the Discrete Element
 Method for the Modeling of Viscosity in Concentrated Suspensions*, Langmuir 2016,
@@ -369,9 +386,14 @@ Design:
   between coarse-detection updates (this is a legitimate expert mode when
   `ε_cut` is small, but it must be loud).
 
-The `PE_LUBRICATION_CONTACTS` compile-time gate in the detection code stays
-(it selects the `HardContactLubricated` code paths); everything else is
-runtime.
+**Superseded.** This design originally kept the `PE_LUBRICATION_CONTACTS`
+compile-time gate in the detection code (it selected the `HardContactLubricated`
+code paths). That macro has since been **deleted**. The detection branches in
+`pe/core/detection/fine/MaxContacts.h` are now gated at **runtime** on
+`pe::lubrication::contactGenerationEnabled()`, i.e.
+`isEnabled() || getSecurityZone()` — the security zone belongs to
+`ShortRangeRepulsion`, which reuses the same pre-contact channel. Everything,
+including the gate, is now runtime.
 
 ### 3.5 Diagnostics (small but necessary for production)
 
@@ -392,34 +414,42 @@ coupling.
 
 ### Running the Level 0–2 tests
 
-The World-based tests (Level 1) require the lubricated constraint solver. Either
-set `pe_CONSTRAINT_SOLVER` to `pe::response::HardContactLubricated` in
-`pe/config/Collisions.h` (the current repository default), or override it per
-build without touching the header:
+**Updated recipe.** The original text here told you to build with
+`-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated`; that solver no
+longer exists and such a configure line fails. The World-based tests (Level 1)
+drive the shared lubrication stage, so they need a *stage-capable* solver — they
+now link the `pe_static_lubstage_fluid` / `pe_static_lubstage_plain` library
+variants, which are built with one, so a plain testing build suffices and no
+solver override is required:
 
 ```bash
-cmake -S . -B build-interface-tests-hcl -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC \
-      -DBUILD_TESTING=ON -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON \
-      -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated"
-cmake --build build-interface-tests-hcl -j
+cmake -S . -B build-interface-tests -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC \
+      -DBUILD_TESTING=ON -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON
+cmake --build build-interface-tests -j
 ```
 
-Under any other solver the Level 1 tests self-report as SKIPPED (exit code 77);
-the Level 0 test runs in every build.
+The Level 1 tests no longer self-SKIP (exit code 77) on the library default;
+they run and must pass in every build configuration, as does the Level 0 test.
+
+For an *application* (as opposed to the tests), pick a stage-capable solver
+yourself and enable lubrication at runtime:
+`-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid` plus
+`"lubricationEnabled_": true` in the json input (see
+[lubrication-contacts.md](lubrication-contacts.md)).
 
 ```bash
 # Level 0 (pure math) + Level 1 gates:
-ctest --test-dir build-interface-tests-hcl -R pe-lubrication --output-on-failure
+ctest --test-dir build-interface-tests -R pe-lubrication --output-on-failure
 #   pe-lubrication-model                (Level 0)
 #   pe-lubrication-legacy-regression   (bit-for-bit legacy gate)
 #   pe-lubrication-two-sphere-approach (Level 1.1/1.3: Fig. 7, suction switch)
 #   pe-lubrication-bounce-stokes       (Level 1.2/1.4/1.5: impact, dt sweep, tangential)
 
 # Plot data (PE_LUB_CSV=1 makes the Level 1 binaries emit CSV on stdout):
-PE_LUB_CSV=1 ./build-interface-tests-hcl/tests/interface/pe_lubrication_two_sphere_approach_test > approach.csv
+PE_LUB_CSV=1 ./build-interface-tests/tests/interface/pe_lubrication_two_sphere_approach_test > approach.csv
 ./tests/interface/plot_two_sphere_approach.py approach.csv             # pair curves, zoomed
 ./tests/interface/plot_two_sphere_approach.py approach.csv 5000 wall   # the paper's exact Fig. 7 frame
-PE_LUB_CSV=1 ./build-interface-tests-hcl/tests/interface/pe_lubrication_bounce_stokes_test > bounce.csv
+PE_LUB_CSV=1 ./build-interface-tests/tests/interface/pe_lubrication_bounce_stokes_test > bounce.csv
 ```
 
 Level 2 (shear-cell skeleton; needs an examples build, named target only —

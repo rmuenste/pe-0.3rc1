@@ -2,9 +2,11 @@
 
 PE selects its collision response solver at compile time through
 `pe_CONSTRAINT_SOLVER` in `pe/config/Collisions.h`. There is no runtime solver
-switch in the shared command-line interface. This note gives a short overview
+switch in the shared command-line interface. The default is the neutral
+`pe::response::HardContactEulerLagrange`. This note gives a short overview
 of the main response families that are present in the codebase and the practical
-tradeoffs between them.
+tradeoffs between them. Lubrication is deliberately *not* one of them: it is a
+runtime add-on layered on top of a stage-capable solver (see below).
 
 ## Hard-Contact Timestepping
 
@@ -37,39 +39,62 @@ If a "default-like" baseline solver is needed for hard-contact-only work, this
 is the oldest and most robust family to look at. The actual solver is still the
 one selected by the user in `pe/config/Collisions.h` before compilation.
 
-## Hard-Contact With Lubrication
+## Lubrication (Runtime Add-On, Not A Solver Family)
 
 Primary files:
 
-- `pe/core/response/HardContactLubricated.h`
-- `pe/core/collisionsystem/HardContactLubricated.h`
-- `pe/core/lubrication/Params.h`
+- `pe/core/lubrication/LubricationStage.h` — the application stage
+- `pe/core/lubrication/LubricationModel.h` — the Kroupa-2016 closure
+- `pe/core/lubrication/ContactState.h` — per-contact lubrication flag + blend weight
+- `pe/core/lubrication/Params.h` — runtime parameter store and master switch
 
-`HardContactLubricated` extends the hard-contact timestepping path with
-lubrication-aware contact handling. It keeps hard contacts in the iterative
-constraint solve and applies lubrication corrections for contacts that are
-tagged as lubrication contacts. Runtime parameters include lubrication
-threshold, lubrication hysteresis, minimum lubrication gap regularization, and
-an impulse cap.
+Lubrication is **not** a solver choice. A stage-capable collision system invokes
+`lubrication::applyLubricationStage(...)` after its first
+`synchronizeVelocities()`; the hard contacts themselves stay in that solver's
+own iterative constraint solve. Runtime parameters include the lubrication
+cutoff, blend hysteresis, minimum-gap regularization, and (for the
+`explicit-capped` scheme) an impulse cap.
+
+Stage-capable solvers today, both advertising
+`static constexpr bool hasLubricationStage = true;`:
+
+- `pe::response::HardContactAndFluid`
+- `pe::response::HardContactSemiImplicitTimesteppingSolvers`
+
+Enabling it is a **runtime** decision: set the `lubricationEnabled_` json key, or
+call `pe::lubrication::setEnabled(true)`. It defaults to OFF everywhere.
+Enabling it while the compiled-in `pe_CONSTRAINT_SOLVER` does not run the stage
+throws in `pe::applyOptionalLubricationParams()` rather than silently doing
+nothing. The detection branches in `pe/core/detection/fine/MaxContacts.h` are
+gated on `pe::lubrication::contactGenerationEnabled()`
+(`isEnabled() || getSecurityZone()` — the security zone belongs to
+`ShortRangeRepulsion`, which reuses the same pre-contact channel).
 
 Strengths:
 
-- Canonical path for current lubrication work.
+- Usable from any hard-contact pipeline that opts in; no dedicated solver
+  variant and no dedicated build.
 - Preserves the hard-contact solver structure while adding near-contact
   lubrication effects.
 - Exposes runtime controls for contact/lubrication blending and regularization.
 
 Limitations:
 
-- More specialized than the baseline hard-contact solver.
-- Requires the build and examples to be configured consistently for
-  `HardContactLubricated`.
-- The lubrication path is focused on supported pair types and current
-  integration experiments, not a general fluid solver.
+- Only solvers that explicitly opt in run the stage.
+- The lubrication path is focused on supported pair types (sphere–sphere,
+  sphere–plane), not a general fluid solver.
 
-Deprecated or legacy lubrication stacks such as `HardContactAndFluid` should not
-be used as the target for new work unless a specific historical comparison is
-being made.
+> **Retired.** A dedicated `pe::response::HardContactLubricated` collision system
+> (`pe/core/response/HardContactLubricated.h`,
+> `pe/core/collisionsystem/HardContactLubricated.h`) used to be the canonical
+> lubrication path, and lubrication was selected by compiling against it plus the
+> `PE_LUBRICATION_CONTACTS` macro. Both are gone. Older notes and build recipes
+> that name that solver or that macro cannot configure any more; use the runtime
+> switch above instead.
+
+`HardContactAndFluidWithLubrication` and `HardContactFluidLubrication` remain
+deprecated legacy stacks and should not be the target for new work unless a
+specific historical comparison is being made.
 
 ## Short-Range Repulsion
 
@@ -171,14 +196,14 @@ timestepping collision-system specializations.
 They are useful to understand when reading older configurations or
 solver-specific contact traits, but most current hard-contact discussion should
 start with `HardContactSemiImplicitTimesteppingSolvers` or
-`HardContactLubricated`.
+`HardContactAndFluid`.
 
 ## Choosing A Solver Family
 
 | Need | Solver family to inspect first |
 |------|--------------------------------|
 | Robust hard-contact-only rigid-body dynamics | `HardContactSemiImplicitTimesteppingSolvers` |
-| Hard contact plus current lubrication experiments | `HardContactLubricated` |
+| Hard contact plus lubrication | any stage-capable solver (`HardContactAndFluid`, `HardContactSemiImplicitTimesteppingSolvers`) **plus** `lubricationEnabled_` at runtime |
 | Soft near-contact repulsion without hard constraints | `ShortRangeRepulsion` |
 | Per-body QP contact response with explicit restitution | `FFDSolver` |
 | Force-based particle contact dynamics | `DEMSolver` |

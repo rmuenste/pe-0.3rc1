@@ -1,10 +1,24 @@
 # Lubrication Contacts: Design and Initial Integration
 
 Status
-- Canonical implementation: HardContactLubricated
+- Canonical implementation: the **runtime lubrication add-on** —
+  `pe/core/lubrication/LubricationStage.h` (application stage),
+  `pe/core/lubrication/LubricationModel.h` (Kroupa-2016 closure),
+  `pe/core/lubrication/ContactState.h` (per-contact flag + blend weight),
+  `pe/core/lubrication/Params.h` (runtime parameter store / master switch).
+- **Retired:** the dedicated `pe::response::HardContactLubricated` collision system, and
+  the `PE_LUBRICATION_CONTACTS` compile-time macro. Neither exists any more. Passages
+  below that describe them are kept for provenance and marked as historical.
+- Enabling lubrication is a runtime decision (`lubricationEnabled_` json key /
+  `pe::lubrication::setEnabled(true)`), **not** a solver choice, and it defaults to OFF.
+  It requires a stage-capable solver: `pe::response::HardContactAndFluid` or
+  `pe::response::HardContactSemiImplicitTimesteppingSolvers`, both of which advertise
+  `static constexpr bool hasLubricationStage = true;`. Enabling it under any other
+  `pe_CONSTRAINT_SOLVER` throws in `pe::applyOptionalLubricationParams()`.
 - Deprecated (to be removed next version): HardContactAndFluidWithLubrication, HardContactFluidLubrication
-- Solver selection is compile-time configuration in `pe/config/Collisions.h`;
-  this note describes the lubrication/contact stack, not a universal default.
+- Solver selection is still compile-time configuration in `pe/config/Collisions.h`
+  (default: the neutral `pe::response::HardContactEulerLagrange`); this note describes
+  the lubrication/contact stack, not a universal default.
 
 ## Overview
 - Introduces a lubrication interaction regime between “no contact” and “hard contact”.
@@ -18,16 +32,28 @@ Status
 - Sphere–sphere: when gap falls in the lubrication band, create a lubrication contact via `ContactVector::addLubricationContact(...)`.
 - Sphere–plane: added the same lubrication branch.
 - Lubrication contacts are flagged via `ContactTrait::setLubricationFlag()`.
+- The detection branches are gated at **runtime** on
+  `pe::lubrication::contactGenerationEnabled()` (`isEnabled() || getSecurityZone()`; the
+  security zone belongs to `ShortRangeRepulsion`, which reuses the same pre-contact
+  channel). There is no compile-time gate any more — `PE_LUBRICATION_CONTACTS` is gone.
 
-## Contact Trait (HardContactLubricated)
-- Added `ContactTrait` specialization to carry a lubrication flag for the `HardContactLubricated` solver stack:
-  - `setLubricationFlag()` and `getLubricationFlag()`.
+## Contact State (lubrication mixin)
+- `pe/core/lubrication/ContactState.h` supplies the per-contact lubrication flag and
+  blend weight that a `ContactTrait` mixes in:
+  - `setLubricationFlag()` / `getLubricationFlag()`,
+  - `setLubricationWeight()` / `getLubricationWeight()` (clamped to `[0,1]`).
+  Contact traits that do not carry the state provide inert stubs, so a solver that never
+  runs the stage simply sees "no lubrication contacts".
+- *Historical:* this state used to live in a `ContactTrait` specialization written
+  specifically for the `HardContactLubricated` solver stack.
 
 ## Force Model (Production: Kroupa et al. 2016)
 - Physics lives in `pe/core/lubrication/LubricationModel.h` (header-only, unit-tested in
-  isolation by `tests/interface/pe_lubrication_model_test.cpp`); the solver loop in
-  `pe/core/collisionsystem/HardContactLubricated.h` only gathers kinematics, calls the
-  model, integrates, and applies velocity corrections.
+  isolation by `tests/interface/pe_lubrication_model_test.cpp`); the application loop in
+  `pe/core/lubrication/LubricationStage.h` only gathers kinematics, calls the
+  model, integrates, and applies velocity corrections. A collision system invokes the
+  stage after its first `synchronizeVelocities()`. (*Historically this loop was inlined
+  in `pe/core/collisionsystem/HardContactLubricated.h`.*)
 - Full pairwise resistance set (Langmuir 2016, 32, 8451−8460; Dance & Maxey 2003):
   - Normal squeeze force with `1/ε`, `ln ε`, and `ε ln ε` terms (pair eq 12 / wall eq 16)
   - Tangential sliding force `F_sl` (eq 13/17), sliding torque `M_sl` (eq 14/18), and
@@ -62,6 +88,34 @@ Status
   - Potential simulation divergence or unphysical results
 - This synchronization overhead is necessary but minimal (one additional MPI exchange per time step)
 
+## Enabling Lubrication In An Application
+
+Two independent steps — a compile-time solver choice, then a runtime switch:
+
+```bash
+# 1. Build with a stage-capable constraint solver (the library default is the
+#    neutral HardContactEulerLagrange, which does NOT run the stage).
+cmake -S . -B build-lub -DCMAKE_BUILD_TYPE=Release -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON \
+      -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid"
+cmake --build build-lub -j
+```
+
+```json
+// 2. Turn lubrication on at runtime, in the simulation's json input:
+{ "lubricationEnabled_": true }
+```
+
+Programmatic equivalent: `pe::lubrication::setEnabled(true)`. `pe_CONSTRAINT_SOLVER` can
+equally be set in `pe/config/Collisions.h`; the other stage-capable solver is
+`pe::response::HardContactSemiImplicitTimesteppingSolvers`. If step 2 is done without
+step 1, `pe::applyOptionalLubricationParams()` throws at setup rather than running a
+silent no-op.
+
+> **Retired recipe.** Lubrication used to be selected by building against
+> `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated` (optionally with the
+> `PE_LUBRICATION_CONTACTS` macro). That solver and that macro no longer exist, so such a
+> configure line now fails outright. Use the two steps above.
+
 ## Runtime Parameters (JSON via SimulationConfig)
 All model parameters are runtime input, parsed by `SimulationConfig::loadFromFile` and
 pushed into the engine by `pe::applyOptionalLubricationParams()`
@@ -71,7 +125,7 @@ one-liner. Programmatic access: `pe::lubrication::` setters (`pe/core/lubricatio
 
 | JSON key | Default | Meaning |
 |---|---|---|
-| `lubricationEnabled_` | `true` | Master switch (also gates lubrication-contact emission) |
+| `lubricationEnabled_` | `false` | Master switch (also gates lubrication-contact emission). Requires a stage-capable solver; otherwise `applyOptionalLubricationParams()` throws |
 | `lubricationModel_` | `"kroupa2016"` | `"kroupa2016"` or `"legacy"` |
 | `lubricationIntegration_` | `"semi-implicit"` | or `"explicit-capped"` |
 | `lubricationTangential_` | `true` | Sliding force + sliding torque |
@@ -140,16 +194,20 @@ To prevent flickering between contact regimes when gaps oscillate near threshold
   restitution-vs-Stokes validation (Gondret) is limited to the viscous/attenuation side;
   see `tests/interface/pe_lubrication_bounce_stokes_test.cpp` header.
 - Other shapes (capsules, boxes, meshes) are not AABB-inflated for lubrication.
-- MPI parity test variant for the lubricated solver is still to be added (needs an
-  MPI + HardContactLubricated test build; the two `synchronizeVelocities()` calls around
-  the lubrication loop are unchanged, so the communication footprint is identical).
+- MPI parity test variant for the lubrication stage is still to be added (needs an MPI
+  test build with a stage-capable solver and `lubricationEnabled_` on; the two
+  `synchronizeVelocities()` calls around the lubrication loop are unchanged, so the
+  communication footprint is identical).
 
 ## Validation
 - Level 0 (pure math, any build): `pe-lubrication-model` — coefficients vs hand values,
   slip-factor limits, dissipativity on random states, semi-implicit impulse bounds,
   cutoff/padding helpers.
-- Level 1 (needs `pe_CONSTRAINT_SOLVER = pe::response::HardContactLubricated`; tests
-  self-SKIP otherwise): `pe-lubrication-legacy-regression` (bit-for-bit legacy gate),
+- Level 1 (drives the stage through a real collision pipeline; the targets link the
+  `pe_static_lubstage_fluid` / `pe_static_lubstage_plain` library variants, which are
+  built with a stage-capable `pe_CONSTRAINT_SOLVER`, so they run and must pass in every
+  build configuration — they no longer self-SKIP on the library default):
+  `pe-lubrication-legacy-regression` (bit-for-bit legacy gate),
   `pe-lubrication-two-sphere-approach` (paper Fig. 7 pointwise: no-slip curve, slip
   departure, saturation plateau monotone in ε_c, switchable suction; **caution**: the
   paper's Fig. 7 caption says "approach of two spheres" but the curves use the
@@ -160,8 +218,7 @@ To prevent flickering between contact regimes when gaps oscillate near threshold
   land at 405/805/1605/3202 for ε_c = 0.02/0.01/0.005/0.0025),
   `pe-lubrication-bounce-stokes` (immersed wall impact: dissipativity, viscosity
   attenuation, dt robustness over 3 decades, wall tangential/twist sanity).
-  Lubricated test build:
-  `cmake -B build-interface-tests-hcl ... -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated"`
+  Plain `-DBUILD_TESTING=ON` build; no solver override needed.
 - Level 2 skeleton: `examples/shear_cell_kroupa` (boundary-driven shear cell, lubrication
   stress virial → `η_L(φ)` CSV) + `evaluate_viscosity.py` (Krieger–Dougherty /
   Maron–Pierce comparison). Full η(φ) campaign and CFD-coupled Level 3 are future work.
