@@ -88,6 +88,37 @@ void setMeshDx( real dx );
 bool getAabbInflation();
 void setAabbInflation( bool on );
 
+// Numerical gap floor used by the stage (legacy minEpsLub_)
+real getMinGap();
+void setMinGap( real gap );
+
+// Impulse cap factor relative to approach momentum (schemeExplicitCapped and the
+// legacy model only; the semi-implicit normal mode is unconditionally stable)
+real getAlphaImpulseCap();
+void setAlphaImpulseCap( real alpha );
+
+//=================================================================================================
+// Security-zone co-tenancy
+//
+// The extended-range ("pre-contact") branch of fine detection is shared with the
+// ShortRangeRepulsion solver, which reuses the same addLubricationContact channel to
+// realize its Pan et al. security zone and sets the legacy absolute threshold to its
+// rho. That consumer is independent of the lubrication master switch: SRR needs the
+// pre-contact pairs whether or not lubrication forces are active. It is therefore set
+// programmatically by the solver, never from json, and applyOptionalLubricationParams
+// deliberately does not touch it.
+//=================================================================================================
+
+bool getSecurityZone();
+void setSecurityZone( bool on );
+
+// True when fine detection must run its extended-range branch at all: either
+// lubrication forces are active, or a security-zone consumer needs pre-contact pairs.
+inline bool contactGenerationEnabled()
+{
+   return isEnabled() || getSecurityZone();
+}
+
 // Largest sphere radius registered so far (used for plane AABB padding)
 real getMaxSphereRadius();
 void registerSphereRadius( real radius );
@@ -102,9 +133,9 @@ void registerSphereRadius( real radius );
 real lubricationCutoff( real aRef );
 
 // AABB padding for a body of the given radius:
+//   getLubricationThreshold()  if a security-zone consumer is active (SRR, absolute rho)
 //   0                          if lubrication disabled or inflation switched off
-//   cutoffFactor * bodyRadius  in relative-cutoff mode (mesh clamp deliberately NOT
-//                              applied: padding must stay a superset of the force band)
+//   cutoffFactor * bodyRadius  in relative-cutoff mode
 //   getLubricationThreshold()  in legacy absolute mode (radius ignored)
 real aabbPadding( real bodyRadius );
 // Getter/setter pair for the domain-decomposition shadow-copy margin.

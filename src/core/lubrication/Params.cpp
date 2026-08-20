@@ -41,6 +41,9 @@ real meshDx           = real(0);
 bool aabbInflation    = true;
 real maxSphereRadius  = real(0);
 real shadowCopyMargin  = real(0);     // Off unless lubrication setup enables it
+real minGap           = real(1e-8);   // Mirrors SimulationConfig::minEpsLub_
+real alphaImpulseCap  = real(1);      // Mirrors SimulationConfig::alphaImpulseCap_
+bool securityZone     = false;        // Set by ShortRangeRepulsion, never from json
 }  // namespace
 
 real getContactHysteresisDelta()
@@ -112,6 +115,15 @@ void setMeshDx( real dx )     { meshDx = dx; }
 bool getAabbInflation()           { return aabbInflation; }
 void setAabbInflation( bool on )  { aabbInflation = on; }
 
+real getMinGap()              { return minGap; }
+void setMinGap( real gap )    { minGap = gap; }
+
+real getAlphaImpulseCap()          { return alphaImpulseCap; }
+void setAlphaImpulseCap( real a )  { alphaImpulseCap = a; }
+
+bool getSecurityZone()          { return securityZone; }
+void setSecurityZone( bool on ) { securityZone = on; }
+
 real getMaxSphereRadius()     { return maxSphereRadius; }
 
 void registerSphereRadius( real radius )
@@ -132,6 +144,11 @@ real lubricationCutoff( real aRef )
 
 real aabbPadding( real bodyRadius )
 {
+   // A security-zone consumer (ShortRangeRepulsion) needs its absolute rho band
+   // regardless of the lubrication master switch.
+   if( securityZone )
+      return lubricationThresh;
+
    if( !enabled || !aabbInflation )
       return real(0);
    if( cutoffFactor <= real(0) )
