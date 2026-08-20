@@ -449,9 +449,7 @@ private:
     Vec3 gravity_;               //!< Gravity vector
     real lubricationHysteresisDelta_; //!< Half-width of lubrication blend band
     real contactHysteresisDelta_; //!< Half-width of contact blend band
-
-  
-  real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication (explicit-capped scheme)
+    real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication (explicit-capped scheme)
     real minEpsLub_;             //!< Regularization epsilon for lubrication gap (numerical floor)
     bool lubricationEnabled_;    //!< Master switch for lubrication forces
     std::string lubricationModel_; //!< Force model: "kroupa2016" or "legacy"
@@ -465,10 +463,7 @@ private:
     real lubricationCutoffFactor_; //!< eps_cut = h_cut/a_ref outer cutoff; 0 = legacy absolute
     real lubricationMeshClampFactor_; //!< Mesh clamp c: h_cut capped at c*dx_CFD; 0 = off
     bool lubricationAabbInflation_; //!< Grow AABBs by the lubrication cutoff
-    real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
-    real minEpsLub_;             //!< Regularization epsilon for lubrication gap
-    bool lubricationEnabled_;    //!< Pairwise lubrication forces in the EL solver
-    real lubricationCutoff_;     //!< Surface-gap trigger distance for lubrication pairs
+    real lubricationCutoff_;     //!< Surface-gap trigger distance for lubrication pairs (EL solver)
     real lubricationSlipLength_; //!< Slip length h_c of the Vinogradova f* correction
     bool zWallsEnabled_;         //!< Create global z-planes (Couette walls) in the EL setup
     real zWallVelocityTop_;      //!< x-velocity of the top wall (z = zmax)
