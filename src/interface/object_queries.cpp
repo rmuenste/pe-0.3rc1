@@ -13,6 +13,7 @@
 #include <pe/util/logging/Logger.h>
 #include <pe/core/TimeStep.h>
 #include <pe/config/SimulationConfig.h>
+#include <pe/util/CheckpointMetadata.h>
 
 //#define ONLY_ROTATION 
 using namespace pe;
@@ -46,6 +47,59 @@ void get_pe_timestep_(double *dTime) {
 
   *dTime = static_cast<double>(TimeStep::size());
 }
+
+//*************************************************************************************************
+/*!\brief Hands pe the driver's authoritative time/step and pairing tag for checkpoint writes.
+ *
+ * Without this, a checkpoint records pe's own substep counter, which does not identify the
+ * driver dump it belongs to. Call once per driver time step, before pe may write a checkpoint.
+ *
+ * \param simTime Driver simulation time.
+ * \param step    Driver step index.
+ * \param tag     Null-terminated pairing tag, or nullptr for none. See doc FF-WIRING.md.
+ */
+extern "C"
+void set_pe_checkpoint_identity_(const double *simTime, const int *step, const char *tag) {
+  if (simTime == nullptr || step == nullptr) {
+    return;
+  }
+
+  setCheckpointIdentity(static_cast<real>(*simTime),
+                        static_cast<uint64_t>(*step),
+                        tag != nullptr ? std::string(tag) : std::string());
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Declares which checkpoint the driver expects to resume from.
+ *
+ * Must be called before the commf2c_* setup entry point, which is where the resume happens. A
+ * checkpoint that does not match is rejected with a hard error naming both values -- the point
+ * is to turn a silently mispaired restart into a failed one.
+ *
+ * Negative \a step, or a null/empty \a tag, means "do not check this field". Equivalent to the
+ * resumeExpectedTime_ / resumeExpectedStep_ / resumeExpectedTag_ deck keys.
+ *
+ * \param simTime Expected simulation time, or nullptr to leave the time unchecked.
+ * \param step    Expected step index; negative leaves the step unchecked.
+ * \param tag     Expected pairing tag; nullptr or empty leaves the tag unchecked.
+ */
+extern "C"
+void set_pe_resume_expectation_(const double *simTime, const int *step, const char *tag) {
+  SimulationConfig &config = SimulationConfig::getInstance();
+
+  if (simTime != nullptr) {
+    config.setResumeExpectedTime(static_cast<real>(*simTime));
+  }
+  if (step != nullptr) {
+    config.setResumeExpectedStep(static_cast<long long>(*step));
+  }
+  if (tag != nullptr) {
+    config.setResumeExpectedTag(std::string(tag));
+  }
+}
+//*************************************************************************************************
 
 extern "C"
 void set_el_hydro_state(const short int bytes[8],
