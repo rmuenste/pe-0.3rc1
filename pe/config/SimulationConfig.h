@@ -181,6 +181,20 @@ public:
     void setResume(bool value) { resume_ = value; }
     const std::string& getResumeCheckpointFile() const { return resumeCheckpointFile_; }
     void setResumeCheckpointFile(const std::string& file) { resumeCheckpointFile_ = file; }
+
+    // Resume expectations. All opt-in: an unset expectation is not checked, a set one that is
+    // violated aborts the run. Sentinels mean "unset" -- a negative step index and an empty tag
+    // are not otherwise meaningful, and a driver that wants t = 0 checked must say so with a
+    // tolerance rather than relying on a default.
+    bool getResumeExpectedTimeSet() const { return resumeExpectedTimeSet_; }
+    real getResumeExpectedTime() const { return resumeExpectedTime_; }
+    void setResumeExpectedTime(real value) { resumeExpectedTime_ = value; resumeExpectedTimeSet_ = true; }
+    real getResumeTimeToleranceSteps() const { return resumeTimeToleranceSteps_; }
+    void setResumeTimeToleranceSteps(real value) { resumeTimeToleranceSteps_ = value; }
+    long long getResumeExpectedStep() const { return resumeExpectedStep_; }
+    void setResumeExpectedStep(long long value) { resumeExpectedStep_ = value; }
+    const std::string& getResumeExpectedTag() const { return resumeExpectedTag_; }
+    void setResumeExpectedTag(const std::string& tag) { resumeExpectedTag_ = tag; }
     //@}
     //**************************************************************************************
 
@@ -406,6 +420,11 @@ private:
     boost::filesystem::path checkpoint_path_; //!< Path for checkpoint files
     bool resume_;                //!< Resume from checkpoint
     std::string resumeCheckpointFile_; //!< Checkpoint base name/path used for resume loading
+    bool resumeExpectedTimeSet_;       //!< Whether resumeExpectedTime_ carries a driver expectation
+    real resumeExpectedTime_;          //!< Simulation time the driver expects the checkpoint to hold
+    real resumeTimeToleranceSteps_;    //!< Allowed time deviation, in units of the checkpoint stepSize
+    long long resumeExpectedStep_;     //!< Step index the driver expects; negative means unset
+    std::string resumeExpectedTag_;    //!< Pairing tag the driver expects; empty means unset
 
     // Simulation parameters
     real volumeFraction_;        //!< Volume fraction for particle packing

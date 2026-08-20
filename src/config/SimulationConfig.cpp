@@ -26,6 +26,7 @@
 //*************************************************************************************************
 
 #include <pe/config/SimulationConfig.h>
+#include <pe/util/CheckpointMetadata.h>
 #include <fstream>
 #include <stdexcept>
 #if HAVE_JSON
@@ -66,6 +67,10 @@ SimulationConfig::SimulationConfig()
     , checkpoint_path_("checkpoints/")
     , resume_(false)
     , resumeCheckpointFile_("../start.1")
+    , resumeExpectedTimeSet_(false)
+    , resumeExpectedTime_(0.0)
+    , resumeTimeToleranceSteps_(defaultResumeTimeToleranceSteps)
+    , resumeExpectedStep_(-1)
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
     , seedMode_("file")
@@ -259,6 +264,18 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set the checkpoint path (assuming the JSON key is a string)
     if (j.contains("checkpoint_path_"))
         config.setCheckpointPath(boost::filesystem::path(j["checkpoint_path_"].get<std::string>()));
+
+    if (j.contains("resumeExpectedTime_"))
+        config.setResumeExpectedTime(j["resumeExpectedTime_"].get<real>());
+
+    if (j.contains("resumeTimeToleranceSteps_"))
+        config.setResumeTimeToleranceSteps(j["resumeTimeToleranceSteps_"].get<real>());
+
+    if (j.contains("resumeExpectedStep_"))
+        config.setResumeExpectedStep(j["resumeExpectedStep_"].get<long long>());
+
+    if (j.contains("resumeExpectedTag_"))
+        config.setResumeExpectedTag(j["resumeExpectedTag_"].get<std::string>());
 
     // Set simulation parameters
     if (j.contains("volumeFraction_"))
