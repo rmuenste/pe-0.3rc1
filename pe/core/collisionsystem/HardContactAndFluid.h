@@ -1834,7 +1834,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
    {
       maximumPenetration_ = 0;
-      numContacts_ = numContacts;
+      // Hard contacts only: lubrication pre-contacts carry a positive gap and are not
+      // contacts in any sense the CFD layer means. getNumberOfContacts() is read by
+      // FeatFloWer through pe/interface/c_interface_queries.h, so reporting them would
+      // silently inflate the count the moment lubrication is switched on. Identical to
+      // the previous value whenever lubrication is off.
+      numContacts_ = numContactsMaskedHard;
 
       size_t j = 0;
       for( size_t i = 0; i < numContacts; ++i ) {
@@ -2253,19 +2258,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          }
       }
 
-      // DEBUG: Track convergence for translation-locked contacts
-      if( numContactsMasked > 0 ) {
-         bool anyTranslationLocked = false;
-         for( size_t i = 0; i < numContactsMasked; ++i ) {
-            if( body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0) ) {
-               anyTranslationLocked = true;
-               break;
-            }
-         }
-//          if( anyTranslationLocked && (it % 10 == 0 || it == maxIterations_ - 1) ) {
-//             std::cout << "Iteration " << it << ": delta_max = " << delta_max << "\n";
-//          }
-      }
 
       // Compute maximum impulse variation.
       // TODO:
