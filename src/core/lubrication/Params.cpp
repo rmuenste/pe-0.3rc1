@@ -20,7 +20,13 @@ real lubricationThresh = real(1E-2);  // Default matches Thresholds.h
 // Model switches/parameters. Production defaults: Kroupa-2016 model, semi-implicit
 // scheme, relative outer cutoff 0.5. Must stay in sync with the SimulationConfig
 // constructor defaults (src/config/SimulationConfig.cpp).
-bool enabled          = true;
+//
+// The master switch defaults to OFF: lubrication is opt-in via lubricationEnabled_.
+// This value is what the AABB padding helper (aabbPadding, read by SphereBase and
+// PlaneBase for *every* constraint solver) sees before the interface layer pushes
+// the config in via applyOptionalLubricationParams, so it must match
+// SimulationConfig::lubricationEnabled_ or bodies created early get inflated boxes.
+bool enabled          = false;
 int  model            = 0;        // ModelKind: 0 = kroupa2016
 int  scheme           = 0;        // SchemeKind: 0 = semi-implicit
 bool tangential       = true;
