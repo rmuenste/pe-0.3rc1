@@ -140,3 +140,16 @@ if(MPI AND CGAL)
   endforeach()
 endif()
 
+# Serial-mode coverage for the lubrication add-on (D2.2 §3.7). Drives the shared stage
+# through the CAMPAIGN solver (HardContactAndFluid) in a non-MPI build, with lubrication
+# enabled purely at runtime, and checks the pipeline force against LubricationModel.h
+# evaluated directly -- the model as its own oracle, isolating plumbing from physics.
+# Covers sphere-sphere and sphere-wall, and that the switch is exactly inert when off.
+add_executable(pe_lubrication_serial_coverage_test
+  pe_lubrication_serial_coverage_test.cpp
+)
+target_link_libraries(pe_lubrication_serial_coverage_test PRIVATE pe_static_lubstage_fluid)
+add_test(
+  NAME pe-lubrication-serial-coverage
+  COMMAND pe_lubrication_serial_coverage_test
+)
