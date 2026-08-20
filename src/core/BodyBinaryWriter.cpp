@@ -115,6 +115,10 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
       localSize = headerSize + globals_.size() + buffer_.size();
    }
 
+   // Captured before the profiling reduction below, which would otherwise turn this rank's count
+   // into a global sum only when profiling happens to be enabled.
+   bodies_ = bodies;
+
    // determine offset of chunk for local body descriptions
    pe_LOG_DEBUG_SECTION( log ) {
       log << "On rank " << MPISettings::rank() << " size of local bodies chunk is " << localSize << "\n";

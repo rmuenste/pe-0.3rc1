@@ -96,6 +96,7 @@ public:
    void writeFile( const char* filename );
    void writeFileAsync( const char* filename );
    void wait();
+   inline size_t getMarshalledBodyCount() const;
    //@}
    //**********************************************************************************************
 
@@ -130,6 +131,7 @@ private:
 #endif
    bool fhOpen_;
    int fpSize_;
+   size_t bodies_;   //!< Body records written by the last writeFileAsync() call on this rank.
    //@}
    //**********************************************************************************************
 };
@@ -147,7 +149,7 @@ private:
 //*************************************************************************************************
 /*!\brief Constructs the binary writer.
  */
-inline BodyBinaryWriter::BodyBinaryWriter() : fhOpen_( false ), fpSize_( 0 ) {
+inline BodyBinaryWriter::BodyBinaryWriter() : fhOpen_( false ), fpSize_( 0 ), bodies_( 0 ) {
 }
 //*************************************************************************************************
 
@@ -183,6 +185,23 @@ inline BodyBinaryWriter::~BodyBinaryWriter() {
 inline void BodyBinaryWriter::writeFile( const char* filename ) {
    writeFileAsync( filename );
    wait();
+}
+//*************************************************************************************************
+
+
+
+
+//*************************************************************************************************
+/*!\brief Returns how many body records the last write put into the file.
+ *
+ * This is the number of bodies the file actually contains, which is not the same as the size of
+ * the world: planes that are not global are not persisted at all, and global bodies are written
+ * by rank 0 only. Callers recording checkpoint metadata must use this rather than a world size.
+ *
+ * \return Body records written by the last writeFile()/writeFileAsync() call on this rank.
+ */
+inline size_t BodyBinaryWriter::getMarshalledBodyCount() const {
+   return bodies_;
 }
 //*************************************************************************************************
 
