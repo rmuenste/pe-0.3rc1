@@ -166,3 +166,18 @@ add_test(
   NAME pe-lubrication-aabb-neutrality
   COMMAND pe_lubrication_aabb_neutrality_test
 )
+
+# Refusal guard (D2.2 §3.5): lubricationEnabled_ must never be a silent no-op.
+# Deliberately links the SHIPPED pe_static -- not a stage-capable variant -- because the
+# configuration it polices is the default one a user actually gets. It asserts the guard's
+# contract (throws iff enabled && !stage-capable), so it stays meaningful under both a
+# neutral and a stage-capable default rather than degenerating into a tautology.
+# Currently also the only test that exercises the shipped default configuration.
+add_executable(pe_lubrication_refusal_test
+  pe_lubrication_refusal_test.cpp
+)
+target_link_libraries(pe_lubrication_refusal_test PRIVATE pe_static)
+add_test(
+  NAME pe-lubrication-refusal
+  COMMAND pe_lubrication_refusal_test
+)
