@@ -62,6 +62,9 @@
 #include <pe/core/rigidbody/BodyStorage.h>
 #include <pe/core/rigidbody/BodyCast.h>
 #include <pe/core/rigidbody/Sphere.h>
+#include <pe/core/Settings.h>
+#include <pe/config/SimulationConfig.h>
+#include <cmath>
 #include <pe/core/rigidbody/MPIRigidBodyTrait.h>
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/notifications/NotificationType.h>
@@ -212,6 +215,31 @@ public:
    inline const Domain&   getDomain()             const;
    inline real            getMaximumPenetration() const;
    inline size_t          getNumberOfContacts()   const;
+   inline void            getElLubricationVirial( real* sigma ) const
+      { for( int k=0; k<9; ++k ) sigma[k] = lubricationVirial_[k]; }
+   inline size_t          getElLubricationPairs() const { return lubricationPairs_; }
+   inline void            resetElLubricationVirial()
+      { for( int k=0; k<9; ++k ) lubricationVirial_[k] = real(0);
+        for( int k=0; k<3; ++k ) lubricationImpulse_[k] = real(0);
+        lubricationPairs_ = 0;
+        for( int k=0; k<9; ++k ) contactVirial_[k] = real(0);
+        contactVirialPairs_ = 0;
+        for( int w=0; w<2; ++w )
+           for( int k=0; k<3; ++k ) {
+              wallLubImpulse_[w][k] = real(0);
+              wallContactImpulse_[w][k] = real(0);
+           }
+        wallLubPairs_ = 0; }
+   inline void            getElLubricationImpulse( real* dp ) const
+      { for( int k=0; k<3; ++k ) dp[k] = lubricationImpulse_[k]; }
+   inline void            getElContactVirial( real* sigma ) const
+      { for( int k=0; k<9; ++k ) sigma[k] = contactVirial_[k]; }
+   inline size_t          getElContactVirialPairs() const { return contactVirialPairs_; }
+   inline void            getElWallLubImpulse( int wall, real* dp ) const
+      { for( int k=0; k<3; ++k ) dp[k] = wallLubImpulse_[wall][k]; }
+   inline void            getElWallContactImpulse( int wall, real* dp ) const
+      { for( int k=0; k<3; ++k ) dp[k] = wallContactImpulse_[wall][k]; }
+   inline size_t          getElWallLubPairs() const { return wallLubPairs_; }
    //@}
    //**********************************************************************************************
 
@@ -290,6 +318,8 @@ private:
    //@{
    inline void clear();
    inline void clearContacts();
+          void applyELLubrication( real dt );
+          void applyELWallLubrication( real dt );
           bool checkUpdateFlags();
    inline real getCharacteristicLength( ConstBodyID body ) const;
    //@}
@@ -320,6 +350,14 @@ private:
    real relaxationParam_;     //!< Parameter specifying underrelaxation of velocity corrections for boundary bodies.
    real maximumPenetration_;
    size_t numContacts_;
+   real lubricationVirial_[9];   //!< Rank-local impulse virial of pairwise lubrication, Sum w*dt*F (x) r12 over substeps (row-major); stress = -virial/(dt_macro*V) after MPI sum.
+   size_t lubricationPairs_;     //!< Rank-local lubrication pair evaluations with a locally-owned member (accumulated over substeps).
+   real lubricationImpulse_[3];  //!< Rank-local NET momentum folded by the lubrication sweep; the MPI sum measures pair one-sidedness and must be zero.
+   real contactVirial_[9];       //!< Rank-local impulse virial of sphere-sphere PGS contacts, Sum p (x) r12 over substeps (row-major); the contact-filtering mask already treats each contact on exactly one rank, so the MPI sum counts each contact once.
+   size_t contactVirialPairs_;   //!< Rank-local sphere-sphere contacts accumulated into contactVirial_ (over substeps).
+   real wallLubImpulse_[2][3];   //!< Rank-local impulse Sum dt*F the SPHERES exert on each z-wall via wall lubrication (0 = bottom, 1 = top); spheres are owner-local, so the MPI sum counts each once.
+   real wallContactImpulse_[2][3]; //!< Rank-local converged PGS contact impulse ON each z-wall (0 = bottom, 1 = top); local-global contacts are treated once (sphere-owner rank).
+   size_t wallLubPairs_;         //!< Rank-local sphere-wall lubrication evaluations (over substeps).
    MPITag lastSyncTag_;
 
    // bodies
@@ -440,6 +478,14 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , relaxationParam_  ( 0.9 )
    , maximumPenetration_ ( 0.0 )
    , numContacts_      ( 0 )
+   , lubricationVirial_()
+   , lubricationPairs_ ( 0 )
+   , lubricationImpulse_()
+   , contactVirial_()
+   , contactVirialPairs_ ( 0 )
+   , wallLubImpulse_()
+   , wallContactImpulse_()
+   , wallLubPairs_     ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
 {
@@ -793,6 +839,318 @@ template< template<typename> class CD                           // Type of the c
 inline size_t CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::getNumberOfContacts() const
 {
    return numContacts_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief All-pairs pairwise lubrication for the Euler-Lagrange solver.
+ *
+ * Kroupa/Vonka/Soos/Kosek, Langmuir 32 (2016) 8451: normal squeeze (eq 12),
+ * sliding force (eq 13) and sliding torque (eq 14), with the Vinogradova
+ * slip correction f* (eq 20) and the h < h_c substitution rule. Twisting
+ * (eq 15) is omitted (negligible per the paper). The pair search is a plain
+ * all-pairs sweep over local + shadow-copy spheres - no involvement of the
+ * collision detection pipeline; the shadow-copy margin
+ * (pe::lubrication::setShadowCopyMargin, set by the EL setup to the cutoff)
+ * guarantees every pair with surface gap below the cutoff is visible on the
+ * ranks owning either member.
+ *
+ * Velocities are read from the synchronized post-hydro v_/w_ caches (NEVER
+ * from dv_/dw_, which differ between owner and shadow ranks), so both ranks
+ * of a cross-boundary pair compute identical forces; each rank folds only
+ * its locally-owned bodies at full weight (fold-once). The caller must run
+ * a synchronizeVelocities() afterwards.
+ *
+ * The impulse virial Sum w*dt*F (x) r12 is accumulated with weight 0.5 per
+ * locally-owned member (1.0 when both are local), so the MPI-summed tensor
+ * counts every pair exactly once; particle-phase stress follows as
+ * sigma = -virial/(dt_macro*V).
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELLubrication( real dt )
+{
+   const SimulationConfig& cfg( SimulationConfig::getInstance() );
+   const real cutoff( cfg.getLubricationCutoff() );
+   if( cutoff <= real(0) || dt <= real(0) )
+      return;
+
+   const real hc( cfg.getLubricationSlipLength() );
+   const real hmin( std::max( cfg.getMinEpsLub(), real(1e-300) ) );
+   const real mu( Settings::liquidViscosity() );
+   const real alphaCap( cfg.getAlphaImpulseCap() );
+
+   // Collect spheres once: locally-owned bodies first, then shadow copies.
+   struct LubEntry {
+      SphereID s;
+      size_t   idx;
+      bool     local;
+   };
+   std::vector<LubEntry> spheres;
+   spheres.reserve( bodystorage_.size() + bodystorageShadowCopies_.size() );
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
+      if( body->getType() != sphereType || body->isFixed() || body->isGlobal() )
+         continue;
+      // Ownership must be the isRemote() flag, NOT bodystorage_ membership:
+      // during a migration handover a body can sit in bodystorage_ on two
+      // ranks, and treating both as local double-applies every pair force it
+      // participates in (intermittent Newton-pair bursts at high phi). The
+      // hydro fold in initializeVelocityCorrections guards the same way.
+      LubEntry e = { static_body_cast<Sphere>( *body ), body->index_, !body->isRemote() };
+      spheres.push_back( e );
+   }
+   for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body ) {
+      if( body->getType() != sphereType || body->isFixed() )
+         continue;
+      LubEntry e = { static_body_cast<Sphere>( *body ), body->index_, false };
+      spheres.push_back( e );
+   }
+
+   // Designated-treater scheme (the same structure that makes the PGS
+   // contact relay Newton-exact): each pair is evaluated by exactly ONE
+   // rank - the owner of the member with the smaller system ID - which
+   // applies the corrections to BOTH members through dv_/dw_. The following
+   // synchronizeVelocities() folds the local side and relays the shadow
+   // side to its owner, both with the uniform relaxationParam_ fold, so the
+   // corrections are pre-divided by relaxationParam_ to land at full
+   // weight. This requires NO symmetric cross-rank pair visibility and NO
+   // bitwise cross-rank determinism: an earlier fold-once variant (both
+   // ranks independently updating their own member) leaked momentum
+   // whenever visibility was one-sided (EL_NEWTON_PAIR bursts up to 5.8e-6
+   // matching the folded net impulse digit-for-digit). If the designated
+   // owner does not see the pair it is skipped for one substep - a missed
+   // micro-interaction, not a momentum leak. Forces read only the
+   // synchronized v_/w_, never dv_/dw_.
+   const real relaxInv( real(1) / relaxationParam_ );
+
+   const size_t n( spheres.size() );
+   for( size_t a = 0; a + 1 < n; ++a ) {
+      for( size_t b = a + 1; b < n; ++b ) {
+         // Designated treater: the owner of the smaller system ID.
+         {
+            const bool aFirst( spheres[a].s->getSystemID() < spheres[b].s->getSystemID() );
+            if( aFirst ? !spheres[a].local : !spheres[b].local )
+               continue;
+         }
+
+         SphereID s1( spheres[a].s );
+         SphereID s2( spheres[b].s );
+         const Vec3 r12( s1->getPosition() - s2->getPosition() );
+         const real dist( r12.length() );
+         const real gap( dist - s1->getRadius() - s2->getRadius() );
+         if( gap >= cutoff || dist <= real(1e-300) )
+            continue;
+
+         // Kroupa slip procedure: below h_c evaluate all expressions at h_c
+         // (also covers contact overlap, gap <= 0, where the PGS solver owns
+         // the interaction and lubrication contributes capped dissipation).
+         const real Rp( real(0.5) * ( s1->getRadius() + s2->getRadius() ) );
+         const real hfloor( hc > real(0) ? hc : hmin );
+         const real h( gap > hfloor ? gap : hfloor );
+         const real eps( h / Rp );
+         const real leps( std::log( eps ) );
+
+         // Vinogradova slip correction f* (eq 20); -> 1 for hc -> 0.
+         real fstar( real(1) );
+         if( hc > real(0) ) {
+            const real x( h / ( real(6) * hc ) );
+            fstar = h / ( real(3) * hc ) * ( ( real(1) + x ) * std::log( real(1) + real(1) / x ) - real(1) );
+         }
+
+         // Unit normal from particle 1 (i) to particle 2 (j), Kroupa convention.
+         const Vec3 nvec( -r12 / dist );
+         const Vec3 v1( v_[ spheres[a].idx ] );
+         const Vec3 v2( v_[ spheres[b].idx ] );
+         const Vec3 w1( w_[ spheres[a].idx ] );
+         const Vec3 w2( w_[ spheres[b].idx ] );
+         const Vec3 vr( v1 - v2 );
+         const real vrn( trans(nvec) * vr );
+
+         // Normal squeeze (eq 12): resists approach AND recession (the full
+         // dissipative cycle; the approach-only variant elsewhere in pe is a
+         // coagulation-stability choice, not a rheology one).
+         const real Cn( real(0.25) / eps - real(9.0/40.0) * leps - real(3.0/112.0) * eps * leps );
+         Vec3 F( ( -real(6) * M_PI * mu * Rp * fstar * Cn * vrn ) * nvec );
+
+         // Sliding force (eq 13): translational (vs) and rotational (vcs)
+         // surface sliding, r_i = Rp*n, r_j = -Rp*n.
+         const Vec3 vs( vr - vrn * nvec );
+         const Vec3 vcs( ( w1 % (  Rp * nvec ) ) - ( w2 % ( -Rp * nvec ) ) );
+         const real Cs1( -real(1.0/6.0) * leps );
+         const real Cs2( -real(1.0/6.0) * leps - real(1.0/12.0) * eps * leps );
+         F += ( -real(6) * M_PI * mu * Rp * fstar ) * ( Cs1 * vs + Cs2 * vcs );
+
+         // Impulse cap (both signs), pattern of the lubricated solver: the
+         // pair impulse may not exceed alphaCap * m_eff * relative speed.
+         if( alphaCap > real(0) ) {
+            const real meff( real(1) / ( s1->getInvMass() + s2->getInvMass() ) );
+            const real vscale( vr.length() + vcs.length() );
+            const real J( F.length() * dt );
+            const real Jcap( alphaCap * meff * vscale );
+            if( J > Jcap && J > real(0) )
+               F *= Jcap / J;
+         }
+
+         // Sliding torque (eq 14); identical on both members (truncated
+         // two-sphere resistance expressions, equal radii).
+         const Vec3 Msl( ( -real(8) * M_PI * mu * Rp * Rp * fstar ) *
+                         ( ( nvec % vs  ) * ( -real(1.0/6.0) * leps - real(1.0/12.0)   * eps * leps )
+                         + ( nvec % vcs ) * ( -real(1.0/5.0) * leps - real(47.0/250.0) * eps * leps ) ) );
+
+         // Apply to BOTH members via dv_/dw_ (local or shadow alike); the
+         // sync relays shadow corrections to their owners. Pre-divide by
+         // relaxationParam_ so the uniform 0.9 fold lands at full weight.
+         dv_[ spheres[a].idx ] += ( s1->getInvMass() * dt * relaxInv ) * F;
+         dw_[ spheres[a].idx ] += ( dt * relaxInv ) * ( s1->getInvInertia() * Msl );
+         dv_[ spheres[b].idx ] -= ( s2->getInvMass() * dt * relaxInv ) * F;
+         dw_[ spheres[b].idx ] += ( dt * relaxInv ) * ( s2->getInvInertia() * Msl );
+         // Net folded momentum is structurally zero under single-rank
+         // treatment; lubricationImpulse_ is retained as a regression guard
+         // and must read 0 (the EL_NEWTON_PAIR audit is the real gate).
+
+         // Impulse virial, full weight on the (unique) treating rank
+         // (F is the force on particle 1, r12 = x1 - x2).
+         for( int row = 0; row < 3; ++row )
+            for( int col = 0; col < 3; ++col )
+               lubricationVirial_[ 3*row + col ] += dt * F[row] * r12[col];
+         ++lubricationPairs_;
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sphere-wall lubrication (Kroupa et al. 2016 eqs 16-19, twisting eq 19 omitted).
+ *
+ * Sweeps LOCAL spheres against the global z-wall planes (Couette walls). The
+ * wall is treated as "particle j" with the plane's cached velocity (moving
+ * wall) and zero rotation; closures are the sphere-plane coefficient set,
+ * eps = h/R_p with the same h_c substitution, f* slip correction and impulse
+ * cap as the pair sweep. Corrections go to the sphere only (the plane has
+ * zero inverse mass); the reaction impulse is accumulated per wall in
+ * wallLubImpulse_ (0 = bottom, +z normal; 1 = top, -z normal) - this is the
+ * eta_L channel of the Kroupa wall force balance. Spheres are evaluated on
+ * their owner rank only, so the MPI sum counts each interaction once.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::applyELWallLubrication( real dt )
+{
+   const SimulationConfig& cfg( SimulationConfig::getInstance() );
+   const real cutoff( cfg.getLubricationCutoff() );
+   if( cutoff <= real(0) )
+      return;
+   const real hc( cfg.getLubricationSlipLength() );
+   const real hmin( cfg.getMinEpsLub() );
+   const real mu( Settings::liquidViscosity() );
+   const real alphaCap( cfg.getAlphaImpulseCap() );
+   const real relaxInv( real(1) / relaxationParam_ );
+
+   // Collect the z-wall planes (global fixed planes with |n_z| ~ 1).
+   struct WallEntry {
+      PlaneID p;
+      size_t  idx;
+      int     wall;   // 0 = bottom (+z normal), 1 = top (-z normal)
+   };
+   std::vector<WallEntry> walls;
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
+      if( body->getType() != planeType || !body->isGlobal() )
+         continue;
+      PlaneID pl( static_body_cast<Plane>( *body ) );
+      const real nz( pl->getNormal()[2] );
+      if( std::fabs( nz ) < real(0.99) )
+         continue;
+      WallEntry e = { pl, body->index_, nz > real(0) ? 0 : 1 };
+      walls.push_back( e );
+   }
+   if( walls.empty() )
+      return;
+
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body ) {
+      if( body->getType() != sphereType || body->isFixed() || body->isGlobal() )
+         continue;
+      if( body->isRemote() )
+         continue;
+      SphereID s( static_body_cast<Sphere>( *body ) );
+      const size_t sidx( body->index_ );
+
+      for( size_t iw = 0; iw < walls.size(); ++iw ) {
+         const Plane* pl( walls[iw].p );
+         // Surface gap: signed distance of the center above the plane minus R.
+         const real gap( trans( pl->getNormal() ) * s->getPosition()
+                         - pl->getDisplacement() - s->getRadius() );
+         if( gap >= cutoff )
+            continue;
+
+         const real Rp( s->getRadius() );
+         const real hfloor( hc > real(0) ? hc : hmin );
+         const real h( gap > hfloor ? gap : hfloor );
+         const real eps( h / Rp );
+         const real leps( std::log( eps ) );
+
+         real fstar( real(1) );
+         if( hc > real(0) ) {
+            const real x( h / ( real(6) * hc ) );
+            fstar = h / ( real(3) * hc ) * ( ( real(1) + x ) * std::log( real(1) + real(1) / x ) - real(1) );
+         }
+
+         // Unit normal from the sphere (particle i) towards the wall
+         // (particle j), Kroupa convention.
+         const Vec3 nvec( -pl->getNormal() );
+         const Vec3 vwall( v_[ walls[iw].idx ] );
+         const Vec3 vr( v_[ sidx ] - vwall );
+         const real vrn( trans(nvec) * vr );
+
+         // Normal squeeze (eq 16), both signs.
+         const real Cn( real(1) / eps - real(1.0/5.0) * leps - real(1.0/21.0) * eps * leps );
+         Vec3 F( ( -real(6) * M_PI * mu * Rp * fstar * Cn * vrn ) * nvec );
+
+         // Sliding force (eq 17): translational and rotational surface
+         // sliding; the wall has zero rotation rate.
+         const Vec3 vs( vr - vrn * nvec );
+         const Vec3 vcs( w_[ sidx ] % ( Rp * nvec ) );
+         const real Cs1( -real(8.0/15.0) * leps - real(64.0/375.0) * eps * leps );
+         const real Cs2( -real(2.0/15.0) * leps - real(86.0/375.0) * eps * leps );
+         F += ( -real(6) * M_PI * mu * Rp * fstar ) * ( Cs1 * vs + Cs2 * vcs );
+
+         if( alphaCap > real(0) ) {
+            const real meff( real(1) / s->getInvMass() );
+            const real vscale( vr.length() + vcs.length() );
+            const real J( F.length() * dt );
+            const real Jcap( alphaCap * meff * vscale );
+            if( J > Jcap && J > real(0) )
+               F *= Jcap / J;
+         }
+
+         // Sliding torque on the sphere (eq 18).
+         const Vec3 Msl( ( -real(8) * M_PI * mu * Rp * Rp * fstar ) *
+                         ( ( nvec % vs  ) * ( -real(2.0/15.0) * leps - real(86.0/375.0) * eps * leps )
+                         + ( nvec % vcs ) * ( -real(2.0/5.0)  * leps - real(66.0/125.0) * eps * leps ) ) );
+
+         dv_[ sidx ] += ( s->getInvMass() * dt * relaxInv ) * F;
+         dw_[ sidx ] += ( dt * relaxInv ) * ( s->getInvInertia() * Msl );
+
+         // Reaction impulse ON the wall (eta_L measurement channel).
+         const int w( walls[iw].wall );
+         for( int k = 0; k < 3; ++k )
+            wallLubImpulse_[w][k] += dt * ( -F[k] );
+         ++wallLubPairs_;
+      }
+   }
 }
 //*************************************************************************************************
 
@@ -1925,6 +2283,28 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
             v_[j] = body->getLinearVel();
             w_[j] = body->getAngularVel();
          }
+
+         // Euler-Lagrange hydro bodies: fold the unconditionally-stable
+         // semi-implicit hydro velocity correction (elSemiImplicitVelocity, see
+         // initializeVelocityCorrections) into the cached velocity HERE - in
+         // full and exactly once - instead of leaving it in dv_/dw_. The first
+         // synchronizeVelocities() below then broadcasts the post-hydro
+         // velocity to all shadow copies, so every rank resolves contacts
+         // against identical post-hydro velocities. From this point on dv_/dw_
+         // carry only hard-contact PGS corrections, which must be folded with
+         // the uniform under-relaxation relaxationParam_ on BOTH sides of each
+         // contact pair (see synchronizeVelocities); applying the full hydro
+         // correction through the per-iteration fold instead (the previous
+         // elRelax = 1 special case) scaled the locally-owned side of every
+         // cross-rank contact impulse by 1.0 while the shadow side was relayed
+         // to its owner with relaxationParam_, violating Newton's third law by
+         // (1 - relaxationParam_) * impulse per iteration.
+         if( body->hasEulerLagrangeHydroState() ) {
+            v_[j] += dv_[j];
+            w_[j] += dw_[j];
+            dv_[j] = Vec3();
+            dw_[j] = Vec3();
+         }
       }
 
       for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body, ++j ) {
@@ -1941,6 +2321,22 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
       }
 
       synchronizeVelocities();
+
+      // Pairwise lubrication (all-pairs, re-evaluated every substep since
+      // resolveContacts runs once per simulationStep): folded at FULL weight
+      // into v_/w_ of locally-owned bodies from the just-synchronized
+      // post-hydro state, then re-broadcast so the PGS loop sees
+      // lubrication-corrected velocities on every rank. Fold-once across
+      // ranks: both sides of a cross-boundary pair run identical arithmetic
+      // on identical synced v_/w_, each folding only its own bodies, so
+      // Newton antisymmetry is exact without any relayed corrections (and
+      // without the relaxationParam_ fold that dv_/dw_ relays get).
+      if( SimulationConfig::getInstance().getLubricationEnabled() ) {
+         applyELLubrication( dt );
+         if( SimulationConfig::getInstance().getZWallsEnabled() )
+            applyELWallLubrication( dt );
+         synchronizeVelocities();
+      }
    }
 
    pe_PROFILING_SECTION {
@@ -2010,6 +2406,45 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
 #else
       UNUSED( delta_max );
 #endif
+   }
+
+   // Impulse virial of the converged contact impulses: p_[i] is the impulse
+   // on body1 (dv_[body1] += invMass*p in the relaxation apply step), so the
+   // suspension-stress contribution is p (x) r12 with r12 = x1 - x2 =
+   // r2_ - r1_, matching the dt*F (x) r12 convention of the lubrication
+   // virial. The contact-filtering mask above accepts every contact on
+   // exactly one rank globally (local-local at the owner, cross-rank at the
+   // contact-point owner), so no designated-treater logic is needed here.
+   // Sphere-sphere only: wall/global-body stress is a separate channel.
+   for( size_t i = 0; i < numContactsMasked; ++i ) {
+      // Sphere-wall contacts (Couette z-planes): accumulate the converged
+      // impulse ON the wall. Local-global contacts are treated on exactly
+      // one rank (the sphere's owner), so the MPI sum counts each once.
+      // Impulse convention: +p_[i] acts on body1, -p_[i] on body2.
+      if( body1_[i]->getType() == planeType || body2_[i]->getType() == planeType ) {
+         const bool planeFirst( body1_[i]->getType() == planeType );
+         BodyID pb( planeFirst ? body1_[i] : body2_[i] );
+         BodyID sb( planeFirst ? body2_[i] : body1_[i] );
+         if( pb->isGlobal() && sb->getType() == sphereType ) {
+            const real nz( static_body_cast<Plane>( pb )->getNormal()[2] );
+            if( std::fabs( nz ) >= real(0.99) ) {
+               const int w( nz > real(0) ? 0 : 1 );
+               const real sgn( planeFirst ? real(1) : real(-1) );
+               for( int k = 0; k < 3; ++k )
+                  wallContactImpulse_[w][k] += sgn * p_[i][k];
+            }
+         }
+         continue;
+      }
+      if( body1_[i]->getType() != sphereType || body2_[i]->getType() != sphereType )
+         continue;
+      if( body1_[i]->isFixed() || body2_[i]->isFixed() )
+         continue;
+      const Vec3 r12( r2_[i] - r1_[i] );
+      for( int row = 0; row < 3; ++row )
+         for( int col = 0; col < 3; ++col )
+            contactVirial_[ 3*row + col ] += p_[i][row] * r12[col];
+      ++contactVirialPairs_;
    }
 
    pe_PROFILING_SECTION {
@@ -3345,6 +3780,22 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
             // Set new owner and transform to shadow copy
             b->setOwner( p->getRank(), p );
             b->setRemote( true );
+
+            // Capture the hydro state for the migration payload before it is
+            // cleared on demotion.
+            const real elMigDragB   = b->getEulerLagrangeDragB();
+            const Vec3 elMigCarrier = b->getEulerLagrangeCarrierVelocity();
+            const Vec3 elMigOther   = b->getEulerLagrangeOtherForce();
+            const Vec3 elMigRefVel  = b->getEulerLagrangeRefVelocity();
+            const bool elMigActive  = b->hasEulerLagrangeHydroState();
+
+            // The Euler-Lagrange hydro state is owner-only per-step forcing
+            // data (armed by the CFD driver on the owner before each PE step
+            // and cleared from OWNED bodies at the end of the step). Clear it
+            // on demotion so the shadow copy never carries a stale armed
+            // state; the current state is handed over to the new owner in the
+            // migration notification payload below.
+            b->setEulerLagrangeHydroState( real(0), Vec3(), Vec3(), false );
 #ifndef NDEBUG
             b->debugFlag_ = true;
 #endif
@@ -3389,6 +3840,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
 
                marshal( buffer, notificationType<RigidBodyMigrationNotification>() );
                marshal( buffer, RigidBodyMigrationNotification( *b, reglist ) );
+
+               // Euler-Lagrange extension: hand the per-step hydro state over
+               // to the new owner. Ownership can migrate in the middle of a PE
+               // step (between substeps, migration runs in synchronize() after
+               // each substep) while the CFD driver arms the hydro state only
+               // once per PE step on the then-owner. Without this handover the
+               // new owner would integrate the remaining substeps without the
+               // semi-implicit drag/buoyancy forcing, breaking the momentum
+               // balance with the fluid (EL_NEWTON_PAIR audit).
+               buffer << elMigDragB;
+               marshal( buffer, elMigCarrier );
+               marshal( buffer, elMigOther );
+               marshal( buffer, elMigRefVel );
+               buffer << static_cast<byte>( elMigActive ? 1 : 0 );
 
                // Note: The new owner misses shadow copies of all attached bodies. Since we do not have an up to date view
                // we need to relay them later.
@@ -3612,6 +4077,25 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
 
                b->setOwner( myRank, 0 );
                b->setRemote( false );
+
+               // Euler-Lagrange extension: take over the per-step hydro state
+               // from the previous owner (see the matching marshal in the
+               // migration send path) so that PE substeps after a mid-step
+               // ownership migration keep integrating the semi-implicit
+               // drag/buoyancy forcing of this body.
+               {
+                  real elMigDragB;
+                  Vec3 elMigCarrier, elMigOther, elMigRefVel;
+                  byte elMigActive;
+                  buffer >> elMigDragB;
+                  unmarshal( buffer, elMigCarrier );
+                  unmarshal( buffer, elMigOther );
+                  unmarshal( buffer, elMigRefVel );
+                  buffer >> elMigActive;
+                  b->setEulerLagrangeHydroState( elMigDragB, elMigCarrier, elMigOther, elMigActive != 0 );
+                  b->setEulerLagrangeRefVelocity( elMigRefVel );
+               }
+
                b->clearProcesses();
                for( std::size_t i = 0; i < objparam.reglist_.size(); ++i ) {
                   ProcessIterator it( processstorage_.find( objparam.reglist_[i] ) );
@@ -3796,8 +4280,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
       for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body, ++i ) {
          pe_INTERNAL_ASSERT( body->index_ == i, "Invalid body index." );
 
-         if( dv_[i] == Vec3() && dw_[i] == Vec3() ) {
-            // If we did not apply any corrections do not send anything.
+         // If we did not apply any corrections do not send anything.
+         //
+         // NOTE: this must be an EXACT zero test. Vec3::operator== compares
+         // through pe::equal (|a-b| < 1e-8), so it would classify small but
+         // nonzero corrections as "zero" and silently drop them, while the
+         // owner-side fold in this function applies dv_ unconditionally. For
+         // a cross-rank contact the PGS convergence tail (impulse updates
+         // below 1e-8) would then be applied to the locally-owned body but
+         // never delivered to the remote partner, breaking the antisymmetry
+         // of the contact impulses (Newton's third law) at the ~1e-8 level
+         // per iteration (measured as an O(1e-12) per-step momentum leak in
+         // the Euler-Lagrange Newton-pair audit).
+         if( dv_[i][0] == real(0) && dv_[i][1] == real(0) && dv_[i][2] == real(0) &&
+             dw_[i][0] == real(0) && dw_[i][1] == real(0) && dw_[i][2] == real(0) ) {
             continue;
          }
 
@@ -3900,16 +4396,17 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::synchron
          if( body->isGlobal() )
             continue;
 
-         // Euler-Lagrange hydro bodies carry an unconditionally-stable
-         // semi-implicit drag correction in dv_ (see initializeVelocityCorrections
-         // / elSemiImplicitVelocity). It must be applied in FULL: the 0.9 contact
-         // under-relaxation is only meant for hard-contact PGS corrections, and
-         // leaking it into the hydro update changes the particle drag (~0.9x) and
-         // breaks momentum balance with the fluid feedback (issue D). Ordinary
-         // contact corrections keep relaxationParam_.
-         const real elRelax = body->hasEulerLagrangeHydroState() ? real(1) : relaxationParam_;
-         v_[i] += elRelax*dv_[i];
-         w_[i] += elRelax*dw_[i];
+         // NOTE (issue D / Newton-pair audit): the Euler-Lagrange semi-implicit
+         // hydro correction is NOT part of dv_/dw_ here - it is folded into the
+         // cached velocity v_/w_ in full, exactly once, at body-caching time in
+         // resolveContacts() before the first synchronizeVelocities(). At this
+         // point dv_/dw_ contain only hard-contact PGS corrections, which MUST
+         // be folded with the same relaxationParam_ that is applied to the
+         // corrections relayed from shadow copies above; any per-body factor
+         // difference breaks the antisymmetry of cross-rank contact impulses
+         // (Newton's third law) and leaks momentum.
+         v_[i] += relaxationParam_*dv_[i];
+         w_[i] += relaxationParam_*dw_[i];
          dv_[i] = Vec3();
          dw_[i] = Vec3();
 
@@ -4307,13 +4804,33 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::initiali
 {
    if( body->awake_ ) {
       if( !body->isFixed() ) {
-         if( body->hasEulerLagrangeHydroState() ) {
-            const Vec3 uold = body->getLinearVel();
+         // The Euler-Lagrange semi-implicit hydro update is applied by the
+         // OWNER of a body, exactly once. Shadow copies must never compute a
+         // hydro velocity correction: their dv_ is relayed to the owner as a
+         // contact-correction message during synchronizeVelocities(), so an
+         // armed shadow copy (e.g. a stale hydro state surviving an ownership
+         // migration that demoted the body to a shadow copy) would make the
+         // owner apply the hydro forcing a second time (under-relaxed by
+         // relaxationParam_), i.e. ~1.9x gravity/drag per step (measured).
+         if( body->hasEulerLagrangeHydroState() && !body->isRemote() ) {
+            // Advance the FREE-FLIGHT reference velocity of the drag
+            // sub-cycling, not the actual body velocity: contacts occurring
+            // between substeps perturb the actual velocity, and computing the
+            // hydro increment from it would make the total drag impulse the
+            // particle receives deviate from the mirrored free-flight impulse
+            // the CFD driver charged to the fluid (the deviations of a contact
+            // pair do not cancel when the two bodies have different drag
+            // coefficients), leaking momentum. The reference trajectory is
+            // armed with the pre-step velocity (equal to the actual velocity
+            // while no contact impulses act, so contact-free behaviour is
+            // bit-identical) and reproduces the audited impulse exactly.
+            const Vec3 uref = body->getEulerLagrangeRefVelocity();
             const Vec3 unew = elSemiImplicitVelocity(
-               uold, body->getMass(), body->getEulerLagrangeDragB(),
+               uref, body->getMass(), body->getEulerLagrangeDragB(),
                body->getEulerLagrangeCarrierVelocity(),
                body->getEulerLagrangeOtherForce(), dt );
-            dv = unew - uold;
+            dv = unew - uref;
+            body->setEulerLagrangeRefVelocity( unew );
          }
          else {
             dv = ( body->getInvMass() * dt ) * body->getForce();

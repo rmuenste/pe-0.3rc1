@@ -1,6 +1,7 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/CollisionSystem.h>
+#include <pe/interface/el_optional_api.h>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -107,6 +108,88 @@ extern "C" int getElContactCount() {
  */
 extern "C" double getElMaxPenetration() {
   return static_cast<double>(pe::theCollisionSystem()->getMaximumPenetration());
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local lubrication impulse virial of the current macro step
+ * (9 components, row-major): Sum w*dt*F (x) r12 over pairs and substeps,
+ * weight 0.5 per locally-owned pair member so the MPI sum counts each pair
+ * once. Particle-phase stress: sigma = -virial/(dt_macro*V).
+ */
+extern "C" void getElLubricationVirial(double *sigma) {
+  pe::elLubricationVirial(*pe::theCollisionSystem(), sigma);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local count of lubrication pair evaluations this macro step.
+ */
+extern "C" int getElLubricationPairs() {
+  return static_cast<int>(pe::elLubricationPairs(*pe::theCollisionSystem()));
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local NET momentum folded by the lubrication sweep this macro
+ * step; the MPI sum across ranks measures pair one-sidedness (must be ~0).
+ */
+extern "C" void getElLubricationImpulse(double *dp) {
+  pe::elLubricationImpulse(*pe::theCollisionSystem(), dp);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local impulse virial of the converged sphere-sphere PGS contact
+ * impulses this macro step, Sum p (x) r12 (row-major 3x3); same normalization
+ * as the lubrication virial (stress = -virial/(dt_macro*V) after MPI sum).
+ */
+extern "C" void getElContactVirial(double *sigma) {
+  pe::elContactVirial(*pe::theCollisionSystem(), sigma);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local count of sphere-sphere contacts accumulated into the
+ * contact virial this macro step.
+ */
+extern "C" int getElContactVirialPairs() {
+  return static_cast<int>(pe::elContactVirialPairs(*pe::theCollisionSystem()));
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local lubrication impulse the spheres exert on z-wall `wall`
+ * (0 = bottom, 1 = top) this macro step; MPI-SUM counts each sphere once
+ * (owner-only evaluation). Wall shear stress: tau = Sum(dp_x)/(dt_macro*A).
+ */
+extern "C" void getElWallLubImpulse(int wall, double *dp) {
+  pe::elWallLubImpulse(*pe::theCollisionSystem(), wall, dp);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local converged PGS contact impulse ON z-wall `wall`
+ * (0 = bottom, 1 = top) this macro step; each contact counted once.
+ */
+extern "C" void getElWallContactImpulse(int wall, double *dp) {
+  pe::elWallContactImpulse(*pe::theCollisionSystem(), wall, dp);
+}
+
+//=================================================================================================
+
+/*
+ *!\brief Rank-local count of sphere-wall lubrication evaluations this macro step.
+ */
+extern "C" int getElWallLubPairs() {
+  return static_cast<int>(pe::elWallLubPairs(*pe::theCollisionSystem()));
 }
 
 //=================================================================================================

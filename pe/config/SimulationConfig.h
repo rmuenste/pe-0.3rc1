@@ -195,10 +195,28 @@ public:
     void setSeedMode(const std::string& value) { seedMode_ = value; }
     real getSeedMinGap() const { return seedMinGap_; }
     void setSeedMinGap(real value) { seedMinGap_ = value; }
+    bool getSeedAllowContact() const { return seedAllowContact_; }
+    void setSeedAllowContact(bool value) { seedAllowContact_ = value; }
+    const std::string& getSeedDomain() const { return seedDomain_; }
+    void setSeedDomain(const std::string& value) { seedDomain_ = value; }
+    const Vec3& getSeedCylinderCenter() const { return seedCylinderCenter_; }
+    void setSeedCylinderCenter(const Vec3& value) { seedCylinderCenter_ = value; }
+    real getSeedCylinderRadius() const { return seedCylinderRadius_; }
+    void setSeedCylinderRadius(real value) { seedCylinderRadius_ = value; }
+    const std::string& getSeedCylinderAxis() const { return seedCylinderAxis_; }
+    void setSeedCylinderAxis(const std::string& value) { seedCylinderAxis_ = value; }
+    bool getPeriodicX() const { return periodicX_; }
+    void setPeriodicX(bool value) { periodicX_ = value; }
+    bool getPeriodicY() const { return periodicY_; }
+    void setPeriodicY(bool value) { periodicY_ = value; }
+    bool getPeriodicZ() const { return periodicZ_; }
+    void setPeriodicZ(bool value) { periodicZ_ = value; }
     real getFluidizationSpacingFactor() const { return fluidizationSpacingFactor_; }
     void setFluidizationSpacingFactor(real value) { fluidizationSpacingFactor_ = value; }
     const Vec3& getBenchStartPosition() const { return benchStartPosition_; }
     void setBenchStartPosition(const Vec3& value) { benchStartPosition_ = value; }
+    bool getBenchUseConfigStart() const { return benchUseConfigStart_; }
+    void setBenchUseConfigStart(bool value) { benchUseConfigStart_ = value; }
     const Vec3& getInitialParticleVelocity() const { return initialParticleVelocity_; }
     void setInitialParticleVelocity(const Vec3& value) { initialParticleVelocity_ = value; }
     //@}
@@ -295,6 +313,16 @@ public:
     void setLubricationMeshClampFactor(real value) { lubricationMeshClampFactor_ = value; }
     bool getLubricationAabbInflation() const { return lubricationAabbInflation_; }
     void setLubricationAabbInflation(bool value) { lubricationAabbInflation_ = value; }
+    real getLubricationCutoff() const { return lubricationCutoff_; }
+    void setLubricationCutoff(real value) { lubricationCutoff_ = value; }
+    real getLubricationSlipLength() const { return lubricationSlipLength_; }
+    void setLubricationSlipLength(real value) { lubricationSlipLength_ = value; }
+    bool getZWallsEnabled() const { return zWallsEnabled_; }
+    void setZWallsEnabled(bool value) { zWallsEnabled_ = value; }
+    real getZWallVelocityTop() const { return zWallVelocityTop_; }
+    void setZWallVelocityTop(real value) { zWallVelocityTop_ = value; }
+    real getZWallVelocityBottom() const { return zWallVelocityBottom_; }
+    void setZWallVelocityBottom(real value) { zWallVelocityBottom_ = value; }
     real getRestitution() const { return restitution_; }
     void setRestitution(real value) { restitution_ = value; }
     real getStaticFriction() const { return staticFriction_; }
@@ -384,8 +412,17 @@ private:
     real benchRadius_;           //!< Radius of the benchmark geometry
     std::string seedMode_;       //!< EL validation seeding mode: file or random
     real seedMinGap_;            //!< Minimum surface-to-surface seed gap; negative means setup default
+    bool seedAllowContact_;      //!< Allow intentionally touching/overlapping seeds (skips the min-gap guard; test cases)
+    bool periodicX_;             //!< Periodic wrap-around domain connectivity in x (MPI build only)
+    bool periodicY_;             //!< Periodic wrap-around domain connectivity in y (MPI build only)
+    bool periodicZ_;             //!< Periodic wrap-around domain connectivity in z (MPI build only)
+    std::string seedDomain_;     //!< Random seed support domain: box or cylinder
+    Vec3 seedCylinderCenter_;    //!< Center point for cylindrical random seed support
+    real seedCylinderRadius_;    //!< Radius for cylindrical random seed support
+    std::string seedCylinderAxis_; //!< Axis for cylindrical random seed support
     real fluidizationSpacingFactor_; //!< Gap factor relative to radius for fluidization grid packing
     Vec3 benchStartPosition_;    //!< Initial position of the benchmark geometry
+    bool benchUseConfigStart_;   //!< Opt-in: bench setups take the start position from benchStartPosition_ instead of their legacy hard-coded value
     Vec3 initialParticleVelocity_; //!< Optional initial velocity assigned to created particles
 
     // Domain boundary parameters
@@ -412,7 +449,9 @@ private:
     Vec3 gravity_;               //!< Gravity vector
     real lubricationHysteresisDelta_; //!< Half-width of lubrication blend band
     real contactHysteresisDelta_; //!< Half-width of contact blend band
-    real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication (explicit-capped scheme)
+
+  
+  real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication (explicit-capped scheme)
     real minEpsLub_;             //!< Regularization epsilon for lubrication gap (numerical floor)
     bool lubricationEnabled_;    //!< Master switch for lubrication forces
     std::string lubricationModel_; //!< Force model: "kroupa2016" or "legacy"
@@ -421,11 +460,19 @@ private:
     bool lubricationTwisting_;   //!< Twisting torque term
     bool lubricationSlipCorrection_; //!< Vinogradova slip correction f*
     bool lubricationOnSeparation_; //!< Resist separating motion (suction) as well
-    bool lubricationWallTerms_;  //!< Dedicated wall resistance set for sphere-plane pairs
+    bool lubricationWallTerms_;  //!< Dedicated wall resqistance set for sphere-plane pairs
     real lubricationEpsCritical_; //!< eps_c = h_c/a_ref saturation/slip-length scale
     real lubricationCutoffFactor_; //!< eps_cut = h_cut/a_ref outer cutoff; 0 = legacy absolute
     real lubricationMeshClampFactor_; //!< Mesh clamp c: h_cut capped at c*dx_CFD; 0 = off
     bool lubricationAabbInflation_; //!< Grow AABBs by the lubrication cutoff
+    real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
+    real minEpsLub_;             //!< Regularization epsilon for lubrication gap
+    bool lubricationEnabled_;    //!< Pairwise lubrication forces in the EL solver
+    real lubricationCutoff_;     //!< Surface-gap trigger distance for lubrication pairs
+    real lubricationSlipLength_; //!< Slip length h_c of the Vinogradova f* correction
+    bool zWallsEnabled_;         //!< Create global z-planes (Couette walls) in the EL setup
+    real zWallVelocityTop_;      //!< x-velocity of the top wall (z = zmax)
+    real zWallVelocityBottom_;   //!< x-velocity of the bottom wall (z = zmin)
     real restitution_;           //!< Contact material restitution coefficient
     real staticFriction_;        //!< Contact material static friction coefficient
     real dynamicFriction_;       //!< Contact material dynamic friction coefficient

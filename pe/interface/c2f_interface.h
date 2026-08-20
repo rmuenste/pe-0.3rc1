@@ -6,6 +6,7 @@
 extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
 extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
 extern "C" void commf2c_dns_drag_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
+extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
 extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
                                          double *xmin, double *xmax,
                                          double *ymin, double *ymax,

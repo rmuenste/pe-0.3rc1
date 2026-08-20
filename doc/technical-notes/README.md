@@ -33,6 +33,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [ffd-solver.md](ffd-solver.md): Fast-Frictional Dynamics solver wiring and solver math notes.
 - [relaxation-models.md](relaxation-models.md): Analysis of hard-contact relaxation models and material parameter effects.
 - [new-collision-system-implementation-guide.md](new-collision-system-implementation-guide.md): Checklist for adding and wiring a new `CollisionSystem` specialization.
+- [euler-lagrange-solver-conventions.md](euler-lagrange-solver-conventions.md): Conventions for `HardContactEulerLagrange`, including the opposite gravity/buoyancy ownership versus `HardContactAndFluid`, and how to call solver-specific interface APIs safely.
 
 ## Lubrication and Short-Range Forces
 

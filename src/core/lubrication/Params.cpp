@@ -34,6 +34,7 @@ real meshClampFactor  = real(0);
 real meshDx           = real(0);
 bool aabbInflation    = true;
 real maxSphereRadius  = real(0);
+real shadowCopyMargin  = real(0);     // Off unless lubrication setup enables it
 }  // namespace
 
 real getContactHysteresisDelta()
@@ -130,6 +131,14 @@ real aabbPadding( real bodyRadius )
    if( cutoffFactor <= real(0) )
       return lubricationThresh;
    return cutoffFactor * bodyRadius;
+real getShadowCopyMargin()
+{
+   return shadowCopyMargin;
+}
+
+void setShadowCopyMargin( real margin )
+{
+   shadowCopyMargin = margin;
 }
 
 } // namespace lubrication

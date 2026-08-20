@@ -18,6 +18,7 @@
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/setup_optional_collision_params.h>
 #include <pe/interface/sim_setup_serial_features.h>
+#include <pe/interface/el_optional_api.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -92,6 +93,8 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   real radBench = config.getBenchRadius();
   real rhoParticle( config.getParticleDensity() );
   Vec3 position(-0.0, -0.0, 0.1275);
+  if (config.getBenchUseConfigStart())
+    position = config.getBenchStartPosition();
 
   int particlesCreated = 0;
 
@@ -110,6 +113,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
     MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
     SphereID sphere(nullptr);
     sphere = createSphere(idx, position, radBench, myMaterial, true);
+    sphere->setLinearVel(config.getInitialParticleVelocity());
     ++idx;
     particlesCreated++;
   }
@@ -368,7 +372,8 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
   const real gammaSRR ( real(0.5)     );  // velocity damping         [dyne·s/cm]
   const size_t nSubcycles = 5000;
 
-  applyOptionalSRRParams( *cs, rhoSRR, epsSRR, epsSRR, gammaSRR, nSubcycles );
+  applyOptionalSRRParams( cs->getContactSolver(), rhoSRR, epsSRR, epsSRR, gammaSRR );
+  applyOptionalSubcycles( *cs, nSubcycles );
 
   // Inflate the lubrication threshold so that the fine collision detector
   // generates contacts at distances up to rho (the SRR security zone width).
@@ -1276,6 +1281,38 @@ inline void setupDNSDragSerial(int cfd_rank) {
   const real targetVF = std::max(real(0.0), config.getVolumeFraction());
   const real sphereVol = (4.0 / 3.0) * M_PI * std::pow(radius, 3);
 
+  // Opt-in random-array path (D3.1): when xyzFilePath_ is set, create one
+  // FIXED sphere per line of the file and skip the legacy lattice below.
+  // Overlap/periodic-image validity is the generator's responsibility.
+  const std::string dragXyzPath = config.getXyzFilePath().string();
+  if (!dragXyzPath.empty()) {
+    std::vector<Vec3> positions = readVectorsFromFile(dragXyzPath);
+    if (positions.empty()) {
+      throw std::runtime_error("setupDNSDragSerial: xyzFilePath_ set but no positions read from '" +
+                               dragXyzPath + "'");
+    }
+    MaterialID arrayMaterial = createMaterial(
+        "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    int aidx = 0;
+    for (const auto& pos : positions) {
+      SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
+      sphere->setFixed(true);
+      sphere->setLinearVel(0.0, 0.0, 0.0);
+      sphere->setAngularVel(0.0, 0.0, 0.0);
+    }
+    if (isRepresentative) {
+      std::cout << "\n--DNS DRAG SETUP (random array from file)--------------------\n"
+                << " Position file                           = " << dragXyzPath << "\n"
+                << " Number of spheres                       = " << positions.size() << "\n"
+                << " Radius                                  = " << radius << "\n"
+                << " Achieved volume fraction                = "
+                << positions.size() * sphereVol / domainVolume << "\n"
+                << "-------------------------------------------------------------\n"
+                << std::endl;
+    }
+    return;
+  }
+
   int targetCount = 1;
   if (targetVF > 0.0 && sphereVol > 0.0) {
     targetCount = std::max(1, static_cast<int>(std::round(targetVF * domainVolume / sphereVol)));
@@ -1343,22 +1380,85 @@ inline void setupDNSDragSerial(int cfd_rank) {
  * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
  */
 inline void setupDraftKissTumbSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::getInstance().setCfdRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
 
   WorldID world = theWorld();
 
-  world->setGravity(0.0, 0.0, -9.81);
-  world->setDamping(1.0);
+  // Apply lubrication/contact parameters from configuration
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
 
-  real simViscosity(1.0);
-  real simRho(1.0);
+  // Gravity and fluid properties come from the configuration, never hardcoded
+  world->setGravity(config.getGravity());
+
+  const real simViscosity(config.getFluidViscosity());
+  const real simRho(config.getFluidDensity());
+  const real rhoParticle(config.getParticleDensity());
+  const real sphereRad(config.getBenchRadius());
 
   world->setLiquidSolid(true);
   world->setLiquidDensity(simRho);
   world->setViscosity(simViscosity);
+  world->setDamping(1.0);
 
-  TimeStep::stepsize(0.001);
+  // The PE stepsize must match the CFD deck TimeStep; take it from the config
+  TimeStep::stepsize(config.getStepsize());
+
+  // Floor contact plane at z = 0
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+  // Contact material from config: restitution_/staticFriction_/dynamicFriction_
+  // json keys (defaults 0.0/0.1/0.05 reproduce the former hard-coded values)
+  MaterialID particleMaterial =
+      createMaterial("Bench", rhoParticle, config.getRestitution(),
+                     config.getStaticFriction(), config.getDynamicFriction(),
+                     0.2, 80, 100, 10, 11);
+
+  // Sphere positions are read from the external xyz file
+  const std::string xyzPath = config.getXyzFilePath().string();
+  std::vector<Vec3> spherePositions = readVectorsFromFile(xyzPath);
+
+  if (spherePositions.empty()) {
+    std::cerr << "ERROR: DKT setup could not read any particle positions from '"
+              << xyzPath << "'" << std::endl;
+    throw std::runtime_error("setupDraftKissTumbSerial: no particle positions read from '" +
+                             xyzPath + "'");
+  }
+
+  int idx = 0;
+  int particlesCreated = 0;
+  for (const auto &spherePos : spherePositions) {
+    createSphere(idx++, spherePos, sphereRad, particleMaterial);
+    ++particlesCreated;
+  }
+
+  if (isRepresentative) {
+    std::cout << "\n--" << "DKT SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Particle radius                         = " << sphereRad << "\n"
+              << " Particle density                        = " << rhoParticle << "\n"
+              << " Position file                           = " << xyzPath << "\n";
+    for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+      std::cout << " Sphere " << i << " position                       = "
+                << spherePositions[i] << "\n";
+    }
+    std::cout << " Total number of particles               = " << particlesCreated << "\n"
+              << "--------------------------------------------------------------------------------\n"
+              << std::endl;
+  }
 }
 
 /**

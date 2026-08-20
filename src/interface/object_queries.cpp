@@ -1,5 +1,6 @@
 #include <pe/interface/object_queries.h>
 #include <pe/interface/el_hydro_compat.h>
+#include <pe/interface/el_optional_api.h>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
@@ -80,6 +81,12 @@ void set_el_hydro_state(const short int bytes[8],
         "set_el_hydro_state requires pe_CONSTRAINT_SOLVER == "
         "pe::response::HardContactEulerLagrange");
   }
+  // Arm the free-flight reference velocity of the semi-implicit drag
+  // sub-cycling with the pre-step body velocity. The CFD driver charges the
+  // fluid the mirrored FREE-FLIGHT sub-cycled drag impulse (issue D); the PE
+  // side advances this reference trajectory (not the actual, possibly
+  // contact-perturbed velocity) so the body receives exactly that impulse.
+  elSetRefVelocity(body, body->getLinearVel());
 }
 
 

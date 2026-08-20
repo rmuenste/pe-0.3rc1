@@ -70,8 +70,17 @@ SimulationConfig::SimulationConfig()
     , benchRadius_(0.0015)
     , seedMode_("file")
     , seedMinGap_(-1.0)
+    , seedAllowContact_(false)
+    , seedDomain_("box")
+    , seedCylinderCenter_(0.0, 0.0, 0.0)
+    , seedCylinderRadius_(-1.0)
+    , seedCylinderAxis_("z")
+    , periodicX_(false)
+    , periodicY_(false)
+    , periodicZ_(false)
     , fluidizationSpacingFactor_(0.1)
     , benchStartPosition_(1.0, 0.01, 0.1275)
+    , benchUseConfigStart_(false)
     , initialParticleVelocity_(0.0, 0.0, 0.0)
     , domainBoundaryEnabled_(true)
     , domainBoundaryFilePath_("atc_boundary_param_zero.obj")
@@ -97,7 +106,7 @@ SimulationConfig::SimulationConfig()
     // Production defaults: Kroupa-2016 model with the relative outer cutoff. Pin
     // lubricationModel_="legacy" + lubricationCutoffFactor_=0 to reproduce the
     // pre-2026 behavior (see doc/technical-notes/lubrication-production-design.md §5).
-    , lubricationEnabled_(true)
+    , lubricationEnabled_(false)
     , lubricationModel_("kroupa2016")
     , lubricationIntegration_("semi-implicit")
     , lubricationTangential_(true)
@@ -109,6 +118,12 @@ SimulationConfig::SimulationConfig()
     , lubricationCutoffFactor_(0.5)
     , lubricationMeshClampFactor_(0.0)
     , lubricationAabbInflation_(true)
+    , lubricationEnabled_(false)
+    , lubricationCutoff_(0.0)
+    , lubricationSlipLength_(0.0)
+    , zWallsEnabled_(false)
+    , zWallVelocityTop_(0.0)
+    , zWallVelocityBottom_(0.0)
     , restitution_(0.0)
     , staticFriction_(0.1)
     , dynamicFriction_(0.05)
@@ -259,6 +274,37 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     if (j.contains("seedMinGap_"))
         config.setSeedMinGap(j["seedMinGap_"].get<real>());
 
+    if (j.contains("seedAllowContact_"))
+        config.setSeedAllowContact(j["seedAllowContact_"].get<bool>());
+
+    if (j.contains("seedDomain_"))
+        config.setSeedDomain(j["seedDomain_"].get<std::string>());
+
+    if (j.contains("seedCylinderCenter_")) {
+        if (j["seedCylinderCenter_"].is_array() &&
+            j["seedCylinderCenter_"].size() == 3) {
+            Vec3 seedCylinderCenter(j["seedCylinderCenter_"][0].get<real>(),
+                                    j["seedCylinderCenter_"][1].get<real>(),
+                                    j["seedCylinderCenter_"][2].get<real>());
+            config.setSeedCylinderCenter(seedCylinderCenter);
+        }
+    }
+
+    if (j.contains("seedCylinderRadius_"))
+        config.setSeedCylinderRadius(j["seedCylinderRadius_"].get<real>());
+
+    if (j.contains("seedCylinderAxis_"))
+        config.setSeedCylinderAxis(j["seedCylinderAxis_"].get<std::string>());
+
+    if (j.contains("periodicX_"))
+        config.setPeriodicX(j["periodicX_"].get<bool>());
+
+    if (j.contains("periodicY_"))
+        config.setPeriodicY(j["periodicY_"].get<bool>());
+
+    if (j.contains("periodicZ_"))
+        config.setPeriodicZ(j["periodicZ_"].get<bool>());
+
     if (j.contains("fluidizationSpacingFactor_"))
         config.setFluidizationSpacingFactor(j["fluidizationSpacingFactor_"].get<real>());
 
@@ -271,6 +317,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
             config.setBenchStartPosition(benchStartPosition);
         }
     }
+
+    if (j.contains("benchUseConfigStart_"))
+        config.setBenchUseConfigStart(j["benchUseConfigStart_"].get<bool>());
 
     if (j.contains("initialParticleVelocity_")) {
         if (j["initialParticleVelocity_"].is_array() &&
@@ -408,6 +457,21 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("lubricationAabbInflation_"))
         config.setLubricationAabbInflation(j["lubricationAabbInflation_"].get<bool>());
+    // Pairwise lubrication in the EL solver (surface-gap trigger + slip length)
+    if (j.contains("lubricationEnabled_"))
+        config.setLubricationEnabled(j["lubricationEnabled_"].get<bool>());
+    if (j.contains("lubricationCutoff_"))
+        config.setLubricationCutoff(j["lubricationCutoff_"].get<real>());
+    if (j.contains("lubricationSlipLength_"))
+        config.setLubricationSlipLength(j["lubricationSlipLength_"].get<real>());
+
+    // Plane-Couette z-walls (global planes with tangential x-velocity)
+    if (j.contains("zWallsEnabled_"))
+        config.setZWallsEnabled(j["zWallsEnabled_"].get<bool>());
+    if (j.contains("zWallVelocityTop_"))
+        config.setZWallVelocityTop(j["zWallVelocityTop_"].get<real>());
+    if (j.contains("zWallVelocityBottom_"))
+        config.setZWallVelocityBottom(j["zWallVelocityBottom_"].get<real>());
 
     if (j.contains("restitution_"))
         config.setRestitution(j["restitution_"].get<real>());

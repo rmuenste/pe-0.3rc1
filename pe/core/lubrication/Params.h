@@ -107,6 +107,13 @@ real lubricationCutoff( real aRef );
 //                              applied: padding must stay a superset of the force band)
 //   getLubricationThreshold()  in legacy absolute mode (radius ignored)
 real aabbPadding( real bodyRadius );
+// Getter/setter pair for the domain-decomposition shadow-copy margin.
+// Default 0 (no behavior change). When pairwise lubrication is enabled the
+// EL setup sets this to the lubrication cutoff so that any pair with a
+// surface gap below the cutoff has both partners shadow-copied across the
+// process boundary (HalfSpace::intersectsWith adds it to the overlap test).
+real getShadowCopyMargin();
+void setShadowCopyMargin( real margin );
 
 } // namespace lubrication
 } // namespace pe
