@@ -263,10 +263,10 @@ void requireFileContains(const fs::path& path, const std::string& needle) {
           "Output file does not contain expected marker '" + needle + "': " + path.string());
 }
 
+// Seeds go through the shipped writeCheckpoint(), not a bare BodyBinaryWriter, so the roundtrip
+// cases exercise the same write path (sidecar + atomic publication) a real run uses.
 void writeCheckpoint(const fs::path& checkpointPath, const std::string& name) {
-  fs::create_directories(checkpointPath);
-  pe::BodyBinaryWriter writer;
-  writer.writeFile((checkpointPath / (name + ".peb")).string().c_str());
+  pe::writeCheckpoint(checkpointPath, name);
 }
 
 void requireCommonConfig(bool resume, pe::SimulationConfig::PackingMethod packingMethod) {

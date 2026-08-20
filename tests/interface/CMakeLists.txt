@@ -79,6 +79,19 @@ add_test(
   COMMAND pe_lubrication_bounce_stokes_test
 )
 
+# Contract tests for the checkpoint identity sidecar: metadata roundtrip, legacy (sidecar-less)
+# acceptance, truncation rejection for both the sidecar and the `.peb`, material table restore,
+# and the resume mismatch guard. Links the shipped pe_static -- the checkpoint path is
+# solver-independent, so this must hold in the default configuration users get.
+add_executable(pe_checkpoint_metadata_test
+  pe_checkpoint_metadata_test.cpp
+)
+target_link_libraries(pe_checkpoint_metadata_test PRIVATE pe_static)
+add_test(
+  NAME pe-checkpoint-metadata
+  COMMAND pe_checkpoint_metadata_test
+)
+
 function(pe_add_interface_serial_test test_name case_name)
   add_test(
     NAME ${test_name}
