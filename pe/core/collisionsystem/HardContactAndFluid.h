@@ -2107,29 +2107,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             w_[j] = body->getAngularVel();
          }
 
-         // VELOCITY CHECK AND LIMITING - before collision pipeline
-         real velocityMagnitude = v_[j].length();
-         if (velocityMagnitude > 32.0 || body->isStuck_) {
+         // Diagnostic only: report implausibly fast or stuck bodies. This used to also
+         // CLAMP the velocity (|v| > 32 -> 12.3), which is removed -- see the commit
+         // that deleted the integratePositions limiter. The 32.0 below is a reporting
+         // threshold, not physics; it changes no state.
+         const real velocityMagnitude = v_[j].length();
+         if (velocityMagnitude > real(32.0) || body->isStuck_) {
             pe_LOG_INFO_SECTION( log ) {
                if (body->isStuck_) {
                   log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n";
                }
-               if (velocityMagnitude > 32.0) {
+               if (velocityMagnitude > real(32.0)) {
                   log << "  HIGH VELOCITY DETECTED for Particle (ID=" << body->getSystemID() << ")\n";
-                  log << "    Velocity before limiting: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
-               } else if (body->isStuck_) {
-                  log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
                }
-            }
-
-            // Apply velocity limiting if too high (BEFORE collision pipeline)
-            if (velocityMagnitude > 32.0) {
-               v_[j].normalize();
-               v_[j] *= 12.3;  // Clamp to safe value
-               pe_LOG_INFO_SECTION( log ) {
-                  log << "    Velocity after limiting: " << v_[j] << " (magnitude: " << v_[j].length() << ")\n";
-                  log << "    Velocity limiting: APPLIED (clamped to 2.5)\n";
-               }
+               log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
             }
          }
       }
@@ -4746,14 +4737,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       // Storing the velocities back in the body properties
       body->v_ = v;
       body->w_ = w;
-
-      // Velocity limiting. We know the fluid speeds in the current application.
-      // Particle speeds higher than this are a numerical artifact and the limiter
-      // gets applied.
-      if(body->v_.length() > 12.3) {
-        body->v_.normalize();
-        body->v_ *= 4.1;
-      }
 
       if( body->getType() == unionType ) {
          // Updating the contained bodies
