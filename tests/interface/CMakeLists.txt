@@ -92,6 +92,29 @@ add_test(
   COMMAND pe_checkpoint_metadata_test
 )
 
+# Two-rank counterpart. The collective parts of the checkpoint write -- the rank-invariant scratch
+# filename MPI_File_open demands, and the cross-rank body-count reduction -- cannot be reached by
+# any serial test, and a mistake in either is silent in a serial-only suite.
+#
+# NOTE: the guard is PE_USE_MPI/MPI_FOUND, not the bare `MPI` used by the frozen-field test below.
+# Nothing in this project ever sets a variable named `MPI`, so that guard is always false and the
+# test it protects is silently never built. Left alone here rather than enabled as a drive-by, but
+# it means the frozen-field MPI coverage does not currently exist. See PR_DESCRIPTION.md.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_checkpoint_metadata_mpi
+    pe_checkpoint_metadata_mpi.cpp
+  )
+  target_link_libraries(pe_checkpoint_metadata_mpi PRIVATE pe_static MPI::MPI_CXX)
+  add_test(
+    NAME pe-checkpoint-metadata-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_checkpoint_metadata_mpi>
+      ${MPIEXEC_POSTFLAGS}
+  )
+endif()
+
 function(pe_add_interface_serial_test test_name case_name)
   add_test(
     NAME ${test_name}

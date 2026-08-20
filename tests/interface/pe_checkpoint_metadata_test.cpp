@@ -19,6 +19,14 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
+// A single-rank test still has to initialise MPI when the library was built with it: the
+// checkpoint write path is collective (MPI_Exscan in BodyBinaryWriter, the scratch-token
+// broadcast, the body-count reduction) and calling any of those before MPI_Init aborts the
+// process, even at size 1.
+#if HAVE_MPI
+#include <mpi.h>
+#endif
+
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -217,6 +225,48 @@ void testTruncationRejection() {
     std::cout << "  (expected throw for future layout version: " << e.what() << ")" << std::endl;
   }
   check(versionRejected, "truncation: a future layout version must be refused");
+
+  // Corruption that is not truncation: a repeated directive is ambiguous, and a fractional value
+  // for an integral field parses as its integer prefix and leaves the rest on the line.
+  struct Corruption {
+    const char* name;
+    const char* find;
+    const char* replaceWith;
+  };
+  const Corruption corruptions[] = {
+      {"repeated directive", "timeStep 2400", "timeStep 2400\ntimeStep 9999"},
+      {"fractional integer", "timeStep 2400", "timeStep 2400.5"},
+      {"trailing content", "bodyCount 7", "bodyCount 7 8"},
+  };
+
+  for (size_t i = 0; i < sizeof(corruptions) / sizeof(corruptions[0]); ++i) {
+    const fs::path corrupt = workDir() / (std::string("corrupt-") + std::to_string(i) + ".peinfo");
+    {
+      fs::ifstream in(complete);
+      std::ostringstream all;
+      all << in.rdbuf();
+      std::string text = all.str();
+      const std::string::size_type at = text.find(corruptions[i].find);
+      check(at != std::string::npos,
+            std::string("corruption fixture: anchor not found for ") + corruptions[i].name);
+      if (at != std::string::npos) {
+        text.replace(at, std::string(corruptions[i].find).size(), corruptions[i].replaceWith);
+      }
+      fs::ofstream out(corrupt, std::ios::out | std::ios::trunc);
+      out << text;
+    }
+
+    bool corruptRejected = false;
+    try {
+      pe::readCheckpointMetadata(corrupt);
+    } catch (const std::exception& e) {
+      corruptRejected = true;
+      std::cout << "  (expected throw for " << corruptions[i].name << ": " << e.what() << ")"
+                << std::endl;
+    }
+    check(corruptRejected,
+          std::string("corruption: '") + corruptions[i].name + "' must be refused");
+  }
 }
 
 //=================================================================================================
@@ -316,6 +366,39 @@ void testMismatchGuard() {
   }
   check(legacyRejected,
         "mismatch guard: an expectation on a legacy checkpoint must be refused, not dropped");
+
+  // A zero step size would collapse the tolerance window to zero and reject every real resume on
+  // a rounding difference. It must say so rather than present itself as a time mismatch.
+  pe::CheckpointMetadata noStepSize = metadata;
+  noStepSize.stepSize = pe::real(0);
+  pe::ResumeExpectation exactTime;
+  exactTime.hasTime = true;
+  exactTime.time = noStepSize.simulationTime;
+  bool stepSizeRejected = false;
+  std::string stepSizeMessage;
+  try {
+    pe::validateResumeExpectation(noStepSize, exactTime, "zero-stepsize.peb");
+  } catch (const std::exception& e) {
+    stepSizeRejected = true;
+    stepSizeMessage = e.what();
+    std::cout << "  (expected throw for zero step size: " << e.what() << ")" << std::endl;
+  }
+  check(stepSizeRejected, "mismatch guard: a zero step size with a time expectation must throw");
+  check(stepSizeMessage.find("step size") != std::string::npos,
+        "mismatch guard: the zero-step-size error must name the step size, not read as a time "
+        "mismatch");
+
+  // A step expectation does not depend on the step size, so it must still work.
+  pe::ResumeExpectation stepOnly;
+  stepOnly.hasStep = true;
+  stepOnly.step = noStepSize.timeStep;
+  bool stepOnlyAccepted = true;
+  try {
+    pe::validateResumeExpectation(noStepSize, stepOnly, "zero-stepsize.peb");
+  } catch (const std::exception&) {
+    stepOnlyAccepted = false;
+  }
+  check(stepOnlyAccepted, "mismatch guard: a step expectation must not depend on the step size");
 }
 
 //=================================================================================================
@@ -416,6 +499,48 @@ void testMaterialRestoreAndPebIntegrity() {
   }
   check(shortRejected, "truncation: a short .peb must be refused, not half-read");
 
+  // The case above is caught by the sidecar's pebBytes. The reader's own length check is what
+  // protects a LEGACY checkpoint, which has no sidecar to compare against, so it needs its own
+  // fixture -- otherwise the reader gate is never actually exercised.
+  //
+  // Three truncation depths, because the reader validates in three stages: the fixed header, the
+  // offset table (whose extent depends on a process count read from the file), and the body
+  // chunks. Cutting only at one depth would leave two gates untested.
+  const std::string truncationDepths[] = {"header", "offset-table", "body"};
+  std::string pebBytesRaw;
+  {
+    fs::ifstream in(peb, std::ios::binary);
+    std::ostringstream all;
+    all << in.rdbuf();
+    pebBytesRaw = all.str();
+  }
+  const size_t fixedHeaderBytes = 9 + sizeof(uint32_t);
+  const size_t cutLengths[] = {fixedHeaderBytes / 2, fixedHeaderBytes + 2,
+                               pebBytesRaw.size() / 2};
+
+  for (size_t i = 0; i < 3; ++i) {
+    const fs::path dir = workDir() / ("legacy-truncated-" + truncationDepths[i]);
+    fs::create_directories(dir);
+    {
+      fs::ofstream out(dir / "restore_seed.peb",
+                       std::ios::out | std::ios::binary | std::ios::trunc);
+      out.write(pebBytesRaw.data(), static_cast<std::streamsize>(cutLengths[i]));
+    }
+    check(!fs::exists(pe::checkpointMetadataPath(dir, "restore_seed")),
+          "truncation: legacy fixture must have no sidecar");
+
+    bool rejectedHere = false;
+    try {
+      pe::readCheckpoint(dir, "restore_seed");
+    } catch (const std::exception& e) {
+      rejectedHere = true;
+      std::cout << "  (expected throw for legacy .peb truncated at the " << truncationDepths[i]
+                << ": " << e.what() << ")" << std::endl;
+    }
+    check(rejectedHere, "truncation: a sidecar-less .peb truncated at the " + truncationDepths[i] +
+                            " must be refused by the reader itself");
+  }
+
   // A checkpoint whose sidecar is removed is exactly what a pre-metadata pe build produced. It
   // must still load -- loudly, but without failing -- so existing checkpoints stay usable.
   const fs::path legacyDir = workDir() / "legacy-checkpoint";
@@ -438,7 +563,14 @@ void testMaterialRestoreAndPebIntegrity() {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+#if HAVE_MPI
+  MPI_Init(&argc, &argv);
+#else
+  (void)argc;
+  (void)argv;
+#endif
+
   try {
     fs::create_directories(workDir());
 
@@ -451,8 +583,15 @@ int main() {
     fs::remove_all(workDir());
   } catch (const std::exception& e) {
     std::cerr << "pe_checkpoint_metadata_test: unexpected exception: " << e.what() << std::endl;
+#if HAVE_MPI
+    MPI_Finalize();
+#endif
     return EXIT_FAILURE;
   }
+
+#if HAVE_MPI
+  MPI_Finalize();
+#endif
 
   if (failures != 0) {
     std::cerr << "pe_checkpoint_metadata_test: " << failures << " check(s) failed" << std::endl;
