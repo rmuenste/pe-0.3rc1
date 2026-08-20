@@ -395,6 +395,13 @@ translation-only pipeline produces. This is a candidate explanation that has
 nothing to do with mesh resolution, timestep or contact parameters, and it
 should be checked before others are pursued.
 
+**Authorization.** This removal was explicitly instructed by the owner, who
+identified `w = Vec3(0,0,0)` as a stable debug artifact and directed that it be
+taken out; it is recorded in the campaign ledger as datasheet row
+`hcaf_angvel_reset` (FeatFloWer commit `ca33475d`). Noted here because a commit
+that changes the campaign solver's physics should carry its provenance in the
+PR, not only in the coordinating session.
+
 Removing it makes `integratePositions` identical to the plain hard-contact
 implementation. Pinned by an assertion in the serial coverage test
 (`[rotation] free spin w_y after one step = 3 (set to 3)`), and it is why the
@@ -436,7 +443,7 @@ rescale to a magic constant.
 | 3 | §3 (implied) stage extraction is sufficient | Also extracted per-contact state (`ContactState.h`) | Without it the stage runs and finds nothing. Finding A. |
 | 4 | §3.6 tests run "under a stage-capable solver … no skips under the neutral default" | Achieved via two dedicated library variants, not per-target defines | Per-target selection cannot work in pe. Finding C. |
 | 5 | §3.7 "one serial-mode + CFD-coupled test" | Serial-mode test only | The CFD-coupled half needs the FeatFloWer wire (§4), explicitly out of scope for this PR. Stated in the test header. |
-| 6 | — | `aabbPadding()` returns the absolute threshold when a security zone is active | Same reason as #1; SRR's AABBs must not collapse. |
+| 6 | — | `aabbPadding()` composes the security-zone and lubrication bands with `max` | Same reason as #1. The two consumers are independent, so neither may drop the other's pairs from the broad phase: SRR's AABBs must not collapse when lubrication is off, and the lubrication band must not be clipped to SRR's `rho` when it is wider. (An earlier revision of this branch returned the absolute threshold outright when a security zone was active; that was review finding 2, fixed in `4273f98`.) |
 
 Nothing in the spec was silently adapted; every departure is above.
 
@@ -545,24 +552,43 @@ extraction and the hook reproduce the retired pipeline exactly.
   references `getNumberOfContacts`, which SRR's collision system lacks). Not a
   regression from this PR; SRR is exercised as a contact solver, not as the
   selected constraint solver.
-- **Gate G0** (lubrication-off bitwise twins of DKT 20-step and e4_l3 against
-  certified logs) is campaign work and belongs to the validation ladder, not to
-  this PR. The disabled-path arguments above are the *design* case for why G0
-  should pass; they are not a substitute for running it.
+- **Gate G0** (lubrication-off twins of DKT 20-step and e4_l3 against certified
+  logs) is campaign work and belongs to the validation ladder, not to this PR.
+  The disabled-path arguments above are the *design* case for parts of it; they
+  are not a substitute for running it. Note that G0 is no longer a single
+  bitwise gate — see follow-up 1 for what each twin can and cannot show after
+  `a71c34d` and `044b04a`.
 
 ---
 
 ## Recommended follow-ups
 
-1. **Run Gate G0 before anything downstream bumps the submodule.** The
-   disabled path is now *enforced* bitwise by
-   `pe_lubrication_aabb_neutrality_test` rather than merely argued, but note
-   what that test does and does not say: it proves lubrication-off adds no
-   padding **relative to `radius + contactThreshold`**. It does not say the
-   AABBs match the campaign's *current* binary — they deliberately do not,
-   because that binary carries the legacy unconditional `1e-2` halo. Shrinking
-   it is the intended fix (spec §3.4) and is precisely the change G0's twins
-   have to clear.
+1. **Run Gate G0 before anything downstream bumps the submodule — but expect
+   two different kinds of answer.** G0 was designed as bitwise lubrication-off
+   twins. That framing no longer fits this branch, because two of its commits
+   deliberately change physics for rotating cases:
+
+   - **`e4_l3` remains the bitwise instrument.** Spin is ≈ 0, so `a71c34d`
+     (angular-velocity restoration) cannot move it, and the velocity limiters
+     removed in `044b04a` are argued never to have fired in campaign units —
+     that is a claim from inspection, not a measurement, and this twin is where
+     it gets tested. What `e4_l3` then isolates is the AABB change.
+   - **The DKT twin is now a physics-diff case, not a bitwise one.** Restoring
+     rotation must change a draft-kiss-tumble trajectory; if it did not, that
+     would itself be the bug. Its deviation from the certified log is the
+     omega-restoration signal, and the interesting question is whether the tilt
+     now proceeds past the recorded 4.2° stall rather than whether the numbers
+     match.
+
+   The campaign's own design spec was amended the same way today
+   (FeatFloWer commit `1cf6e3f1`).
+
+   Separately, on what the new AABB test does and does not say: it proves
+   lubrication-off adds no padding **relative to `radius + contactThreshold`**.
+   It does *not* say the AABBs match the campaign's current binary — they
+   deliberately do not, because that binary carries the legacy unconditional
+   `1e-2` halo. Shrinking it is the intended fix (spec §3.4) and is part of what
+   `e4_l3` has to clear.
 2. **`setMeshDx` is still a dead wire.** `lubricationMeshClampFactor_` now
    genuinely controls both the force cutoff *and* the AABB padding (commit 2),
    which is what makes the D2.1 "take over at gap ≲ 2h" rule expressible — but

@@ -96,7 +96,10 @@ int main() {
            "refusal leaves AABB padding at zero");
   }
 
-  // Restore the default so nothing downstream inherits an armed store.
+  // Put the CONFIG back to its default. This resets the json-side switch only -- the
+  // pe::lubrication:: store is left as the last applyOptionalLubricationParams call left
+  // it. That is harmless here because each test is its own process, but it is not a
+  // general "disarm everything" and should not be read as one.
   config.setLubricationEnabled(false);
 
   if (failures == 0) {

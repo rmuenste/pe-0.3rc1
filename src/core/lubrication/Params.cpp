@@ -14,6 +14,13 @@ namespace lubrication {
 
 // Hot-path gate flags: defined here, read through the inline accessors in Params.h so
 // the per-candidate-pair detection branch does not become a function call.
+//
+// enabledFlag defaults to OFF: lubrication is opt-in via lubricationEnabled_. This is
+// the value the AABB padding helper (aabbPadding, read by SphereBase and PlaneBase for
+// *every* constraint solver) sees before the interface layer pushes the config in via
+// applyOptionalLubricationParams, so it must match SimulationConfig::lubricationEnabled_
+// or bodies created early get inflated boxes. Pinned by
+// tests/interface/pe_lubrication_aabb_neutrality_test.cpp.
 namespace detail {
 bool enabledFlag      = false;   // Lubrication is opt-in; must match SimulationConfig
 bool securityZoneFlag = false;   // Set by ShortRangeRepulsion, never from json
@@ -27,12 +34,6 @@ real lubricationThresh = real(1E-2);  // Default matches Thresholds.h
 // Model switches/parameters. Production defaults: Kroupa-2016 model, semi-implicit
 // scheme, relative outer cutoff 0.5. Must stay in sync with the SimulationConfig
 // constructor defaults (src/config/SimulationConfig.cpp).
-//
-// The master switch defaults to OFF: lubrication is opt-in via lubricationEnabled_.
-// This value is what the AABB padding helper (aabbPadding, read by SphereBase and
-// PlaneBase for *every* constraint solver) sees before the interface layer pushes
-// the config in via applyOptionalLubricationParams, so it must match
-// SimulationConfig::lubricationEnabled_ or bodies created early get inflated boxes.
 int  model            = 0;        // ModelKind: 0 = kroupa2016
 int  scheme           = 0;        // SchemeKind: 0 = semi-implicit
 bool tangential       = true;

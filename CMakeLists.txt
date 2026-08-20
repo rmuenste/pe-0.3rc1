@@ -595,7 +595,9 @@ if(BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
    #   *_fluid  HardContactAndFluid -- the campaign solver. Carries buoyancy, so it
    #            reproduces the legacy regression reference trajectories bit-for-bit.
    #   *_plain  HardContactSemiImplicitTimesteppingSolvers -- the neutral hard-contact
-   #            pipeline, with neither buoyancy nor the application velocity limiter.
+   #            pipeline. Buoyancy is now the only difference between the two: the
+   #            application velocity limiters that used to distinguish them were
+   #            removed as debug artifacts.
    #
    # Both are exercised on purpose: the add-on claims to work with ANY hard-contact
    # pipeline (D2.2 §1), and a claim with no test on the second pipeline is untested.
