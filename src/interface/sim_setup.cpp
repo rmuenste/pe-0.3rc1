@@ -338,10 +338,11 @@ void clearELHydroStates() {
   for (auto it = theCollisionSystem()->getBodyStorage().begin();
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
-    trySetELHydroState(body, real(0), Vec3(0, 0, 0), Vec3(0, 0, 0), false);
-    throw std::logic_error(
-      "stepELFrozenTrace requires "
-      "pe_CONSTRAINT_SOLVER == pe::response::HardContactEulerLagrange");
+    if (!trySetELHydroState(body, real(0), Vec3(0, 0, 0), Vec3(0, 0, 0), false)) {
+      throw std::logic_error(
+        "stepELFrozenTrace requires "
+        "pe_CONSTRAINT_SOLVER == pe::response::HardContactEulerLagrange");
+    }
   }
 }
 
