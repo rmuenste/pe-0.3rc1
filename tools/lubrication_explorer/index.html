@@ -97,11 +97,12 @@
   .seg:first-child { border-radius: 6px 0 0 6px; }
   .seg:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
   .seg.on { color: var(--ground); background: var(--accent); border-color: var(--accent); }
-  #resetBtn {
+  .toolbtn {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--edge);
     border-radius: 6px; padding: 4px 11px; font: 11px var(--mono); cursor: pointer;
   }
-  #resetBtn:hover { border-color: var(--accent); color: var(--accent); }
+  .toolbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .toolbtn.primary { background: rgba(52,211,222,0.09); border-color: rgba(52,211,222,0.35); }
 
   .panelrow { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
   .cell {
@@ -159,7 +160,11 @@
       <span class="cluster"><span class="lbl">X</span><span id="xmode" class="segset"></span></span>
       <span class="cluster"><span class="lbl">Y</span><span id="ymode" class="segset"></span></span>
       <label class="chkline"><input type="checkbox" id="normToggle" /> Fig.7 dimensionless (continuous)</label>
-      <button id="resetBtn" title="Double-click any plot, or here, to reset zoom on all panels">Reset view</button>
+      <button id="visualDefaultsBtn" class="toolbtn primary"
+              title="Restore the explorer's visualization-oriented parameters and plot view">Visualization defaults</button>
+      <button id="engineDefaultsBtn" class="toolbtn"
+              title="Load the PE lubrication engine defaults; plot-only geometry and kinematics are unchanged">Set engine defaults</button>
+      <button id="resetBtn" class="toolbtn" title="Double-click any plot, or here, to reset zoom on all panels">Reset view</button>
       <span class="lbl" style="opacity:.7">drag = box-zoom · wheel = zoom · shift+wheel = zoom Y</span>
     </div>
     <div id="grid"></div>
