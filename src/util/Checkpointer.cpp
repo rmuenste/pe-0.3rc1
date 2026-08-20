@@ -104,6 +104,28 @@ CheckpointMetadata loadCheckpoint( const boost::filesystem::path& pebPath,
 
 
 //*************************************************************************************************
+/*!\brief Total body records across all ranks. COLLECTIVE: every rank must call it.
+ *
+ * BodyBinaryWriter counts what the calling rank marshalled. The sidecar describes the whole
+ * file, so the per-rank counts are summed onto the rank that writes it.
+ */
+uint64_t totalMarshalledBodyCount( const BodyBinaryWriter& writer )
+{
+   size_t count = writer.getMarshalledBodyCount();
+
+#if HAVE_MPI
+   if( MPISettings::size() > 1 ) {
+      size_t local = count;
+      MPI_Reduce( &local, &count, 1, MPITrait<size_t>::getType(), MPI_SUM, 0, MPISettings::comm() );
+   }
+#endif
+
+   return static_cast<uint64_t>( count );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Writes the world to `<basePath>.peb` plus its sidecar, publishing both atomically.
  *
  * Publication order is: drop any stale sidecar, write the `.peb` under a scratch name, rename it
@@ -111,8 +133,8 @@ CheckpointMetadata loadCheckpoint( const boost::filesystem::path& pebPath,
  * checkpoint or a sidecar-less checkpoint, and a sidecar-less checkpoint is reported loudly on
  * read. A mismatched (`.peb`, sidecar) pair is never published.
  *
- * COLLECTIVE. Every rank must call this: the `.peb` write and the scratch token are both
- * collective operations.
+ * COLLECTIVE. Every rank must call this: the `.peb` write, the scratch token and the body count
+ * reduction are all collective operations.
  */
 void storeCheckpoint( const boost::filesystem::path& pebPath,
                       const boost::filesystem::path& sidecarPath,
@@ -133,12 +155,14 @@ void storeCheckpoint( const boost::filesystem::path& pebPath,
    writer.wait();
    synchronizeCheckpointWriters();
 
+   const uint64_t bodyCount = totalMarshalledBodyCount( writer );
+
    if( !isCheckpointFileOwner() )
       return;
 
    CheckpointMetadata metadata = currentCheckpointMetadata();
    metadata.pebBytes  = static_cast<uint64_t>( boost::filesystem::file_size( pebTemp ) );
-   metadata.bodyCount = static_cast<uint64_t>( writer.getMarshalledBodyCount() );
+   metadata.bodyCount = bodyCount;
 
    commitCheckpointTempFile( pebTemp, pebPath );
    writeCheckpointMetadata( sidecarPath, metadata );

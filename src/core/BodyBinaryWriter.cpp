@@ -116,7 +116,8 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
    }
 
    // Captured before the profiling reduction below, which would otherwise turn this rank's count
-   // into a global sum only when profiling happens to be enabled.
+   // into a global sum only when profiling happens to be enabled. Stays per-rank by design; see
+   // getMarshalledBodyCount().
    bodies_ = bodies;
 
    // determine offset of chunk for local body descriptions

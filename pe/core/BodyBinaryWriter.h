@@ -194,9 +194,12 @@ inline void BodyBinaryWriter::writeFile( const char* filename ) {
 //*************************************************************************************************
 /*!\brief Returns how many body records the last write put into the file.
  *
- * This is the number of bodies the file actually contains, which is not the same as the size of
- * the world: planes that are not global are not persisted at all, and global bodies are written
- * by rank 0 only. Callers recording checkpoint metadata must use this rather than a world size.
+ * Per-rank: it counts what THIS rank marshalled, not what the file contains. Under MPI the two
+ * differ -- each rank writes its own body chunk, and rank 0 additionally writes the global
+ * bodies -- so a caller describing the whole file must sum across ranks.
+ *
+ * It is also not the size of the world: planes that are not global are not persisted at all.
+ * Callers recording checkpoint metadata must use this rather than a world size.
  *
  * \return Body records written by the last writeFile()/writeFileAsync() call on this rank.
  */

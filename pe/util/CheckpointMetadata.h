@@ -122,7 +122,7 @@ struct CheckpointMetadata
    real simulationTime;
    uint64_t timeStep;
    real stepSize;                 //!< TimeStep::size() at write time.
-   uint64_t bodyCount;            //!< Body records the `.peb` contains (not the world size).
+   uint64_t bodyCount;            //!< Body records the `.peb` contains, summed over all ranks.
    uint64_t pebBytes;             //!< Exact size of the companion `.peb`; detects truncation.
    std::string pairingTag;        //!< Free-form driver tag, e.g. the CFD step. May be empty.
    std::vector<CheckpointMaterialRecord> materials;  //!< Full table, in index order.

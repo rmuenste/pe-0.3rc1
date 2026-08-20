@@ -283,8 +283,9 @@ CheckpointMetadata currentCheckpointMetadata()
       metadata.simulationTime = static_cast<real>( TimeStep::step() ) * TimeStep::size();
    }
 
-   // bodyCount is filled in by the writer, which knows how many records actually went into the
-   // `.peb`; World::size() is not that number (non-global planes are not persisted at all).
+   // bodyCount and pebBytes are filled in by the writer, which is the only thing that knows how
+   // many records actually went into the `.peb` and how long it is. World::size() is not that
+   // number: non-global planes are not persisted at all.
 
    const size_t materialCount = Material::count();
    metadata.materials.reserve( materialCount );
