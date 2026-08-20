@@ -32,6 +32,8 @@
 // Includes
 //*************************************************************************************************
 
+#include <cstdint>
+#include <sstream>
 #include <string>
 #include <pe/core/BodyBinaryReader.h>
 #include <pe/core/Marshalling.h>
@@ -81,6 +83,33 @@ void BodyBinaryReader::readFile( const char* filename ) {
 
    pe_PROFILING_SECTION {
       timeOpen.end();
+   }
+
+   // Everything the header yields -- the process count, the chunk offsets -- is trusted as a read
+   // position or an allocation size, so the file must be known to be long enough BEFORE each part
+   // of it is believed. A job killed mid-write leaves a short file whose header still parses, and
+   // the short reads that follow are silently ignored by both the MPI and the ifstream path.
+   uint64_t fileSize;
+#if HAVE_MPI
+   {
+      MPI_Offset mpiFileSize;
+      if( MPI_File_get_size( fh, &mpiFileSize ) != MPI_SUCCESS )
+         throw std::runtime_error( "Cannot determine the size of the rigid body parameter file." );
+      fileSize = static_cast<uint64_t>( mpiFileSize );
+   }
+#else
+   fh.seekg( 0, std::ios::end );
+   fileSize = static_cast<uint64_t>( fh.tellg() );
+   fh.seekg( 0, std::ios::beg );
+#endif
+
+   // Fixed prefix: magic number, format version, five type sizes, process count.
+   const uint64_t fixedHeaderBytes = 9u * sizeof(byte) + 1u * sizeof(uint32_t);
+   if( fileSize < fixedHeaderBytes ) {
+      std::ostringstream message;
+      message << "Rigid body parameter file '" << filename << "' is truncated: it is " << fileSize
+              << " bytes long, shorter than the " << fixedHeaderBytes << "-byte fixed header.";
+      throw std::runtime_error( message.str() );
    }
 
    // read until the position in the file where the number of processors used to write the file is stored
@@ -162,6 +191,18 @@ void BodyBinaryReader::readFile( const char* filename ) {
    if( p0 != p && MPISettings::size() != 1 )
       throw std::runtime_error( "Number of processes differ from the number of processes used to produce the file." );
 
+   // p came out of the file, so it may be garbage from a truncated header. Validate the offset
+   // table's extent in 64-bit arithmetic before resizing to it: a garbage p would otherwise both
+   // request an absurd allocation and produce an offset table read out of uninitialised memory.
+   const uint64_t offsetTableBytes = ( static_cast<uint64_t>( p ) + 2u ) * sizeof(uint32_t);
+   if( fileSize < fixedHeaderBytes + offsetTableBytes ) {
+      std::ostringstream message;
+      message << "Rigid body parameter file '" << filename << "' is truncated: its header claims "
+              << p << " processes, which needs " << ( fixedHeaderBytes + offsetTableBytes )
+              << " header bytes, but the file is only " << fileSize << " bytes long.";
+      throw std::runtime_error( message.str() );
+   }
+
    // read rest of header since we now know the exact size
    header_.resize( ( 2 + p )*sizeof(uint32_t) );
 
@@ -188,6 +229,36 @@ void BodyBinaryReader::readFile( const char* filename ) {
    std::vector<uint32_t> offsets_( p + 1 );
    for( uint32_t i = 0; i < p + 1; ++i ) {
       header_ >> offsets_[i];
+   }
+
+   // The offset table must describe a partition of the file: chunks start where the globals end
+   // and never run backwards. Checked before any subtraction below, which is unsigned and would
+   // otherwise wrap a backwards pair into an enormous allocation.
+   if( offsets_[0] < offsetGlobal ) {
+      std::ostringstream message;
+      message << "Rigid body parameter file '" << filename << "' has an invalid header: the first "
+                 "body chunk starts at " << offsets_[0] << ", before the global body data at "
+              << offsetGlobal << ".";
+      throw std::runtime_error( message.str() );
+   }
+   for( uint32_t i = 0; i < p; ++i ) {
+      if( offsets_[i + 1] < offsets_[i] ) {
+         std::ostringstream message;
+         message << "Rigid body parameter file '" << filename << "' has an invalid header: body "
+                    "chunk offsets decrease at index " << i << " (" << offsets_[i] << " -> "
+                 << offsets_[i + 1] << ").";
+         throw std::runtime_error( message.str() );
+      }
+   }
+
+   // offsets_[p] is the end of the last body chunk, i.e. the length the complete file must have.
+   if( fileSize < offsets_[p] ) {
+      std::ostringstream message;
+      message << "Rigid body parameter file '" << filename << "' is truncated: its header "
+                 "describes " << offsets_[p] << " bytes of body data but the file is only "
+              << fileSize << " bytes long. It was most likely written by a job that was killed "
+                 "mid-checkpoint.";
+      throw std::runtime_error( message.str() );
    }
 
    // read global body data
@@ -248,7 +319,11 @@ void BodyBinaryReader::readFile( const char* filename ) {
          sizeReadLocal += buffer_.size();
       }
 
-      // WARNING: the following code will not trigger exceptions. In debug mode assertions will be triggered. In release mode the behaviour is undefined if the file format is invalid.
+      // WARNING: the unmarshalling below does not validate its input. Truncation is ruled out by
+      // the file length check above, but a file that is intact yet malformed -- or whose body
+      // material indices outrun this process' material table -- triggers assertions in debug and
+      // is undefined behaviour in release. Checkpointer::read()/readCheckpoint() guard the
+      // material case by reinstating the recorded table first; see pe/util/CheckpointMetadata.h.
 
       // restore the system ID counter
       pe_LOG_DEBUG_SECTION( log ) {

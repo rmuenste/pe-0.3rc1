@@ -13,6 +13,7 @@
 #include <pe/util/logging/Logger.h>
 #include <pe/core/TimeStep.h>
 #include <pe/config/SimulationConfig.h>
+#include <pe/util/CheckpointMetadata.h>
 
 //#define ONLY_ROTATION 
 using namespace pe;
@@ -46,6 +47,84 @@ void get_pe_timestep_(double *dTime) {
 
   *dTime = static_cast<double>(TimeStep::size());
 }
+
+//*************************************************************************************************
+/*!\brief Hands pe the driver's authoritative time/step and pairing tag for checkpoint writes.
+ *
+ * Without this, a checkpoint records pe's own substep counter, which does not identify the
+ * driver dump it belongs to. Call once per driver time step, before pe may write a checkpoint.
+ *
+ * \param simTime Driver simulation time.
+ * \param step    Driver step index.
+ * \param tag     Null-terminated pairing tag, or nullptr for none. See doc FF-WIRING.md.
+ */
+extern "C"
+void set_pe_checkpoint_identity_(const double *simTime, const int *step, const char *tag) {
+  if (simTime == nullptr || step == nullptr) {
+    return;
+  }
+
+  // A negative step would wrap to an enormous unsigned value and be written to the sidecar as a
+  // plausible-looking step index, so it is refused rather than converted.
+  if (*step < 0) {
+    throw std::invalid_argument(
+        "set_pe_checkpoint_identity_: negative step index " + std::to_string(*step) +
+        ". A checkpoint's step index identifies a driver time step and cannot be negative.");
+  }
+
+  setCheckpointIdentity(static_cast<real>(*simTime),
+                        static_cast<uint64_t>(*step),
+                        tag != nullptr ? std::string(tag) : std::string());
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Declares which checkpoint the driver expects to resume from.
+ *
+ * A checkpoint that does not match is rejected with a hard error naming both values -- the point
+ * is to turn a silently mispaired restart into a failed one.
+ *
+ * IMPORTANT -- ordering. The resume happens inside the commf2c_* setup entry point, and that call
+ * also parses example.json. In the FeatFloWer applications commf2c_* runs before the driver has
+ * restored its own time and step from its dump, so this entry point usually cannot be given the
+ * right values in time; the resumeExpected* deck keys are the mechanism that works there. See
+ * FF-WIRING.md. This entry point exists for drivers that do control the ordering.
+ *
+ * Declaring an expectation here AND in the deck is refused rather than resolved by precedence:
+ * the deck is parsed after this call, so a silent winner would be the opposite of what the call
+ * site reads like.
+ *
+ * Every field is skippable, which requires passing a null pointer -- from Fortran, bind the
+ * arguments as `type(c_ptr), value` and pass `c_null_ptr`. See FF-WIRING.md for the binding.
+ *
+ * \param simTime Expected simulation time, or nullptr to leave the time unchecked.
+ * \param step    Expected step index, or nullptr to leave it unchecked; negative is refused.
+ * \param tag     Expected pairing tag; nullptr or empty leaves the tag unchecked.
+ */
+extern "C"
+void set_pe_resume_expectation_(const double *simTime, const int *step, const char *tag) {
+  SimulationConfig &config = SimulationConfig::getInstance();
+
+  if (step != nullptr && *step < 0) {
+    throw std::invalid_argument(
+        "set_pe_resume_expectation_: negative step index " + std::to_string(*step) +
+        ". Pass a null pointer to leave the step unchecked.");
+  }
+
+  if (simTime != nullptr) {
+    config.setResumeExpectedTime(static_cast<real>(*simTime));
+  }
+  if (step != nullptr) {
+    config.setResumeExpectedStep(static_cast<long long>(*step));
+  }
+  if (tag != nullptr) {
+    config.setResumeExpectedTag(std::string(tag));
+  }
+
+  config.setResumeExpectationFromDriver(true);
+}
+//*************************************************************************************************
 
 extern "C"
 void set_el_hydro_state(const short int bytes[8],

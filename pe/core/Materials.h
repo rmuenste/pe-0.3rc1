@@ -139,6 +139,7 @@ public:
 
    static        MaterialID         find( const std::string& name );
    static        std::vector<MaterialID> findPrefix( const std::string& prefix );
+   static inline size_t             count();
    static inline const std::string& getName( MaterialID material );
    static inline real               getDensity( MaterialID material );
    static inline real               getRestitution( MaterialID material );
@@ -408,6 +409,22 @@ inline real Material::getDampingN() const
 inline real Material::getDampingT() const
 {
    return dampingT_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the number of registered materials.
+ * \ingroup materials
+ *
+ * \return The size of the material table, that is one past the largest valid MaterialID.
+ *
+ * Bodies reference their material by bare index (see Marshalling.h), so persisting or
+ * reconstructing body state requires knowing how far that index space currently reaches.
+ */
+inline size_t Material::count()
+{
+   return materials_.size();
 }
 //*************************************************************************************************
 

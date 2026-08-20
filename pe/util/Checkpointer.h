@@ -17,6 +17,7 @@
 #include <pe/core/BodyBinaryWriter.h>
 #include <pe/core/BodyBinaryReader.h>
 #include <pe/util/CheckpointerID.h>
+#include <pe/util/CheckpointMetadata.h>
 
 namespace pe {
 //=================================================================================================
@@ -62,11 +63,11 @@ public:
 
    void trigger();
 
-   /// Write checkpoint under the given name
+   /// Write checkpoint under the given name, together with its metadata sidecar
    void write(const std::string& name);
 
-   /// Read checkpoint under the given name
-   void read(const std::string& name);
+   /// Read checkpoint under the given name; returns its metadata (not present ⇒ legacy file)
+   CheckpointMetadata read(const std::string& name);
 
    /// Wait for any async writes to finish
    void flush() {
@@ -115,7 +116,29 @@ inline bool isCheckpointerActive();
                                             unsigned int spacing,
                                             unsigned int start,
                                             unsigned int end);
-       void readCheckpoint(const path& checkpointsPath, const std::string& name);
+
+//*************************************************************************************************
+/*!\brief Loads the checkpoint \a name from \a checkpointsPath into the world.
+ *
+ * Reinstates the checkpoint's material table before any body is instantiated, so body material
+ * indices resolve against the table that produced them regardless of when the caller registers
+ * its own materials.
+ *
+ * \return The checkpoint's metadata. \a present is \a false for a legacy checkpoint written
+ *         without a sidecar; a warning is emitted in that case and no integrity check is
+ *         possible.
+ * \exception std::runtime_error The sidecar is malformed, or the `.peb` does not match the size
+ *            and body count the sidecar records (truncated or mismatched pair).
+ */
+       CheckpointMetadata readCheckpoint(const path& checkpointsPath, const std::string& name);
+
+//*************************************************************************************************
+/*!\brief Writes the current world to checkpoint \a name in \a checkpointsPath, atomically.
+ *
+ * Identity and pairing tag come from the last setCheckpointIdentity() call; without one the
+ * checkpoint records pe's own TimeStep counter.
+ */
+       void writeCheckpoint(const path& checkpointsPath, const std::string& name);
 //*************************************************************************************************
 
 

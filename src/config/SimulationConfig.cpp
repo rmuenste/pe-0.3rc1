@@ -26,6 +26,7 @@
 //*************************************************************************************************
 
 #include <pe/config/SimulationConfig.h>
+#include <pe/util/CheckpointMetadata.h>
 #include <fstream>
 #include <stdexcept>
 #if HAVE_JSON
@@ -66,6 +67,11 @@ SimulationConfig::SimulationConfig()
     , checkpoint_path_("checkpoints/")
     , resume_(false)
     , resumeCheckpointFile_("../start.1")
+    , resumeExpectedTimeSet_(false)
+    , resumeExpectedTime_(0.0)
+    , resumeTimeToleranceSteps_(defaultResumeTimeToleranceSteps)
+    , resumeExpectedStep_(-1)
+    , resumeExpectationFromDriver_(false)
     , volumeFraction_(0.3)
     , benchRadius_(0.0015)
     , seedMode_("file")
@@ -259,6 +265,34 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set the checkpoint path (assuming the JSON key is a string)
     if (j.contains("checkpoint_path_"))
         config.setCheckpointPath(boost::filesystem::path(j["checkpoint_path_"].get<std::string>()));
+
+    // A resume expectation may come from the deck or from set_pe_resume_expectation_, never both.
+    // loadFromFile() runs inside the setup entry point, i.e. after the driver's call, so a deck key
+    // would silently win over an expectation the driver believes it set. Refusing is the only
+    // reading of that situation that cannot mislead.
+    const bool deckDeclaresExpectation =
+        j.contains("resumeExpectedTime_") || j.contains("resumeExpectedStep_") ||
+        j.contains("resumeExpectedTag_");
+    if (deckDeclaresExpectation && config.getResumeExpectationFromDriver()) {
+        throw std::runtime_error(
+            "Resume expectation declared twice: the driver called set_pe_resume_expectation_ and "
+            "the deck also sets resumeExpectedTime_/resumeExpectedStep_/resumeExpectedTag_. The "
+            "deck is parsed after the driver's call and would silently override it. Remove one.");
+    }
+
+    if (j.contains("resumeExpectedTime_"))
+        config.setResumeExpectedTime(j["resumeExpectedTime_"].get<real>());
+
+    if (j.contains("resumeTimeToleranceSteps_"))
+        config.setResumeTimeToleranceSteps(j["resumeTimeToleranceSteps_"].get<real>());
+
+    if (j.contains("resumeExpectedStep_")) {
+        const long long expectedStep = j["resumeExpectedStep_"].get<long long>();
+        config.setResumeExpectedStep(expectedStep);
+    }
+
+    if (j.contains("resumeExpectedTag_"))
+        config.setResumeExpectedTag(j["resumeExpectedTag_"].get<std::string>());
 
     // Set simulation parameters
     if (j.contains("volumeFraction_"))

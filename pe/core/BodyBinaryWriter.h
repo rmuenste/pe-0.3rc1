@@ -96,6 +96,7 @@ public:
    void writeFile( const char* filename );
    void writeFileAsync( const char* filename );
    void wait();
+   inline size_t getMarshalledBodyCount() const;
    //@}
    //**********************************************************************************************
 
@@ -130,6 +131,7 @@ private:
 #endif
    bool fhOpen_;
    int fpSize_;
+   size_t bodies_;   //!< Body records written by the last writeFileAsync() call on this rank.
    //@}
    //**********************************************************************************************
 };
@@ -147,7 +149,7 @@ private:
 //*************************************************************************************************
 /*!\brief Constructs the binary writer.
  */
-inline BodyBinaryWriter::BodyBinaryWriter() : fhOpen_( false ), fpSize_( 0 ) {
+inline BodyBinaryWriter::BodyBinaryWriter() : fhOpen_( false ), fpSize_( 0 ), bodies_( 0 ) {
 }
 //*************************************************************************************************
 
@@ -183,6 +185,26 @@ inline BodyBinaryWriter::~BodyBinaryWriter() {
 inline void BodyBinaryWriter::writeFile( const char* filename ) {
    writeFileAsync( filename );
    wait();
+}
+//*************************************************************************************************
+
+
+
+
+//*************************************************************************************************
+/*!\brief Returns how many body records the last write put into the file.
+ *
+ * Per-rank: it counts what THIS rank marshalled, not what the file contains. Under MPI the two
+ * differ -- each rank writes its own body chunk, and rank 0 additionally writes the global
+ * bodies -- so a caller describing the whole file must sum across ranks.
+ *
+ * It is also not the size of the world: planes that are not global are not persisted at all.
+ * Callers recording checkpoint metadata must use this rather than a world size.
+ *
+ * \return Body records written by the last writeFile()/writeFileAsync() call on this rank.
+ */
+inline size_t BodyBinaryWriter::getMarshalledBodyCount() const {
+   return bodies_;
 }
 //*************************************************************************************************
 
