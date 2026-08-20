@@ -153,3 +153,16 @@ add_test(
   NAME pe-lubrication-serial-coverage
   COMMAND pe_lubrication_serial_coverage_test
 )
+
+# AABB neutrality gate: lubrication OFF must mean no bounding-box inflation at all.
+# Bounding-box size feeds the HashGrids broad phase, so a stray padding term is a silent
+# trajectory change in every DNS case. Runs in its own process so the parameter store is
+# pristine, and links the campaign solver -- the exact "HCAF + defaults + off" case.
+add_executable(pe_lubrication_aabb_neutrality_test
+  pe_lubrication_aabb_neutrality_test.cpp
+)
+target_link_libraries(pe_lubrication_aabb_neutrality_test PRIVATE pe_static_lubstage_fluid)
+add_test(
+  NAME pe-lubrication-aabb-neutrality
+  COMMAND pe_lubrication_aabb_neutrality_test
+)
