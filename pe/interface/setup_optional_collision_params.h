@@ -12,6 +12,7 @@
 #include <pe/core/lubrication/LubricationModel.h>
 
 #include <iostream>
+#include <stdexcept>
 #include <cstddef>
 #include <type_traits>
 
@@ -81,42 +82,45 @@ inline void applyOptionalSRRParams(CollisionSystemT& cs, real rho, real epsP, re
   }
 }
 
-// Detect whether the active (compile-time selected) collision system exposes the
-// lubrication/contact-hysteresis setters. Only HardContactLubricated provides them.
+// Detect whether the active (compile-time selected) collision system invokes the shared
+// lubrication stage (pe/core/lubrication/LubricationStage.h).
+//
+// A stage-capable pipeline advertises itself with a static constexpr member
+//   static constexpr bool hasLubricationStage = true;
+// which is the single source of truth for "this solver honors lubricationEnabled_".
+// It is deliberately an explicit opt-in rather than a structural probe: whether a
+// solver CALLS the stage is not observable from its type, and silently guessing is
+// exactly the failure mode this guard exists to prevent.
 template <typename CollisionSystemT, typename = void>
-struct HasLubricationParamSetters : std::false_type {};
+struct HasLubricationStage : std::false_type {};
 
 template <typename CollisionSystemT>
-struct HasLubricationParamSetters<CollisionSystemT, std::void_t<
-    decltype(std::declval<CollisionSystemT&>().setContactHysteresisDelta(real{})),
-    decltype(std::declval<CollisionSystemT&>().setLubricationHysteresisDelta(real{})),
-    decltype(std::declval<CollisionSystemT&>().setAlphaImpulseCap(real{})),
-    decltype(std::declval<CollisionSystemT&>().setMinEpsLub(real{}))>>
-    : std::true_type {};
+struct HasLubricationStage<CollisionSystemT,
+                           std::void_t<decltype(CollisionSystemT::hasLubricationStage)>>
+    : std::integral_constant<bool, CollisionSystemT::hasLubricationStage> {};
 
-// Apply all runtime lubrication parameters from SimulationConfig:
-//  - per-solver knobs via the collision-system setters, only if the active solver
-//    exposes them (e.g., HardContactLubricated) -- see the trait above. A single
-//    `if constexpr` function is used deliberately: a two-overload SFINAE pair with
-//    identical parameter lists is ambiguous whenever both candidates are viable
-//    (i.e. exactly the lubricated solver this is meant to support).
-//  - model switches/parameters into the pe::lubrication:: global store, always;
-//    they are read only by the lubrication-aware detection branches, the AABB
-//    padding helper, and the HardContactLubricated solver, so pushing them is
-//    harmless for other solvers.
+// Pushes all runtime lubrication parameters from SimulationConfig into the
+// pe::lubrication:: store, which is where the detection branches, the AABB padding
+// helper and the stage all read from.
+//
+// Refuses loudly (D2.2 §3.5) when lubricationEnabled_ is true but the active collision
+// system does not invoke the stage: the json switch would otherwise change AABB padding
+// and generate pre-contact pairs while applying no lubrication force whatsoever -- a
+// silent no-op that looks like a working configuration.
 template <typename CollisionSystemT>
 inline void applyOptionalLubricationParams(CollisionSystemT& cs, const SimulationConfig& config) {
-  if constexpr (HasLubricationParamSetters<CollisionSystemT>::value) {
-    cs.setContactHysteresisDelta(config.getContactHysteresisDelta());
-    cs.setLubricationHysteresisDelta(config.getLubricationHysteresisDelta());
-    cs.setAlphaImpulseCap(config.getAlphaImpulseCap());
-    cs.setMinEpsLub(config.getMinEpsLub());
-  } else {
-    // Constraint solver does not expose lubrication/hysteresis controls; nothing to do.
-    (void)cs;
+  (void)cs;
+  const bool enabled = config.getLubricationEnabled();
+
+  if (enabled && !HasLubricationStage<CollisionSystemT>::value) {
+    throw std::runtime_error(
+        "lubricationEnabled_ is true but the active pe_CONSTRAINT_SOLVER does not invoke "
+        "the lubrication stage, so no lubrication force would be applied. Select a "
+        "stage-capable solver (e.g. pe::response::HardContactAndFluid) or set "
+        "lubricationEnabled_ to false.");
   }
 
-  lubrication::setEnabled(config.getLubricationEnabled());
+  lubrication::setEnabled(enabled);
   lubrication::setModel(config.getLubricationModel() == "legacy"
                             ? lubrication::modelLegacy
                             : lubrication::modelKroupa2016);
@@ -132,10 +136,21 @@ inline void applyOptionalLubricationParams(CollisionSystemT& cs, const Simulatio
   lubrication::setCutoffFactor(config.getLubricationCutoffFactor());
   lubrication::setMeshClampFactor(config.getLubricationMeshClampFactor());
   lubrication::setAabbInflation(config.getLubricationAabbInflation());
+  lubrication::setMinGap(config.getMinEpsLub());
+  lubrication::setAlphaImpulseCap(config.getAlphaImpulseCap());
+
+  // The hysteresis half-widths are lubrication BLEND bands: they widen the hard-contact
+  // weight from a step into a ramp. With lubrication off they must be exactly zero, or
+  // the shared detection path would stop being bitwise-identical to a no-lubrication
+  // build (Gate G0). Pushed only when the add-on is active.
+  lubrication::setContactHysteresisDelta(enabled ? config.getContactHysteresisDelta()
+                                                 : real(0));
+  lubrication::setLubricationHysteresisDelta(
+      enabled ? config.getLubricationHysteresisDelta() : real(0));
 
   // Expert mode: with inflation off, coarse detection may miss pairs entering the
   // lubrication band between updates. Legitimate when the cutoff is small, but loud.
-  if (config.getLubricationEnabled() && !config.getLubricationAabbInflation()) {
+  if (enabled && !config.getLubricationAabbInflation()) {
     static bool warned = false;
     if (!warned) {
       warned = true;

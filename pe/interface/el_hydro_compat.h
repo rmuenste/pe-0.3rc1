@@ -6,7 +6,7 @@
 // setEulerLagrangeHydroState / hasEulerLagrangeHydroState exist only on the RigidBody trait
 // of the HardContactEulerLagrange solver (pe/core/rigidbody/rigidbodytrait/
 // HardContactEulerLagrange.h). The interface layer must keep compiling when a different
-// pe_CONSTRAINT_SOLVER is selected (e.g. HardContactLubricated), so all call sites go
+// pe_CONSTRAINT_SOLVER is selected (e.g. HardContactAndFluid), so all call sites go
 // through these if-constexpr wrappers instead of calling the members directly.
 //=================================================================================================
 

@@ -3,8 +3,17 @@
  *  \file pe/core/lubrication/Params.h
  *  \brief Lightweight access to runtime lubrication parameters and switches
  *
+ *  CONCURRENCY CONTRACT: this is process-global mutable state with no synchronization.
+ *  Writes are SETUP-TIME ONLY and single-threaded -- applyOptionalLubricationParams once
+ *  after SimulationConfig::loadFromFile, plus the setters an example/tool calls before
+ *  stepping. The one write that happens outside setup is registerSphereRadius(), invoked
+ *  from SphereBase's constructor; creating bodies concurrently is therefore a data race.
+ *  This matters because FeatFloWer builds with OpenMP. Reads during the timestep (the
+ *  detection gate, aabbPadding, the stage's per-step snapshot) are safe precisely because
+ *  nothing writes then.
+ *
  *  Free-function global store so detection code (MaxContacts), bounding-box code
- *  (SphereBase/PlaneBase) and the HardContactLubricated solver can read runtime-configured
+ *  (SphereBase/PlaneBase) and the lubrication stage can read runtime-configured
  *  lubrication parameters without depending on the CollisionSystem or SimulationConfig
  *  headers. Values are pushed in from the interface layer (applyOptionalLubricationParams)
  *  after SimulationConfig::loadFromFile, or set programmatically.
@@ -36,8 +45,27 @@ void setLubricationThreshold( real threshold );
 // Enum values for model/scheme are ModelKind/SchemeKind from LubricationModel.h.
 //=================================================================================================
 
+//=================================================================================================
+// HOT-PATH GATE
+//
+// isEnabled() and getSecurityZone() are read by MaxContacts::collideSphereSphere /
+// collideSpherePlane once per CANDIDATE PAIR fed by the HashGrids broad phase -- the
+// hottest loop the add-on touches, and the one the compile-time macro used to cost
+// nothing at all (D2.2 §8). Out-of-line definitions in Params.cpp would put two real
+// function calls there in any build without LTO.
+//
+// The two flags are therefore extern variables read through inline accessors, so the
+// disabled path compiles to a single predictable branch on a hot global. Writes still
+// go through the out-of-line setters in Params.cpp, which stay the only mutation point.
+//=================================================================================================
+
+namespace detail {
+extern bool enabledFlag;        //!< Mirror of the master switch; write via setEnabled()
+extern bool securityZoneFlag;   //!< Mirror of the security zone; write via setSecurityZone()
+}  // namespace detail
+
 // Master switch for lubrication contacts/forces
-bool isEnabled();
+inline bool isEnabled() { return detail::enabledFlag; }
 void setEnabled( bool enabled );
 
 // Force model: 0 = Kroupa 2016, 1 = legacy (ModelKind)
@@ -88,6 +116,37 @@ void setMeshDx( real dx );
 bool getAabbInflation();
 void setAabbInflation( bool on );
 
+// Numerical gap floor used by the stage (legacy minEpsLub_)
+real getMinGap();
+void setMinGap( real gap );
+
+// Impulse cap factor relative to approach momentum (schemeExplicitCapped and the
+// legacy model only; the semi-implicit normal mode is unconditionally stable)
+real getAlphaImpulseCap();
+void setAlphaImpulseCap( real alpha );
+
+//=================================================================================================
+// Security-zone co-tenancy
+//
+// The extended-range ("pre-contact") branch of fine detection is shared with the
+// ShortRangeRepulsion solver, which reuses the same addLubricationContact channel to
+// realize its Pan et al. security zone and sets the legacy absolute threshold to its
+// rho. That consumer is independent of the lubrication master switch: SRR needs the
+// pre-contact pairs whether or not lubrication forces are active. It is therefore set
+// programmatically by the solver, never from json, and applyOptionalLubricationParams
+// deliberately does not touch it.
+//=================================================================================================
+
+inline bool getSecurityZone() { return detail::securityZoneFlag; }
+void setSecurityZone( bool on );
+
+// True when fine detection must run its extended-range branch at all: either
+// lubrication forces are active, or a security-zone consumer needs pre-contact pairs.
+inline bool contactGenerationEnabled()
+{
+   return isEnabled() || getSecurityZone();
+}
+
 // Largest sphere radius registered so far (used for plane AABB padding)
 real getMaxSphereRadius();
 void registerSphereRadius( real radius );
@@ -101,11 +160,14 @@ void registerSphereRadius( real radius );
 //   cutoffFactor == 0: getLubricationThreshold()  (legacy absolute)
 real lubricationCutoff( real aRef );
 
-// AABB padding for a body of the given radius:
-//   0                          if lubrication disabled or inflation switched off
-//   cutoffFactor * bodyRadius  in relative-cutoff mode (mesh clamp deliberately NOT
-//                              applied: padding must stay a superset of the force band)
-//   getLubricationThreshold()  in legacy absolute mode (radius ignored)
+// AABB padding for a body of the given radius: the MAXIMUM of the bands the active
+// consumers need, so neither can silently drop the other's pairs from the broad phase.
+//   security-zone band : getLubricationThreshold() when a consumer is registered, else 0
+//   lubrication band   : 0 when disabled or inflation off; getLubricationThreshold() in
+//                        legacy absolute-cutoff mode; otherwise the EFFECTIVE cutoff
+//                        min( cutoffFactor*bodyRadius, meshClampFactor*meshDx ), so
+//                        detection never inflates beyond what the model can act on
+// With everything off this is exactly 0 -- see pe_lubrication_aabb_neutrality_test.
 real aabbPadding( real bodyRadius );
 // Getter/setter pair for the domain-decomposition shadow-copy margin.
 // Default 0 (no behavior change). When pairwise lubrication is enabled the

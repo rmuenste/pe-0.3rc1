@@ -78,11 +78,12 @@ class CollisionSystem;
 // WARNING: Include specializations before default implementation so that instantiations of the
 // CollisionSystem can be detected easily.
 //
-// NOTE: HardContactLubricated and ShortRangeRepulsion must be included FIRST because they
-// define PE_LUBRICATION_CONTACTS=1, which enables the pre-contact security-zone detection path
-// in MaxContacts.h.  Any earlier include of MaxContacts.h (via the DEMSolver* or FFDSolver
-// headers) would lock in the non-lubrication path via the include guard.
-#include <pe/core/collisionsystem/HardContactLubricated.h>
+// NOTE: the pre-contact / security-zone branch of MaxContacts.h used to be selected by a
+// PE_LUBRICATION_CONTACTS macro that these headers self-defined, which made the behavior
+// depend on include ORDER: any earlier include of MaxContacts.h (via the DEMSolver* or
+// FFDSolver headers) locked in the non-lubrication path through the include guard. The
+// branch is now a runtime check (lubrication::contactGenerationEnabled()), so include
+// order no longer changes what is compiled.
 #include <pe/core/collisionsystem/ShortRangeRepulsion.h>
 #include <pe/core/collisionsystem/DEMSolverObsolete.h>
 #include <pe/core/collisionsystem/DEMSolver.h>

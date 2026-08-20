@@ -48,6 +48,8 @@
 #include <pe/core/domaindecomp/ProcessStorage.h>
 #include <pe/core/io/BodySimpleAsciiWriter.h>
 #include <pe/core/joint/JointStorage.h>
+#include <pe/core/lubrication/LubricationStage.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPI.h>
 #include <pe/core/MPISection.h>
@@ -173,6 +175,10 @@ public:
    /*! The type of the collision response algorithm is selected by the setting of the
        pe::pe_CONTACT_SOLVER macro. */
    typedef response::HardContactAndFluid<Config>  ContactSolver;
+
+   //! Opt-in marker: this pipeline invokes the shared lubrication stage, so it honors
+   //! lubricationEnabled_ (see pe/interface/setup_optional_collision_params.h).
+   static constexpr bool hasLubricationStage = true;
 
    enum RelaxationModel {
       InelasticFrictionlessContact,
@@ -1796,25 +1802,44 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       memCollisionResponseContactCaching_.start();
    }
 
-   // Cache contact properties
-   body1_.resize( numContactsMasked );
-   body2_.resize( numContactsMasked );
-   r1_.resize( numContactsMasked );
-   r2_.resize( numContactsMasked );
-   n_.resize( numContactsMasked );
-   t_.resize( numContactsMasked );
-   o_.resize( numContactsMasked );
-   dist_.resize( numContactsMasked );
-   mu_.resize( numContactsMasked );
-   diag_nto_.resize( numContactsMasked );
-   diag_nto_inv_.resize( numContactsMasked );
-   diag_to_inv_.resize( numContactsMasked );
-   diag_n_inv_.resize( numContactsMasked );
-   p_.resize( numContactsMasked );
+   // Lubrication pre-contacts are NOT constraints: they carry a positive surface gap and
+   // are handled by the lubrication stage above. Feeding them to the hard-contact solver
+   // would resolve them as if the bodies were touching. When lubrication is off no contact
+   // ever carries the flag, so this reduces to the previous count exactly.
+   size_t numContactsMaskedHard( numContactsMasked );
+   if( lubrication::isEnabled() ) {
+      numContactsMaskedHard = 0;
+      for( size_t i = 0; i < numContacts; ++i ) {
+         if( !contactsMask_[i] ) continue;
+         if( contacts[i]->getLubricationFlag() ) continue;
+         ++numContactsMaskedHard;
+      }
+   }
+
+   // Cache contact properties (hard contacts only)
+   body1_.resize( numContactsMaskedHard );
+   body2_.resize( numContactsMaskedHard );
+   r1_.resize( numContactsMaskedHard );
+   r2_.resize( numContactsMaskedHard );
+   n_.resize( numContactsMaskedHard );
+   t_.resize( numContactsMaskedHard );
+   o_.resize( numContactsMaskedHard );
+   dist_.resize( numContactsMaskedHard );
+   mu_.resize( numContactsMaskedHard );
+   diag_nto_.resize( numContactsMaskedHard );
+   diag_nto_inv_.resize( numContactsMaskedHard );
+   diag_to_inv_.resize( numContactsMaskedHard );
+   diag_n_inv_.resize( numContactsMaskedHard );
+   p_.resize( numContactsMaskedHard );
 
    {
       maximumPenetration_ = 0;
-      numContacts_ = numContacts;
+      // Hard contacts only: lubrication pre-contacts carry a positive gap and are not
+      // contacts in any sense the CFD layer means. getNumberOfContacts() is read by
+      // FeatFloWer through pe/interface/c_interface_queries.h, so reporting them would
+      // silently inflate the count the moment lubrication is switched on. Identical to
+      // the previous value whenever lubrication is off.
+      numContacts_ = numContactsMaskedHard;
 
       size_t j = 0;
       for( size_t i = 0; i < numContacts; ++i ) {
@@ -1822,6 +1847,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             continue;
 
          const ContactID c( contacts[i] );
+         if( c->getLubricationFlag() )
+            continue;   // handled by the lubrication stage, not a constraint
+
          BodyID b1( c->getBody1() );
          BodyID b2( c->getBody2() );
 
@@ -2079,29 +2107,20 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             w_[j] = body->getAngularVel();
          }
 
-         // VELOCITY CHECK AND LIMITING - before collision pipeline
-         real velocityMagnitude = v_[j].length();
-         if (velocityMagnitude > 32.0 || body->isStuck_) {
+         // Diagnostic only: report implausibly fast or stuck bodies. This used to also
+         // CLAMP the velocity (|v| > 32 -> 12.3), which is removed -- see the commit
+         // that deleted the integratePositions limiter. The 32.0 below is a reporting
+         // threshold, not physics; it changes no state.
+         const real velocityMagnitude = v_[j].length();
+         if (velocityMagnitude > real(32.0) || body->isStuck_) {
             pe_LOG_INFO_SECTION( log ) {
                if (body->isStuck_) {
                   log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n";
                }
-               if (velocityMagnitude > 32.0) {
+               if (velocityMagnitude > real(32.0)) {
                   log << "  HIGH VELOCITY DETECTED for Particle (ID=" << body->getSystemID() << ")\n";
-                  log << "    Velocity before limiting: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
-               } else if (body->isStuck_) {
-                  log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
                }
-            }
-
-            // Apply velocity limiting if too high (BEFORE collision pipeline)
-            if (velocityMagnitude > 32.0) {
-               v_[j].normalize();
-               v_[j] *= 12.3;  // Clamp to safe value
-               pe_LOG_INFO_SECTION( log ) {
-                  log << "    Velocity after limiting: " << v_[j] << " (magnitude: " << v_[j].length() << ")\n";
-                  log << "    Velocity limiting: APPLIED (clamped to 2.5)\n";
-               }
+               log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
             }
          }
       }
@@ -2120,6 +2139,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       }
 
       synchronizeVelocities();
+
+      // Optional lubrication add-on (D2.2). Off by default: one predictable branch,
+      // and the extra velocity synchronization -- an MPI collective -- is never
+      // reached. On, the shared stage applies Kroupa-2016 lubrication impulses to the
+      // tagged pre-contact pairs before the hard-contact solver runs below.
+      // See pe/core/lubrication/LubricationStage.h.
+      if( lubrication::isEnabled() ) {
+         lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
+
+         // Shadow copies must see the lubrication corrections before the constraint
+         // solver consumes these velocities.
+         synchronizeVelocities();
+      }
    }
 
    pe_PROFILING_SECTION {
@@ -2217,19 +2249,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          }
       }
 
-      // DEBUG: Track convergence for translation-locked contacts
-      if( numContactsMasked > 0 ) {
-         bool anyTranslationLocked = false;
-         for( size_t i = 0; i < numContactsMasked; ++i ) {
-            if( body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0) ) {
-               anyTranslationLocked = true;
-               break;
-            }
-         }
-//          if( anyTranslationLocked && (it % 10 == 0 || it == maxIterations_ - 1) ) {
-//             std::cout << "Iteration " << it << ": delta_max = " << delta_max << "\n";
-//          }
-      }
 
       // Compute maximum impulse variation.
       // TODO:
@@ -4700,7 +4719,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       // Calculating the translational displacement
       body->gpos_ += v * dt;
 
-      w = Vec3(0,0,0);
       // Calculating the rotation angle
       const Vec3 phi( w * dt );
 
@@ -4719,14 +4737,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       // Storing the velocities back in the body properties
       body->v_ = v;
       body->w_ = w;
-
-      // Velocity limiting. We know the fluid speeds in the current application.
-      // Particle speeds higher than this are a numerical artifact and the limiter
-      // gets applied.
-      if(body->v_.length() > 12.3) {
-        body->v_.normalize();
-        body->v_ *= 4.1;
-      }
 
       if( body->getType() == unionType ) {
          // Updating the contained bodies

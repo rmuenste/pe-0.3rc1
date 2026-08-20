@@ -11,8 +11,10 @@
 //   * forces plateau (saturate) below h_c, plateau monotone in eps_c
 //   * separation branch: suction active with lubricationOnSeparation_, absent without
 //
-// Needs pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated; exits 77 (CTest
-// SKIPPED) under any other solver. Set PE_LUB_CSV=1 to dump a curve CSV for plotting.
+// Linked against pe_static_lubstage_plain: the same library built with
+// pe_CONSTRAINT_SOLVER=pe::response::HardContactSemiImplicitTimesteppingSolvers.
+// The test therefore runs under any shipped library default and never skips.
+// Set PE_LUB_CSV=1 to dump a curve CSV for plotting.
 
 #include <pe/core.h>
 #include <pe/core/lubrication/LubricationModel.h>
@@ -28,7 +30,6 @@ using namespace pe;
 
 namespace {
 
-const int skipReturnCode = 77;
 int failures = 0;
 
 void check(bool ok, const char* what) {
@@ -38,12 +39,6 @@ void check(bool ok, const char* what) {
   }
 }
 
-template <typename CS, typename = void>
-struct IsLubricatedSolver : std::false_type {};
-template <typename CS>
-struct IsLubricatedSolver<CS, std::void_t<
-    decltype(std::declval<CS&>().setAlphaImpulseCap(real{})),
-    decltype(std::declval<CS&>().setMinEpsLub(real{}))>> : std::true_type {};
 
 struct Scene {
   WorldID world;
@@ -91,6 +86,7 @@ lubrication::ModelConfig currentConfig(real eta) {
 
 template <typename CS>
 int run(CS& cs) {
+  (void)cs;   // the stage is configured through pe::lubrication::, not the solver
   Scene s;
   s.radius = real(0.01);
   s.dt = real(1e-3);
@@ -102,10 +98,10 @@ int run(CS& cs) {
   s.world->setLiquidDensity(1.0);
   s.world->setDamping(1.0);
 
-  cs.setContactHysteresisDelta(0.0);       // sharp entry: blend = 1 across the whole band
-  cs.setLubricationHysteresisDelta(0.0);   // sharp exit
-  cs.setAlphaImpulseCap(1.0);
-  cs.setMinEpsLub(1e-12);
+  lubrication::setContactHysteresisDelta(0.0);       // sharp entry: blend = 1 across the whole band
+  lubrication::setLubricationHysteresisDelta(0.0);   // sharp exit
+  lubrication::setAlphaImpulseCap(1.0);
+  lubrication::setMinGap(1e-12);
   lubrication::setEnabled(true);
   lubrication::setModel(lubrication::modelKroupa2016);
   lubrication::setScheme(lubrication::schemeSemiImplicit);
@@ -253,12 +249,7 @@ int run(CS& cs) {
 }  // namespace
 
 int main() {
-  using CollisionSystemType = std::remove_reference_t<decltype(*theCollisionSystem())>;
-  if constexpr (IsLubricatedSolver<CollisionSystemType>::value) {
-    return run(*theCollisionSystem());
-  } else {
-    std::cout << "pe-lubrication-two-sphere-approach: SKIPPED (active pe_CONSTRAINT_SOLVER "
-                 "is not pe::response::HardContactLubricated)\n";
-    return skipReturnCode;
-  }
+  // No solver gate: this target links the stage-capable library variant, so the
+  // test runs (and must pass) under any shipped library default.
+  return run(*theCollisionSystem());
 }

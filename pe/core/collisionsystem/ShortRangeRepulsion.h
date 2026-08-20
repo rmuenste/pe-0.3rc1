@@ -23,12 +23,6 @@
 #ifndef _PE_CORE_COLLISIONSYSTEM_SHORTRANGEREPULSION_H_
 #define _PE_CORE_COLLISIONSYSTEM_SHORTRANGEREPULSION_H_
 
-// Enable pre-contact detection in fine collision detection (required for security zone forces)
-#ifndef PE_LUBRICATION_CONTACTS
-#define PE_LUBRICATION_CONTACTS 1
-#endif
-
-
 //*************************************************************************************************
 // Includes
 //*************************************************************************************************
@@ -366,7 +360,12 @@ CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::CollisionSystem()
    , requireSync_      ( false )
    , nSubcycles_      ( 1     )
 {
-   // Sync lubrication threshold with solver's security zone width rho
+   // This solver needs the extended-range ("pre-contact") branch of fine detection to
+   // realize its Pan et al. security zone: it reuses the addLubricationContact channel
+   // with the legacy absolute threshold set to rho. That requirement is independent of
+   // the lubrication master switch, so it is declared here rather than via the json
+   // switch, and applyOptionalLubricationParams deliberately leaves it alone.
+   lubrication::setSecurityZone( true );
    lubrication::setLubricationThreshold( solver_.getRho() );
 
    // Registering all timers

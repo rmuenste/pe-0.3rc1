@@ -102,7 +102,8 @@ def main():
     J = F_uncapped * dt
     Jcap = cap_factor * m_eff * (-vrn)
     cap_ratio = np.where(J > 0, np.minimum(1.0, Jcap / J), 1.0)
-    # Solver applies: Fmag_weighted = Fmag_capped * blend  (line 2310 in HCL solver)
+    # Lubrication stage applies: Fmag_weighted = Fmag_capped * blend
+    # (pe/core/lubrication/LubricationStage.h)
     # The blend factor appears twice: once inside Jcap, once after capping.
     F_applied = F_uncapped * cap_ratio * blend
 

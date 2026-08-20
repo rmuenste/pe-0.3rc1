@@ -14,9 +14,22 @@ A major fix was implemented for collisions involving "Kinematic Bodies" (bodies 
 - **Reference:** `@doc/technical-notes/hard-contact-response-walkthrough.md`
 
 ### 2. Lubrication Model Changes
-- **Canonical Implementation:** `HardContactLubricated` is the new standard.
+- **Lubrication is a runtime add-on, not a solver.** The former `HardContactLubricated`
+  collision system has been **retired** (deleted). Lubrication is now a switchable stage
+  that any hard-contact pipeline can invoke: `pe/core/lubrication/LubricationStage.h`
+  (application stage, run after the collision system's first `synchronizeVelocities()`),
+  `pe/core/lubrication/LubricationModel.h` (the Kroupa-2016 closure),
+  `pe/core/lubrication/ContactState.h` (per-contact flag + blend weight).
+- **Stage-capable solvers today:** `pe::response::HardContactAndFluid` and
+  `pe::response::HardContactSemiImplicitTimesteppingSolvers`; both advertise
+  `static constexpr bool hasLubricationStage = true;`.
+- **Enabling it:** *not* by picking a solver. Set the `lubricationEnabled_` json key (or
+  call `pe::lubrication::setEnabled(true)`). Enabling it under a solver that does not run
+  the stage **throws** in `applyOptionalLubricationParams()`. Lubrication defaults to
+  **OFF** everywhere; the default `pe_CONSTRAINT_SOLVER` is the neutral
+  `pe::response::HardContactEulerLagrange`.
 - **Deprecation:** `HardContactAndFluidWithLubrication` and `HardContactFluidLubrication` are deprecated.
-- **Runtime Controls:** `pe/core/lubrication/Params.*` exposes global controls for contact/lubrication blending, queried directly by `MaxContacts`.
+- **Runtime Controls:** `pe/core/lubrication/Params.*` exposes global controls for contact/lubrication blending, queried directly by `MaxContacts`. The old `PE_LUBRICATION_CONTACTS` compile-time macro is **gone**; the `MaxContacts` detection branches are gated at runtime on `pe::lubrication::contactGenerationEnabled()`.
 
 ### 3. DistanceMap Integration
 - **Status:** Fully integrated into PE core as a fine collision detection algorithm.

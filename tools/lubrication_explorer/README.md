@@ -57,7 +57,7 @@ default 1 cm wall case, the contact blend half-width is 5% of `h_c` and the cuto
 half-width is 10% of `h_cut`; this makes both transitions readable without letting the outer
 blend dominate the curve. **Visualization defaults** restores the complete illustrative
 scenario. **Set engine defaults** loads the engine-owned lubrication values from
-`HardContactLubricated` / `SimulationConfig` (including `contact = 1e-9 m` and
+the lubrication stage / `SimulationConfig` (including `contact = 1e-9 m` and
 `cutoff = 1e-3 m`) while preserving plot-only geometry, kinematics, mass/inertia and view.
 
 The plot extends through `h_cut + lubricationHysteresis`, so the per-step curve displays the
@@ -73,7 +73,7 @@ mass knobs affect the **per-step** column only.
 coefficient tagged with its source line:
 
 - `pe/core/lubrication/LubricationModel.h` — coefficients, slip `f*`, saturation, wrench.
-- `pe/core/collisionsystem/HardContactLubricated.h` — per-step impulse (semi-implicit /
+- `pe/core/lubrication/LubricationStage.h` — per-step impulse (semi-implicit /
   explicit-capped, `expClamp`), blend application.
 - `pe/core/detection/fine/MaxContacts.h` — blend-weight ramp.
 - `src/core/lubrication/Params.cpp` — outer cutoff.

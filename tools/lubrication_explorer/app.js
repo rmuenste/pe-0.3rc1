@@ -11,7 +11,7 @@
 //-------------------------------------------------------------------------------------------------
 // These values describe a readable, illustrative plot. In the default wall case they make the
 // contact blend 5% of h_c and the cutoff blend 10% of h_cut. They are intentionally distinct
-// from the production values in HardContactLubricated / SimulationConfig.
+// from the production values in the lubrication stage / SimulationConfig.
 const VISUALIZATION_DEFAULTS = Object.freeze({
    // Fluid
    viscosity: 8.37e-5,
@@ -32,7 +32,7 @@ const VISUALIZATION_DEFAULTS = Object.freeze({
    yMode: "lin",         // 'lin' | 'log' (log plots |value|)
 });
 
-// Runtime defaults seeded by CollisionSystem<HardContactLubricated>, Params.cpp and
+// Runtime defaults seeded by the lubrication stage, Params.cpp and
 // SimulationConfig. Only engine-owned lubrication controls belong here: applying this preset
 // deliberately preserves the explorer-only geometry, kinematics, effective mass/inertia and view.
 const ENGINE_DEFAULTS = Object.freeze({

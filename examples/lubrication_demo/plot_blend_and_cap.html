@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HCL Blend &amp; Impulse Cap Explorer</title>
+<title>Lubrication Blend &amp; Impulse Cap Explorer</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -117,7 +117,7 @@
 </head>
 <body>
 
-<h1>HCL Blend Weights &amp; Impulse Cap Explorer</h1>
+<h1>Lubrication Blend Weights &amp; Impulse Cap Explorer</h1>
 
 <div class="layout">
 <div class="controls">
@@ -358,7 +358,8 @@ function update() {
     const Jcap = cf * mEff * (-vrn);
     const cr = J > 0 ? Math.min(1, Jcap / J) : 1;
     capRatio.push(cr);
-    // Solver applies: Fmag_weighted = Fmag_capped * blend  (line 2310 in HCL solver)
+    // Lubrication stage applies: Fmag_weighted = Fmag_capped * blend
+    // (pe/core/lubrication/LubricationStage.h)
     // The blend factor appears twice: once inside Jcap, once after capping.
     Fapplied.push(Func * cr * l);
   }

@@ -3,11 +3,11 @@
 //
 // A sphere falls onto a plane under gravity with an explicit Stokes drag applied by the
 // driver (PE-only stand-in for the fluid); lubrication and the hard contact come from the
-// HardContactLubricated solver.
+// shared lubrication stage under HardContactAndFluid.
 //
 // IMPORTANT SCOPE NOTE: the canonical Gondret gate (restitution e vs Stokes number
 // collapsing onto the experimental curve) requires an ELASTIC hard-contact rebound. The
-// HardContactLubricated relaxation models are inelastic by design (relaxationModel_ =
+// The hard-contact relaxation models are inelastic by design (relaxationModel_ =
 // ApproximateInelasticCoulombContactByDecoupling; material restitution is not applied,
 // see doc/technical-notes/relaxation-models.md) -- any upward velocity after impact is an
 // error-reduction artifact, not physics. The full e(St) curve therefore remains a Level 2/3
@@ -21,8 +21,9 @@
 //   * dt robustness across 3 decades at fixed viscosity
 //   * wall tangential force / rolling torque / twist decay signs and switches
 //
-// Needs pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated; exits 77 (CTest
-// SKIPPED) otherwise.
+// Linked against pe_static_lubstage_fluid: the same library built with
+// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid.
+// The test therefore runs under any shipped library default and never skips.
 
 #include <pe/core.h>
 #include <pe/core/lubrication/LubricationModel.h>
@@ -37,7 +38,6 @@ using namespace pe;
 
 namespace {
 
-const int skipReturnCode = 77;
 int failures = 0;
 
 void check(bool ok, const char* what) {
@@ -47,12 +47,6 @@ void check(bool ok, const char* what) {
   }
 }
 
-template <typename CS, typename = void>
-struct IsLubricatedSolver : std::false_type {};
-template <typename CS>
-struct IsLubricatedSolver<CS, std::void_t<
-    decltype(std::declval<CS&>().setAlphaImpulseCap(real{})),
-    decltype(std::declval<CS&>().setMinEpsLub(real{}))>> : std::true_type {};
 
 struct DropResult {
   real vIn;    // max downward speed over the whole fall
@@ -101,6 +95,7 @@ DropResult dropOntoWall(WorldID world, SphereID sphere, real radius, real eta,
 
 template <typename CS>
 int run(CS& cs) {
+  (void)cs;   // the stage is configured through pe::lubrication::, not the solver
   const real radius = real(3.175e-3);  // Gondret steel bead
   const real rhoP = real(7800.0);
   const real eDry = real(0.9);         // material value; NOT honored by the inelastic solver
@@ -111,10 +106,10 @@ int run(CS& cs) {
   world->setDamping(1.0);
   world->setAutoForceReset(true);
 
-  cs.setContactHysteresisDelta(0.0);
-  cs.setLubricationHysteresisDelta(0.0);
-  cs.setAlphaImpulseCap(1.0);
-  cs.setMinEpsLub(1e-12);
+  lubrication::setContactHysteresisDelta(0.0);
+  lubrication::setLubricationHysteresisDelta(0.0);
+  lubrication::setAlphaImpulseCap(1.0);
+  lubrication::setMinGap(1e-12);
   lubrication::setEnabled(true);
   lubrication::setModel(lubrication::modelKroupa2016);
   lubrication::setScheme(lubrication::schemeSemiImplicit);
@@ -242,12 +237,7 @@ int run(CS& cs) {
 }  // namespace
 
 int main() {
-  using CollisionSystemType = std::remove_reference_t<decltype(*theCollisionSystem())>;
-  if constexpr (IsLubricatedSolver<CollisionSystemType>::value) {
-    return run(*theCollisionSystem());
-  } else {
-    std::cout << "pe-lubrication-bounce-stokes: SKIPPED (active pe_CONSTRAINT_SOLVER is "
-                 "not pe::response::HardContactLubricated)\n";
-    return skipReturnCode;
-  }
+  // No solver gate: this target links the stage-capable library variant, so the
+  // test runs (and must pass) under any shipped library default.
+  return run(*theCollisionSystem());
 }
