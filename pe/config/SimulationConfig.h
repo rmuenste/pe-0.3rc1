@@ -195,6 +195,10 @@ public:
     void setResumeExpectedStep(long long value) { resumeExpectedStep_ = value; }
     const std::string& getResumeExpectedTag() const { return resumeExpectedTag_; }
     void setResumeExpectedTag(const std::string& tag) { resumeExpectedTag_ = tag; }
+    // Set only by the C driver entry point, never by loadFromFile, so the two sources of a resume
+    // expectation can be told apart and a disagreement refused instead of silently resolved.
+    bool getResumeExpectationFromDriver() const { return resumeExpectationFromDriver_; }
+    void setResumeExpectationFromDriver(bool value) { resumeExpectationFromDriver_ = value; }
     //@}
     //**************************************************************************************
 
@@ -425,6 +429,7 @@ private:
     real resumeTimeToleranceSteps_;    //!< Allowed time deviation, in units of the checkpoint stepSize
     long long resumeExpectedStep_;     //!< Step index the driver expects; negative means unset
     std::string resumeExpectedTag_;    //!< Pairing tag the driver expects; empty means unset
+    bool resumeExpectationFromDriver_; //!< Expectation came from the C entry point, not the deck
 
     // Simulation parameters
     real volumeFraction_;        //!< Volume fraction for particle packing
