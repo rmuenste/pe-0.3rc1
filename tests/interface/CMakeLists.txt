@@ -36,11 +36,13 @@ add_test(
   COMMAND pe_lubrication_model_test
 )
 
-# The three tests below drive the shared lubrication stage through a real collision
-# pipeline, so they need a stage-capable pe_CONSTRAINT_SOLVER. Rather than depending on
-# the library default -- which is deliberately neutral, and used to make these tests skip
-# -- each target selects HardContactAndFluid for ITSELF via target_compile_definitions.
-# They therefore run and must pass in every build configuration.
+# The tests below drive the shared lubrication stage through a real collision pipeline, so
+# they need a stage-capable pe_CONSTRAINT_SOLVER. That CANNOT be selected per target with
+# target_compile_definitions -- pe_CONSTRAINT_SOLVER feeds the global Config typedef and
+# non-template library units are compiled against it, so mixing solvers between library
+# and consumer yields undefined references. Each test therefore links a whole library
+# variant instead, and so runs and must pass in every build configuration.
+#
 # pe_static_lubstage_fluid / _plain are the same library built with a stage-capable
 # pe_CONSTRAINT_SOLVER (HardContactAndFluid / the plain hard-contact solver). See the
 # top-level CMakeLists.txt for why this has to be a whole library variant rather than a

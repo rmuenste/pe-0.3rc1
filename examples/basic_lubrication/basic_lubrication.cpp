@@ -123,6 +123,14 @@ int main( int argc, char* argv[] )
    // switch used to be implied by the solver choice; it is now explicit. The hysteresis
    // half-widths reproduce the defaults the retired HardContactLubricated solver installed.
    pe::lubrication::setEnabled( useLubrication );
+   // NOTE: this example used to call setSlipLength(0.01) and setMinEps(0.005) on the
+   // collision system. Both were empty inline stubs -- no-ops -- and went away with the
+   // retired solver. The real parameters carrying those meanings now live in the shared
+   // store, but they are NOT the same quantities:
+   //   slip length -> pe::lubrication::setEpsCritical( h_c / a_ref )  (RELATIVE to radius)
+   //   gap floor   -> pe::lubrication::setMinGap( h_min )             (absolute)
+   // Left at their defaults rather than transcribing the old absolute values, which never
+   // took effect and are not in the same units.
    pe::lubrication::setContactHysteresisDelta( real(1e-9) );
    pe::lubrication::setLubricationHysteresisDelta( real(1e-3) );
    theCollisionSystem()->setErrorReductionParameter( 0.05 );

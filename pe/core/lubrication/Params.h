@@ -3,6 +3,15 @@
  *  \file pe/core/lubrication/Params.h
  *  \brief Lightweight access to runtime lubrication parameters and switches
  *
+ *  CONCURRENCY CONTRACT: this is process-global mutable state with no synchronization.
+ *  Writes are SETUP-TIME ONLY and single-threaded -- applyOptionalLubricationParams once
+ *  after SimulationConfig::loadFromFile, plus the setters an example/tool calls before
+ *  stepping. The one write that happens outside setup is registerSphereRadius(), invoked
+ *  from SphereBase's constructor; creating bodies concurrently is therefore a data race.
+ *  This matters because FeatFloWer builds with OpenMP. Reads during the timestep (the
+ *  detection gate, aabbPadding, the stage's per-step snapshot) are safe precisely because
+ *  nothing writes then.
+ *
  *  Free-function global store so detection code (MaxContacts), bounding-box code
  *  (SphereBase/PlaneBase) and the lubrication stage can read runtime-configured
  *  lubrication parameters without depending on the CollisionSystem or SimulationConfig

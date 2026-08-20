@@ -11,9 +11,9 @@
 //   * forces plateau (saturate) below h_c, plateau monotone in eps_c
 //   * separation branch: suction active with lubricationOnSeparation_, absent without
 //
-// Linked against pe_static_lubstage: the same library built with
-// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid. The test therefore runs under
-// any shipped library default and never skips.
+// Linked against pe_static_lubstage_plain: the same library built with
+// pe_CONSTRAINT_SOLVER=pe::response::HardContactSemiImplicitTimesteppingSolvers.
+// The test therefore runs under any shipped library default and never skips.
 // Set PE_LUB_CSV=1 to dump a curve CSV for plotting.
 
 #include <pe/core.h>
@@ -86,6 +86,7 @@ lubrication::ModelConfig currentConfig(real eta) {
 
 template <typename CS>
 int run(CS& cs) {
+  (void)cs;   // the stage is configured through pe::lubrication::, not the solver
   Scene s;
   s.radius = real(0.01);
   s.dt = real(1e-3);

@@ -229,6 +229,46 @@ int main() {
   }
 
   //---------------------------------------------------------------------------------
+  // 2c. The dissipation invariant, observed through the pipeline
+  //
+  // The stage returns StageDiagnostics::dissipation, which must be <= 0 -- the model is
+  // purely resistive, so a positive value is a sign-convention bug in the wrench. Both
+  // solver hosts discard that return value and the stage only logs it under
+  // pe_LOG_DEBUG_SECTION, compiled out in Release: in the build everyone actually runs,
+  // the invariant is checked by nobody.
+  //
+  // Asserted here as its physical consequence instead of by reaching into solver
+  // internals: with no gravity, no damping and a fixed partner, lubrication is the only
+  // force acting, so the mobile body's kinetic energy must not increase over a step.
+  // That covers the translational AND rotational terms in one statement, and unlike a
+  // direct diagnostics read it cannot pass while the applied impulses disagree with the
+  // reported number.
+  //---------------------------------------------------------------------------------
+  {
+    const auto kineticEnergy = [](ConstSphereID b) {
+      const Vec3 w = b->getAngularVel();
+      return real(0.5) * b->getMass() * trans(b->getLinearVel()) * b->getLinearVel()
+           + real(0.5) * trans(w) * ( b->getInertia() * w );
+    };
+
+    // Near the wall, translating and spinning: normal squeeze, sliding force, sliding
+    // torque and twisting torque are all active.
+    wallProbe->setPosition(0.0, 0.0, zWall + radius + real(0.02) * radius);
+    wallProbe->setLinearVel(real(0.004), 0.0, v0);
+    wallProbe->setAngularVel(real(1.0), real(-2.0), real(3.0));
+    const real keBefore = kineticEnergy(wallProbe);
+    world->simulationStep(dt);
+    const real keAfter = kineticEnergy(wallProbe);
+
+    std::printf("\n[dissip  ] kinetic energy %.10g -> %.10g (change %.3g)\n",
+                (double)keBefore, (double)keAfter, (double)(keAfter - keBefore));
+    expect(keAfter <= keBefore,
+          "lubrication is purely resistive: kinetic energy does not increase");
+    expect(keAfter < keBefore,
+          "lubrication actually dissipates here (guards against a vacuous pass)");
+  }
+
+  //---------------------------------------------------------------------------------
   // 3. The switch is honest: off means exactly nothing
   //---------------------------------------------------------------------------------
   {

@@ -7,9 +7,9 @@
 // who pin the legacy configuration.
 //
 // The constraint solver is compile-time configuration (pe/config/Collisions.h), so this
-// target links pe_static_lubstage: the same library built with
-// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid. The test therefore runs under
-// any shipped library default and never skips.
+// target links pe_static_lubstage_fluid: the same library built with
+// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid.
+// The test therefore runs under any shipped library default and never skips.
 //
 // Scene: one sphere falling onto a plane through the lubrication band, plus a sphere pair
 // approaching head-on inside the band (both far from each other). 500 steps, dt = 1e-4.

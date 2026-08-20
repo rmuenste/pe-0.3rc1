@@ -21,9 +21,9 @@
 //   * dt robustness across 3 decades at fixed viscosity
 //   * wall tangential force / rolling torque / twist decay signs and switches
 //
-// Linked against pe_static_lubstage: the same library built with
-// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid. The test therefore runs under
-// any shipped library default and never skips.
+// Linked against pe_static_lubstage_fluid: the same library built with
+// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid.
+// The test therefore runs under any shipped library default and never skips.
 
 #include <pe/core.h>
 #include <pe/core/lubrication/LubricationModel.h>
@@ -95,6 +95,7 @@ DropResult dropOntoWall(WorldID world, SphereID sphere, real radius, real eta,
 
 template <typename CS>
 int run(CS& cs) {
+  (void)cs;   // the stage is configured through pe::lubrication::, not the solver
   const real radius = real(3.175e-3);  // Gondret steel bead
   const real rhoP = real(7800.0);
   const real eDry = real(0.9);         // material value; NOT honored by the inelastic solver
