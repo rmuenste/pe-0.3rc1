@@ -216,10 +216,19 @@ Every configuration below runs the **complete** suite. Zero skips.
 | `HardContactAndFluid`, Release | `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid` | 13/13 pass |
 | `HardContactAndFluid`, Debug + `_GLIBCXX_ASSERTIONS` | both of the above | 13/13 pass |
 | MPI, Release | `-DPE_USE_MPI=ON`, `pe_static` | compiles clean |
+| `PE_BUILD_EXAMPLES=ON`, Release | neutral solver | unchanged from `de855b6` (see below) |
 
 All with `-DPE_USE_JSON=ON -DPE_USE_EIGEN=ON -DPE_USE_CGAL=OFF`.
 Baseline on `de855b6` for comparison: 12/12 Release, **11/12 Debug** —
 `pe-interface-serial-atc-resume-roundtrip` aborted.
+
+The examples build fails identically before and after this PR — three
+pre-existing errors under a neutral solver, verified by building `de855b6` in a
+detached worktree with the same flags: `examples/box_domain` calls
+`setSlipLength()`, removed when the `HardContactLubricated` pipeline was retired,
+and `examples/lubrication_demo` static-asserts that it needs
+`HardContactAndFluid`. Neither is touched here. Noted so the failure is not
+mistaken for a regression.
 
 ### The acceptance test
 
