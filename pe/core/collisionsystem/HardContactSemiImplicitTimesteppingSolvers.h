@@ -47,6 +47,8 @@
 #include <pe/core/domaindecomp/ProcessStorage.h>
 #include <pe/core/io/BodySimpleAsciiWriter.h>
 #include <pe/core/joint/JointStorage.h>
+#include <pe/core/lubrication/LubricationStage.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPI.h>
 #include <pe/core/MPISection.h>
@@ -170,6 +172,9 @@ public:
    /*! The type of the collision response algorithm is selected by the setting of the
        pe::pe_CONTACT_SOLVER macro. */
    typedef response::HardContactSemiImplicitTimesteppingSolvers<Config>  ContactSolver;
+
+   //! Opt-in marker: this pipeline invokes the shared lubrication stage.
+   static constexpr bool hasLubricationStage = true;
 
    enum RelaxationModel {
       InelasticFrictionlessContact,
@@ -1789,20 +1794,32 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    }
 
    // Cache contact properties
-   body1_.resize( numContactsMasked );
-   body2_.resize( numContactsMasked );
-   r1_.resize( numContactsMasked );
-   r2_.resize( numContactsMasked );
-   n_.resize( numContactsMasked );
-   t_.resize( numContactsMasked );
-   o_.resize( numContactsMasked );
-   dist_.resize( numContactsMasked );
-   mu_.resize( numContactsMasked );
-   diag_nto_.resize( numContactsMasked );
-   diag_nto_inv_.resize( numContactsMasked );
-   diag_to_inv_.resize( numContactsMasked );
-   diag_n_inv_.resize( numContactsMasked );
-   p_.resize( numContactsMasked );
+   // Lubrication pre-contacts are not constraints; the stage above owns them. With
+   // lubrication off no contact carries the flag, so this is the previous count exactly.
+   size_t numContactsMaskedHard( numContactsMasked );
+   if( lubrication::isEnabled() ) {
+      numContactsMaskedHard = 0;
+      for( size_t i = 0; i < numContacts; ++i ) {
+         if( !contactsMask_[i] ) continue;
+         if( contacts[i]->getLubricationFlag() ) continue;
+         ++numContactsMaskedHard;
+      }
+   }
+
+   body1_.resize( numContactsMaskedHard );
+   body2_.resize( numContactsMaskedHard );
+   r1_.resize( numContactsMaskedHard );
+   r2_.resize( numContactsMaskedHard );
+   n_.resize( numContactsMaskedHard );
+   t_.resize( numContactsMaskedHard );
+   o_.resize( numContactsMaskedHard );
+   dist_.resize( numContactsMaskedHard );
+   mu_.resize( numContactsMaskedHard );
+   diag_nto_.resize( numContactsMaskedHard );
+   diag_nto_inv_.resize( numContactsMaskedHard );
+   diag_to_inv_.resize( numContactsMaskedHard );
+   diag_n_inv_.resize( numContactsMaskedHard );
+   p_.resize( numContactsMaskedHard );
 
    {
       maximumPenetration_ = 0;
@@ -1814,6 +1831,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
             continue;
 
          const ContactID c( contacts[i] );
+         if( c->getLubricationFlag() )
+            continue;   // handled by the lubrication stage, not a constraint
+
          BodyID b1( c->getBody1() );
          BodyID b2( c->getBody2() );
 
@@ -1938,6 +1958,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       }
 
       synchronizeVelocities();
+
+      // Optional lubrication add-on (D2.2): see pe/core/lubrication/LubricationStage.h.
+      // Off by default -- one predictable branch, and the extra velocity
+      // synchronization (an MPI collective) is never reached.
+      if( lubrication::isEnabled() ) {
+         lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
+         synchronizeVelocities();
+      }
    }
 
    pe_PROFILING_SECTION {

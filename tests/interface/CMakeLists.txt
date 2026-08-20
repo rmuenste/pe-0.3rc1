@@ -36,41 +36,46 @@ add_test(
   COMMAND pe_lubrication_model_test
 )
 
+# The three tests below drive the shared lubrication stage through a real collision
+# pipeline, so they need a stage-capable pe_CONSTRAINT_SOLVER. Rather than depending on
+# the library default -- which is deliberately neutral, and used to make these tests skip
+# -- each target selects HardContactAndFluid for ITSELF via target_compile_definitions.
+# They therefore run and must pass in every build configuration.
+# pe_static_lubstage_fluid / _plain are the same library built with a stage-capable
+# pe_CONSTRAINT_SOLVER (HardContactAndFluid / the plain hard-contact solver). See the
+# top-level CMakeLists.txt for why this has to be a whole library variant rather than a
+# per-target compile definition, and why two are needed.
+
 # Bit-for-bit regression gate: lubricationModel_="legacy" + lubricationCutoffFactor_=0
-# must reproduce the pre-Kroupa-2016 solver trajectories exactly. Needs a build with
-# pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated (see the test file header);
-# under any other solver the test self-reports as SKIPPED via exit code 77.
+# must reproduce the pre-Kroupa-2016 trajectories exactly.
 add_executable(pe_lubrication_legacy_regression_test
   pe_lubrication_legacy_regression_test.cpp
 )
-target_link_libraries(pe_lubrication_legacy_regression_test PRIVATE pe_static)
+target_link_libraries(pe_lubrication_legacy_regression_test PRIVATE pe_static_lubstage_fluid)
 add_test(
   NAME pe-lubrication-legacy-regression
   COMMAND pe_lubrication_legacy_regression_test
 )
-set_tests_properties(pe-lubrication-legacy-regression PROPERTIES SKIP_RETURN_CODE 77)
 
 # Level 1 lubrication validation (Kroupa-2016 model through the full solver pipeline).
-# Both need the HardContactLubricated solver and self-report as SKIPPED otherwise.
+# Both link a stage-capable library variant, so neither can skip.
 add_executable(pe_lubrication_two_sphere_approach_test
   pe_lubrication_two_sphere_approach_test.cpp
 )
-target_link_libraries(pe_lubrication_two_sphere_approach_test PRIVATE pe_static)
+target_link_libraries(pe_lubrication_two_sphere_approach_test PRIVATE pe_static_lubstage_fluid)
 add_test(
   NAME pe-lubrication-two-sphere-approach
   COMMAND pe_lubrication_two_sphere_approach_test
 )
-set_tests_properties(pe-lubrication-two-sphere-approach PROPERTIES SKIP_RETURN_CODE 77)
 
 add_executable(pe_lubrication_bounce_stokes_test
   pe_lubrication_bounce_stokes_test.cpp
 )
-target_link_libraries(pe_lubrication_bounce_stokes_test PRIVATE pe_static)
+target_link_libraries(pe_lubrication_bounce_stokes_test PRIVATE pe_static_lubstage_plain)
 add_test(
   NAME pe-lubrication-bounce-stokes
   COMMAND pe_lubrication_bounce_stokes_test
 )
-set_tests_properties(pe-lubrication-bounce-stokes PROPERTIES SKIP_RETURN_CODE 77)
 
 function(pe_add_interface_serial_test test_name case_name)
   add_test(
@@ -134,3 +139,4 @@ if(MPI AND CGAL)
     )
   endforeach()
 endif()
+

@@ -1802,21 +1802,35 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       memCollisionResponseContactCaching_.start();
    }
 
-   // Cache contact properties
-   body1_.resize( numContactsMasked );
-   body2_.resize( numContactsMasked );
-   r1_.resize( numContactsMasked );
-   r2_.resize( numContactsMasked );
-   n_.resize( numContactsMasked );
-   t_.resize( numContactsMasked );
-   o_.resize( numContactsMasked );
-   dist_.resize( numContactsMasked );
-   mu_.resize( numContactsMasked );
-   diag_nto_.resize( numContactsMasked );
-   diag_nto_inv_.resize( numContactsMasked );
-   diag_to_inv_.resize( numContactsMasked );
-   diag_n_inv_.resize( numContactsMasked );
-   p_.resize( numContactsMasked );
+   // Lubrication pre-contacts are NOT constraints: they carry a positive surface gap and
+   // are handled by the lubrication stage above. Feeding them to the hard-contact solver
+   // would resolve them as if the bodies were touching. When lubrication is off no contact
+   // ever carries the flag, so this reduces to the previous count exactly.
+   size_t numContactsMaskedHard( numContactsMasked );
+   if( lubrication::isEnabled() ) {
+      numContactsMaskedHard = 0;
+      for( size_t i = 0; i < numContacts; ++i ) {
+         if( !contactsMask_[i] ) continue;
+         if( contacts[i]->getLubricationFlag() ) continue;
+         ++numContactsMaskedHard;
+      }
+   }
+
+   // Cache contact properties (hard contacts only)
+   body1_.resize( numContactsMaskedHard );
+   body2_.resize( numContactsMaskedHard );
+   r1_.resize( numContactsMaskedHard );
+   r2_.resize( numContactsMaskedHard );
+   n_.resize( numContactsMaskedHard );
+   t_.resize( numContactsMaskedHard );
+   o_.resize( numContactsMaskedHard );
+   dist_.resize( numContactsMaskedHard );
+   mu_.resize( numContactsMaskedHard );
+   diag_nto_.resize( numContactsMaskedHard );
+   diag_nto_inv_.resize( numContactsMaskedHard );
+   diag_to_inv_.resize( numContactsMaskedHard );
+   diag_n_inv_.resize( numContactsMaskedHard );
+   p_.resize( numContactsMaskedHard );
 
    {
       maximumPenetration_ = 0;
@@ -1828,6 +1842,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             continue;
 
          const ContactID c( contacts[i] );
+         if( c->getLubricationFlag() )
+            continue;   // handled by the lubrication stage, not a constraint
+
          BodyID b1( c->getBody1() );
          BodyID b2( c->getBody2() );
 

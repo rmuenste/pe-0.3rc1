@@ -32,6 +32,7 @@
 #include <cmath>
 #include <pe/core/rigidbody/GeomPrimitive.h>
 #include <pe/core/Types.h>
+#include <pe/core/lubrication/ContactState.h>
 #include <pe/core/response/Types.h>
 #include <pe/math/Constants.h>
 #include <pe/math/shims/Square.h>
@@ -112,22 +113,10 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
 class ContactTrait< C<CD,FD,BG,HardContactLubricated> >
+   : public lubrication::ContactState
 {
 public:
-   explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/, const Vec3& /*gpos*/, const Vec3& /*normal*/ )
-     : isLubricationContact_( false )
-     , lubricationWeight_( real(1) ) {}
-
-   inline void setLubricationFlag() { isLubricationContact_ = true; }
-   inline void setLubricationWeight( real weight ) {
-      lubricationWeight_ = std::max( real(0), std::min( real(1), weight ) );
-   }
-   inline bool getLubricationFlag() const { return isLubricationContact_; }
-   inline real getLubricationWeight() const { return lubricationWeight_; }
-
-private:
-   bool isLubricationContact_;
-   real lubricationWeight_;
+   explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/, const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
 };
 //*************************************************************************************************
 //=================================================================================================
@@ -823,8 +812,8 @@ inline const Vec3& ContactTrait< C<CD,FD,BG,OpenCLSolver> >::getTangentY() const
 //*************************************************************************************************
 /*!\brief Specialization of ContactTrait for the HardContactSemiImplicitTimesteppingSolvers solver.
  *
- * Provides no-op stubs for the lubrication flag/weight interface called by
- * ContactVector::addLubricationContact. This solver does not use lubrication contacts.
+ * Stage-capable: this solver invokes the lubrication stage, so its contacts carry real
+ * lubrication state (see pe/core/lubrication/ContactState.h).
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
         , typename FD                                           // Type of the fine collision detection algorithm
@@ -835,15 +824,11 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
 class ContactTrait< C<CD,FD,BG,HardContactSemiImplicitTimesteppingSolvers> >
+   : public lubrication::ContactState
 {
 public:
    explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
                           const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
-
-   inline void setLubricationFlag() {}
-   inline void setLubricationWeight( real ) {}
-   inline bool getLubricationFlag() const { return false; }
-   inline real getLubricationWeight() const { return real(1); }
 };
 //*************************************************************************************************
 
@@ -870,15 +855,11 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
 class ContactTrait< C<CD,FD,BG,HardContactEulerLagrange> >
+   : public lubrication::NullContactState
 {
 public:
    explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
                           const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
-
-   inline void setLubricationFlag() {}
-   inline void setLubricationWeight( real ) {}
-   inline bool getLubricationFlag() const { return false; }
-   inline real getLubricationWeight() const { return real(1); }
 };
 //*************************************************************************************************
 
@@ -892,9 +873,9 @@ public:
 //*************************************************************************************************
 /*!\brief Specialization of ContactTrait for the HardContactAndFluid solver.
  *
- * Provides no-op stubs for the lubrication flag/weight interface called by
- * ContactVector::addLubricationContact. HardContactAndFluid handles collisions
- * directly without lubrication contacts.
+ * Stage-capable: this solver invokes the lubrication stage, so its contacts must carry
+ * real lubrication state (see pe/core/lubrication/ContactState.h). With no-op stubs the
+ * stage would run and find nothing, silently.
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
         , typename FD                                           // Type of the fine collision detection algorithm
@@ -905,16 +886,11 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
 class ContactTrait< C<CD,FD,BG,HardContactAndFluid> >
+   : public lubrication::ContactState
 {
 public:
    explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
                           const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
-
-   // Required stubs (called by addLubricationContact in ContactVector.h)
-   inline void setLubricationFlag() {}
-   inline void setLubricationWeight( real ) {}
-   inline bool getLubricationFlag() const { return false; }
-   inline real getLubricationWeight() const { return real(1); }
 };
 //*************************************************************************************************
 
@@ -942,16 +918,11 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
 class ContactTrait< C<CD,FD,BG,ShortRangeRepulsion> >
+   : public lubrication::NullContactState
 {
 public:
    explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
                           const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
-
-   // Required stubs (called by addLubricationContact in ContactVector.h)
-   inline void setLubricationFlag() {}
-   inline void setLubricationWeight( real ) {}
-   inline bool getLubricationFlag() const { return false; }
-   inline real getLubricationWeight() const { return real(1); }
 };
 //*************************************************************************************************
 

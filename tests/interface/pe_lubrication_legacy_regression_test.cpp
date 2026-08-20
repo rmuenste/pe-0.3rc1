@@ -1,4 +1,4 @@
-// Bit-for-bit regression gate for the LEGACY lubrication path of HardContactLubricated.
+// Bit-for-bit regression gate for the LEGACY lubrication path of the shared lubrication stage.
 //
 // Reference trajectories below were captured from the pre-Kroupa-2016 solver (the original
 // inline force block: F = 6*pi*mu*R_eff^2*(-vrn)/gap, approach-only, impulse-capped) with
@@ -6,13 +6,10 @@
 // lubricationCutoffFactor_=0 must reproduce these trajectories, protecting existing users
 // who pin the legacy configuration.
 //
-// The constraint solver is compile-time configuration (pe/config/Collisions.h). This test
-// needs pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated; under any other solver
-// it exits with code 77, which CTest reports as SKIPPED (see SKIP_RETURN_CODE). Build a
-// lubricated tree with:
-//   cmake -B build-interface-tests-hcl -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC \
-//         -DBUILD_TESTING=ON -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON \
-//         -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated"
+// The constraint solver is compile-time configuration (pe/config/Collisions.h), so this
+// target links pe_static_lubstage: the same library built with
+// pe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid. The test therefore runs under
+// any shipped library default and never skips.
 //
 // Scene: one sphere falling onto a plane through the lubrication band, plus a sphere pair
 // approaching head-on inside the band (both far from each other). 500 steps, dt = 1e-4.
@@ -36,7 +33,6 @@ using namespace pe;
 
 namespace {
 
-const int skipReturnCode = 77;
 
 int failures = 0;
 
@@ -51,15 +47,6 @@ bool close(real a, real b) {
   // Tight relative tolerance: identical code paths should agree to roundoff.
   return std::fabs(a - b) <= real(1e-12) * std::max(real(1), std::fabs(b));
 }
-
-// Active solver detection: only HardContactLubricated exposes these setters.
-template <typename CS, typename = void>
-struct IsLubricatedSolver : std::false_type {};
-
-template <typename CS>
-struct IsLubricatedSolver<CS, std::void_t<
-    decltype(std::declval<CS&>().setAlphaImpulseCap(real{})),
-    decltype(std::declval<CS&>().setMinEpsLub(real{}))>> : std::true_type {};
 
 // Checkpoints: after steps 100, 250, 500. Per checkpoint: pos + linvel of the three
 // spheres (falling probe, pair left, pair right), 18 values per checkpoint.
@@ -86,11 +73,11 @@ int runScene(CS& cs, bool printReference) {
   world->setDamping(1.0);
 
   // Pin every lubrication parameter explicitly: this test must be immune to default flips.
-  cs.setContactHysteresisDelta(1e-9);
-  cs.setLubricationHysteresisDelta(1e-3);
-  cs.setLubricationThreshold(1e-2);
-  cs.setAlphaImpulseCap(1.0);
-  cs.setMinEpsLub(1e-8);
+  lubrication::setContactHysteresisDelta(1e-9);
+  lubrication::setLubricationHysteresisDelta(1e-3);
+  lubrication::setLubricationThreshold(1e-2);
+  lubrication::setAlphaImpulseCap(1.0);
+  lubrication::setMinGap(1e-8);
   lubrication::setEnabled(true);
   lubrication::setModel(lubrication::modelLegacy);
   lubrication::setScheme(lubrication::schemeExplicitCapped);
@@ -168,12 +155,7 @@ int main(int argc, char* argv[]) {
   const bool printReference =
       (argc > 1 && std::strcmp(argv[1], "--print-reference") == 0);
 
-  using CollisionSystemType = std::remove_reference_t<decltype(*theCollisionSystem())>;
-  if constexpr (IsLubricatedSolver<CollisionSystemType>::value) {
-    return runScene(*theCollisionSystem(), printReference);
-  } else {
-    std::cout << "pe-lubrication-legacy-regression: SKIPPED (active pe_CONSTRAINT_SOLVER is "
-                 "not pe::response::HardContactLubricated; see file header)\n";
-    return skipReturnCode;
-  }
+  // No solver gate: this target links the stage-capable library variant, so the
+  // test runs (and must pass) under any shipped library default.
+  return runScene(*theCollisionSystem(), printReference);
 }

@@ -577,6 +577,53 @@ endif()
 #
 #=================================================================================================
 if(BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
+   # The lubrication stage tests drive a real collision pipeline, so they need a
+   # stage-capable pe_CONSTRAINT_SOLVER. That cannot be selected per test target:
+   # pe_CONSTRAINT_SOLVER feeds the global Config typedef, and non-template library
+   # units (e.g. MPICommunication, whose constructor takes ProcessStorage<Config>&)
+   # are compiled against it -- mixing solvers between library and consumer produces
+   # undefined references, not a working binary.
+   #
+   # So build extra static variants of the library, differing only in the solver, and
+   # link each test against the one whose pipeline its assertions were written for.
+   # This keeps the shipped default neutral (D2.2 §3.6) while letting the tests run
+   # unconditionally in every configuration instead of skipping (the fix-branch
+   # test-skip issue), at the cost of extra test-only compilation.
+   #
+   # Two variants are needed because the two stage-capable pipelines differ in ways
+   # the tests can see:
+   #   *_fluid  HardContactAndFluid -- the campaign solver. Carries buoyancy, so it
+   #            reproduces the legacy regression reference trajectories bit-for-bit.
+   #            It also zeroes angular velocity unconditionally in integratePositions
+   #            (a long-standing application-specific choice, unchanged here), so
+   #            lubrication torques are not observable under it.
+   #   *_plain  HardContactSemiImplicitTimesteppingSolvers -- the neutral hard-contact
+   #            pipeline. Preserves rotation, so it is where the sliding/twisting
+   #            torque assertions live.
+   function( pe_add_lubstage_library name solver )
+      add_library( ${name} STATIC EXCLUDE_FROM_ALL ${PE_ALL} )
+      # The solver must be forced via compile OPTIONS, not compile DEFINITIONS: CMake
+      # emits $(CXX_DEFINES) before $(CXX_FLAGS), so a user-supplied
+      # -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=..." would otherwise override the
+      # variant and silently give it the wrong pipeline. -U first keeps gcc quiet about
+      # the redefinition.
+      target_compile_options( ${name} PUBLIC ${PE_CXX_FLAGS}
+         -Upe_CONSTRAINT_SOLVER "-Dpe_CONSTRAINT_SOLVER=${solver}" )
+      set_target_properties( ${name} PROPERTIES OUTPUT_NAME ${name} PREFIX "lib" )
+      target_link_libraries( ${name} PRIVATE ${PE_THIRD_PARTY_LIBS} )
+      target_include_directories( ${name}
+         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS} )
+      if( PE_USE_CGAL AND TARGET pe_cgal )
+         target_link_libraries( ${name} PUBLIC pe_cgal )
+      endif()
+      if( TARGET eigen )
+         add_dependencies( ${name} eigen )
+      endif()
+   endfunction()
+
+   pe_add_lubstage_library( pe_static_lubstage_fluid pe::response::HardContactAndFluid )
+   pe_add_lubstage_library( pe_static_lubstage_plain pe::response::HardContactSemiImplicitTimesteppingSolvers )
+
    add_subdirectory(tests/interface)
 endif()
 
