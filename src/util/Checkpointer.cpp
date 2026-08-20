@@ -107,10 +107,32 @@ CheckpointMetadata loadCheckpoint( const boost::filesystem::path& pebPath,
 
 
 //*************************************************************************************************
+/*!\brief Path the previous sidecar is preserved under while the new one is assembled.
+ *
+ * Must NOT be checkpointTempPath( sidecarPath, ... ): writeCheckpointMetadata() builds the new
+ * sidecar under exactly that name, and on the writing rank the tokens coincide, so sharing the
+ * marker would truncate the very copy being preserved.
+ */
+boost::filesystem::path preservedSidecarPath( const boost::filesystem::path& sidecarPath,
+                                              long token )
+{
+   std::ostringstream name;
+   name << sidecarPath.filename().string() << ".prev-" << token;
+   return sidecarPath.parent_path() / name.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Total body records across all ranks. COLLECTIVE: every rank must call it.
  *
  * BodyBinaryWriter counts what the calling rank marshalled. The sidecar describes the whole
  * file, so the per-rank counts are summed onto the rank that writes it.
+ *
+ * \return The total, valid on rank 0 only -- MPI_Reduce leaves every other rank's buffer
+ *         untouched, so the value other ranks see is their own count. That is sufficient here
+ *         because only rank 0 writes the sidecar, and it is why the caller must not use the
+ *         result for anything else.
  */
 uint64_t totalMarshalledBodyCount( const BodyBinaryWriter& writer )
 {
@@ -131,11 +153,16 @@ uint64_t totalMarshalledBodyCount( const BodyBinaryWriter& writer )
 //*************************************************************************************************
 /*!\brief Writes the world to `<basePath>.peb` plus its sidecar, publishing both atomically.
  *
- * Publication order is: move any stale sidecar aside, write the `.peb` under a scratch name,
- * rename it into place, write the new sidecar, then drop the stale one. Every intermediate state
- * is either the previous checkpoint or a sidecar-less checkpoint, and a sidecar-less checkpoint
- * is reported loudly on read -- a mismatched (`.peb`, sidecar) pair is never published, and a
- * kill mid-write never destroys the previous sidecar outright.
+ * Publication order is: move any stale sidecar aside under a `.prev-` marker, write the `.peb`
+ * under a scratch name, rename it into place, write the new sidecar, then drop the preserved one.
+ * Every intermediate state is either the previous checkpoint or a sidecar-less checkpoint, and a
+ * sidecar-less checkpoint is reported loudly on read -- a mismatched (`.peb`, sidecar) pair is
+ * never published.
+ *
+ * The preserved copy survives a kill throughout the `.peb` write, which is the long part. It does
+ * not survive a kill during the sidecar write itself: that is a truncate-and-rewrite of the
+ * sidecar path with no third copy to fall back on. The outcome there is a sidecar-less checkpoint,
+ * which is loud, not a wrong pairing.
  *
  * The stale sidecar has to go before the new `.peb` appears rather than after: checkpoint names
  * are reused across runs (Checkpointer's counter restarts at zero), and a steady-state `.peb`
@@ -153,7 +180,7 @@ void storeCheckpoint( const boost::filesystem::path& pebPath,
 
    // Collective: MPI_File_open below requires an identical filename on every rank.
    const long token = collectiveCheckpointScratchToken();
-   const boost::filesystem::path staleSidecar = checkpointTempPath( sidecarPath, token );
+   const boost::filesystem::path staleSidecar = preservedSidecarPath( sidecarPath, token );
 
    if( isCheckpointFileOwner() && boost::filesystem::exists( sidecarPath ) ) {
       boost::system::error_code ignored;

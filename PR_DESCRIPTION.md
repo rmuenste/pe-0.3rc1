@@ -57,6 +57,8 @@ Answering the independent review (see "Review response" below):
 | 17 | `a09b4b1` | 6, 7, 9a | `review`: refuse a resume expectation declared by both driver and deck |
 | 18 | `1bbb114` | 4 | `tests`: exercise the reader's own truncation gate, and add two-rank coverage |
 | 19 | `4a63188` | 10, 11, 12, 13 | `review`: rewrite FF-WIRING around the mechanism that actually works |
+| 20 | `fc108ec` | — | `docs`: fold the review response into the PR description |
+| 21 | *(head)* | 14, 15, 16 | `review`: give the preserved sidecar its own marker |
 
 ---
 
@@ -111,8 +113,10 @@ name*.
 
 **Fix:** write to a scratch name in the same directory, then `rename(2)`
 (`checkpointTempPath()` / `commitCheckpointTempFile()`). Publication order is:
-move any stale sidecar aside → write `.peb` scratch → rename `.peb` → write the
-new sidecar → drop the stale one. Every intermediate state is either the previous
+move any stale sidecar aside under a `.prev-` marker → write `.peb` scratch →
+rename `.peb` → write the new sidecar → drop the preserved one. The two markers
+must differ: they name the same file's path otherwise, and the preserved copy gets
+truncated by the write it exists to outlive. Every intermediate state is either the previous
 checkpoint or a sidecar-less one, and a sidecar-less checkpoint is reported loudly
 on read. A mismatched (`.peb`, sidecar) pair is never published.
 
@@ -410,12 +414,19 @@ remains in the checkpoint directory.
    late — which is why commit 6 fixes the ordering as well as the mechanism.
 
 2. **The (`.peb`, sidecar) pair is still not atomic across a kill.** Two files
-   cannot be renamed atomically together. The window is now confined to "new
-   `.peb`, sidecar renamed aside but not yet republished", which reads as a legacy
-   checkpoint — loud, never a wrong pairing — and the previous sidecar survives
-   under a `.tmp-<pid>` name instead of being destroyed (review finding 5). Smaller
-   than before, not gone. Closing it fully would require a nonce inside the `.peb`,
-   i.e. a format break.
+   cannot be renamed atomically together. The failure window reads as a legacy
+   checkpoint — loud, never a wrong pairing — but the previous sidecar's survival is
+   partial: it is preserved under a `.prev-<token>` name for the duration of the
+   `.peb` write, which is the long part, and is **not** recoverable if the kill lands
+   during the sidecar write itself, which is a truncate-and-rewrite with no third
+   copy. Closing it fully would require a nonce inside the `.peb`, i.e. a format
+   break.
+
+   (Review finding 5 introduced the preserved copy; finding 14 caught that the
+   aside and the new sidecar's scratch file resolved to the same path on the writing
+   rank, so the copy was being truncated by the very write it was meant to outlive.
+   Distinct markers now: `.tmp-` for in-progress files, `.prev-` for the preserved
+   sidecar.)
 
 3. **Two MPI-config tests fail, both pre-existing.** See the MPI section of the
    verification matrix: `pe-interface-serial-{atc,fluidization-srr}-resume-roundtrip`

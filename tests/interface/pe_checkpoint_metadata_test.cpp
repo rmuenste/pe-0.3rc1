@@ -427,11 +427,14 @@ void testMaterialRestoreAndPebIntegrity() {
   check(fs::exists(peb), "material restore: checkpoint .peb was not written");
   check(fs::exists(sidecar), "material restore: metadata sidecar was not written");
 
-  // Nothing may be left behind under a scratch name.
+  // Nothing may be left behind under either marker: `.tmp-` for the in-progress copies, `.prev-`
+  // for the preserved previous sidecar, which must be gone once the new one is published.
   size_t scratchFiles = 0;
   for (fs::directory_iterator it(checkpoints), end; it != end; ++it) {
-    if (it->path().string().find(".tmp-") != std::string::npos) {
+    const std::string name = it->path().string();
+    if (name.find(".tmp-") != std::string::npos || name.find(".prev-") != std::string::npos) {
       ++scratchFiles;
+      std::cerr << "  leftover scratch file: " << name << std::endl;
     }
   }
   check(scratchFiles == 0, "atomic write: scratch files were left behind");

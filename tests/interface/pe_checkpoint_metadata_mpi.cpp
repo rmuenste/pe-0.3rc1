@@ -87,9 +87,10 @@ int main(int argc, char** argv) {
     }
     check(world->size() == spheresPerRank, "each rank should hold its own seeds");
 
+    // Both ranks must agree on the directory, so rank 0's value is broadcast below; the local
+    // pid here is therefore only rank 0's, and every rank ends up with that one.
     const fs::path checkpoints =
-        fs::temp_directory_path() / ("pe-checkpoint-mpi-" + std::to_string(::getpid() - rank));
-    // Both ranks must agree on the directory; derive it on rank 0 and broadcast.
+        fs::temp_directory_path() / ("pe-checkpoint-mpi-" + std::to_string(::getpid()));
     std::string dir = checkpoints.string();
     unsigned long dirLength = dir.size();
     MPI_Bcast(&dirLength, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
@@ -108,11 +109,15 @@ int main(int argc, char** argv) {
       check(fs::exists(sidecar), "MPI write did not produce a sidecar");
 
       // A rank-dependent scratch name shows up as leftovers, so enumerate rather than trust.
+      // Both markers are checked: `.tmp-` for the in-progress copies, `.prev-` for the preserved
+      // previous sidecar, which must be gone once the new one is published.
       size_t scratchFiles = 0;
       for (fs::directory_iterator it(checkpointDir), end; it != end; ++it) {
-        if (it->path().string().find(".tmp-") != std::string::npos) {
+        const std::string name = it->path().string();
+        if (name.find(".tmp-") != std::string::npos ||
+            name.find(".prev-") != std::string::npos) {
           ++scratchFiles;
-          std::cerr << "  leftover scratch file: " << it->path().string() << std::endl;
+          std::cerr << "  leftover scratch file: " << name << std::endl;
         }
       }
       check(scratchFiles == 0, "MPI write left scratch files behind");
