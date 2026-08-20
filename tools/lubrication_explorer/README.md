@@ -49,8 +49,19 @@ Mirrors the live viewer's lubrication set (fluid viscosity, the model switches, 
 regularization) plus the physical inputs a force plot needs: geometry (`pair ↔ wall`, radii),
 the kinematic scalars (`vₙ` approach, `v_s` sliding, `v_cs` rotational sliding, `ω_twist`),
 and the per-step controls (`dt`, effective mass `m_eff`, effective inertia `I_eff`, `α`
-impulse cap). Ranges / log-scaling / defaults match `setupParamRegistry()` in
-`tools/live_viewer/live_viewer.cpp` and the defaults in `src/core/lubrication/Params.cpp`.
+impulse cap). Ranges and log-scaling match `setupParamRegistry()` in
+`tools/live_viewer/live_viewer.cpp`.
+
+The explorer starts with **visualization defaults** rather than production defaults. For its
+default 1 cm wall case, the contact blend half-width is 5% of `h_c` and the cutoff blend
+half-width is 10% of `h_cut`; this makes both transitions readable without letting the outer
+blend dominate the curve. **Visualization defaults** restores the complete illustrative
+scenario. **Set engine defaults** loads the engine-owned lubrication values from
+`HardContactLubricated` / `SimulationConfig` (including `contact = 1e-9 m` and
+`cutoff = 1e-3 m`) while preserving plot-only geometry, kinematics, mass/inertia and view.
+
+The plot extends through `h_cut + lubricationHysteresis`, so the per-step curve displays the
+complete outer fade to zero. The readout reports the dimensionless blend-width ratios.
 
 **Intentionally not exposed** (no effect on a force-vs-gap curve): world damping/gravity,
 solver ERP, mouse-spring, and AABB inflation (coarse-detection only). The `scheme`, `dt` and
