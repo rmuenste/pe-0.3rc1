@@ -7,9 +7,12 @@
 //=================================================================================================
 
 //-------------------------------------------------------------------------------------------------
-// State (defaults from Params.cpp / the live viewer scenario)
+// Presets and state
 //-------------------------------------------------------------------------------------------------
-const S = {
+// These values describe a readable, illustrative plot. In the default wall case they make the
+// contact blend 5% of h_c and the cutoff blend 10% of h_cut. They are intentionally distinct
+// from the production values in HardContactLubricated / SimulationConfig.
+const VISUALIZATION_DEFAULTS = Object.freeze({
    // Fluid
    viscosity: 8.37e-5,
    // Lubrication model
@@ -17,7 +20,7 @@ const S = {
    tangential: true, twisting: true, slipCorrection: true, resistSeparation: true, wallTerms: true,
    // Cutoffs / regularization
    epsCritical: 0.1, cutoffFactor: 0.5, legacyThreshold: 1e-2,
-   contactHysteresis: 1e-9, lubricationHysteresis: 1e-3, minGap: 1e-8,
+   contactHysteresis: 5e-5, lubricationHysteresis: 5e-4, minGap: 1e-8,
    // Geometry / kinematics
    wall: true, equalRadii: true, r1: 0.01, r2: 0.01,
    vn: 0.05, vs: 0.02, vcs: 0.01, wtw: 5.0,
@@ -27,7 +30,20 @@ const S = {
    normalize: false,     // continuous panels: false = dimensional, true = Fig.7 dimensionless
    xMode: "loggap",      // 'loggap' (log gap h) | 'linax' (linear a_ref/h, Fig.7 framing)
    yMode: "lin",         // 'lin' | 'log' (log plots |value|)
-};
+});
+
+// Runtime defaults seeded by CollisionSystem<HardContactLubricated>, Params.cpp and
+// SimulationConfig. Only engine-owned lubrication controls belong here: applying this preset
+// deliberately preserves the explorer-only geometry, kinematics, effective mass/inertia and view.
+const ENGINE_DEFAULTS = Object.freeze({
+   enabled: true, model: L.MODEL_KROUPA, scheme: L.SCHEME_SEMI_IMPLICIT,
+   tangential: true, twisting: true, slipCorrection: true, resistSeparation: true, wallTerms: true,
+   epsCritical: 0.1, cutoffFactor: 0.5, legacyThreshold: 1e-2,
+   contactHysteresis: 1e-9, lubricationHysteresis: 1e-3, minGap: 1e-8,
+   alphaImpulseCap: 1.0,
+});
+
+const S = { ...VISUALIZATION_DEFAULTS };
 
 //-------------------------------------------------------------------------------------------------
 // Control registry — {key, label, type, min, max, log, items, tooltip, enabledIf}
@@ -57,10 +73,10 @@ const REG = [
         tooltip: "Relative outer cutoff eps_cut = h_cut/a_ref; 0 = legacy absolute threshold" },
       { key: "legacyThreshold", label: "legacy threshold", type: "real", min: 1e-6, max: 1e-2, log: true,
         tooltip: "Absolute outer cutoff, active only when cutoff factor == 0" },
-      { key: "contactHysteresis", label: "contact hysteresis", type: "real", min: 1e-8, max: 1e-3, log: true,
-        tooltip: "Blend ramp-up half-width near contact" },
-      { key: "lubricationHysteresis", label: "lubrication hysteresis", type: "real", min: 1e-8, max: 1e-3, log: true,
-        tooltip: "Blend ramp-down half-width at the cutoff" },
+      { key: "contactHysteresis", label: "contact blend half-width", type: "real", min: 1e-9, max: 1e-3, log: true,
+        tooltip: "Absolute half-width of the lubrication ramp-up near contact [m] (engine name: contact hysteresis)" },
+      { key: "lubricationHysteresis", label: "cutoff blend half-width", type: "real", min: 1e-8, max: 1e-3, log: true,
+        tooltip: "Absolute half-width of the lubrication ramp-down at the outer cutoff [m] (engine name: lubrication hysteresis)" },
       { key: "minGap", label: "min eps (gap clamp)", type: "real", min: 1e-10, max: 1e-4, log: true,
         tooltip: "Minimal lubrication gap regularization (minEpsLub)" },
    ]},
@@ -186,6 +202,8 @@ function updateReadout() {
    el.appendChild(stat("a_ref", fmtNum(a) + " m"));
    el.appendChild(stat("h_c", fmtNum(hc) + " m"));
    el.appendChild(stat("h_cut", fmtNum(hCut) + " m"));
+   el.appendChild(stat("δc/a", fmtNum(S.contactHysteresis / a)));
+   el.appendChild(stat("δl/h_cut", fmtNum(S.lubricationHysteresis / hCut)));
    el.appendChild(stat("1/ε_c", fmtNum(1 / S.epsCritical)));
    const chk = document.createElement("span");
    chk.className = "chk " + (sc.pass ? "ok" : "bad");
@@ -265,10 +283,34 @@ function normalizeVal(compKey, val, a) {
 
 function sampleGaps(a) {
    const hCut = L.lubricationCutoff(a, S);
-   const hMin = Math.max(1e-8 * a, 0.05 * S.epsCritical * a);
-   const hs = [];
-   for (let i = 0; i < N; i++) hs.push(hMin * Math.pow(hCut / hMin, i / (N - 1)));
-   return { hs, hMin, hCut };
+   const threshold = L.CONTACT_THRESHOLD;
+   const contactBlend = Math.max(0, S.contactHysteresis);
+   const cutoffBlend = Math.max(0, S.lubricationHysteresis);
+   const entryStart = threshold - contactBlend;
+   const entryEnd = threshold + contactBlend;
+   const exitStart = threshold + hCut - cutoffBlend;
+   const exitEnd = threshold + hCut + cutoffBlend;
+   const numericalFloor = Math.max(1e-14, 1e-10 * a);
+   const positiveEntryStart = Math.max(numericalFloor, entryStart);
+   const hMin = Math.min(0.05 * S.epsCritical * a,
+                         Math.max(numericalFloor, 0.5 * positiveEntryStart));
+   const hMax = Math.max(hCut, exitEnd);
+
+   // A logarithmic backbone covers the model. Extra linear samples in both blend bands keep
+   // narrow engine-default ramps visible without requiring thousands of points globally.
+   const values = [];
+   for (let i = 0; i < N; i++) values.push(hMin * Math.pow(hMax / hMin, i / (N - 1)));
+   const addBand = (lo, hi, count) => {
+      lo = Math.max(hMin, lo); hi = Math.min(hMax, hi);
+      if (!(hi > lo)) return;
+      for (let i = 0; i < count; i++) values.push(lo + (hi - lo) * i / (count - 1));
+   };
+   addBand(entryStart, entryEnd, 64);
+   addBand(exitStart, exitEnd, 96);
+   values.push(hCut, exitEnd);
+   values.sort((x, y) => x - y);
+   const hs = values.filter((h, i) => i === 0 || h > values[i - 1]);
+   return { hs, hMin, hCut, hBlendEnd: exitEnd };
 }
 
 function yUnit(comp) {
@@ -278,7 +320,7 @@ function yUnit(comp) {
 
 function render() {
    const a = aRef();
-   const { hs, hCut } = sampleGaps(a);
+   const { hs, hCut, hBlendEnd } = sampleGaps(a);
    const hc = S.epsCritical * a;
    const kin = { vn: S.vn, vs: S.vs, vcs: S.vcs, wtw: S.wtw };
    const step = { dt: S.dt, mEff: S.mEff, iEff: S.iEff };
@@ -291,8 +333,10 @@ function render() {
    const xLabel = loggap ? "gap h [m]" : "a_ref / h";
    let xs = loggap ? hs.slice() : hs.map((h) => a / h);
    const markers = loggap
-      ? [{ x: hc, label: "h_c" }, { x: hCut, label: "cut" }]
-      : [{ x: a / hc, label: "1/ε_c" }, { x: a / hCut, label: "cut" }];
+      ? [{ x: hc, label: "h_c" }, { x: hCut, label: "cut" },
+         { x: hBlendEnd, label: "blend end" }]
+      : [{ x: a / hc, label: "1/ε_c" }, { x: a / hCut, label: "cut" },
+         { x: a / hBlendEnd, label: "blend end" }];
    const revIfNeeded = (arr) => (loggap ? arr : arr.slice().reverse());
    if (!loggap) xs = xs.slice().reverse();
 
@@ -385,7 +429,25 @@ function buildTopBar() {
    segmented(document.getElementById("ymode"), [["lin", "linear"], ["log", "log |·|"]],
       () => S.yMode, (v) => { S.yMode = v; onChange(); });
    document.getElementById("normToggle").addEventListener("change", (e) => { S.normalize = e.target.checked; onChange(); });
+   document.getElementById("visualDefaultsBtn").addEventListener("click", () => applyPreset(VISUALIZATION_DEFAULTS));
+   document.getElementById("engineDefaultsBtn").addEventListener("click", () => applyPreset(ENGINE_DEFAULTS));
    document.getElementById("resetBtn").addEventListener("click", () => Charts.resetAllZoom());
+}
+
+function refreshTopBar() {
+   document.getElementById("normToggle").checked = S.normalize;
+   document.querySelectorAll("#xmode .seg").forEach((b, i) =>
+      b.classList.toggle("on", ["loggap", "linax"][i] === S.xMode));
+   document.querySelectorAll("#ymode .seg").forEach((b, i) =>
+      b.classList.toggle("on", ["lin", "log"][i] === S.yMode));
+}
+
+function applyPreset(preset) {
+   Object.assign(S, preset);
+   if (S.equalRadii) S.r2 = S.r1;
+   refreshTopBar();
+   onChange();
+   Charts.resetAllZoom();
 }
 
 //-------------------------------------------------------------------------------------------------
