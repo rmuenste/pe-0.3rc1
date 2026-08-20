@@ -179,9 +179,28 @@ boost::filesystem::path checkpointMetadataPath( const boost::filesystem::path& c
 //*************************************************************************************************
 /*!\brief Returns the scratch path a checkpoint file is assembled under before publication.
  *
- * Includes the writer's pid so concurrent writers to one directory cannot collide.
+ * \param token Disambiguates concurrent writers to one directory. It is a parameter rather than
+ *        something this function samples itself because a file written collectively must be
+ *        opened under an identical name on every rank -- see collectiveCheckpointScratchToken().
  */
-boost::filesystem::path checkpointTempPath( const boost::filesystem::path& finalPath );
+boost::filesystem::path checkpointTempPath( const boost::filesystem::path& finalPath, long token );
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Scratch token for a file written by one rank on its own.
+ */
+long localCheckpointScratchToken();
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief COLLECTIVE. Scratch token agreed by every rank, for a collectively written file.
+ *
+ * MPI_File_open is collective and requires the same filename on all ranks, so a per-rank pid in
+ * the scratch name is an error, not merely untidy. Every rank must call this.
+ */
+long collectiveCheckpointScratchToken();
 //*************************************************************************************************
 
 

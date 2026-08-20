@@ -1,6 +1,7 @@
 #include <pe/util/Checkpointer.h>
 
 #include <pe/core/MPISettings.h>
+#include <pe/core/MPITrait.h>
 #include <pe/core/World.h>
 
 #include <sstream>
@@ -109,6 +110,9 @@ CheckpointMetadata loadCheckpoint( const boost::filesystem::path& pebPath,
  * into place, then write the sidecar. Every intermediate state is therefore either the previous
  * checkpoint or a sidecar-less checkpoint, and a sidecar-less checkpoint is reported loudly on
  * read. A mismatched (`.peb`, sidecar) pair is never published.
+ *
+ * COLLECTIVE. Every rank must call this: the `.peb` write and the scratch token are both
+ * collective operations.
  */
 void storeCheckpoint( const boost::filesystem::path& pebPath,
                       const boost::filesystem::path& sidecarPath,
@@ -122,7 +126,9 @@ void storeCheckpoint( const boost::filesystem::path& pebPath,
    }
    synchronizeCheckpointWriters();
 
-   const boost::filesystem::path pebTemp = checkpointTempPath( pebPath );
+   // Collective: MPI_File_open below requires an identical filename on every rank.
+   const long token = collectiveCheckpointScratchToken();
+   const boost::filesystem::path pebTemp = checkpointTempPath( pebPath, token );
    writer.writeFile( pebTemp.string().c_str() );
    writer.wait();
    synchronizeCheckpointWriters();

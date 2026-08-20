@@ -30,6 +30,8 @@
 
 #include <pe/util/CheckpointMetadata.h>
 
+#include <pe/core/MPISettings.h>
+#include <pe/core/MPITrait.h>
 #include <pe/core/Materials.h>
 #include <pe/core/World.h>
 #include <pe/core/TimeStep.h>
@@ -188,11 +190,37 @@ boost::filesystem::path checkpointMetadataPath( const boost::filesystem::path& c
 
 
 //*************************************************************************************************
-boost::filesystem::path checkpointTempPath( const boost::filesystem::path& finalPath )
+boost::filesystem::path checkpointTempPath( const boost::filesystem::path& finalPath, long token )
 {
    std::ostringstream suffix;
-   suffix << finalPath.filename().string() << ".tmp-" << static_cast<long>( ::getpid() );
+   suffix << finalPath.filename().string() << ".tmp-" << token;
    return finalPath.parent_path() / suffix.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+long localCheckpointScratchToken()
+{
+   return static_cast<long>( ::getpid() );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+long collectiveCheckpointScratchToken()
+{
+   long token = localCheckpointScratchToken();
+
+#if HAVE_MPI
+   if( MPISettings::size() > 1 ) {
+      // Rank 0's token wins. Any rank-dependent component would make the scratch filename differ
+      // between ranks, which MPI_File_open rejects.
+      MPI_Bcast( &token, 1, MPITrait<long>::getType(), 0, MPISettings::comm() );
+   }
+#endif
+
+   return token;
 }
 //*************************************************************************************************
 
@@ -291,7 +319,8 @@ CheckpointMetadata currentCheckpointMetadata()
 void writeCheckpointMetadata( const boost::filesystem::path& filename,
                               const CheckpointMetadata& metadata )
 {
-   const boost::filesystem::path tempPath = checkpointTempPath( filename );
+   // Sidecar writing is not collective -- one rank owns the file -- so a local token suffices.
+   const boost::filesystem::path tempPath = checkpointTempPath( filename, localCheckpointScratchToken() );
 
    {
       boost::filesystem::ofstream out( tempPath, std::ios::out | std::ios::trunc );
