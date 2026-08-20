@@ -46,6 +46,18 @@ Each builds standalone (verified, see below) and each is one concern.
 | 7 | `9545c9f` | Retire the `HardContactLubricated` pipeline |
 | 8 | `8eca829` | Add serial-mode coverage test for the lubrication add-on |
 | 9 | `245b53b` | Pin AABB neutrality: lubrication off must not inflate bounding boxes |
+| 10 | `a71c34d` | *(pre-existing)* Remove the unconditional angular-velocity reset |
+| 11 | `fd3bafe` | **review** Fix out-of-bounds indexing on the lubrication-enabled path |
+| 12 | `4273f98` | **review** AABB padding: compose the two bands, never override |
+| 13 | `234c295` | **review** Inline the detection gate so the disabled path stays a single branch |
+| 14 | `8ead8c9` | **review** Add a test for the refusal guard |
+| 15 | `044b04a` | *(pre-existing)* Remove the hardcoded velocity limiters |
+| 16 | `77f7a12` | **review** Docs: record the retired solver as history, fix dead build recipes |
+| 17 | `64d0d91` | **review** Correct stale comments and tighten the test suite |
+
+Commits 11-14, 16-17 answer the independent review (see "Review response").
+Commits 10 and 15 are pre-existing defects unrelated to lubrication (see
+"Pre-existing defects removed in passing").
 
 Commit 6 is not in the spec's list. It exists because commits 4 and 5 were not
 sufficient on their own — see "Findings" below. It is the commit a reviewer
@@ -197,28 +209,53 @@ pre-contacts from the hard-contact constraint solve. Those pairs carry a
 them explicitly; the hook had not carried that over, so they were being resolved
 as if the bodies were touching.
 
-### B. `HardContactAndFluid` discards angular velocity — pre-existing
+### B. `HardContactAndFluid` discarded angular velocity — a debugging artifact, now removed
 
-`HardContactAndFluid::integratePositions` contains, unconditionally:
+> **Read this even if you skip the rest. It is not a lubrication issue.**
+
+`HardContactAndFluid::integratePositions` contained, with no guard and no
+comment, placed after the translational update and before the rotation angle is
+formed:
 
 ```cpp
 w = Vec3(0,0,0);
 ```
 
-and then `body->w_ = w`. **Particles never rotate under this solver.**
+`body->w_` was then overwritten with zero. **Under this solver no body could
+rotate, ever.**
 
-Confirmed pre-existing: present on the fix branch and at the campaign submodule
-pin `5f90e7c`. Not introduced here and **not changed here** — removing it would
-be a physics change to the campaign solver, out of scope, and would break
-Gate G0.
+I initially recorded this as a long-standing modelling choice and left it alone.
+That was wrong: the owner identifies it as a debugging artifact from a run where
+angular velocity blew up. It is removed in commit `a71c34d`, which makes
+`integratePositions` identical to the plain hard-contact implementation apart
+from the separate (retained) application velocity limiter. It was the only
+angular suppression in the file — the other `setAngularVel` call sites are MPI
+sync paths restoring received values.
 
-Consequence for lubrication: only the normal and tangential *forces* are
-observable under `HardContactAndFluid`. The sliding and twisting **torques** the
-Kroupa model produces are computed and then discarded. That is why commit 6 also
-hooks the plain hard-contact pipeline, and why the torque assertions live there.
+**Campaign implication.** `HardContactAndFluid` is the solver the DNS campaign
+ships. Any result depending on particle rotation was produced with rotation
+pinned at zero. In particular the draft-kiss-tumble benchmark: **a DKT run under
+this solver could not tumble, because tumbling is rotation.** The recorded
+*"tilt onset then stall at 4.2°, full tumble open"* is exactly what a
+translation-only pipeline produces. This line is a candidate explanation that
+has nothing to do with mesh resolution, timestep or contact parameters, and it
+should be checked before other explanations are pursued.
 
-**This is worth the owner's attention independently of lubrication** — it says
-something about what "tumble" means in a DKT run under this solver.
+Consequences inside this branch:
+
+- lubrication sliding and twisting torques are now actually applied under the
+  campaign solver, where before they were computed and thrown away;
+- `pe_lubrication_bounce_stokes_test` — the torque assertions — now runs under
+  `HardContactAndFluid` and passes, which is direct evidence rotation works
+  rather than merely being un-zeroed;
+- `pe_lubrication_serial_coverage_test` gains an explicit assertion that a
+  freely spinning body keeps its spin (`[rotation] free spin w_y after one step
+  = 3 (set to 3)`), so the artifact cannot creep back silently.
+
+**Risk note.** If the original blow-up recurs, the principled tool is the
+adaptive Baumgarte capping already present in this solver
+(`setAdaptiveBaumgarteCapping` / `useAdaptiveBaumgarteCapping_`), or an explicit
+angular limiter alongside the existing linear one — not a silent reset.
 
 ### C. Per-target solver selection is impossible in pe
 
@@ -235,8 +272,8 @@ they cost nothing unless testing is on):
 
 | variant | solver | used by | why |
 |---|---|---|---|
-| `pe_static_lubstage_fluid` | `HardContactAndFluid` | legacy regression, two-sphere approach, serial coverage | carries buoyancy → reproduces the legacy reference trajectories |
-| `pe_static_lubstage_plain` | `HardContactSemiImplicitTimesteppingSolvers` | bounce-Stokes | preserves rotation → torque assertions are expressible |
+| `pe_static_lubstage_fluid` | `HardContactAndFluid` | legacy regression, bounce-Stokes, serial coverage, AABB neutrality | the campaign solver; carries buoyancy → reproduces the legacy reference trajectories |
+| `pe_static_lubstage_plain` | `HardContactSemiImplicitTimesteppingSolvers` | two-sphere approach | the neutral pipeline; keeps the "works on any pipeline" claim tested |
 
 The solver is forced via compile **options**, not definitions: CMake emits
 `$(CXX_DEFINES)` before `$(CXX_FLAGS)`, so a user's
@@ -278,12 +315,124 @@ a runtime branch cannot have one.
 
 ---
 
+## Review response
+
+An independent review returned REVISIONS REQUIRED. Disposition of every finding:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | Out-of-bounds indexing on the ON path (`HardContactAndFluid.h`) | **Fixed** `fd3bafe`. The dead "translation-locked" debug block indexed `body1_`/`body2_` with the unfiltered count while commit `c3a3c12` had resized them to the filtered one. Deleted rather than re-indexed — it was dead code with a live bug, surviving only because `-O2` eliminated it. Verified the other loops all take their bound from `p_.size()`; the plain host never had the block. |
+| 2 | `securityZone` *replaced* the lubrication padding | **Fixed** `4273f98`. Now the **max** of the two bands. Under-inflation here is a missing interaction with no diagnostic, not a safe failure. Composition semantics pinned by five new assertions in the neutrality test. |
+| 3 | Detection gate was two out-of-line calls per candidate pair | **Fixed** `234c295`. `isEnabled()`/`getSecurityZone()` are now extern flags with inline accessors; writes still go through the out-of-line setters. Verified by compiling `contactGenerationEnabled()` to assembly at `-O2`: **zero calls emitted**. |
+| 4 | Refusal guard had no test | **Fixed** `8ead8c9`. Links the **shipped** `pe_static`, asserts the contract (`throws ⇔ enabled && !stage-capable`) so it stays meaningful in both CI configurations, and additionally pins that a refusal leaves the store *unarmed*. |
+| 5 | Docs canonized the retired solver | **Fixed** `77f7a12`. Five documents; descriptions kept as provenance, every *instruction* corrected — including the `-Dpe_CONSTRAINT_SOLVER=...HardContactLubricated` recipe that can no longer configure, and a `lubricationEnabled_` default documented as `true` when it is `false`. |
+| 6 | Stale comments | **Fixed** `64d0d91`. The `target_compile_definitions` claim (which contradicts Finding C three lines below it) and the nonexistent `pe_static_lubstage` target name; each test header now names the variant **and solver it actually links** — load-bearing, since bounce-Stokes and two-sphere deliberately use different ones. |
+| 7 | `numContacts_` reported pre-contacts to FeatFloWer | **Fixed** `fd3bafe`. Reports `numContactsMaskedHard`; identical whenever lubrication is off. |
+| 8 | Disclose the true disabled-path cost | **Done**, below. |
+| 9 | `StageDiagnostics` computed and discarded, invariant Release-invisible | **Fixed** `64d0d91`, by a different route than suggested: asserted as its *physical* consequence (kinetic energy cannot increase) rather than by reading the diagnostics. There is no public contacts accessor, and the physical form cannot pass while the applied impulses disagree with the reported number. A second assertion checks the energy strictly *decreases*, so it cannot pass vacuously. |
+| 10 | `VelocityBuffers` struct; `std::vector` narrows "any pipeline" | **Noted, not done** — see Known limitations. |
+| 11 | Params store threading contract | **Fixed** `64d0d91`. Documented setup-time/single-threaded, and called out `registerSphereRadius()` from `SphereBase`'s constructor as the one write outside setup — a data race under concurrent body creation, which matters because FeatFloWer builds with OpenMP. |
+| 12 | Example cleanups, CMake duplication | **Partly done** `64d0d91`: the dropped `setSlipLength`/`setMinEps` no-ops are documented (with the warning that `setEpsCritical` is *relative* and not the same quantity), two `-Wunused-parameter` warnings silenced. Routing `pe_static` through `pe_add_lubstage_library` **not done** — noted below. |
+
+### Disabled-path cost, stated plainly (finding 8)
+
+With lubrication off, versus the pre-add-on library:
+
+- **one branch per timestep** per stage-capable solver (the `isEnabled()` guard
+  around the stage call and its extra `synchronizeVelocities()`);
+- **one inlined branch per candidate pair** in fine detection — after `234c295`
+  a predictable test on a hot global, not a call. This is the only cost in a
+  loop that scales with the broad phase, and it is where the retired macro cost
+  literally nothing;
+- **+16 bytes per contact** on stage-capable hosts, from `lubrication::ContactState`
+  (a `bool` and a `real`) embedded in `ContactTrait`. Solvers using
+  `NullContactState` are unchanged — it is an empty base.
+
+Not free, then, but bounded and disclosed. The AABB path is *cheaper* than
+before, because the unconditional `1e-2` padding is gone.
+
+### Known limitations (finding 10, 12)
+
+- The stage signature takes four adjacent `std::vector<Vec3>&`. That is the
+  shape every current pe hard-contact pipeline already stores, but it does
+  narrow "usable by any collision pipeline" to "any pipeline that happens to use
+  `std::vector`". A `VelocityBuffers` view struct would decouple it. Deferred:
+  it touches the signature this PR is trying to establish, and there is no
+  second storage shape in-tree to justify it yet.
+- `pe_static` is still defined separately from the `pe_add_lubstage_library()`
+  helper, so the library definition exists twice. That duplication is what
+  produced the compile-options-vs-definitions bug fixed during this work.
+  Routing `pe_static` through the same helper would remove the class of bug;
+  deferred as a build-system change with blast radius beyond lubrication.
+
+---
+
+## Pre-existing defects removed in passing
+
+Two defects in `HardContactAndFluid` that **have nothing to do with
+lubrication**. Both predate this branch (present at the campaign submodule pin
+`5f90e7c`), both are owner-classified as stable debug scaffolding, and both
+silently mutated physics. Separated out here so they can be judged on their own
+terms — and, if wanted, reverted independently of the add-on work.
+
+### `a71c34d` — angular velocity was reset to zero every step
+
+`integratePositions` contained, unguarded and uncommented:
+
+```cpp
+w = Vec3(0,0,0);
+```
+
+`body->w_` was then overwritten with it. **Under this solver no body could
+rotate, ever.**
+
+**Campaign implication, and the reason this matters more than the rest of the
+PR:** `HardContactAndFluid` is the solver the DNS campaign ships. Any result
+depending on particle rotation was produced with rotation pinned at zero — in
+particular the draft-kiss-tumble benchmark, where *tumbling is rotation*. The
+recorded *"tilt onset then stall at 4.2°, full tumble open"* is exactly what a
+translation-only pipeline produces. This is a candidate explanation that has
+nothing to do with mesh resolution, timestep or contact parameters, and it
+should be checked before others are pursued.
+
+Removing it makes `integratePositions` identical to the plain hard-contact
+implementation. Pinned by an assertion in the serial coverage test
+(`[rotation] free spin w_y after one step = 3 (set to 3)`), and it is why the
+torque test now runs under the campaign solver.
+
+### `044b04a` — hardcoded dimensional velocity limiters
+
+```cpp
+// Velocity limiting. We know the fluid speeds in the current application.
+if (body->v_.length() > 12.3) { body->v_.normalize(); body->v_ *= 4.1; }
+```
+
+pe has no unit system, so this silently caps translational velocity in any case
+whose speeds exceed `12.3` in whatever units the deck uses, and rescales them to
+an unrelated `4.1`. A unit-system landmine, not a stability mechanism. No
+certified result is affected — campaign speeds never approached it in the units
+used, so it never fired.
+
+A **second** limiter of the same species, not named in the review, was found in
+the velocity-caching block: `|v| > 32.0` renormalized to `12.3`, while its own
+log line claimed *"clamped to 2.5"* — three mutually inconsistent constants in
+one block. Removed too; scope expansion flagged explicitly here. The genuine
+stuck-particle and high-velocity **diagnostics** are kept, with `32.0` now
+purely a reporting threshold that changes no state.
+
+**Risk note for both.** If a real instability surfaces, the principled tools are
+the adaptive Baumgarte capping already in this solver, a properly dimensioned
+CFL-based limit derived from the deck, or a loud error — not a silent reset or
+rescale to a magic constant.
+
+---
+
 ## Deviations from the spec
 
 | # | Spec says | Implemented | Rationale |
 |---|---|---|---|
 | 1 | §3.3 gate detection on `lubrication::isEnabled()` | Gated on `isEnabled() \|\| getSecurityZone()` | SRR co-tenants the branch for its security zone and must keep it with lubrication off. Finding D. |
-| 2 | §3.2 hook `HardContactAndFluid` | Hooked `HardContactAndFluid` **and** the plain hard-contact pipeline | §1 asks for "usable by any collision pipeline"; two hosts prove it generalizes, and the plain one preserves rotation so the torque tests remain expressible (finding B). |
+| 2 | §3.2 hook `HardContactAndFluid` | Hooked `HardContactAndFluid` **and** the plain hard-contact pipeline | §1 asks for "usable by any collision pipeline"; a claim with no test on a second pipeline is untested. Both variants now carry tests. |
 | 3 | §3 (implied) stage extraction is sufficient | Also extracted per-contact state (`ContactState.h`) | Without it the stage runs and finds nothing. Finding A. |
 | 4 | §3.6 tests run "under a stage-capable solver … no skips under the neutral default" | Achieved via two dedicated library variants, not per-target defines | Per-target selection cannot work in pe. Finding C. |
 | 5 | §3.7 "one serial-mode + CFD-coupled test" | Serial-mode test only | The CFD-coupled half needs the FeatFloWer wire (§4), explicitly out of scope for this PR. Stated in the test header. |
@@ -299,8 +448,26 @@ Nothing in the spec was silently adapted; every departure is above.
 
 | configuration | build | ctest |
 |---|---|---|
-| Neutral default (`HardContactEulerLagrange`), `BUILD_TESTING=ON` | 0 errors | **11/11 passed, 0 failed, 0 skipped** |
-| `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid` | 0 errors | **11/11 passed, 0 failed, 0 skipped** |
+| Neutral default (`HardContactEulerLagrange`), Release | 0 errors | **12/12 passed, 0 failed, 0 skipped** |
+| `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid`, Release | 0 errors | **12/12 passed, 0 failed, 0 skipped** |
+| **Debug + `-D_GLIBCXX_ASSERTIONS`** | 0 errors | 11/12 — all lubrication tests pass; one **pre-existing** unrelated failure, see below |
+
+The Debug/assertions build is the lesson of review finding 1: an out-of-bounds
+read hid behind `-O2` dead-code elimination and would never have shown up in the
+Release matrix. It is now part of the bar.
+
+**The one Debug failure is pre-existing and not lubrication-related.**
+`pe-interface-serial-atc-resume-roundtrip` aborts on
+`Material::getDensity: Assertion 'material < materials_.size()' failed` — an
+invalid material ID in the ATC checkpoint/resume path. Verified by building the
+**base branch** (`fix/lubrication-merge-resolution`) in the identical Debug
+configuration: same test, same assertion, same abort. Worth its own look, since
+it is the same species of latent defect as finding 1 — real, and invisible in
+Release.
+
+Note the torque test (`bounce-Stokes`) now runs under `HardContactAndFluid`: with
+the angular-velocity artifact removed, the campaign solver expresses the full
+lubrication wrench.
 
 gcc 11.5.0, cmake 3.31.8, Release, non-MPI (the serial-PE arrangement).
 All four inherited lubrication tests **pass** — none skips — in both
@@ -401,9 +568,10 @@ extraction and the hook reproduce the retired pipeline exactly.
    which is what makes the D2.1 "take over at gap ≲ 2h" rule expressible — but
    nothing calls `lubrication::setMeshDx()` outside a unit test. That is the
    FF-side wire (§4) and it is what unlocks the whole point of the clamp.
-3. **Consider whether `HardContactAndFluid` should keep discarding angular
-   velocity** (finding B). Out of scope here, but it bounds what lubrication —
-   and arguably what DKT — can mean under the campaign solver.
+3. **Re-examine every rotation-dependent campaign result produced before commit
+   `a71c34d`** (finding B), DKT first. Those runs had particle rotation pinned
+   at zero by the removed artifact. This is the highest-value item in this list
+   and it is independent of lubrication.
 4. **CI**: the two library variants make a `BUILD_TESTING=ON` build noticeably
    heavier. If that is unwelcome, the alternative is to accept skips again, or
    to make the shipped default stage-capable. Worth an explicit decision rather
