@@ -156,12 +156,18 @@ inline StageDiagnostics applyLubricationStage( const Contacts& contacts,
 
    for( size_t i = 0; i < numContacts; ++i ) {
       if( !contactsMask[i] ) continue;
-      const ContactID c( contacts[i] );
+      // Deliberately deduced, not spelled as ContactID/BodyID: keeping these expressions
+      // DEPENDENT on the template parameter defers name lookup of body->index_ to
+      // instantiation. index_ lives on the hard-contact RigidBody trait, so a concrete
+      // BodyID here would hard-error at parse time in any translation unit whose active
+      // solver lacks it (e.g. ShortRangeRepulsion), merely because this header was
+      // included. It also makes "carries index_" the de facto stage-capability contract.
+      auto c = contacts[i];
       // Only act on lubrication contacts; keep hard contacts for the constraint solver
       if( !c->getLubricationFlag() ) continue;
 
-      BodyID b1( c->getBody1() );
-      BodyID b2( c->getBody2() );
+      auto b1 = c->getBody1();
+      auto b2 = c->getBody2();
       const size_t i1 = b1->index_;
       const size_t i2 = b2->index_;
 

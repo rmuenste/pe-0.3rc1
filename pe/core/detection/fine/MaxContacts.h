@@ -696,7 +696,26 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
    Vec3 normal( s1->getPosition() - s2->getPosition() );
    const real dist( normal.length() - s1->getRadius() - s2->getRadius() );
 
-#ifdef PE_LUBRICATION_CONTACTS
+   // Fast path: neither lubrication forces nor a security-zone consumer is active.
+   // One predictable branch, then exactly the pre-add-on hard-contact test.
+   if( !lubrication::contactGenerationEnabled() ) {
+      if( dist < contactThreshold ) {
+         normal.normalize();
+         const real k( s2->getRadius() + real(0.5) * dist );
+         const Vec3 gPos( s2->getPosition() + normal * k );
+
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between sphere " << s1->getID()
+                << " and sphere " << s2->getID() << " (dist=" << dist << ")";
+         }
+
+         contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
+      }
+      return;
+   }
+
+   // Extended-range path: hard contacts plus pre-contact (lubrication / security-zone)
+   // pairs, blended across the hysteresis bands.
    const real contactBlend = lubrication::getContactHysteresisDelta();
    const real lubricationBlend = lubrication::getLubricationHysteresisDelta();
    // Effective outer cutoff for this pair: relative to the pair reference radius
@@ -733,21 +752,6 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
 
       contacts.addLubricationContact( s1, s2, gPos, normal, dist, lubWeight );
    }
-#else
-   // Standard sphere-sphere collision (no lubrication)
-   if( dist < contactThreshold ) {
-      normal.normalize();
-      const real k( s2->getRadius() + real(0.5) * dist );
-      const Vec3 gPos( s2->getPosition() + normal * k );
-
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      Contact created between sphere " << s1->getID()
-             << " and sphere " << s2->getID() << " (dist=" << dist << ")";
-      }
-
-      contacts.addVertexFaceContact( s1, s2, gPos, normal, dist );
-   }
-#endif
 }
 //*************************************************************************************************
 
@@ -1094,7 +1098,22 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
    const real k( trans( p->getNormal() ) * s->getPosition() );
    const real dist( k - s->getRadius() - p->getDisplacement() );
 
-#ifdef PE_LUBRICATION_CONTACTS
+   // Fast path: see collideSphereSphere.
+   if( !lubrication::contactGenerationEnabled() ) {
+      if( dist < contactThreshold ) {
+         const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
+
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between sphere " << s->getID()
+                << " and plane " << p->getID() << " (dist=" << dist << ")";
+         }
+
+         contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
+      }
+      return;
+   }
+
+   // Extended-range path: hard contacts plus pre-contact pairs.
    const real contactBlend = lubrication::getContactHysteresisDelta();
    const real lubricationBlend = lubrication::getLubricationHysteresisDelta();
    // Effective outer cutoff for this pair: aRef = R_sphere for sphere-plane pairs.
@@ -1121,19 +1140,6 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
       const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
       contacts.addLubricationContact( s, p, gPos, p->getNormal(), dist, lubWeight );
    }
-#else
-   // Standard sphere-plane collision (no lubrication)
-   if( dist < contactThreshold ) {
-      const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
-
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      Contact created between sphere " << s->getID()
-             << " and plane " << p->getID() << " (dist=" << dist << ")";
-      }
-
-      contacts.addVertexFaceContact( s, p, gPos, p->getNormal(), dist );
-   }
-#endif
 }
 //*************************************************************************************************
 

@@ -25,7 +25,6 @@
 #define _PE_CORE_COLLISIONSYSTEM_HARDCONTACTLUBRICATED_H_
 
 // Define macro to enable lubrication-specific code in fine collision detection
-#define PE_LUBRICATION_CONTACTS 1
 
 //*************************************************************************************************
 // Includes

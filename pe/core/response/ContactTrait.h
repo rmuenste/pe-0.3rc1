@@ -929,7 +929,7 @@ public:
 /*!\brief Specialization of ContactTrait for the ShortRangeRepulsion solver.
  *
  * Provides no-op stubs for the lubrication flag/weight interface called by
- * ContactVector::addLubricationContact when PE_LUBRICATION_CONTACTS is active.
+ * ContactVector::addLubricationContact.
  * ShortRangeRepulsion does not use these fields — the contact distance alone drives
  * the Pan et al. force law.
  */

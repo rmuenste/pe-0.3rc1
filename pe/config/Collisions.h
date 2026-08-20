@@ -96,8 +96,6 @@
 // Other available solvers (uncomment one to switch):
 //#define pe_CONSTRAINT_SOLVER  pe::response::HardContactAndFluid
 
-// Optional: enable lubrication-contact generation in fine detection when using HardContactLubricated
-// Uncomment the block below to propagate the flag into MaxContacts (kept disabled for diagnostic runs)
-//#if defined(pe_CONSTRAINT_SOLVER) && pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated
-//#  define PE_LUBRICATION_CONTACTS 1
-//#endif
+// Lubrication is a runtime add-on, not a build option: set lubricationEnabled_ in the
+// simulation json. Any stage-capable collision system honors it (see
+// pe/core/lubrication/LubricationStage.h).
