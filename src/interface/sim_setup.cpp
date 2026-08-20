@@ -15,6 +15,7 @@
 #include <pe/core/domaindecomp/Process.h>
 #include <pe/core/domaindecomp/RectilinearGrid.h>
 #include <pe/engine.h>
+#include <pe/interface/el_hydro_compat.h>
 #include <pe/support.h>
 
 #if HAVE_JSON
@@ -337,7 +338,10 @@ void clearELHydroStates() {
   for (auto it = theCollisionSystem()->getBodyStorage().begin();
        it != theCollisionSystem()->getBodyStorage().end(); ++it) {
     BodyID body = *it;
-    elSetHydroState(body, real(0), Vec3(0, 0, 0), Vec3(0, 0, 0), false);
+    trySetELHydroState(body, real(0), Vec3(0, 0, 0), Vec3(0, 0, 0), false);
+    throw std::logic_error(
+      "stepELFrozenTrace requires "
+      "pe_CONSTRAINT_SOLVER == pe::response::HardContactEulerLagrange");
   }
 }
 

@@ -223,6 +223,9 @@ void setupKroupa(MPI_Comm ex0) {
 
   loadSimulationConfig("example.json");
 
+  // Push runtime lubrication parameters (model switches, cutoff, hysteresis) into the engine
+  applyOptionalLubricationParams(*theCollisionSystem(), config);
+
   world->setGravity( 0.0, 0.0, 0.0 );
 
   // Re 1.5 configuration

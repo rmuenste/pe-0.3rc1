@@ -1,4 +1,5 @@
 #include <pe/interface/object_queries.h>
+#include <pe/interface/el_hydro_compat.h>
 #include <pe/interface/el_optional_api.h>
 #include <sstream>
 #include <iostream>
@@ -70,12 +71,16 @@ void set_el_hydro_state(const short int bytes[8],
   }
 
   BodyID body = *fid;
-  elSetHydroState(
-    body,
-    static_cast<real>(*dragB),
-    Vec3(carrierVelocity[0], carrierVelocity[1], carrierVelocity[2]),
-    Vec3(otherForce[0], otherForce[1], otherForce[2]),
-    (*active != 0));
+  if (!trySetELHydroState(
+        body,
+        static_cast<real>(*dragB),
+        Vec3(carrierVelocity[0], carrierVelocity[1], carrierVelocity[2]),
+        Vec3(otherForce[0], otherForce[1], otherForce[2]),
+        (*active != 0))) {
+    throw std::logic_error(
+        "set_el_hydro_state requires pe_CONSTRAINT_SOLVER == "
+        "pe::response::HardContactEulerLagrange");
+  }
   // Arm the free-flight reference velocity of the semi-implicit drag
   // sub-cycling with the pre-step body velocity. The CFD driver charges the
   // fluid the mirrored FREE-FLIGHT sub-cycled drag impulse (issue D); the PE

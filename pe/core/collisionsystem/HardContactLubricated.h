@@ -69,6 +69,7 @@
 #include <pe/core/rigidbody/RigidBody.h>
 #include <pe/core/notifications/NotificationType.h>
 #include <pe/core/lubrication/Params.h>
+#include <pe/core/lubrication/LubricationModel.h>
 #include <pe/core/notifications/RigidBodyCopyNotification.h>
 #include <pe/core/notifications/RigidBodyDeletionNotification.h>
 #include <pe/core/notifications/RigidBodyForceNotification.h>
@@ -245,6 +246,7 @@ public:
    //**Transition blend parameters*****************************************************************
    /*!\name Transition blend parameters */
    //@{
+   inline real            getErrorReductionParameter() const;
    inline real            getContactHysteresisDelta() const;
    inline real            getLubricationHysteresisDelta() const;
    inline real            getLubricationThreshold() const;
@@ -936,6 +938,28 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::setE
    pe_INTERNAL_ASSERT( erp >= 0 && erp <= 1, "Error reduction parameter out of range." );
 
    erp_ = erp;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the currently active error reduction parameter.
+ *
+ * \return The error reduction parameter (0 <= erp <= 1).
+ *
+ * See setErrorReductionParameter() for the meaning of the value.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::getErrorReductionParameter() const
+{
+   return erp_;
 }
 //*************************************************************************************************
 
@@ -2193,15 +2217,46 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
       }
 
       synchronizeVelocities();
-      // Apply lubrication velocity corrections for tagged pairs (sphere-sphere, sphere-plane)
+      // Apply lubrication velocity corrections for tagged pairs (sphere-sphere, sphere-plane).
+      // All model physics lives in pe/core/lubrication/LubricationModel.h; runtime switches
+      // come from pe::lubrication::Params (pushed in by applyOptionalLubricationParams).
+      // See doc/technical-notes/lubrication-production-design.md.
       {
-         real totalLubricationForce = real(0);  // Track total force for logging
+         // Per-timestep snapshot of the runtime model configuration: the contact loop reads
+         // only this local struct, never the global store.
+         lubrication::ModelConfig lubCfg;
+         lubCfg.enabled          = lubrication::isEnabled();
+         lubCfg.tangential       = lubrication::getTangential();
+         lubCfg.twisting         = lubrication::getTwisting();
+         lubCfg.slipCorrection   = lubrication::getSlipCorrection();
+         lubCfg.resistSeparation = lubrication::getResistSeparation();
+         lubCfg.wallTerms        = lubrication::getWallTerms();
+         lubCfg.model            = lubrication::getModel();
+         lubCfg.scheme           = lubrication::getScheme();
+         lubCfg.epsCritical      = lubrication::getEpsCritical();
+         lubCfg.cutoffFactor     = lubrication::getCutoffFactor();
+         lubCfg.minGap           = minEpsLub_;
+         lubCfg.alphaImpulseCap  = alphaImpulseCap_;
+         lubCfg.viscosity        = Settings::liquidViscosity();
+
+         // (1 - exp(-x))/x clamp factor for explicit modes: ~1 for soft modes, prevents
+         // overshoot for stiff ones (exact integration of a linear drag mode over dt).
+         const auto expClamp = []( real x ) {
+            return ( x > real(1e-8) ) ? ( real(1) - std::exp( -x ) ) / x : real(1);
+         };
+
+         // Diagnostics (reported under pe_LOG_DEBUG_SECTION only)
+         real   totalLubricationForce  = real(0);
+         real   lubricationDissipation = real(0);   // sum J.g + L.w over the step, must be <= 0
+         real   maxNormalImpulse       = real(0);
+         size_t numLubContacts         = 0;
+         size_t numSaturated           = 0;
 
          pe_LOG_DEBUG_SECTION( log ) {
             log << "   Applying lubrication forces:\n";
          }
 
-         for( size_t i = 0; i < numContacts; ++i ) {
+         for( size_t i = 0; lubCfg.enabled && i < numContacts; ++i ) {
             if( !contactsMask_[i] ) continue;
             const ContactID c( contacts[i] );
             // Only act on lubrication contacts; keep hard contacts for solver below
@@ -2216,7 +2271,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
             const Vec3 r1 = c->getPosition() - b1->getPosition();
             const Vec3 r2 = c->getPosition() - b2->getPosition();
             const Vec3 n  = c->getNormal();
-            const real gap = std::max( c->getDistance(), minEpsLub_ );
+            const real h  = c->getDistance();
             const real blend = c->getLubricationWeight();
 
             if( blend <= real(0) ) {
@@ -2226,50 +2281,51 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
                continue;
             }
 
-            // Store pre-correction velocities for logging
+            const real invm1 = b1->getInvMass();
+            const real invm2 = b2->getInvMass();
+            const real invm_sum = invm1 + invm2;
+            if( invm_sum <= real(0) ) continue;   // both bodies immobile: impulses are no-ops
+            const real m_eff = real(1) / invm_sum;
+
+            // Pre-correction velocities and relative surface velocity at the contact
             const Vec3 v1_pre = v_[i1] + dv_[i1];
             const Vec3 w1_pre = w_[i1] + dw_[i1];
             const Vec3 v2_pre = v_[i2] + dv_[i2];
             const Vec3 w2_pre = w_[i2] + dw_[i2];
-
-            // Relative velocity at contact
             const Vec3 gdot = v1_pre - v2_pre + w1_pre % r1 - w2_pre % r2;
-            const real vrn = trans(n) * gdot; // normal component
+            const real vrn = trans(n) * gdot; // normal component, < 0 on approach
 
             pe_LOG_DEBUG_SECTION( log ) {
                log << "      Lubrication contact " << i << " (bodies " << b1->getID()
                    << "-" << b2->getID() << "):\n"
-                   << "         Gap distance    = " << c->getDistance() << " (regularized: " << gap << ")\n"
+                   << "         Gap distance    = " << h << "\n"
                    << "         Normal vrn      = " << vrn << "\n";
             }
 
-            if( vrn >= real(0) ) {
-               pe_LOG_DEBUG_SECTION( log ) {
-                  log << "         Status: SKIPPED (separating, vrn >= 0)\n";
-               }
-               continue;    // only resist approaching motion
-            }
-
-            // Determine effective radius for lubrication
+            // Geometry dispatch: legacy reduced radius R_eff and pair reference radius aRef
+            // (aRef defines eps = h/aRef; equals the paper's R_p for equal spheres).
             real R_eff = real(0);
-            const char* geometryType = "unknown";
+            real aRef  = real(0);
+            bool wall  = false;
             if( b1->getType() == sphereType && b2->getType() == sphereType ) {
                SphereID s1 = static_body_cast<Sphere>( b1 );
                SphereID s2 = static_body_cast<Sphere>( b2 );
                const real r1s = s1->getRadius();
                const real r2s = s2->getRadius();
                R_eff = ( r1s * r2s ) / ( r1s + r2s );
-               geometryType = "sphere-sphere";
+               aRef  = real(2) * R_eff;
             }
             else if( b1->getType() == sphereType && b2->getType() == planeType ) {
                SphereID s1 = static_body_cast<Sphere>( b1 );
                R_eff = s1->getRadius();
-               geometryType = "sphere-plane";
+               aRef  = R_eff;
+               wall  = true;
             }
             else if( b2->getType() == sphereType && b1->getType() == planeType ) {
                SphereID s2 = static_body_cast<Sphere>( b2 );
                R_eff = s2->getRadius();
-               geometryType = "plane-sphere";
+               aRef  = R_eff;
+               wall  = true;
             }
             else {
                // For now only sphere-sphere and sphere-plane
@@ -2279,82 +2335,160 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactLubricated> >::resolveCont
                continue;
             }
 
-            if( R_eff <= real(0) ) {
+            if( R_eff <= real(0) ) continue;
+
+            //=========================================================================
+            // LEGACY MODEL: leading-order normal term, approach-only, impulse-capped.
+            // Kept operation-for-operation identical to the pre-Kroupa solver so that
+            // lubricationModel_="legacy" reproduces historical trajectories bit-for-bit
+            // (guarded by tests/interface/pe_lubrication_legacy_regression_test.cpp).
+            //=========================================================================
+            if( lubCfg.model == lubrication::modelLegacy ) {
+               if( vrn >= real(0) ) {
+                  pe_LOG_DEBUG_SECTION( log ) {
+                     log << "         Status: SKIPPED (separating, vrn >= 0)\n";
+                  }
+                  continue;    // legacy path only resists approaching motion
+               }
+
+               const real gap = std::max( h, minEpsLub_ );
+               const real Fmag_uncapped =
+                  lubrication::legacyForceMagnitude( gap, R_eff, lubCfg.viscosity, vrn );
+               real Fmag_capped = Fmag_uncapped;
+
+               // Impulse capping relative to approach momentum; cap scaled by the blend
+               // weight so it ramps up near hard-contact entry.
+               const real Jprop = Fmag_capped * dt;
+               const real Jcap  = ( alphaImpulseCap_ * blend ) * m_eff * (-vrn);
+               if( Jprop > Jcap && Jprop > real(0) ) {
+                  Fmag_capped *= ( Jcap / Jprop );
+               }
+
+               const real Fmag_weighted = Fmag_capped * blend;
+               const Vec3 F = Fmag_weighted * n;
+               totalLubricationForce += Fmag_weighted;
+
+               dv_[i1] += invm1 * F * dt;
+               dw_[i1] += b1->getInvInertia() * ( r1 % ( F * dt ) );
+               dv_[i2] -= invm2 * F * dt;
+               dw_[i2] += b2->getInvInertia() * ( r2 % ( -F * dt ) );
+
+               ++numLubContacts;
+               lubricationDissipation += trans( F * dt ) * gdot;
+               maxNormalImpulse = std::max( maxNormalImpulse, Fmag_weighted * dt );
+
                pe_LOG_DEBUG_SECTION( log ) {
-                  log << "         Status: SKIPPED (R_eff <= 0)\n";
+                  log << "         Model           = legacy\n"
+                      << "         Applied force   = " << Fmag_weighted << "\n"
+                      << "         Status: APPLIED\n";
                }
                continue;
             }
 
-            const real mu = Settings::liquidViscosity();
-            // Classical normal lubrication coefficient: 6*pi*mu*R_eff^2
-            const real Fmag_uncapped = real(6) * M_PI * mu * R_eff * R_eff * (-vrn) / gap;
-            real Fmag_capped = Fmag_uncapped;
+            //=========================================================================
+            // KROUPA 2016 MODEL: full pairwise resistance set (normal squeeze with log
+            // corrections, sliding force, sliding + twisting torques; wall variants),
+            // Vinogradova slip correction and h_c saturation.
+            //=========================================================================
+            lubrication::PairKinematics kin;
+            kin.n = n;  kin.h = h;
+            kin.r1 = r1;  kin.r2 = r2;
+            kin.v1 = v1_pre;  kin.v2 = v2_pre;
+            kin.w1 = w1_pre;  kin.w2 = w2_pre;
+            kin.aRef = aRef;  kin.wall = wall;
 
-            // Impulse capping relative to approach momentum
-            const real invm1 = b1->getInvMass();
-            const real invm2 = b2->getInvMass();
-            const real invm_sum = invm1 + invm2;
-            bool capped = false;
-            if( invm_sum > real(0) ) {
-               const real m_eff = real(1) / invm_sum;
-               const real J     = Fmag_capped * dt;               // proposed impulse magnitude
-               // Scale cap by lubrication blend so it ramps up near hard-contact entry
-               const real Jcap  = ( alphaImpulseCap_ * blend ) * m_eff * (-vrn);
-               if( J > Jcap && J > real(0) ) {
-                  Fmag_capped *= ( Jcap / J );
-                  capped = true;
+            const lubrication::PairWrench wr = lubrication::computeWrench( kin, lubCfg );
+
+            Vec3 J;        // translational impulse on body 1 (unweighted)
+            Vec3 L1, L2;   // pure-torque impulses on bodies 1/2 (unweighted)
+
+            if( lubCfg.scheme == lubrication::schemeSemiImplicit ) {
+               // Normal mode: exact exponential update of the relative normal velocity.
+               // |Jn| < m_eff |vrn| by construction: unconditionally stable, no cap needed.
+               if( vrn < real(0) || lubCfg.resistSeparation ) {
+                  const real Kn = lubrication::normalResistance( h, aRef, wall, lubCfg );
+                  J = -m_eff * ( real(1) - std::exp( -Kn * dt / m_eff ) ) * vrn * n;
                }
+
+               // Tangential force: explicit, with the exponential clamp of its own mode
+               // (soft O(log eps) resistance, clamp ~1 in practice).
+               const real Ks = lubrication::slidingResistance( h, aRef, wall, lubCfg );
+               J += wr.Ft * ( dt * expClamp( Ks * dt / m_eff ) );
+
+               // Pure torques: twist component clamped against its own resistance, the
+               // sliding-torque remainder guarded with the heuristic K_s*aRef^2 rotational
+               // stiffness. Effective inertia about n from both bodies.
+               const real invIn = trans(n) * ( ( b1->getInvInertia() + b2->getInvInertia() ) * n );
+               real cTwist = real(1);
+               real cSlide = real(1);
+               if( invIn > real(0) ) {
+                  const real I_eff = real(1) / invIn;
+                  const real Kt = lubrication::twistingResistance( h, aRef, wall, lubCfg );
+                  cTwist = expClamp( Kt * dt / I_eff );
+                  cSlide = expClamp( Ks * aRef * aRef * dt / I_eff );
+               }
+               const Vec3 Mt1  = ( trans(wr.M1) * n ) * n;   // twist part of M1
+               const Vec3 Msl1 = wr.M1 - Mt1;
+               const Vec3 Mt2  = ( trans(wr.M2) * n ) * n;
+               const Vec3 Msl2 = wr.M2 - Mt2;
+               L1 = ( Msl1 * cSlide + Mt1 * cTwist ) * dt;
+               L2 = ( Msl2 * cSlide + Mt2 * cTwist ) * dt;
+            }
+            else {
+               // Explicit force x dt with the legacy impulse cap applied to the normal
+               // component (lubricationIntegration_ = "explicit-capped").
+               Vec3 FnCapped = wr.Fn;
+               const real JnProp = wr.Fn.length() * dt;
+               const real Jcap   = ( alphaImpulseCap_ * blend ) * m_eff * std::fabs( vrn );
+               if( JnProp > Jcap && JnProp > real(0) ) {
+                  FnCapped *= ( Jcap / JnProp );
+               }
+               J  = ( FnCapped + wr.Ft ) * dt;
+               L1 = wr.M1 * dt;
+               L2 = wr.M2 * dt;
             }
 
-            const real Fmag_weighted = Fmag_capped * blend;
-            const Vec3 F = Fmag_weighted * n;
+            // Blend-weight scaling (single multiplication of all impulses), then apply as
+            // velocity corrections. Lever-arm torques r x J complement the pure torques.
+            const Vec3 Jw  = blend * J;
+            const Vec3 L1w = blend * L1;
+            const Vec3 L2w = blend * L2;
 
-            // Accumulate total lubrication force magnitude for summary logging
-            totalLubricationForce += Fmag_weighted;
+            dv_[i1] += invm1 * Jw;
+            dw_[i1] += b1->getInvInertia() * ( r1 % Jw + L1w );
+            dv_[i2] -= invm2 * Jw;
+            dw_[i2] += b2->getInvInertia() * ( r2 % ( -Jw ) + L2w );
 
-            pe_LOG_DEBUG_SECTION( log ) {
-               log << "         Geometry        = " << geometryType << "\n"
-                   << "         R_eff           = " << R_eff << "\n"
-                   << "         Viscosity μ     = " << mu << "\n"
-                   << "         Force magnitude = " << Fmag_uncapped;
-               if( capped ) {
-                  log << " (capped to " << Fmag_capped << ")";
-               }
-               log << "\n"
-                   << "         Blend factor    = " << blend << "\n"
-                   << "         Applied force   = " << Fmag_weighted << "\n"
-                   << "         Force direction = " << n << "\n"
-                   << "         Force vector    = " << F << "\n"
-                   << "         Pre-velocities:\n"
-                   << "            Body " << b1->getID() << ": v=" << v1_pre << ", w=" << w1_pre << "\n"
-                   << "            Body " << b2->getID() << ": v=" << v2_pre << ", w=" << w2_pre << "\n";
-            }
-
-            // Apply as velocity corrections
-            dv_[i1] += invm1 * F * dt;
-            dw_[i1] += b1->getInvInertia() * ( r1 % ( F * dt ) );
-            dv_[i2] -= invm2 * F * dt;
-            dw_[i2] += b2->getInvInertia() * ( r2 % ( -F * dt ) );
-
-            // Log post-correction velocities
-            const Vec3 v1_post = v_[i1] + dv_[i1];
-            const Vec3 w1_post = w_[i1] + dw_[i1];
-            const Vec3 v2_post = v_[i2] + dv_[i2];
-            const Vec3 w2_post = w_[i2] + dw_[i2];
+            // Diagnostics
+            ++numLubContacts;
+            if( h < lubCfg.epsCritical * aRef ) ++numSaturated;
+            const real JnMag = std::fabs( trans(Jw) * n );
+            maxNormalImpulse = std::max( maxNormalImpulse, JnMag );
+            lubricationDissipation += trans(Jw) * gdot + trans(L1w) * w1_pre + trans(L2w) * w2_pre;
+            totalLubricationForce  += Jw.length() / dt;
 
             pe_LOG_DEBUG_SECTION( log ) {
-               log << "         Post-velocities:\n"
-                   << "            Body " << b1->getID() << ": v=" << v1_post << ", w=" << w1_post << "\n"
-                   << "            Body " << b2->getID() << ": v=" << v2_post << ", w=" << w2_post << "\n"
+               log << "         Model           = kroupa2016 ("
+                   << ( lubCfg.scheme == lubrication::schemeSemiImplicit ? "semi-implicit" : "explicit-capped" ) << ")\n"
+                   << "         Impulse J       = " << Jw << "\n"
+                   << "         Torque L1       = " << L1w << "\n"
                    << "         Status: APPLIED\n";
             }
          }
 
-         // Log summary for plotting: always output step and total lubrication force
+         // Log summary for plotting and model health: dissipation must be <= 0 (the model
+         // is purely resistive); a positive value indicates a sign-convention bug.
          pe_LOG_DEBUG_SECTION( log ) {
             log << "[LUBRICATION_SUMMARY] Step: " << TimeStep::step()
-                << ", TotalForce: " << totalLubricationForce << "\n";
+                << ", Contacts: " << numLubContacts
+                << ", Saturated: " << numSaturated
+                << ", TotalForce: " << totalLubricationForce
+                << ", MaxNormalImpulse: " << maxNormalImpulse
+                << ", Dissipation: " << lubricationDissipation << "\n";
+            if( lubricationDissipation > real(0) ) {
+               log << "[LUBRICATION_WARNING] Positive lubrication dissipation detected ("
+                   << lubricationDissipation << ") - sign-convention bug?\n";
+            }
          }
       }
 

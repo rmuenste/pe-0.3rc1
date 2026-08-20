@@ -23,19 +23,31 @@ Status
 - Added `ContactTrait` specialization to carry a lubrication flag for the `HardContactLubricated` solver stack:
   - `setLubricationFlag()` and `getLubricationFlag()`.
 
-## Collision System Integration
-- File: `pe/core/collisionsystem/HardContactLubricated.h`
-- Excludes lubrication contacts from the hard-contact constraint arrays (they don't enter the unilateral constraint solver).
-- After velocity synchronization inside `resolveContacts`, applies lubrication as external velocity corrections for flagged lubrication pairs:
-  - Relative velocity at contact: `gdot = (v1 + w1 × r1) − (v2 + w2 × r2)`.
-  - Normal component `vrn = n · gdot`; only resist approaching motion (`vrn < 0`).
-  - Effective radius:
-    - Sphere–sphere: `R_eff = (R1·R2)/(R1 + R2)`
-    - Sphere–plane: `R_eff = R_sphere`
-  - Normal lubrication magnitude (classical form): `F = 6π μ R_eff^2 (−vrn) / gap`
-    - `μ` from `Settings::liquidViscosity()`
-    - `gap = max(dist, eps_lub)` to regularize
-  - Apply as velocity corrections to both bodies (linear and angular through torque `r × F`).
+## Force Model (Production: Kroupa et al. 2016)
+- Physics lives in `pe/core/lubrication/LubricationModel.h` (header-only, unit-tested in
+  isolation by `tests/interface/pe_lubrication_model_test.cpp`); the solver loop in
+  `pe/core/collisionsystem/HardContactLubricated.h` only gathers kinematics, calls the
+  model, integrates, and applies velocity corrections.
+- Full pairwise resistance set (Langmuir 2016, 32, 8451−8460; Dance & Maxey 2003):
+  - Normal squeeze force with `1/ε`, `ln ε`, and `ε ln ε` terms (pair eq 12 / wall eq 16)
+  - Tangential sliding force `F_sl` (eq 13/17), sliding torque `M_sl` (eq 14/18), and
+    twisting torque `M_tl` (eq 15/19; sign corrected to be dissipative)
+  - `ε = h/a_ref` with `a_ref = 2·R1R2/(R1+R2)` (pair) or `R_sphere` (wall)
+- Divergence treatment: Vinogradova slip factor `f*` for `h ≥ h_c` and force saturation
+  (frozen separation) for `h < h_c`, with `h_c = ε_c·a_ref` (`lubricationEpsCritical_`,
+  default 0.1 per the paper's calibration against Krieger/de Kruif data).
+- Normal force acts on approach **and** separation (suction), switchable via
+  `lubricationOnSeparation_`. Moving walls contribute their real velocity (shear cells).
+- Time integration (default `"semi-implicit"`): the stiff normal mode is integrated
+  exactly, `J_n = m_eff (1−exp(−K_n dt/m_eff)) |vrn| < m_eff|vrn|` — unconditionally
+  stable at CFD-scale timesteps, no impulse cap needed. Tangential force/torques use the
+  same exponential clamp per mode. `"explicit-capped"` retains the legacy cap.
+- Legacy model preserved: `lubricationModel_="legacy"` + `lubricationCutoffFactor_=0`
+  reproduces the pre-2026 solver bit-for-bit (normal-only `F = 6πμR_eff²(−vrn)/gap`,
+  approach-only, impulse-capped) — guarded by
+  `tests/interface/pe_lubrication_legacy_regression_test.cpp`.
+- `μ` from `Settings::liquidViscosity()`; excludes lubrication contacts from the
+  hard-contact constraint arrays (they don't enter the unilateral constraint solver).
 
 ### MPI Synchronization (Critical)
 - **Velocity synchronization is required AFTER applying lubrication forces**
@@ -50,17 +62,50 @@ Status
   - Potential simulation divergence or unphysical results
 - This synchronization overhead is necessary but minimal (one additional MPI exchange per time step)
 
-## Stability Safeguards
-- Regularization: `eps_lub = 1e-8` (member `minEpsLub_`).
-- Impulse capping: limit `|F| dt` by `α m_eff |vrn|` with `α = 1.0` (member `alphaImpulseCap_`).
-  - `m_eff = 1/(m1^{-1} + m2^{-1})`.
+## Runtime Parameters (JSON via SimulationConfig)
+All model parameters are runtime input, parsed by `SimulationConfig::loadFromFile` and
+pushed into the engine by `pe::applyOptionalLubricationParams()`
+(`pe/interface/setup_optional_collision_params.h`), which every serial setup and
+`setup_kroupa.h` call after `loadFromFile`. Other MPI setups still need the same
+one-liner. Programmatic access: `pe::lubrication::` setters (`pe/core/lubrication/Params.h`).
 
-## Parameters
-- Uses existing thresholds from `pe/core/Thresholds.h`:
-  - `contactThreshold`
-  - `lubricationThreshold` (intended to be set from a simulation parameter, e.g., CFD cell size)
-- Fluid properties from `pe/core/Settings.h`:
-  - `Settings::liquidViscosity()` and `Settings::liquidDensity()` (buoyancy already present elsewhere).
+| JSON key | Default | Meaning |
+|---|---|---|
+| `lubricationEnabled_` | `true` | Master switch (also gates lubrication-contact emission) |
+| `lubricationModel_` | `"kroupa2016"` | `"kroupa2016"` or `"legacy"` |
+| `lubricationIntegration_` | `"semi-implicit"` | or `"explicit-capped"` |
+| `lubricationTangential_` | `true` | Sliding force + sliding torque |
+| `lubricationTwisting_` | `true` | Twisting torque |
+| `lubricationSlipCorrection_` | `true` | Vinogradova `f*` |
+| `lubricationOnSeparation_` | `true` | Normal suction on separation |
+| `lubricationWallTerms_` | `true` | Wall resistance set for sphere–plane |
+| `lubricationEpsCritical_` | `0.1` | `ε_c = h_c/a_ref` saturation / slip length |
+| `lubricationCutoffFactor_` | `0.5` | `ε_cut = h_cut/a_ref`; `0` → legacy absolute threshold |
+| `lubricationMeshClampFactor_` | `0` (off) | Clamp `h_cut ≤ c·Δx_CFD`; `Δx` set via `lubrication::setMeshDx()` by the CFD interface |
+| `lubricationAabbInflation_` | `true` | Grow AABBs by the lubrication cutoff (switchable) |
+| `minEpsLub_` | `1e-8` | Final numerical gap floor |
+| `alphaImpulseCap_` | `1.0` | Cap factor (`explicit-capped` scheme only) |
+| `contactHysteresisDelta_` / `lubricationHysteresisDelta_` | `1e-9` / `1e-3` | Blend half-widths |
+| `fluidViscosity_` | — | `μ` (via `world->setViscosity`) |
+
+### Outer cutoff semantics (CFD coupling)
+`h_cut = min(ε_cut·a_ref, c·Δx_CFD)`. In **unresolved Euler–Lagrange** coupling the mesh
+clamp stays off and `ε_cut` is set by model validity alone (0.5–1). In **marginally
+resolved** coupling (~8–16 cells per diameter) the clamp binds so the model only adds
+what the grid cannot resolve (`c ≈ 1–2`). Legacy absolute behavior: `ε_cut = 0`.
+
+### AABB inflation switch
+`SphereBase`/`PlaneBase::calcBoundingBox()` pad via `lubrication::aabbPadding(radius)`
+(planes use the largest registered sphere radius; sphere-side padding alone already
+covers the pair cutoff, so plane-box staleness is benign). Switching inflation off with
+lubrication on emits a one-time warning: pairs may enter the band undetected.
+
+## Legacy behavior recipe
+```json
+{ "lubricationModel_": "legacy", "lubricationCutoffFactor_": 0.0 }
+```
+reproduces pre-2026 trajectories exactly (regression-gated). The old no-op stubs
+`setLubrication/setSlipLength/setMinEps` remain as deprecated no-ops.
 
 ## Regime Transition Blending
 To prevent flickering between contact regimes when gaps oscillate near threshold boundaries, the detection step computes smooth blend weights directly from the current gap distance:
@@ -88,9 +133,38 @@ To prevent flickering between contact regimes when gaps oscillate near threshold
 
 ## Limitations (Current Implementation)
 - Only sphere–sphere and sphere–plane pairs are supported.
-- No tangential lubrication yet; normal component only.
-- No partial submersion logic or deeper CFD coupling; keeps a simple analytical model.
-- Coarse detection padding: sphere AABBs are inflated by `contactThreshold + lubricationThreshold`, so lubrication pairs reach fine detection. Other shapes are not yet inflated for lubrication; coarse phase may miss pairs that are separated by more than `contactThreshold`.
+- Unequal radii use the equal-sphere log coefficients with `ε = h/(2a)`; the `1/ε` pole
+  is exact, the log terms are approximate (Jeffrey–Onishi β-dependent coefficients are a
+  possible follow-up behind the same `computeWrench` interface).
+- The hard-contact relaxation models are inelastic (no material restitution), so
+  restitution-vs-Stokes validation (Gondret) is limited to the viscous/attenuation side;
+  see `tests/interface/pe_lubrication_bounce_stokes_test.cpp` header.
+- Other shapes (capsules, boxes, meshes) are not AABB-inflated for lubrication.
+- MPI parity test variant for the lubricated solver is still to be added (needs an
+  MPI + HardContactLubricated test build; the two `synchronizeVelocities()` calls around
+  the lubrication loop are unchanged, so the communication footprint is identical).
+
+## Validation
+- Level 0 (pure math, any build): `pe-lubrication-model` — coefficients vs hand values,
+  slip-factor limits, dissipativity on random states, semi-implicit impulse bounds,
+  cutoff/padding helpers.
+- Level 1 (needs `pe_CONSTRAINT_SOLVER = pe::response::HardContactLubricated`; tests
+  self-SKIP otherwise): `pe-lubrication-legacy-regression` (bit-for-bit legacy gate),
+  `pe-lubrication-two-sphere-approach` (paper Fig. 7 pointwise: no-slip curve, slip
+  departure, saturation plateau monotone in ε_c, switchable suction; **caution**: the
+  paper's Fig. 7 caption says "approach of two spheres" but the curves use the
+  **wall** resistance set, eq 16 — leading `ε⁻¹`, 4× the equal-sphere pair's `¼ε⁻¹` —
+  because the figure compares against sphere-on-flat AFM data ("wall = particle j with
+  zero velocity"). Plot the CSV's `wall …` curves via
+  `plot_two_sphere_approach.py approach.csv 5000 wall` to reproduce the figure; plateaus
+  land at 405/805/1605/3202 for ε_c = 0.02/0.01/0.005/0.0025),
+  `pe-lubrication-bounce-stokes` (immersed wall impact: dissipativity, viscosity
+  attenuation, dt robustness over 3 decades, wall tangential/twist sanity).
+  Lubricated test build:
+  `cmake -B build-interface-tests-hcl ... -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated"`
+- Level 2 skeleton: `examples/shear_cell_kroupa` (boundary-driven shear cell, lubrication
+  stress virial → `η_L(φ)` CSV) + `evaluate_viscosity.py` (Krieger–Dougherty /
+  Maron–Pierce comparison). Full η(φ) campaign and CFD-coupled Level 3 are future work.
 
 ## MPI Parallel Execution
 - **Fully supported**: Lubrication forces work correctly in MPI simulations

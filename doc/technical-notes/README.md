@@ -38,9 +38,16 @@ This directory contains focused engineering notes for PE internals. Use this ind
 ## Lubrication and Short-Range Forces
 
 - [lubrication-contacts.md](lubrication-contacts.md): Lubrication contact design and integration, centered on `HardContactLubricated`.
+- [lubrication-production-design.md](lubrication-production-design.md): Design draft for the production lubrication component (Kroupa et al. 2016 model: full resistance set, slip-length regularization, runtime switches via `SimulationConfig`, validation plan).
+- [lubrication-kroupa2016-handoff.md](lubrication-kroupa2016-handoff.md): Continuation handoff for the Kroupa-2016 work — context map, validation status, gotchas (Fig. 7 wall caveat, inelastic contacts), and prioritized open points.
 - [lubrication-redesign.md](lubrication-redesign.md): Migration notes from deprecated lubrication solver stacks to `HardContactLubricated`.
 - [short-range-rep-forces.md](short-range-rep-forces.md): Robust implementation plan for short-range repulsive forces in narrow-gap scenarios.
 - [srr-implementation-lessons.md](srr-implementation-lessons.md): Lessons learned from implementing the short-range repulsion solver.
+
+## Developer Tools
+
+- [`tools/lubrication_explorer/`](../../tools/lubrication_explorer/README.md): Zero-build web tool that plots each lubrication force/torque component vs gap and recomputes live as you drag the model knobs (a faithful JS port of `LubricationModel.h`, with a self-check against the Level-0 test values). Opens by double-clicking `index.html`; no build/engine/server.
+- [`tools/live_viewer/`](../../tools/live_viewer/README.md): Interactive Polyscope viewer that runs an actual small lubrication simulation with the runtime knobs as live ImGui widgets (`PE_BUILD_LIVE_VIEWER`).
 
 ## Integration and Coupling
 

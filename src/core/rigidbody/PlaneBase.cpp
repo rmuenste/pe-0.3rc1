@@ -37,6 +37,7 @@
 #include <pe/core/GlobalSection.h>
 #include <pe/core/MPI.h>
 #include <pe/core/rigidbody/PlaneBase.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/Thresholds.h>
 #include <pe/math/Accuracy.h>
 #include <pe/math/Infinity.h>
@@ -131,7 +132,12 @@ PlaneBase::~PlaneBase()
  */
 void PlaneBase::calcBoundingBox()
 {
-   const real padding = contactThreshold + lubricationThreshold;
+   // Runtime lubrication padding: a plane has no radius, so the largest registered sphere
+   // radius bounds the padding any pair with this plane can need. This is belt-and-braces:
+   // the sphere-side padding (cutoffFactor * R_sphere) alone already covers the wall pair
+   // cutoff (h_cut = cutoffFactor * R_sphere), so a plane box computed before the first
+   // sphere registration is stale but harmless; it self-heals on the next call anyway.
+   const real padding = contactThreshold + lubrication::aabbPadding( lubrication::getMaxSphereRadius() );
 
    aabb_[0] = ( normal_[0] <  real(0) && normal_[1] == real(0) && normal_[2] == real(0) )
                  ? ( -d_ - padding ) : ( -inf );

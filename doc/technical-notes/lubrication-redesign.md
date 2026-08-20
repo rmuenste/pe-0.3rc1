@@ -1,5 +1,12 @@
 # Lubrication Response Redesign
 
+> **Partially superseded (July 2026).** The force model, parameters, and validation
+> described here refer to the pre-Kroupa-2016 implementation. The production lubrication
+> component (full resistance set, slip-length regularization, runtime switches, relative
+> cutoff) is documented in [lubrication-production-design.md](lubrication-production-design.md)
+> and [lubrication-contacts.md](lubrication-contacts.md). The migration/blending material
+> below is still current.
+
 This document tracks the migration from the legacy lubrication-capable solver
 stacks (`HardContactAndFluidWithLubrication`,
 `HardContactFluidLubrication`) to the canonical `HardContactLubricated`

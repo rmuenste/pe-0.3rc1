@@ -281,6 +281,38 @@ public:
     void setMinEpsLub(real value) { minEpsLub_ = value; }
     bool getLubricationEnabled() const { return lubricationEnabled_; }
     void setLubricationEnabled(bool value) { lubricationEnabled_ = value; }
+    const std::string& getLubricationModel() const { return lubricationModel_; }
+    void setLubricationModel(const std::string& value) {
+        if (value != "kroupa2016" && value != "legacy")
+            throw std::invalid_argument("Unknown lubricationModel_: " + value +
+                                        " (expected \"kroupa2016\" or \"legacy\")");
+        lubricationModel_ = value;
+    }
+    const std::string& getLubricationIntegration() const { return lubricationIntegration_; }
+    void setLubricationIntegration(const std::string& value) {
+        if (value != "semi-implicit" && value != "explicit-capped")
+            throw std::invalid_argument("Unknown lubricationIntegration_: " + value +
+                                        " (expected \"semi-implicit\" or \"explicit-capped\")");
+        lubricationIntegration_ = value;
+    }
+    bool getLubricationTangential() const { return lubricationTangential_; }
+    void setLubricationTangential(bool value) { lubricationTangential_ = value; }
+    bool getLubricationTwisting() const { return lubricationTwisting_; }
+    void setLubricationTwisting(bool value) { lubricationTwisting_ = value; }
+    bool getLubricationSlipCorrection() const { return lubricationSlipCorrection_; }
+    void setLubricationSlipCorrection(bool value) { lubricationSlipCorrection_ = value; }
+    bool getLubricationOnSeparation() const { return lubricationOnSeparation_; }
+    void setLubricationOnSeparation(bool value) { lubricationOnSeparation_ = value; }
+    bool getLubricationWallTerms() const { return lubricationWallTerms_; }
+    void setLubricationWallTerms(bool value) { lubricationWallTerms_ = value; }
+    real getLubricationEpsCritical() const { return lubricationEpsCritical_; }
+    void setLubricationEpsCritical(real value) { lubricationEpsCritical_ = value; }
+    real getLubricationCutoffFactor() const { return lubricationCutoffFactor_; }
+    void setLubricationCutoffFactor(real value) { lubricationCutoffFactor_ = value; }
+    real getLubricationMeshClampFactor() const { return lubricationMeshClampFactor_; }
+    void setLubricationMeshClampFactor(real value) { lubricationMeshClampFactor_ = value; }
+    bool getLubricationAabbInflation() const { return lubricationAabbInflation_; }
+    void setLubricationAabbInflation(bool value) { lubricationAabbInflation_ = value; }
     real getLubricationCutoff() const { return lubricationCutoff_; }
     void setLubricationCutoff(real value) { lubricationCutoff_ = value; }
     real getLubricationSlipLength() const { return lubricationSlipLength_; }
@@ -417,6 +449,22 @@ private:
     Vec3 gravity_;               //!< Gravity vector
     real lubricationHysteresisDelta_; //!< Half-width of lubrication blend band
     real contactHysteresisDelta_; //!< Half-width of contact blend band
+
+  
+  real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication (explicit-capped scheme)
+    real minEpsLub_;             //!< Regularization epsilon for lubrication gap (numerical floor)
+    bool lubricationEnabled_;    //!< Master switch for lubrication forces
+    std::string lubricationModel_; //!< Force model: "kroupa2016" or "legacy"
+    std::string lubricationIntegration_; //!< Scheme: "semi-implicit" or "explicit-capped"
+    bool lubricationTangential_; //!< Sliding force + sliding torque terms
+    bool lubricationTwisting_;   //!< Twisting torque term
+    bool lubricationSlipCorrection_; //!< Vinogradova slip correction f*
+    bool lubricationOnSeparation_; //!< Resist separating motion (suction) as well
+    bool lubricationWallTerms_;  //!< Dedicated wall resqistance set for sphere-plane pairs
+    real lubricationEpsCritical_; //!< eps_c = h_c/a_ref saturation/slip-length scale
+    real lubricationCutoffFactor_; //!< eps_cut = h_cut/a_ref outer cutoff; 0 = legacy absolute
+    real lubricationMeshClampFactor_; //!< Mesh clamp c: h_cut capped at c*dx_CFD; 0 = off
+    bool lubricationAabbInflation_; //!< Grow AABBs by the lubrication cutoff
     real alphaImpulseCap_;       //!< Max impulse cap factor for lubrication
     real minEpsLub_;             //!< Regularization epsilon for lubrication gap
     bool lubricationEnabled_;    //!< Pairwise lubrication forces in the EL solver

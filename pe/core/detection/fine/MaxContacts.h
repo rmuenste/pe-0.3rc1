@@ -699,10 +699,16 @@ inline void MaxContacts::collideSphereSphere( SphereID s1, SphereID s2, CC& cont
 #ifdef PE_LUBRICATION_CONTACTS
    const real contactBlend = lubrication::getContactHysteresisDelta();
    const real lubricationBlend = lubrication::getLubricationHysteresisDelta();
-   const real lubricationThresholdValue = lubrication::getLubricationThreshold();
+   // Effective outer cutoff for this pair: relative to the pair reference radius
+   // aRef = 2*R1*R2/(R1+R2) in relative-cutoff mode, legacy absolute threshold otherwise.
+   const real aRef = real(2) * s1->getRadius() * s2->getRadius()
+                     / ( s1->getRadius() + s2->getRadius() );
+   const real lubricationThresholdValue = lubrication::lubricationCutoff( aRef );
 
    const real hardWeight = detail::computeHardWeight( dist, contactThreshold, contactBlend );
-   const real lubWeight  = detail::computeLubricationWeight( dist, contactThreshold, lubricationThresholdValue, contactBlend, lubricationBlend );
+   const real lubWeight  = lubrication::isEnabled()
+                           ? detail::computeLubricationWeight( dist, contactThreshold, lubricationThresholdValue, contactBlend, lubricationBlend )
+                           : real(0);
 
    if( hardWeight > real(0) || lubWeight > real(0) ) {
       normal.normalize();
@@ -1091,10 +1097,13 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
 #ifdef PE_LUBRICATION_CONTACTS
    const real contactBlend = lubrication::getContactHysteresisDelta();
    const real lubricationBlend = lubrication::getLubricationHysteresisDelta();
-   const real lubricationThresholdValue = lubrication::getLubricationThreshold();
+   // Effective outer cutoff for this pair: aRef = R_sphere for sphere-plane pairs.
+   const real lubricationThresholdValue = lubrication::lubricationCutoff( s->getRadius() );
 
    const real hardWeight = detail::computeHardWeight( dist, contactThreshold, contactBlend );
-   const real lubWeight  = detail::computeLubricationWeight( dist, contactThreshold, lubricationThresholdValue, contactBlend, lubricationBlend );
+   const real lubWeight  = lubrication::isEnabled()
+                           ? detail::computeLubricationWeight( dist, contactThreshold, lubricationThresholdValue, contactBlend, lubricationBlend )
+                           : real(0);
 
    if( hardWeight > real(0) ) {
       const Vec3 gPos( s->getPosition() - ( s->getRadius() + dist ) * p->getNormal() );
