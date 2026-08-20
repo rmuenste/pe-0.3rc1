@@ -85,6 +85,9 @@ CheckpointMetadata loadCheckpoint( const boost::filesystem::path& pebPath,
       restoreCheckpointMaterials( metadata, pebPath.string() );
    }
    else {
+      // Deliberately std::cerr rather than pe_LOG_WARNING_SECTION: this warning says that the
+      // integrity and pairing guarantees do not hold for this run, and it must reach the operator
+      // even when logging is off or below warning level, which is the default in coupled runs.
       pe_EXCLUSIVE_SECTION( 0 ) {
          std::cerr << "WARNING: checkpoint '" << pebPath.string() << "' has no metadata sidecar ("
                    << sidecarPath.filename().string() << "). It was written by a pe build without "
@@ -128,10 +131,16 @@ uint64_t totalMarshalledBodyCount( const BodyBinaryWriter& writer )
 //*************************************************************************************************
 /*!\brief Writes the world to `<basePath>.peb` plus its sidecar, publishing both atomically.
  *
- * Publication order is: drop any stale sidecar, write the `.peb` under a scratch name, rename it
- * into place, then write the sidecar. Every intermediate state is therefore either the previous
- * checkpoint or a sidecar-less checkpoint, and a sidecar-less checkpoint is reported loudly on
- * read. A mismatched (`.peb`, sidecar) pair is never published.
+ * Publication order is: move any stale sidecar aside, write the `.peb` under a scratch name,
+ * rename it into place, write the new sidecar, then drop the stale one. Every intermediate state
+ * is either the previous checkpoint or a sidecar-less checkpoint, and a sidecar-less checkpoint
+ * is reported loudly on read -- a mismatched (`.peb`, sidecar) pair is never published, and a
+ * kill mid-write never destroys the previous sidecar outright.
+ *
+ * The stale sidecar has to go before the new `.peb` appears rather than after: checkpoint names
+ * are reused across runs (Checkpointer's counter restarts at zero), and a steady-state `.peb`
+ * can be byte-identical to its predecessor, so pebBytes alone cannot detect a leftover sidecar
+ * describing a different instant.
  *
  * COLLECTIVE. Every rank must call this: the `.peb` write, the scratch token and the body count
  * reduction are all collective operations.
@@ -142,17 +151,19 @@ void storeCheckpoint( const boost::filesystem::path& pebPath,
 {
    boost::filesystem::create_directories( pebPath.parent_path() );
 
-   if( isCheckpointFileOwner() ) {
+   // Collective: MPI_File_open below requires an identical filename on every rank.
+   const long token = collectiveCheckpointScratchToken();
+   const boost::filesystem::path staleSidecar = checkpointTempPath( sidecarPath, token );
+
+   if( isCheckpointFileOwner() && boost::filesystem::exists( sidecarPath ) ) {
       boost::system::error_code ignored;
-      boost::filesystem::remove( sidecarPath, ignored );
+      boost::filesystem::rename( sidecarPath, staleSidecar, ignored );
    }
    synchronizeCheckpointWriters();
 
-   // Collective: MPI_File_open below requires an identical filename on every rank.
-   const long token = collectiveCheckpointScratchToken();
+   // writeFile() already waits for the asynchronous chunk writes to complete.
    const boost::filesystem::path pebTemp = checkpointTempPath( pebPath, token );
    writer.writeFile( pebTemp.string().c_str() );
-   writer.wait();
    synchronizeCheckpointWriters();
 
    const uint64_t bodyCount = totalMarshalledBodyCount( writer );
@@ -166,6 +177,9 @@ void storeCheckpoint( const boost::filesystem::path& pebPath,
 
    commitCheckpointTempFile( pebTemp, pebPath );
    writeCheckpointMetadata( sidecarPath, metadata );
+
+   boost::system::error_code ignored;
+   boost::filesystem::remove( staleSidecar, ignored );
 }
 //*************************************************************************************************
 
@@ -187,8 +201,11 @@ Checkpointer::~Checkpointer() {
 //*************************************************************************************************
 void Checkpointer::trigger()
 {
-  // Skipping the visualization for intermediate time steps
-  if(( ++steps_ < tspacing_ ) && (!counter_ == 0)) {
+  // Skip intermediate time steps. The counter_ term forces the very first trigger to write
+  // regardless of spacing, so a run always has a checkpoint at its start; it was previously
+  // spelled `!counter_ == 0`, which parses as `(!counter_) == 0` and happens to mean the same
+  // thing by accident.
+  if(( ++steps_ < tspacing_ ) && ( counter_ != 0 )) {
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "Checkpoint in:" << tspacing_ - steps_ << std::endl;
   }
