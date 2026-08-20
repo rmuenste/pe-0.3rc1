@@ -32,6 +32,8 @@
 // Includes
 //*************************************************************************************************
 
+#include <cstdint>
+#include <sstream>
 #include <string>
 #include <pe/core/BodyBinaryReader.h>
 #include <pe/core/Marshalling.h>
@@ -82,6 +84,23 @@ void BodyBinaryReader::readFile( const char* filename ) {
    pe_PROFILING_SECTION {
       timeOpen.end();
    }
+
+   // The body chunk offsets below are trusted as read positions, so the file must be known to be
+   // long enough before any of them is used. A job killed mid-write leaves a short file whose
+   // header still parses; without this the short reads that follow are silently ignored.
+   uint64_t fileSize;
+#if HAVE_MPI
+   {
+      MPI_Offset mpiFileSize;
+      if( MPI_File_get_size( fh, &mpiFileSize ) != MPI_SUCCESS )
+         throw std::runtime_error( "Cannot determine the size of the rigid body parameter file." );
+      fileSize = static_cast<uint64_t>( mpiFileSize );
+   }
+#else
+   fh.seekg( 0, std::ios::end );
+   fileSize = static_cast<uint64_t>( fh.tellg() );
+   fh.seekg( 0, std::ios::beg );
+#endif
 
    // read until the position in the file where the number of processors used to write the file is stored
    header_.resize( 9*sizeof(byte) + 1*sizeof(uint32_t) );
@@ -190,6 +209,16 @@ void BodyBinaryReader::readFile( const char* filename ) {
       header_ >> offsets_[i];
    }
 
+   // offsets_[p] is the end of the last body chunk, i.e. the length the complete file must have.
+   if( fileSize < offsets_[p] ) {
+      std::ostringstream message;
+      message << "Rigid body parameter file '" << filename << "' is truncated: its header "
+                 "describes " << offsets_[p] << " bytes of body data but the file is only "
+              << fileSize << " bytes long. It was most likely written by a job that was killed "
+                 "mid-checkpoint.";
+      throw std::runtime_error( message.str() );
+   }
+
    // read global body data
    globals_.resize( offsets_[0] - offsetGlobal );
 
@@ -248,7 +277,11 @@ void BodyBinaryReader::readFile( const char* filename ) {
          sizeReadLocal += buffer_.size();
       }
 
-      // WARNING: the following code will not trigger exceptions. In debug mode assertions will be triggered. In release mode the behaviour is undefined if the file format is invalid.
+      // WARNING: the unmarshalling below does not validate its input. Truncation is ruled out by
+      // the file length check above, but a file that is intact yet malformed -- or whose body
+      // material indices outrun this process' material table -- triggers assertions in debug and
+      // is undefined behaviour in release. Checkpointer::read()/readCheckpoint() guard the
+      // material case by reinstating the recorded table first; see pe/util/CheckpointMetadata.h.
 
       // restore the system ID counter
       pe_LOG_DEBUG_SECTION( log ) {
