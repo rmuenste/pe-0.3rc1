@@ -41,6 +41,52 @@ inline unsigned int effectiveCheckpointSpacing(const SimulationConfig& config) {
 }
 
 /**
+ * @brief Translates the deck's resume expectation keys into a ResumeExpectation.
+ *
+ * Every key is opt-in, so a deck that does not mention them yields an empty expectation and the
+ * resume behaves exactly as before this guard existed.
+ */
+inline ResumeExpectation resumeExpectationFromConfig(const SimulationConfig& config) {
+  ResumeExpectation expectation;
+
+  if (config.getResumeExpectedTimeSet()) {
+    expectation.hasTime = true;
+    expectation.time = config.getResumeExpectedTime();
+  }
+  expectation.toleranceSteps = config.getResumeTimeToleranceSteps();
+
+  if (config.getResumeExpectedStep() >= 0) {
+    expectation.hasStep = true;
+    expectation.step = static_cast<uint64_t>(config.getResumeExpectedStep());
+  }
+
+  if (!config.getResumeExpectedTag().empty()) {
+    expectation.hasTag = true;
+    expectation.tag = config.getResumeExpectedTag();
+  }
+
+  return expectation;
+}
+
+/**
+ * @brief Loads the configured resume checkpoint and enforces the deck's expectations on it.
+ *
+ * This is the single resume entry point for the serial setups: it restores the checkpoint's
+ * material table before instantiating bodies, rejects a truncated or mismatched checkpoint, and
+ * refuses to continue when the driver's expected time/step/tag does not match what the
+ * checkpoint carries -- the sibling of the pe/CFD step size mismatch guard.
+ *
+ * @return The resumed checkpoint's metadata, so the setup can report it.
+ */
+inline CheckpointMetadata resumeFromConfiguredCheckpoint(const SimulationConfig& config) {
+  const CheckpointMetadata metadata =
+      readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+  validateResumeExpectation(metadata, resumeExpectationFromConfig(config),
+                            config.getResumeCheckpointFile());
+  return metadata;
+}
+
+/**
  * @brief Serial mode simulation setup
  *
  * In serial PE mode, each CFD domain runs its own independent serial PE instance.
@@ -101,16 +147,20 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   // Set default timestep
   TimeStep::stepsize(0.001);
 
+  // Registered on both paths and in a fixed order: checkpointed bodies reference materials by
+  // bare table index, so registering them only on the fresh path leaves the resumed bodies
+  // pointing past the end of the table.
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
   if (resume) {
     // Resume must load on every rank in PE serial mode, because each CFD rank runs
     // its own PE instance and later queries local particle storage.
-    readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+    resumeFromConfiguredCheckpoint(config);
     particlesCreated = static_cast<int>(theCollisionSystem()->getBodyStorage().size());
   } else {
     // Create static benchmark scene only for fresh starts.
-    MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
     createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
-    MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
     SphereID sphere(nullptr);
     sphere = createSphere(idx, position, radBench, myMaterial, true);
     sphere->setLinearVel(config.getInitialParticleVelocity());
@@ -480,7 +530,7 @@ inline void setupFluidizationSRRSerial(int cfd_rank) {
     //   2. The floor plane — defensive fallback in case a checkpoint format
     //                        change ever drops it from the globals section.
     //============================================================================================
-    readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+    resumeFromConfiguredCheckpoint(config);
 
     int planeCount = 0;
     for (auto it = theCollisionSystem()->getBodyStorage().begin();
@@ -1000,13 +1050,26 @@ inline void setupATCSerial(int cfd_rank) {
   // SphereID sphere = createSphere(idx++, position, radius, myMaterial, global);
   int idx = 0;
 
+  //==============================================================================================
+  // Material registration
+  //==============================================================================================
+  // Registered before the resume below, and in the same order on every path. Checkpointed bodies
+  // carry a bare index into the process material table (Marshalling.h), so a table that is
+  // shorter or differently ordered at read time resolves those indices against the wrong
+  // material -- or past the end of the table. The checkpoint's own table is reinstated by
+  // readCheckpoint() as well, but only for checkpoints that carry a metadata sidecar; keeping
+  // this order correct is what makes legacy checkpoints resumable too.
+  real rhoParticle( config.getParticleDensity() );
+  MaterialID boundaryMat = createMaterial("boundary", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID particleMaterial = createMaterial("particleMaterial", rhoParticle, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+
   int restoredBoundaryMeshes = 0;
   if (resume) {
     // Resume must load on every rank in PE serial mode, because each CFD rank runs
     // its own PE instance and later queries local particle storage.  TriangleMesh
     // distance-map checkpointing is not reliable yet, so discard restored meshes
     // and recreate the domain boundary exactly like the fresh-start path below.
-    readCheckpoint(config.getCheckpointPath(), config.getResumeCheckpointFile());
+    resumeFromConfiguredCheckpoint(config);
 
     WorldID restoredWorld = theWorld();
     for (auto it = restoredWorld->begin(); it != restoredWorld->end();) {
@@ -1025,7 +1088,6 @@ inline void setupATCSerial(int cfd_rank) {
   const bool domainBoundaryEnabled = config.getDomainBoundaryEnabled();
   std::string boundaryFileName = config.getDomainBoundaryFilePath().string();
   Vec3 boundaryPos = config.getDomainBoundaryPosition();
-  MaterialID boundaryMat = createMaterial("boundary", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
 
   TriangleMeshID boundaryMesh(nullptr);
   if (domainBoundaryEnabled) {
@@ -1122,8 +1184,6 @@ inline void setupATCSerial(int cfd_rank) {
   }
 
   real sphereRad =  config.getBenchRadius(); //  0.0183 Sphere radius for centerline particles
-  real rhoParticle( config.getParticleDensity() );
-  MaterialID particleMaterial = createMaterial("particleMaterial", rhoParticle, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
 
   // Generate sphere positions along the centerline.
   // num_rings=5 (one extra ring vs. before), margin_steps=20 (up from 4) to keep
