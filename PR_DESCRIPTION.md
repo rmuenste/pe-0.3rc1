@@ -42,6 +42,21 @@ Each is one concern.
 | 7 | `628fb6f` | `interface`: C entry points for driver-supplied checkpoint identity |
 | 8 | `ab18849` | `tests`: checkpoint metadata contract, and route seeds through `writeCheckpoint()` |
 | 9 | `76be00c` | `docs`: `FF-WIRING.md` — what FeatFloWer must do to pair its dumps with pe |
+| 10 | `9cecb08` | `docs`: PR description |
+| 11 | `ce66b09` | `docs`: record that the examples build failure predates this branch |
+
+Answering the independent review (see "Review response" below):
+
+| # | Commit | Finding | Concern |
+|---|---|---|---|
+| 12 | `563a797` | 1 | `review`: make the checkpoint scratch filename rank-invariant |
+| 13 | `4a67b14` | 2 | `review`: sum the marshalled body count across ranks for the sidecar |
+| 14 | `1b47ce0` | 5, 9c, 9d, 9f | `review`: keep the previous sidecar until the new one is published |
+| 15 | `e961823` | 8, 9b | `review`: tighten sidecar parsing and the zero-step-size case |
+| 16 | `e2c2c57` | 3 | `review`: validate the `.peb` header before believing any of it |
+| 17 | `a09b4b1` | 6, 7, 9a | `review`: refuse a resume expectation declared by both driver and deck |
+| 18 | `1bbb114` | 4 | `tests`: exercise the reader's own truncation gate, and add two-rank coverage |
+| 19 | `4a63188` | 10, 11, 12, 13 | `review`: rewrite FF-WIRING around the mechanism that actually works |
 
 ---
 
@@ -94,12 +109,18 @@ counts substeps and does not identify a driver step.
 truncating `ofstream`). A job killed mid-write left a short file *under the real
 name*.
 
-**Fix:** write to a pid-suffixed scratch name in the same directory, then
-`rename(2)` (`checkpointTempPath()` / `commitCheckpointTempFile()`). Publication
-order is: drop any stale sidecar → write `.peb` scratch → rename `.peb` → write
-sidecar. Every intermediate state is either the previous checkpoint or a
-sidecar-less one, and a sidecar-less checkpoint is reported loudly on read. A
-mismatched (`.peb`, sidecar) pair is never published.
+**Fix:** write to a scratch name in the same directory, then `rename(2)`
+(`checkpointTempPath()` / `commitCheckpointTempFile()`). Publication order is:
+move any stale sidecar aside → write `.peb` scratch → rename `.peb` → write the
+new sidecar → drop the stale one. Every intermediate state is either the previous
+checkpoint or a sidecar-less one, and a sidecar-less checkpoint is reported loudly
+on read. A mismatched (`.peb`, sidecar) pair is never published.
+
+The scratch name's disambiguating token is **passed in**, not sampled inside
+`checkpointTempPath()`. That is load-bearing under MPI: `MPI_File_open` is
+collective and requires an identical filename on every rank, so a per-rank pid
+makes the call erroneous — see review finding 1, which is exactly the bug the first
+version of this fix shipped.
 
 The write is synchronous now. It already effectively was — `trigger()` called
 `flush()` on the line after `write()` — so nothing is lost, and direct
@@ -115,9 +136,15 @@ what happens: assertions in debug, undefined behaviour in release.
 
 **Fix, two layers:**
 
-- `offsets_[p]` is the end of the last chunk, i.e. exactly the length a complete
-  file must have. One comparison against the file size covers it, and works for
-  checkpoints written by *any* pe version, sidecar or not.
+- The header is validated in the order it is consumed: the fixed 13-byte prefix
+  must exist before it is read; the offset table's extent, computed in 64-bit
+  arithmetic from the file's own process count, must fit in the file before the
+  buffer is resized to it; offsets must be non-decreasing and start at or after the
+  global chunk before any unsigned subtraction uses them; and `offsets_[p]`, the end
+  of the last chunk, must be within the file. This works for checkpoints written by
+  *any* pe version, sidecar or not. (The ordering here is review finding 3 — the
+  first version placed the single length check after the header had already been
+  believed.)
 - For checkpoints with a sidecar, the recorded `pebBytes` must match the file
   size exactly — which also catches a sidecar that belongs to a different
   checkpoint.
@@ -205,6 +232,82 @@ no expectation.
 
 ---
 
+## Review response
+
+An independent review returned REVISIONS REQUIRED with five must-fix findings
+(1, 2, 3+4, 10, 11) and eleven should-fix/nits. All are addressed. Two of the
+must-fix findings were defects **this PR introduced**, both on the MPI path, and
+both are worth naming plainly.
+
+### Finding 1 — every rank used its own pid in the scratch filename (introduced here)
+
+`checkpointTempPath()` sampled `::getpid()` itself, so the atomic-write change made
+each rank pass a *different* filename to the collective `MPI_File_open`. Multi-rank
+checkpoint writes went from working to hanging. The first version of the atomicity
+fix traded one correctness problem for a worse one, and a serial-only suite passed
+it without complaint.
+
+The token is now a parameter rather than something the function samples — which puts
+the requirement in front of every call site — and `collectiveCheckpointScratchToken()`
+broadcasts rank 0's value. The sidecar deliberately keeps a *local* token: it is
+written by one rank with plain POSIX calls, and calling the collective helper from
+inside a rank-0-only branch would deadlock.
+
+### Finding 2 — `bodyCount` was rank 0's own count (introduced here)
+
+Documented as "body records the `.peb` contains", filled from one rank's tally.
+Now reduced across ranks in the checkpoint layer; `BodyBinaryWriter`'s count stays
+per-rank by design and its doc comment says so instead of leaving it to be inferred.
+
+### Finding 3 — the length gate ran too late
+
+The `.peb` length check was placed after the process count and offset table had
+already been read, so a header-truncated file was parsed out of uninitialised buffer
+memory; garbage offsets could pass the check and reach an unsigned subtraction that
+wraps into an enormous allocation. Validation now follows the order the header is
+consumed: fixed prefix, then offset-table extent in 64-bit arithmetic, then
+monotonicity, each before the value it protects is used.
+
+### Finding 4 — the truncation test was not testing the reader
+
+The `.peb`-truncation fixture kept its sidecar, so the throw came from `pebBytes`
+and the reader's own gate — the one that exists for legacy checkpoints, which have
+no sidecar — was never reached. Now fixtured at three depths with no sidecar, one
+per validation stage; each produces a distinct message.
+
+### Findings 10–13 — FF-WIRING was recommending something impossible
+
+The resume ordering it recommended cannot be achieved: `commf2c_*` runs inside each
+application's own `General_init_ext`, which runs *before* `SolFromFile`. Deck keys
+are now THE mechanism (they work, because `example.json` is parsed inside the same
+`commf2c_*` call) and the C entry point is an appendix with the evidence. The tag
+recommendation was also backwards — `iOut` is a cyclic slot whose counter resets on
+restart, so a checkpoint tagged with it can point at a dump since overwritten by a
+different instant.
+
+**Found while verifying the review's claims, and not in the review:** `read_time_sol`
+post-increments (`solution_io.f90:1364`), so after a restart `istep_ns` is the dump's
+step **plus one**. An expectation built from the in-memory value would be off by one
+and fail every resume. Documented, and it is a further argument for building the keys
+in the staging script from `time.dmp` directly.
+
+### Should-fix and nits
+
+| # | Disposition |
+|---|---|
+| 5 | Fixed — stale sidecar is renamed aside and deleted only after the new one publishes, so a kill no longer destroys the previous one. The delete cannot simply move after the rename: a steady-state `.peb` can be byte-identical to its predecessor, so `pebBytes` cannot catch a leftover sidecar. |
+| 6 | Fixed — declaring a resume expectation via both the driver call and the deck is refused, not resolved by precedence. Either winner would leave the losing call site reading as though it had taken effect. |
+| 7 | Fixed — documented the `type(c_ptr), value` binding the skippable arguments require, in both the entry point's doc comment and FF-WIRING's appendix. |
+| 8 | Fixed — `stepSize <= 0` with a time expectation now says the step size is the problem instead of reporting a time mismatch. Covered, including that a step expectation still works. |
+| 9a | Fixed — negative step rejected in both entry points rather than wrapping to a huge unsigned value. |
+| 9b | Fixed — repeated directives and trailing content both refused; `timeStep 1.5` no longer parses as 1. |
+| 9c | Fixed — redundant `writer.wait()` dropped; `writeFile()` already waits. |
+| 9d | Fixed — one-line rationale for `std::cerr` over the log section: the warning states that the run's guarantees do not hold and must survive logging being off. |
+| 9e | **Documented, not fixed** — see limitation 6. |
+| 9f | Fixed — `!counter_ == 0` spelled as `counter_ != 0`, with a comment on what it is for. |
+
+---
+
 ## Verification matrix
 
 Every configuration below runs the **complete** suite. Zero skips.
@@ -215,12 +318,49 @@ Every configuration below runs the **complete** suite. Zero skips.
 | Neutral solver, Debug + `_GLIBCXX_ASSERTIONS` | `-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-D_GLIBCXX_ASSERTIONS` | 13/13 pass |
 | `HardContactAndFluid`, Release | `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid` | 13/13 pass |
 | `HardContactAndFluid`, Debug + `_GLIBCXX_ASSERTIONS` | both of the above | 13/13 pass |
-| MPI, Release | `-DPE_USE_MPI=ON`, `pe_static` | compiles clean |
+| MPI, Release, **2 ranks** | `-DPE_USE_MPI=ON` + OpenMPI 4.1.6 | 12/14 pass; the 2 failures are pre-existing, see below |
 | `PE_BUILD_EXAMPLES=ON`, Release | neutral solver | unchanged from `de855b6` (see below) |
 
 All with `-DPE_USE_JSON=ON -DPE_USE_EIGEN=ON -DPE_USE_CGAL=OFF`.
 Baseline on `de855b6` for comparison: 12/12 Release, **11/12 Debug** —
 `pe-interface-serial-atc-resume-roundtrip` aborted.
+
+### MPI: what was executed vs. what was only compiled
+
+Corrected from the first version of this document, which claimed "MPI compiles
+clean" on the strength of a configure step that had in fact **failed** — MPI is not
+on the default `PATH` here and the `&&` chain never reached `make`. That claim was
+wrong and is retracted.
+
+What was actually done, using OpenMPI 4.1.6 from
+`/sfw/openmpi/gcc13.2.x/4.1.6/ucx-threaded-noverbs`:
+
+- **Executed, 2 ranks:** `pe-checkpoint-metadata-mpi`, the new two-rank test.
+  Passes. Both MPI-path fixes were regression-verified by reverting them
+  individually: with the scratch-token broadcast disabled the test **hangs** (the
+  ranks never agree on a filename for the collective open); with the body-count
+  reduction disabled it reports `bodyCount 3, expected 6`.
+- **Executed, 1 rank:** the whole suite in the MPI build, 12/14.
+- **Compiled only:** nothing in the checkpoint path. The MPI branches in
+  `storeCheckpoint()`, `totalMarshalledBodyCount()`,
+  `collectiveCheckpointScratchToken()` and the reader's `MPI_File_get_size()` gate
+  are all executed by the two-rank test.
+- **Not reachable at all:** pe's domain decomposition. `defineLocalDomain()` throws
+  "Selected configuration is not MPI parallel" for *every* configuration, because
+  `pe/core/ParallelTrait.h` contains no specialisation setting `value = 1` — the
+  specialisation block is empty. Pre-existing and out of scope; the two-rank test
+  works without it, since the checkpoint write is collective over `MPI_COMM_WORLD`
+  and each rank contributes its own local bodies.
+
+**The 2 MPI-config failures are pre-existing.** `pe-interface-serial-atc-resume-roundtrip`
+and `pe-interface-serial-fluidization-srr-resume-roundtrip` abort with
+"MPI_Exscan() was called before MPI_INIT" — the checkpoint write path is collective
+even at size 1, and the smoke harness never initialises MPI. Verified by building
+`de855b6` in the same MPI configuration in a detached worktree: **the same two tests
+fail there**, 10/12. This PR's own tests do not have the problem — the new serial
+test calls `MPI_Init` when `HAVE_MPI` — but the harness was not changed to match,
+because it `fork`/`execv`s a seed child and initialising MPI before a fork needs more
+care than a drive-by deserves. Follow-up below.
 
 The examples build fails identically before and after this PR — three
 pre-existing errors under a neutral solver, verified by building `de855b6` in a
@@ -269,17 +409,19 @@ remains in the checkpoint directory.
    still reachable for a legacy checkpoint whose resume path registers materials
    late — which is why commit 6 fixes the ordering as well as the mechanism.
 
-2. **The (`.peb`, sidecar) pair is not atomic as a unit.** Two files cannot be
-   renamed atomically together. The publication order confines the failure window
-   to "new `.peb`, no sidecar" — a loud legacy warning — never to a silently
-   mispaired sidecar. Closing it fully would require a nonce in the `.peb`, i.e.
-   a format break.
+2. **The (`.peb`, sidecar) pair is still not atomic across a kill.** Two files
+   cannot be renamed atomically together. The window is now confined to "new
+   `.peb`, sidecar renamed aside but not yet republished", which reads as a legacy
+   checkpoint — loud, never a wrong pairing — and the previous sidecar survives
+   under a `.tmp-<pid>` name instead of being destroyed (review finding 5). Smaller
+   than before, not gone. Closing it fully would require a nonce inside the `.peb`,
+   i.e. a format break.
 
-3. **MPI is compile-verified only.** The MPI paths in `storeCheckpoint()`
-   (barrier + rank-0 rename) and in the reader's `MPI_File_get_size()` length
-   check build clean but are not exercised by any test — the suite has no
-   multi-rank checkpoint case, and did not before this PR either. The serial
-   interface, which is what the DNS campaign runs, is fully covered.
+3. **Two MPI-config tests fail, both pre-existing.** See the MPI section of the
+   verification matrix: `pe-interface-serial-{atc,fluidization-srr}-resume-roundtrip`
+   abort with "MPI_Exscan() called before MPI_INIT", verified identical on
+   `de855b6`. This PR's own tests initialise MPI and pass; the shared harness was
+   not changed because of its `fork`/`execv` seed child.
 
 4. **`bodyCount` is descriptive, not a gate.** `World::size()` is not a
    write/read invariant (non-global planes are not persisted at all; global
@@ -293,19 +435,45 @@ remains in the checkpoint directory.
    TriangleMesh distance maps. The ATC setup already discards restored meshes and
    rebuilds them for this reason. Out of scope here.
 
-6. **The FeatFloWer side is not implemented.** By design — see `FF-WIRING.md`.
+6. **A throw from one rank inside `storeCheckpoint()` deadlocks the others**
+   (review finding 9e). The barriers and the reduction are unconditional, so a rank
+   that throws — a full disk, a failed rename — leaves its peers waiting. Fixing it
+   properly means collective error propagation across the checkpoint path, which
+   would be the first such mechanism in the library and is a larger change than this
+   PR should make. Documented rather than half-done.
+
+7. **The FeatFloWer side is not implemented.** By design — see `FF-WIRING.md`.
    Until it lands, checkpoints record `timeSource pe-timestep` (pe's substep
    counter) rather than a driver time, which is honest but not pairable.
+
+8. **`setupDNSDragSerial` has no resume branch at all**, so none of this applies to
+   the DNS drag application until one is added. This PR supplies the validation half
+   of a mechanism whose loading half does not exist for that case.
 
 ---
 
 ## Follow-ups
 
 - **Land the FF side** per `FF-WIRING.md`. The one ordering constraint worth
-  repeating: `SolFromFile()` must restore `timens`/`istep_ns` *before* the
-  expectation is built, or every resume fails against `SimPar@StartSimTime`.
-- **A multi-rank checkpoint test.** Limitation 3 predates this PR but is now the
-  largest uncovered surface in the checkpoint path.
+  repeating: build the expectation keys in the staging script from `time.dmp`
+  directly, because the in-memory `istep_ns` is the dump's step **plus one** after
+  `read_time_sol`'s post-increment.
+- **Add a resume branch to `setupDNSDragSerial`** (limitation 8), following
+  `setupFluidizationSRRSerial`: materials first, then
+  `resumeFromConfiguredCheckpoint(config)`.
+- **Initialise MPI in the serial smoke harness**, which would fix the two
+  pre-existing MPI-config failures. Needs care around the harness's `fork`/`execv`
+  seed child; the pattern is already in `pe_checkpoint_metadata_test.cpp`.
+- **Fix the frozen-field MPI test's guard.** It reads `if(MPI AND CGAL)`, and
+  nothing in this project ever sets a variable named `MPI`, so that test has never
+  been built. Found while adding the two-rank test, which uses
+  `PE_USE_MPI AND MPI_FOUND` instead. Left alone rather than enabled as a drive-by,
+  since a test that has never run may well not pass.
+- **`ParallelTrait` has no specialisation setting `value = 1`**, so
+  `defineLocalDomain()` throws for every configuration and pe's domain decomposition
+  is unreachable. Far outside this PR, but it is why the two-rank test does not use
+  a decomposed domain, and it deserves an issue.
+- **Collective error propagation in the checkpoint path** (limitation 6).
 - **Checkpoint naming.** `checkpoint.<counter>` still restarts at zero each run,
   so a resumed run overwrites its predecessor's checkpoints. The sidecar makes
   that detectable but does not prevent it; naming by step index would.
