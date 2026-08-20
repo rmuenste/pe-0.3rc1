@@ -45,6 +45,7 @@ Each builds standalone (verified, see below) and each is one concern.
 | 6 | `c3a3c12` | Give every stage-capable pipeline real per-contact lubrication state |
 | 7 | `9545c9f` | Retire the `HardContactLubricated` pipeline |
 | 8 | `8eca829` | Add serial-mode coverage test for the lubrication add-on |
+| 9 | `245b53b` | Pin AABB neutrality: lubrication off must not inflate bounding boxes |
 
 Commit 6 is not in the spec's list. It exists because commits 4 and 5 were not
 sufficient on their own — see "Findings" below. It is the commit a reviewer
@@ -73,7 +74,7 @@ already there. Defaults (`1e-8`, `1.0`) match the former ctor initializers.
 deliberately, so its three solver-gated tests act as the fidelity check on the
 extraction before the pipeline is retired. All three passed.
 
-### 2. AABB padding = effective cutoff
+### 2 + 9. AABB padding = effective cutoff, and provably zero when off
 
 Spec §3.4. `aabbPadding()` mirrors `lubricationCutoff()` exactly, mesh clamp
 included. Dropping the old "padding is a strict superset of the force band"
@@ -83,6 +84,52 @@ remains.
 
 `pe_lubrication_model_test` asserted the superseded intent
 (*"mesh clamp NOT applied to padding"*) and is re-pointed at the approved rule.
+
+**No silent inflation when lubrication is off — enforced, not argued.** This is a
+hard requirement: bounding-box size feeds the HashGrids broad phase, so it
+selects the grid hierarchy level and hence candidate-pair enumeration order,
+which perturbs contact ordering in the sequential solver. Stray padding is a
+silent trajectory change in every DNS case.
+
+The regression is historical fact. Before the refactor,
+`SphereBase::calcBoundingBox` added `getLubricationThreshold()`
+**unconditionally** — a hard-coded `1e-2` in *absolute* units, under every
+solver, whether or not lubrication existed in the build. On a 1.5 mm benchmark
+sphere that is a **10 mm halo**: padding several times the body radius,
+permanently on, invisible.
+
+`pe_lubrication_aabb_neutrality_test` (commit 9) pins it. It runs in its own
+process, so the parameter store is pristine, and links the campaign solver —
+i.e. exactly the "`HardContactAndFluid` + shipped defaults + lubrication off"
+configuration:
+
+```
+[defaults] isEnabled=false securityZone=false aabbPadding(R)=0
+[defaults] sphere half-extent = 0.00150001 (R + contactThreshold = 0.00150001)
+[defaults] plane  face        = -0.049999990000000001 (d + contactThreshold = -0.049999990000000001)
+[enabled ] sphere half-extent = 0.0022500100000000002 (grew by 0.00075 = cutoffFactor*R)
+```
+
+Asserted with **bitwise** equality, not a tolerance: defaults neutral (switch
+off, security zone off, contact generation off); `aabbPadding()` exactly zero
+across radii `1e-6 … 1e3`; sphere half-extent exactly `radius + contactThreshold`
+and plane face exactly `d + contactThreshold`; the json path neutral too
+(pushing a *default* `SimulationConfig` through `applyOptionalLubricationParams`
+— the call every setup makes — arms nothing and leaves boxes bitwise unmoved,
+and pins both hysteresis half-widths at zero); an explicit check that the `1e-2`
+halo specifically is gone; and non-vacuity — enabling *does* inflate, the mesh
+clamp *does* bound it, disabling restores the neutral box bitwise.
+
+**Verified by mutation:** reintroducing the old unconditional padding fails 11
+of the checks; reverting restores a clean pass. The gate bites.
+
+Two structural facts underpin the guarantee, both verified by grep over the
+whole library: `aabbPadding()` has exactly **two** call sites
+(`SphereBase.h:222`, `PlaneBase.cpp:140`) and no other body type pads at all;
+and `setSecurityZone(true)` — the one branch that can return a nonzero padding
+while the master switch is off — has exactly **one** call site, in
+`CollisionSystem<C<...,ShortRangeRepulsion>>`'s constructor, which is never
+instantiated under `HardContactAndFluid`.
 
 ### 3. Runtime detection gate
 
@@ -252,8 +299,8 @@ Nothing in the spec was silently adapted; every departure is above.
 
 | configuration | build | ctest |
 |---|---|---|
-| Neutral default (`HardContactEulerLagrange`), `BUILD_TESTING=ON` | 0 errors | **10/10 passed, 0 failed, 0 skipped** |
-| `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid` | 0 errors | **10/10 passed, 0 failed, 0 skipped** |
+| Neutral default (`HardContactEulerLagrange`), `BUILD_TESTING=ON` | 0 errors | **11/11 passed, 0 failed, 0 skipped** |
+| `-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid` | 0 errors | **11/11 passed, 0 failed, 0 skipped** |
 
 gcc 11.5.0, cmake 3.31.8, Release, non-MPI (the serial-PE arrangement).
 All four inherited lubrication tests **pass** — none skips — in both
@@ -341,8 +388,14 @@ extraction and the hook reproduce the retired pipeline exactly.
 ## Recommended follow-ups
 
 1. **Run Gate G0 before anything downstream bumps the submodule.** The
-   disabled path is argued bitwise here and demonstrated zero-delta in a unit
-   test, but the campaign's own twins are the real gate.
+   disabled path is now *enforced* bitwise by
+   `pe_lubrication_aabb_neutrality_test` rather than merely argued, but note
+   what that test does and does not say: it proves lubrication-off adds no
+   padding **relative to `radius + contactThreshold`**. It does not say the
+   AABBs match the campaign's *current* binary — they deliberately do not,
+   because that binary carries the legacy unconditional `1e-2` halo. Shrinking
+   it is the intended fix (spec §3.4) and is precisely the change G0's twins
+   have to clear.
 2. **`setMeshDx` is still a dead wire.** `lubricationMeshClampFactor_` now
    genuinely controls both the force cutoff *and* the AABB padding (commit 2),
    which is what makes the D2.1 "take over at gap ≲ 2h" rule expressible — but

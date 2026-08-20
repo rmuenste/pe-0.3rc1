@@ -4736,7 +4736,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       // Calculating the translational displacement
       body->gpos_ += v * dt;
 
-      w = Vec3(0,0,0);
       // Calculating the rotation angle
       const Vec3 phi( w * dt );
 

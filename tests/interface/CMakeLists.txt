@@ -62,7 +62,7 @@ add_test(
 add_executable(pe_lubrication_two_sphere_approach_test
   pe_lubrication_two_sphere_approach_test.cpp
 )
-target_link_libraries(pe_lubrication_two_sphere_approach_test PRIVATE pe_static_lubstage_fluid)
+target_link_libraries(pe_lubrication_two_sphere_approach_test PRIVATE pe_static_lubstage_plain)
 add_test(
   NAME pe-lubrication-two-sphere-approach
   COMMAND pe_lubrication_two_sphere_approach_test
@@ -71,7 +71,7 @@ add_test(
 add_executable(pe_lubrication_bounce_stokes_test
   pe_lubrication_bounce_stokes_test.cpp
 )
-target_link_libraries(pe_lubrication_bounce_stokes_test PRIVATE pe_static_lubstage_plain)
+target_link_libraries(pe_lubrication_bounce_stokes_test PRIVATE pe_static_lubstage_fluid)
 add_test(
   NAME pe-lubrication-bounce-stokes
   COMMAND pe_lubrication_bounce_stokes_test

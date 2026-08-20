@@ -209,6 +209,26 @@ int main() {
   }
 
   //---------------------------------------------------------------------------------
+  // 2b. Rotation survives the solver at all
+  //
+  // HardContactAndFluid used to contain `w = Vec3(0,0,0);` in integratePositions -- a
+  // debugging artifact from a run where angular velocity blew up, which silently made
+  // every body non-rotating. The lubrication sliding/twisting torques were computed and
+  // then discarded, and any rotational physics under this solver (a tumbling DKT pair,
+  // say) was suppressed without a diagnostic. Pinned here so it cannot creep back.
+  //---------------------------------------------------------------------------------
+  {
+    mobile->setPosition(0.0, 0.0, 40.0 * radius);
+    mobile->setLinearVel(0.0, 0.0, 0.0);
+    mobile->setAngularVel(0.0, 3.0, 0.0);
+    world->simulationStep(dt);
+    expect(mobile->getAngularVel()[1] != real(0),
+          "solver preserves angular velocity (no unconditional w = 0)");
+    std::printf("\n[rotation] free spin w_y after one step = %.10g (set to 3)\n",
+                (double)mobile->getAngularVel()[1]);
+  }
+
+  //---------------------------------------------------------------------------------
   // 3. The switch is honest: off means exactly nothing
   //---------------------------------------------------------------------------------
   {

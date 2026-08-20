@@ -594,12 +594,11 @@ if(BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
    # the tests can see:
    #   *_fluid  HardContactAndFluid -- the campaign solver. Carries buoyancy, so it
    #            reproduces the legacy regression reference trajectories bit-for-bit.
-   #            It also zeroes angular velocity unconditionally in integratePositions
-   #            (a long-standing application-specific choice, unchanged here), so
-   #            lubrication torques are not observable under it.
    #   *_plain  HardContactSemiImplicitTimesteppingSolvers -- the neutral hard-contact
-   #            pipeline. Preserves rotation, so it is where the sliding/twisting
-   #            torque assertions live.
+   #            pipeline, with neither buoyancy nor the application velocity limiter.
+   #
+   # Both are exercised on purpose: the add-on claims to work with ANY hard-contact
+   # pipeline (D2.2 §1), and a claim with no test on the second pipeline is untested.
    function( pe_add_lubstage_library name solver )
       add_library( ${name} STATIC EXCLUDE_FROM_ALL ${PE_ALL} )
       # The solver must be forced via compile OPTIONS, not compile DEFINITIONS: CMake
