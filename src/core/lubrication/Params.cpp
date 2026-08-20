@@ -131,6 +131,8 @@ real aabbPadding( real bodyRadius )
    if( cutoffFactor <= real(0) )
       return lubricationThresh;
    return cutoffFactor * bodyRadius;
+}
+
 real getShadowCopyMargin()
 {
    return shadowCopyMargin;

@@ -118,7 +118,6 @@ SimulationConfig::SimulationConfig()
     , lubricationCutoffFactor_(0.5)
     , lubricationMeshClampFactor_(0.0)
     , lubricationAabbInflation_(true)
-    , lubricationEnabled_(false)
     , lubricationCutoff_(0.0)
     , lubricationSlipLength_(0.0)
     , zWallsEnabled_(false)
@@ -457,9 +456,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("lubricationAabbInflation_"))
         config.setLubricationAabbInflation(j["lubricationAabbInflation_"].get<bool>());
-    // Pairwise lubrication in the EL solver (surface-gap trigger + slip length)
-    if (j.contains("lubricationEnabled_"))
-        config.setLubricationEnabled(j["lubricationEnabled_"].get<bool>());
+
+    // Pairwise lubrication in the EL solver (surface-gap trigger + slip length).
+    // lubricationEnabled_ is the shared master switch, read once above.
     if (j.contains("lubricationCutoff_"))
         config.setLubricationCutoff(j["lubricationCutoff_"].get<real>());
     if (j.contains("lubricationSlipLength_"))
