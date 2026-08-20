@@ -123,6 +123,38 @@ T requireValue( std::istringstream& stream, const std::string& key, const std::s
 
 
 //*************************************************************************************************
+/*!\brief Rejects anything left on the line of a fixed-arity directive.
+ *
+ * Without this, `timeStep 1.5` silently parses as 1 and leaves `.5` behind: the stream extractor
+ * for an integral type stops at the dot and reports success.
+ */
+void requireEndOfLine( std::istringstream& stream, const std::string& key, const std::string& file )
+{
+   std::string trailing;
+   if( stream >> trailing )
+      throw std::runtime_error( "Checkpoint metadata '" + file + "': directive '" + key +
+                                "' has trailing content '" + trailing + "'." );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Rejects a directive that has already been seen.
+ *
+ * A repeated directive is ambiguous, and "last one wins" would let a corrupt or concatenated
+ * sidecar quietly override an earlier, correct value.
+ */
+void requireFirstOccurrence( bool& seen, const std::string& key, const std::string& file )
+{
+   if( seen )
+      throw std::runtime_error( "Checkpoint metadata '" + file + "': directive '" + key +
+                                "' appears more than once." );
+   seen = true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Fails with a message naming the material property, its recorded and its live value.
  */
 void reportPropertyMismatch( const std::string& materialName, const std::string& property,
@@ -398,7 +430,9 @@ CheckpointMetadata readCheckpointMetadata( const boost::filesystem::path& filena
          continue;
 
       if( key == "metadataVersion" ) {
+         requireFirstOccurrence( sawVersion, key, file );
          metadata.version = requireValue<unsigned int>( stream, key, file );
+         requireEndOfLine( stream, key, file );
          if( metadata.version > checkpointMetadataVersion ) {
             std::ostringstream message;
             message << "Checkpoint metadata '" << file << "' declares layout version "
@@ -406,10 +440,11 @@ CheckpointMetadata readCheckpointMetadata( const boost::filesystem::path& filena
                     << checkpointMetadataVersion << ". Refusing to guess at its contents.";
             throw std::runtime_error( message.str() );
          }
-         sawVersion = true;
       }
       else if( key == "timeSource" ) {
+         requireFirstOccurrence( sawTimeSource, key, file );
          const std::string value = requireValue<std::string>( stream, key, file );
+         requireEndOfLine( stream, key, file );
          if( value == "driver" )
             metadata.timeSource = checkpointTimeFromDriver;
          else if( value == "pe-timestep" )
@@ -417,35 +452,40 @@ CheckpointMetadata readCheckpointMetadata( const boost::filesystem::path& filena
          else
             throw std::runtime_error( "Checkpoint metadata '" + file + "': unknown timeSource '" +
                                       value + "'." );
-         sawTimeSource = true;
       }
       else if( key == "simulationTime" ) {
+         requireFirstOccurrence( sawSimulationTime, key, file );
          metadata.simulationTime = requireValue<real>( stream, key, file );
-         sawSimulationTime = true;
+         requireEndOfLine( stream, key, file );
       }
       else if( key == "timeStep" ) {
+         requireFirstOccurrence( sawTimeStep, key, file );
          metadata.timeStep = requireValue<uint64_t>( stream, key, file );
-         sawTimeStep = true;
+         requireEndOfLine( stream, key, file );
       }
       else if( key == "stepSize" ) {
+         requireFirstOccurrence( sawStepSize, key, file );
          metadata.stepSize = requireValue<real>( stream, key, file );
-         sawStepSize = true;
+         requireEndOfLine( stream, key, file );
       }
       else if( key == "bodyCount" ) {
+         requireFirstOccurrence( sawBodyCount, key, file );
          metadata.bodyCount = requireValue<uint64_t>( stream, key, file );
-         sawBodyCount = true;
+         requireEndOfLine( stream, key, file );
       }
       else if( key == "pebBytes" ) {
+         requireFirstOccurrence( sawPebBytes, key, file );
          metadata.pebBytes = requireValue<uint64_t>( stream, key, file );
-         sawPebBytes = true;
+         requireEndOfLine( stream, key, file );
       }
       else if( key == "pairingTag" ) {
+         requireFirstOccurrence( sawPairingTag, key, file );
          metadata.pairingTag = readRestOfLine( stream );  // May legitimately be empty.
-         sawPairingTag = true;
       }
       else if( key == "materialCount" ) {
+         requireFirstOccurrence( sawMaterialCount, key, file );
          declaredMaterialCount = requireValue<size_t>( stream, key, file );
-         sawMaterialCount = true;
+         requireEndOfLine( stream, key, file );
       }
       else if( key == "material" ) {
          const size_t index = requireValue<size_t>( stream, key, file );
@@ -528,6 +568,18 @@ void validateResumeExpectation( const CheckpointMetadata& metadata,
    }
 
    if( expectation.hasTime ) {
+      // The tolerance is a multiple of the checkpoint's own step size, so a missing or nonsensical
+      // step size would silently collapse the window to zero and reject every real resume.
+      if( !( metadata.stepSize > real( 0 ) ) ) {
+         std::ostringstream message;
+         configureRealOutput( message );
+         message << "Checkpoint resume refused for " << label << ": a simulation time was expected,"
+                    " but the checkpoint records a step size of " << metadata.stepSize
+                 << ". The time tolerance is expressed in step sizes and cannot be evaluated. "
+                    "Expect a step index instead, or repair the checkpoint's metadata.";
+         throw std::runtime_error( message.str() );
+      }
+
       const real tolerance = expectation.toleranceSteps * metadata.stepSize;
       const real deviation = std::abs( metadata.simulationTime - expectation.time );
       if( !( deviation <= tolerance ) ) {
