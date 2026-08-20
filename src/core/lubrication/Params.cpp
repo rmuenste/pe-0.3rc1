@@ -153,7 +153,14 @@ real aabbPadding( real bodyRadius )
       return real(0);
    if( cutoffFactor <= real(0) )
       return lubricationThresh;
-   return cutoffFactor * bodyRadius;
+
+   // Track the EFFECTIVE cutoff: when the mesh clamp is armed the force band is
+   // min(cutoffFactor*aRef, meshClampFactor*meshDx), so padding beyond that would
+   // enumerate candidate pairs the model can never act on.
+   real padding = cutoffFactor * bodyRadius;
+   if( meshClampFactor > real(0) && meshDx > real(0) )
+      padding = std::min( padding, meshClampFactor * meshDx );
+   return padding;
 }
 
 real getShadowCopyMargin()

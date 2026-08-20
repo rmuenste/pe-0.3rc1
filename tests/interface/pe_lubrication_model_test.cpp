@@ -427,9 +427,16 @@ int main() {
           "cutoff: mesh clamp c*dx binds when smaller");
     check(close(lubricationCutoff(real(0.1)), real(0.05), real(0)),
           "cutoff: relative bound binds when smaller than clamp");
-    check(close(aabbPadding(real(2)), real(1), real(0)),
-          "padding: mesh clamp NOT applied to padding (superset of force band)");
+    // D2.2 §3.4: padding tracks the EFFECTIVE cutoff, mesh clamp included -- never
+    // inflate by more than the band the model can act on. Pair detection keeps a 2x
+    // margin regardless, because both partners carry the padding.
+    check(close(aabbPadding(real(2)), real(0.2), real(0)),
+          "padding: mesh clamp IS applied to padding (effective cutoff)");
+    check(close(aabbPadding(real(0.1)), real(0.05), real(0)),
+          "padding: relative bound still binds when smaller than the clamp");
     setMeshDx(real(0));
+    check(close(aabbPadding(real(2)), real(1), real(0)),
+          "padding: clamp inactive without dx -> relative band");
     check(close(lubricationCutoff(real(2)), real(1), real(0)),
           "cutoff: clamp inactive without dx");
 
