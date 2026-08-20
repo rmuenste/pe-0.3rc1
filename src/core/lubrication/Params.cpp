@@ -12,6 +12,13 @@
 namespace pe {
 namespace lubrication {
 
+// Hot-path gate flags: defined here, read through the inline accessors in Params.h so
+// the per-candidate-pair detection branch does not become a function call.
+namespace detail {
+bool enabledFlag      = false;   // Lubrication is opt-in; must match SimulationConfig
+bool securityZoneFlag = false;   // Set by ShortRangeRepulsion, never from json
+}  // namespace detail
+
 namespace {
 real contactHystDelta  = real(0);
 real lubricationHystDelta = real(0);
@@ -40,8 +47,6 @@ real meshDx           = real(0);
 bool aabbInflation    = true;
 real maxSphereRadius  = real(0);
 real shadowCopyMargin  = real(0);     // Off unless lubrication setup enables it
-bool enabled          = false;
-bool securityZone     = false;        // Set by ShortRangeRepulsion, never from json
 real minGap           = real(1e-8);   // Mirrors SimulationConfig::minEpsLub_
 real alphaImpulseCap  = real(1);      // Mirrors SimulationConfig::alphaImpulseCap_
 }  // namespace
@@ -76,8 +81,7 @@ void setLubricationThreshold( real threshold )
    lubricationThresh = threshold;
 }
 
-bool isEnabled()              { return enabled; }
-void setEnabled( bool on )    { enabled = on; }
+void setEnabled( bool on )    { detail::enabledFlag = on; }
 
 int  getModel()               { return model; }
 void setModel( int m )        { model = m; }
@@ -121,8 +125,7 @@ void setMinGap( real gap )    { minGap = gap; }
 real getAlphaImpulseCap()          { return alphaImpulseCap; }
 void setAlphaImpulseCap( real a )  { alphaImpulseCap = a; }
 
-bool getSecurityZone()          { return securityZone; }
-void setSecurityZone( bool on ) { securityZone = on; }
+void setSecurityZone( bool on ) { detail::securityZoneFlag = on; }
 
 real getMaxSphereRadius()     { return maxSphereRadius; }
 
@@ -150,9 +153,9 @@ real aabbPadding( real bodyRadius )
    // whatever the security zone does. Taking the max is the only choice that keeps
    // both bands inside the broad phase; an early return for either one silently
    // drops the other's pairs before fine detection ever sees them.
-   real padding = securityZone ? lubricationThresh : real(0);
+   real padding = detail::securityZoneFlag ? lubricationThresh : real(0);
 
-   if( enabled && aabbInflation ) {
+   if( detail::enabledFlag && aabbInflation ) {
       real lubBand;
       if( cutoffFactor <= real(0) ) {
          lubBand = lubricationThresh;              // legacy absolute cutoff

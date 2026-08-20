@@ -36,8 +36,27 @@ void setLubricationThreshold( real threshold );
 // Enum values for model/scheme are ModelKind/SchemeKind from LubricationModel.h.
 //=================================================================================================
 
+//=================================================================================================
+// HOT-PATH GATE
+//
+// isEnabled() and getSecurityZone() are read by MaxContacts::collideSphereSphere /
+// collideSpherePlane once per CANDIDATE PAIR fed by the HashGrids broad phase -- the
+// hottest loop the add-on touches, and the one the compile-time macro used to cost
+// nothing at all (D2.2 §8). Out-of-line definitions in Params.cpp would put two real
+// function calls there in any build without LTO.
+//
+// The two flags are therefore extern variables read through inline accessors, so the
+// disabled path compiles to a single predictable branch on a hot global. Writes still
+// go through the out-of-line setters in Params.cpp, which stay the only mutation point.
+//=================================================================================================
+
+namespace detail {
+extern bool enabledFlag;        //!< Mirror of the master switch; write via setEnabled()
+extern bool securityZoneFlag;   //!< Mirror of the security zone; write via setSecurityZone()
+}  // namespace detail
+
 // Master switch for lubrication contacts/forces
-bool isEnabled();
+inline bool isEnabled() { return detail::enabledFlag; }
 void setEnabled( bool enabled );
 
 // Force model: 0 = Kroupa 2016, 1 = legacy (ModelKind)
@@ -109,7 +128,7 @@ void setAlphaImpulseCap( real alpha );
 // deliberately does not touch it.
 //=================================================================================================
 
-bool getSecurityZone();
+inline bool getSecurityZone() { return detail::securityZoneFlag; }
 void setSecurityZone( bool on );
 
 // True when fine detection must run its extended-range branch at all: either
