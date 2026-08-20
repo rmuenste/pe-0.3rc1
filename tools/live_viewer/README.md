@@ -14,8 +14,10 @@ cmake --build build-viewer --target pe_live_viewer -j
 ```
 
 Polyscope `v2.3.0` and ImPlot `v0.16` are downloaded via `FetchContent` at configure time;
-nothing is added to the core PE build. Requires `pe_CONSTRAINT_SOLVER` to be
-`pe::response::HardContactLubricated` (the current default in `pe/config/Collisions.h`).
+nothing is added to the core PE build. Requires `pe_CONSTRAINT_SOLVER` to be a
+lubrication-stage-capable solver, i.e. `pe::response::HardContactAndFluid` (configure in
+`pe/config/Collisions.h`). Lubrication itself is a runtime switch: the viewer calls
+`pe::lubrication::setEnabled(true)` at startup and exposes it as the "enabled" toggle.
 
 On Debian/Ubuntu (including WSL2 with WSLg) the GLFW build inside Polyscope needs the X11
 development packages:
@@ -28,7 +30,7 @@ sudo apt install xorg-dev libgl1-mesa-dev
 
 - `live_viewer.cpp` — scenario construction (sphere column over a plane), the PE→Polyscope
   mirror, the per-frame callback (stepping, controls, plots), and the registry entries for
-  the lubrication knobs (`pe::lubrication::*`, `minEpsLub`, world viscosity/damping/gravity).
+  the lubrication knobs (`pe::lubrication::*`, `minGap`, world viscosity/damping/gravity).
 - `ParamRegistry.h` — `{name, range, getter, setter}` parameter descriptions; the GUI
   iterates the registry, so a new tweakable is one `push_back`.
 
@@ -40,7 +42,7 @@ Parameters come in two flavors: the **live** groups apply immediately mid-run; t
 - Boxes/capsules: register a unit-size `polyscope::registerSurfaceMesh` once and update it
   per frame with `bodyTransform()` (see the template in `live_viewer.cpp`).
 - Per-contact lubrication forces in the plots need a small accessor/callback surface on
-  `HardContactLubricated`; the current plots use kinematics of the probe sphere plus the
+  `pe/core/lubrication/LubricationStage.h`; the current plots use kinematics of the probe sphere plus the
   analytic model curve, which needs no engine changes.
 
 ## See also

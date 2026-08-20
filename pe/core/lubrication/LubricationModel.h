@@ -5,8 +5,8 @@
  *
  *  This header isolates the complete pairwise lubrication closure so it can be unit-tested
  *  without standing up a full PE world (MPI, domain, body storage, collision pipeline).
- *  The collision system specialization for response::HardContactLubricated calls into it
- *  from its lubrication contact loop.
+ *  The shared lubrication stage (pe/core/lubrication/LubricationStage.h) calls into it
+ *  from its contact loop, on behalf of whichever collision system invoked the stage.
  *
  *  Model reference:
  *    M. Kroupa, M. Vonka, M. Soos, J. Kosek, "Utilizing the Discrete Element Method for the

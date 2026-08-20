@@ -4,8 +4,8 @@
 //
 //  SYNC CONTRACT: this file mirrors, function-for-function, the C++ source of truth:
 //    - pe/core/lubrication/LubricationModel.h        (coefficients, slip, saturation, wrench)
-//    - pe/core/collisionsystem/HardContactLubricated.h (per-step impulse: semi-implicit /
-//                                                        explicit-capped, expClamp)
+//    - pe/core/lubrication/LubricationStage.h        (per-step impulse: semi-implicit /
+//                                                     explicit-capped, expClamp)
 //    - pe/core/detection/fine/MaxContacts.h          (blend-weight ramp)
 //    - src/core/lubrication/Params.cpp               (outer cutoff)
 //  Every coefficient below carries its source line. If you change the model in C++, change it
@@ -214,7 +214,7 @@ function lubricationCutoff(aRef, cfg) {
 }
 
 //=================================================================================================
-//  Per-step EFFECTIVE force = blend * impulse / dt — HardContactLubricated.h:2405-2455
+//  Per-step EFFECTIVE force = blend * impulse / dt — LubricationStage.h
 //  Returns dimensional { normalF, slideF, slideM, twistM } as applied by the solver.
 //=================================================================================================
 
@@ -279,7 +279,7 @@ function applyNormal(FnMag, vrn, blend, cfg, step) {
 //  Reference radius / geometry
 //=================================================================================================
 
-// a_ref defines eps = h/aRef — HardContactLubricated.h:2310-2329
+// a_ref defines eps = h/aRef — LubricationStage.h
 function refRadius(wall, r1, r2) {
    if (wall) return r1;                 // sphere-plane: a_ref = R_sphere
    return (2 * r1 * r2) / (r1 + r2);    // sphere-sphere: a_ref = 2 R1 R2/(R1+R2)

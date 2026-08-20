@@ -4,7 +4,7 @@
  *  \brief Level-2 rheology skeleton: sheared monodisperse suspension (Kroupa et al. 2016)
  *
  *  Boundary-driven simple shear of N monodisperse spheres between two plane walls, using the
- *  HardContactLubricated solver with the Kroupa-2016 lubrication model. Shear is imposed by
+ *  HardContactAndFluid solver with the Kroupa-2016 lubrication model. Shear is imposed by
  *  velocity-pinning thin particle layers at the top/bottom walls (PE plane walls carry no
  *  measurable reaction force, so the paper's wall force balance eqs 25-33 is replaced by the
  *  equivalent bulk virial): the lubrication contribution to the suspension shear stress is
@@ -16,8 +16,9 @@
  *  (compare against Krieger-Dougherty / Maron-Pierce, paper Fig. 3); production runs sweep
  *  phi and average over a longer steady-state window.
  *
- *  Build note: requires pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated
- *  (configure with -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated").
+ *  Build note: requires pe_CONSTRAINT_SOLVER == pe::response::HardContactAndFluid
+ *  (configure with -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid").
+ *  Lubrication is enabled at runtime below via pe::lubrication::setEnabled( true ).
  *
  *  Usage: shear_cell_kroupa [phi] [steps] [gammaDot]   (defaults: 0.3, 2000, 100 1/s)
  */
@@ -58,9 +59,9 @@ int main(int argc, char* argv[]) {
   world->setLiquidDensity(1000.0);
   world->setDamping(1.0);
 
-  theCollisionSystem()->setContactHysteresisDelta(0.0);
-  theCollisionSystem()->setLubricationHysteresisDelta(0.0);
-  theCollisionSystem()->setMinEpsLub(1e-12);
+  lubrication::setContactHysteresisDelta(0.0);
+  lubrication::setLubricationHysteresisDelta(0.0);
+  lubrication::setMinGap(1e-12);
   lubrication::setEnabled(true);
   lubrication::setModel(lubrication::modelKroupa2016);
   lubrication::setScheme(lubrication::schemeSemiImplicit);

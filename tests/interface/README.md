@@ -83,7 +83,7 @@ ctest --test-dir build-interface-mpi -R pe-interface-frozen-field --output-on-fa
   cutoff/AABB-padding helpers. Runs in every build.
 - `pe-lubrication-legacy-regression`, `pe-lubrication-two-sphere-approach`,
   `pe-lubrication-bounce-stokes`: World-based Level-1 validation of the
-  HardContactLubricated solver (bit-for-bit legacy gate; paper Fig. 7 approach curve
+  shared lubrication stage (bit-for-bit legacy gate; paper Fig. 7 approach curve
   with slip/saturation; immersed wall impact with dt sweep and tangential/twist sanity).
   These need the lubricated constraint solver and self-report as SKIPPED (exit 77)
   under any other `pe_CONSTRAINT_SOLVER`. Lubricated build:
@@ -91,7 +91,6 @@ ctest --test-dir build-interface-mpi -R pe-interface-frozen-field --output-on-fa
 ```bash
 cmake -S . -B build-interface-tests-hcl -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC \
   -DBUILD_TESTING=ON -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON \
-  -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactLubricated"
 cmake --build build-interface-tests-hcl -j
 ctest --test-dir build-interface-tests-hcl -R pe-lubrication --output-on-failure
 ```

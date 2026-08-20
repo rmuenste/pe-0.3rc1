@@ -84,7 +84,6 @@ class CollisionSystem;
 // FFDSolver headers) locked in the non-lubrication path through the include guard. The
 // branch is now a runtime check (lubrication::contactGenerationEnabled()), so include
 // order no longer changes what is compiled.
-#include <pe/core/collisionsystem/HardContactLubricated.h>
 #include <pe/core/collisionsystem/ShortRangeRepulsion.h>
 #include <pe/core/collisionsystem/DEMSolverObsolete.h>
 #include <pe/core/collisionsystem/DEMSolver.h>

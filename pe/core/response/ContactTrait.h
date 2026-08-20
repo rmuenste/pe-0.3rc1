@@ -97,30 +97,6 @@ inline ContactTrait<C>::ContactTrait( GeomID /*g1*/, GeomID /*g2*/,
 
 //=================================================================================================
 //
-//  SPECIALIZATION FOR THE HARD CONTACT LUBRICATED SOLVER
-//
-//=================================================================================================
-
-//*************************************************************************************************
-/*!\brief Specialization of ContactTrait to carry a lubrication flag for HardContactLubricated.
- */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-class ContactTrait< C<CD,FD,BG,HardContactLubricated> >
-   : public lubrication::ContactState
-{
-public:
-   explicit ContactTrait( GeomID /*g1*/, GeomID /*g2*/, const Vec3& /*gpos*/, const Vec3& /*normal*/ ) {}
-};
-//*************************************************************************************************
-//=================================================================================================
-//
 //  SPECIALIZATION FOR THE BOX FRICTION CONTACT SOLVER
 //
 //=================================================================================================

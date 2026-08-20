@@ -8,7 +8,8 @@
 #include <pe/core/Thresholds.h>
 #include <pe/core/Settings.h>
 #include <pe/core/Configuration.h>
-#include <pe/core/collisionsystem/HardContactLubricated.h>
+#include <pe/core/collisionsystem/HardContactAndFluid.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/Types.h>
 
 namespace pe::examples::lubrication {
@@ -19,12 +20,13 @@ using LubricatedConfig = pe::Configuration<
    pe_COARSE_COLLISION_DETECTOR,
    pe_FINE_COLLISION_DETECTOR,
    pe_BATCH_GENERATOR,
-   pe::response::HardContactLubricated
+   pe::response::HardContactAndFluid
 >::Config;
 
 static_assert( std::is_same<LubricatedConfig, pe::Config>::value,
-   "examples/lubrication_demo requires pe::response::HardContactLubricated as pe_CONSTRAINT_SOLVER.\n"
-   "Define PE_USE_LEGACY_HARD_CONTACT only if you intentionally disable lubrication support." );
+   "examples/lubrication_demo requires pe::response::HardContactAndFluid as pe_CONSTRAINT_SOLVER\n"
+   "(configure with -Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid).\n"
+   "Lubrication itself is a runtime switch: pe::lubrication::setEnabled( true )." );
 
 } // namespace detail
 
@@ -47,11 +49,19 @@ struct DemoConfig {
    bool verbose{ true };
 };
 
+//! Master switch for the lubrication stage.
+/*! Lubrication used to be implied by selecting the HardContactLubricated solver at compile
+    time. With the stage-based HardContactAndFluid solver it is a runtime switch, so the demo
+    turns it on explicitly. */
+inline void enableLubrication()
+{
+   pe::lubrication::setEnabled( true );
+}
+
 inline void applyBlendParameters( pe::real contactBlend, pe::real lubricationBlend )
 {
-   CollisionSystemID collisionSystem = theCollisionSystem();
-   collisionSystem->setContactHysteresisDelta( contactBlend );
-   collisionSystem->setLubricationHysteresisDelta( lubricationBlend );
+   pe::lubrication::setContactHysteresisDelta( contactBlend );
+   pe::lubrication::setLubricationHysteresisDelta( lubricationBlend );
 }
 
 inline std::string_view phaseName( std::size_t step, const DemoConfig& cfg )

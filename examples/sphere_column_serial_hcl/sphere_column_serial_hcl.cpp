@@ -1,11 +1,12 @@
 //=================================================================================================
 /*!
  *  \file sphere_column_serial_hcl.cpp
- *  \brief Serial stacked-sphere HardContactLubricated (HCL) thin-column test.
+ *  \brief Serial stacked-sphere lubricated thin-column test.
  *
  *  Mirrors the ShortRangeRepulsion sphere_column_serial example but uses the
- *  HardContactLubricated solver (Stokes lubrication + hard-contact complementarity).
- *  Intended for side-by-side comparison of SRR vs HCL settling behaviour,
+ *  HardContactAndFluid solver with the lubrication stage enabled at runtime
+ *  (Stokes lubrication + hard-contact complementarity).
+ *  Intended for side-by-side comparison of SRR vs lubricated settling behaviour,
  *  equilibrium position, and per-step cost.
  *
  *  Parameters are converted from Pan et al. (2002) CGS to SI:
@@ -16,13 +17,14 @@
  *    SRR zone ρ  = 0.06858 cm           → 6.858e-4 m   (= 0.2168 a)
  *    density  ρs = 1.14 g/cm³           → 1140 kg/m³
  *
- *  HCL uses physical Stokes lubrication instead of SRR penalty forces.
+ *  The lubrication stage uses physical Stokes lubrication instead of SRR penalty forces.
  *  Fluid properties (water at ~20°C): μ = 1e-3 Pa·s, ρ_f = 1000 kg/m³.
- *  Time step is 10× smaller than SRR (1e-4 s vs 1e-3 s) since HCL has
- *  no sub-cycling; total simulation time remains 0.3 s.
+ *  Time step is 10× smaller than SRR (1e-4 s vs 1e-3 s) since the lubrication
+ *  stage has no sub-cycling; total simulation time remains 0.3 s.
  *
- *  Compile-time guard: this binary requires pe_CONSTRAINT_SOLVER =
- *  pe::response::HardContactLubricated in pe/config/Collisions.h.
+ *  Build note: configure pe_CONSTRAINT_SOLVER = pe::response::HardContactAndFluid in
+ *  pe/config/Collisions.h. Lubrication is switched on at runtime below via
+ *  pe::lubrication::setEnabled( true ).
  */
 //=================================================================================================
 
@@ -33,14 +35,16 @@
 #include <vector>
 
 #include <pe/core.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/util.h>
 #include <pe/vtk.h>
 
 #include <pe/support.h>
 
-// NOTE: This example requires pe_CONSTRAINT_SOLVER = pe::response::HardContactLubricated
-// in pe/config/Collisions.h.  If the wrong solver is configured, the HCL-specific API calls
-// (setLubricationThreshold, setMinEpsLub, etc.) will produce compile errors.
+// NOTE: This example requires a lubrication-stage-capable constraint solver, i.e.
+// pe_CONSTRAINT_SOLVER = pe::response::HardContactAndFluid in pe/config/Collisions.h.
+// The lubrication knobs themselves are runtime free functions (pe::lubrication::*) and
+// compile against any solver, but only a stage-capable solver applies the forces.
 
 using namespace pe;
 
@@ -49,7 +53,7 @@ bool singleSphereTest( false );
 unsigned int g_numRows( 5 );  // configurable via --num-rows
 
 //=================================================================================================
-// Single-sphere floor-impact test (HCL version)
+// Single-sphere floor-impact test (lubricated version)
 //=================================================================================================
 void doSingleSphereTestHCL()
 {
@@ -73,15 +77,20 @@ void doSingleSphereTestHCL()
    world->setLiquidDensity( liquidDens );
    world->setLiquidSolid( true );
 
-   MaterialID mat = createMaterial( "test", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-   createPlane( 9999, 0.0, 0.0, 1.0, 0.0, mat, true );  // floor at z = 0
-
-   // Configure HardContactLubricated solver
-   theCollisionSystem()->setLubricationThreshold( lubThreshold );
-   theCollisionSystem()->setMinEpsLub( real(1e-8) );
-   theCollisionSystem()->setAlphaImpulseCap( real(1.0) );
+   // Configure the runtime lubrication stage (formerly HardContactLubricated members).
+   // Set before any body is created so AABB inflation sees the final cutoff.
+   // The hysteresis half-widths reproduce the defaults that solver used to install.
+   pe::lubrication::setEnabled( true );
+   pe::lubrication::setLubricationThreshold( lubThreshold );
+   pe::lubrication::setMinGap( real(1e-8) );
+   pe::lubrication::setAlphaImpulseCap( real(1.0) );
+   pe::lubrication::setContactHysteresisDelta( real(1e-9) );
+   pe::lubrication::setLubricationHysteresisDelta( real(1e-3) );
    theCollisionSystem()->setMaxIterations( 100 );
    theCollisionSystem()->setErrorReductionParameter( real(0.8) );
+
+   MaterialID mat = createMaterial( "test", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
+   createPlane( 9999, 0.0, 0.0, 1.0, 0.0, mat, true );  // floor at z = 0
 
    // Drop sphere from gap = 10*lubThreshold above floor
    SphereID s = createSphere( 0,
@@ -89,11 +98,11 @@ void doSingleSphereTestHCL()
                               radParticle, mat, true );
 
    std::cout << std::fixed << std::setprecision(8);
-   std::cout << "\n--- Single-sphere HCL floor-impact test (Pan et al. 2002 geometry) ---\n"
+   std::cout << "\n--- Single-sphere lubricated floor-impact test (Pan et al. 2002 geometry) ---\n"
              << "  radius         = " << radParticle << " m  (0.3175 cm)\n"
              << "  rho_s          = " << rhoParticle << " kg/m3\n"
              << "  lubThreshold   = " << lubThreshold << " m  (matches SRR rho)\n"
-             << "  minEpsLub      = 1e-8\n"
+             << "  minGap         = 1e-8\n"
              << "  alphaImpulseCap= 1.0\n"
              << "  viscosity      = " << liquidVisc  << " Pa.s\n"
              << "  liquidDensity  = " << liquidDens  << " kg/m3\n"
@@ -139,7 +148,7 @@ void doSingleSphereTestHCL()
 }
 
 //=================================================================================================
-// Thin-column stacked-sphere test (HCL version) — Pan et al. (2002) geometry
+// Thin-column stacked-sphere test (lubricated version) — Pan et al. (2002) geometry
 //=================================================================================================
 void doColumnTestHCL()
 {
@@ -199,6 +208,18 @@ void doColumnTestHCL()
    world->setLiquidDensity( liquidDens );
    world->setLiquidSolid( true );
 
+   // Configure the runtime lubrication stage (formerly HardContactLubricated members).
+   // Set before any body is created so AABB inflation sees the final cutoff.
+   // The hysteresis half-widths reproduce the defaults that solver used to install.
+   pe::lubrication::setEnabled( true );
+   pe::lubrication::setLubricationThreshold( lubThreshold );
+   pe::lubrication::setMinGap( real(1e-8) );
+   pe::lubrication::setAlphaImpulseCap( real(1.0) );
+   pe::lubrication::setContactHysteresisDelta( real(1e-9) );
+   pe::lubrication::setLubricationHysteresisDelta( real(1e-3) );
+   theCollisionSystem()->setMaxIterations( 100 );
+   theCollisionSystem()->setErrorReductionParameter( real(0.8) );
+
    MaterialID mat = createMaterial( "test", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
 
    // Bounding box: floor + 4 side walls (open top).
@@ -207,13 +228,6 @@ void doColumnTestHCL()
    createPlane( 9002, -1.0,  0.0,  0.0, -boxX,  mat, true );  // right wall: x = boxX
    createPlane( 9003,  0.0,  1.0,  0.0,  0.0,   mat, true );  // back wall:  y = 0
    createPlane( 9004,  0.0, -1.0,  0.0, -boxY,  mat, true );  // front wall: y = boxY
-
-   // Configure HardContactLubricated solver
-   theCollisionSystem()->setLubricationThreshold( lubThreshold );
-   theCollisionSystem()->setMinEpsLub( real(1e-8) );
-   theCollisionSystem()->setAlphaImpulseCap( real(1.0) );
-   theCollisionSystem()->setMaxIterations( 100 );
-   theCollisionSystem()->setErrorReductionParameter( real(0.8) );
 
    // Create sphere stack: simple square lattice, single layer in y
    std::vector<SphereID> spheres;
@@ -232,7 +246,7 @@ void doColumnTestHCL()
    const real gapY = y0 - radParticle;
 
    std::cout << std::fixed << std::setprecision(6)
-             << "\n--- Stacked-sphere HCL column test (Pan et al. 2002 geometry) ---\n"
+             << "\n--- Stacked-sphere lubricated column test (Pan et al. 2002 geometry) ---\n"
              << "  box x          = " << boxX*real(1e2) << " cm  y = " << boxY*real(1e3) << " mm\n"
              << "  radius         = " << radParticle*real(1e3) << " mm\n"
              << "  d_eff          = " << dEff*real(1e3) << " mm  (d + rho)\n"

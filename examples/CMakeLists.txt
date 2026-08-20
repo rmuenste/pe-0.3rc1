@@ -17,7 +17,7 @@ add_subdirectory(capsule_spin)
 add_subdirectory(vtk_shapes_ascii)
 add_subdirectory(vtk_writer_test)  # VTK Writer verification test
 add_subdirectory(sphere_column_serial)  # Serial sphere column with ShortRangeRepulsion solver
-add_subdirectory(sphere_column_serial_hcl)  # Serial sphere column with HardContactLubricated solver
+add_subdirectory(sphere_column_serial_hcl)  # Serial sphere column with HardContactAndFluid solver + lubrication stage
 add_subdirectory(shear_cell_kroupa)  # Level-2 rheology skeleton (Kroupa 2016 lubrication)
 
 # CGAL Examples

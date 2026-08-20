@@ -1,10 +1,10 @@
 //=================================================================================================
 /*!
  *  \file basic_lubrication.cpp
- *  \brief Minimal sphere-plane setup for the HardContactLubricated solver stack
+ *  \brief Minimal sphere-plane setup for the HardContactAndFluid solver stack
  *
  *  This example is intended to provide a lightweight regression/diagnostic case to exercise
- *  the HardContactLubricated solver configuration.  It drops a single sphere onto a ground plane
+ *  the lubrication stage.  It drops a single sphere onto a ground plane
  *  (normal n = (0,0,1) through the origin) and reports the gap evolution so that lubrication
  *  forces and solver settings can be tuned and verified independently from complex meshes.
  *
@@ -42,6 +42,7 @@
 #include <iostream>
 #include <limits>
 #include <pe/core.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/support.h>
 #include <pe/vtk.h>
 
@@ -107,7 +108,8 @@ int main( int argc, char* argv[] )
              << " radius       : " << radius << "\n"
              << " start height : " << startHeight << "\n"
              << " lubrication  : " << ( useLubrication ? "enabled" : "disabled" ) << std::endl;
-   std::cout << " NOTE: Configure pe_CONSTRAINT_SOLVER to pe::response::HardContactLubricated for this example."
+   std::cout << " NOTE: Configure pe_CONSTRAINT_SOLVER to pe::response::HardContactAndFluid for this example;"
+                " lubrication itself is switched on at runtime via pe::lubrication::setEnabled()."
              << std::endl;
 
    WorldID world = theWorld();
@@ -117,10 +119,12 @@ int main( int argc, char* argv[] )
    world->setLiquidSolid( true );
    world->setDamping( 1.0 );
 
-   // Configure collision system parameters relevant for the HardContactLubricated solver stack.
-   theCollisionSystem()->setLubrication( useLubrication );
-   theCollisionSystem()->setSlipLength( 0.01 );
-   theCollisionSystem()->setMinEps( 0.005 );
+   // Runtime lubrication configuration for the HardContactAndFluid solver stack. The master
+   // switch used to be implied by the solver choice; it is now explicit. The hysteresis
+   // half-widths reproduce the defaults the retired HardContactLubricated solver installed.
+   pe::lubrication::setEnabled( useLubrication );
+   pe::lubrication::setContactHysteresisDelta( real(1e-9) );
+   pe::lubrication::setLubricationHysteresisDelta( real(1e-3) );
    theCollisionSystem()->setErrorReductionParameter( 0.05 );
 
    unsigned int id( 0U );
@@ -178,7 +182,7 @@ int main( int argc, char* argv[] )
 
    if( !useLubrication ) {
       std::cout << " Lubrication forces were disabled via --no-lubrication; "
-                   "re-run without that switch to exercise the HardContactLubricated solver."
+                   "re-run without that switch to exercise the lubrication stage."
                 << std::endl;
    }
 

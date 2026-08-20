@@ -3,15 +3,17 @@
  *  \file tools/live_viewer/live_viewer.cpp
  *  \brief Interactive Polyscope viewer for small lubrication scenarios
  *
- *  Live viewer for the HardContactLubricated solver stack: a small column of spheres
+ *  Live viewer for the lubrication stage: a small column of spheres
  *  settles onto a ground plane while all runtime lubrication knobs (pe::lubrication::*,
  *  see doc/technical-notes/lubrication-production-design.md) are exposed as ImGui widgets
  *  through a declarative parameter registry (ParamRegistry.h). ImPlot panes show the probe
  *  sphere's gap/velocity history plus the analytic Kroupa wall-normal resistance for the
  *  current knob values, so model parameters can be tuned with immediate visual feedback.
  *
- *  Requires pe_CONSTRAINT_SOLVER == pe::response::HardContactLubricated (the current
- *  default in pe/config/Collisions.h).
+ *  Requires a lubrication-stage-capable constraint solver, i.e.
+ *  pe_CONSTRAINT_SOLVER == pe::response::HardContactAndFluid (configure in
+ *  pe/config/Collisions.h). Lubrication itself is a runtime switch and is turned on
+ *  in main() via pe::lubrication::setEnabled( true ).
  */
 //=================================================================================================
 
@@ -361,10 +363,10 @@ void setupParamRegistry()
    cutoffs.reals.push_back( { "lubrication hysteresis", 1.0e-8f, 1.0e-3f, true,
       []() { return static_cast<double>( lub::getLubricationHysteresisDelta() ); },
       []( double v ) { lub::setLubricationHysteresisDelta( static_cast<real>( v ) ); } } );
-   cutoffs.reals.push_back( { "min eps (gap clamp)", 1.0e-10f, 1.0e-4f, true,
-      []() { return static_cast<double>( theCollisionSystem()->getMinEpsLub() ); },
-      []( double v ) { theCollisionSystem()->setMinEpsLub( static_cast<real>( v ) ); },
-      "Minimal lubrication gap regularization (minEpsLub)" } );
+   cutoffs.reals.push_back( { "min gap (gap clamp)", 1.0e-10f, 1.0e-4f, true,
+      []() { return static_cast<double>( lub::getMinGap() ); },
+      []( double v ) { lub::setMinGap( static_cast<real>( v ) ); },
+      "Minimal lubrication gap regularization (pe::lubrication::setMinGap)" } );
    cutoffs.bools.push_back( { "AABB inflation",
       []() { return lub::getAabbInflation(); },
       []( bool b ) { lub::setAabbInflation( b ); },
@@ -548,7 +550,11 @@ int main( int, char** )
    world->setLiquidSolid( true );
    world->setDamping( 1.0 );
 
+   // Lubrication is a runtime switch on the shared stage. The hysteresis half-widths
+   // reproduce the defaults the retired HardContactLubricated solver used to install.
    lubrication::setEnabled( true );
+   lubrication::setContactHysteresisDelta( real(1e-9) );
+   lubrication::setLubricationHysteresisDelta( real(1e-3) );
    theCollisionSystem()->setErrorReductionParameter( static_cast<real>( kScenarioErp ) );
 
    polyscope::options::programName = "PE live viewer";

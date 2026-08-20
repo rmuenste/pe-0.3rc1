@@ -4,7 +4,7 @@
  *  \brief Lightweight access to runtime lubrication parameters and switches
  *
  *  Free-function global store so detection code (MaxContacts), bounding-box code
- *  (SphereBase/PlaneBase) and the HardContactLubricated solver can read runtime-configured
+ *  (SphereBase/PlaneBase) and the lubrication stage can read runtime-configured
  *  lubrication parameters without depending on the CollisionSystem or SimulationConfig
  *  headers. Values are pushed in from the interface layer (applyOptionalLubricationParams)
  *  after SimulationConfig::loadFromFile, or set programmatically.

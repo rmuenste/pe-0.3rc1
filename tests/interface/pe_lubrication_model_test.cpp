@@ -1,7 +1,7 @@
 // Unit test for the pairwise lubrication model (Kroupa et al., Langmuir 2016).
 //
-// The physics lives in pe/core/lubrication/LubricationModel.h and is called from
-// CollisionSystem<...HardContactLubricated>::resolveContacts. Exercising it through a
+// The physics lives in pe/core/lubrication/LubricationModel.h and is applied by the
+// shared stage in pe/core/lubrication/LubricationStage.h. Exercising it through a
 // real PE step would require standing up a world and the full collision pipeline;
 // instead we test the pure model directly, which is exactly what the solver evaluates,
 // so the force law is covered without that machinery.
