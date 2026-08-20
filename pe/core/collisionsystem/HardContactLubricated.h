@@ -178,6 +178,9 @@ public:
        pe::pe_CONTACT_SOLVER macro. */
    typedef response::HardContactLubricated<Config>  ContactSolver;
 
+   //! Opt-in marker: invokes the shared lubrication stage.
+   static constexpr bool hasLubricationStage = true;
+
    enum RelaxationModel {
       InelasticFrictionlessContact,
       ApproximateInelasticCoulombContactByDecoupling,

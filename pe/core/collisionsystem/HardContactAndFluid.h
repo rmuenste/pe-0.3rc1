@@ -48,6 +48,8 @@
 #include <pe/core/domaindecomp/ProcessStorage.h>
 #include <pe/core/io/BodySimpleAsciiWriter.h>
 #include <pe/core/joint/JointStorage.h>
+#include <pe/core/lubrication/LubricationStage.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPI.h>
 #include <pe/core/MPISection.h>
@@ -173,6 +175,10 @@ public:
    /*! The type of the collision response algorithm is selected by the setting of the
        pe::pe_CONTACT_SOLVER macro. */
    typedef response::HardContactAndFluid<Config>  ContactSolver;
+
+   //! Opt-in marker: this pipeline invokes the shared lubrication stage, so it honors
+   //! lubricationEnabled_ (see pe/interface/setup_optional_collision_params.h).
+   static constexpr bool hasLubricationStage = true;
 
    enum RelaxationModel {
       InelasticFrictionlessContact,
@@ -2120,6 +2126,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       }
 
       synchronizeVelocities();
+
+      // Optional lubrication add-on (D2.2). Off by default: one predictable branch,
+      // and the extra velocity synchronization -- an MPI collective -- is never
+      // reached. On, the shared stage applies Kroupa-2016 lubrication impulses to the
+      // tagged pre-contact pairs before the hard-contact solver runs below.
+      // See pe/core/lubrication/LubricationStage.h.
+      if( lubrication::isEnabled() ) {
+         lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
+
+         // Shadow copies must see the lubrication corrections before the constraint
+         // solver consumes these velocities.
+         synchronizeVelocities();
+      }
    }
 
    pe_PROFILING_SECTION {
