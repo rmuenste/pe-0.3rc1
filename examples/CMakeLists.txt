@@ -38,8 +38,15 @@ if( PE_USE_MPI )
     add_subdirectory(mpidem)
     add_subdirectory(mpidomain)
     add_subdirectory(mpiperiodic)
-    add_subdirectory(mpiperiodic_dev)
-    add_subdirectory(mpiplanedecomposition)
+    # Retired: mpiperiodic_dev and mpiplanedecomposition. Both were scratch variants of the old
+    # mpiperiodic and are not built any more. They read plane geometry from files that do not
+    # exist in the repo (planes.txt / my_planes.txt), then index the resulting empty vector; they
+    # declare `int center[2]` for a 2D Cartesian topology and then read center[2] out of bounds;
+    # and mpiperiodic itself was not even periodic (periods = { false, false }). mpiperiodic has
+    # been rewritten from scratch as a self-verifying periodic transport test. The sources are
+    # kept in the tree for reference only.
+    # add_subdirectory(mpiperiodic_dev)
+    # add_subdirectory(mpiplanedecomposition)
     add_subdirectory(mpispheres)
     add_subdirectory(mpiunion)
     add_subdirectory(rectigrid_demo)

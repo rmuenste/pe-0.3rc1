@@ -1,3 +1,45 @@
+//=================================================================================================
+/*!
+ *  \file examples/mpiperiodic/mpiperiodic.cpp
+ *  \brief Periodic transport test: one sphere crossing a periodic box at least twice
+ *
+ *  A minimal, self-verifying MPI example. The domain is a box of length \a lx in x, cut into
+ *  \a px slabs along x, one per process, and PERIODIC in x. A single sphere is launched along
+ *  +x with no gravity and nothing to collide with, so it must migrate from slab to slab, wrap
+ *  around the periodic boundary, and keep going. The example asserts that it completes at least
+ *  two full laps and that every process owned it at least twice.
+ *
+ *  HOW PERIODICITY WORKS IN PE
+ *  ---------------------------
+ *  Periodicity is expressed by the \a offset argument of connect(), not by defineLocalDomain().
+ *  The local domain is an ordinary slab in unwrapped coordinates. A neighbour that is physically
+ *  on the far side of the box is described in ITS OWN coordinates and then translated into place
+ *  by the offset:
+ *
+ *     west neighbour wrapped round the low  end (west[0] <  0 ) -> offset = ( +lx, 0, 0 )
+ *     east neighbour wrapped round the high end (east[0] == px) -> offset = ( -lx, 0, 0 )
+ *     otherwise                                                 -> offset = (   0, 0, 0 )
+ *
+ *  MPI_Cart_create() is given periods = { true }, which is what lets MPI_Cart_rank() accept an
+ *  out-of-range coordinate and wrap it to the process on the opposite face.
+ *
+ *  MINIMUM PROCESS COUNT
+ *  ---------------------
+ *  A periodic axis needs AT LEAST 3 processes, and pe does not check this for you -- it surfaces
+ *  as an exception from inside connect() (see pe/core/domaindecomp/DomainDecomposition.h):
+ *
+ *     px == 1 : center-1 and center+1 both wrap to this rank
+ *               -> "Invalid MPI rank self-connect"        (std::invalid_argument)
+ *     px == 2 : the west and east neighbours are the SAME rank, connected twice
+ *               -> "Remote process is already connected"  (std::invalid_argument)
+ *
+ *  This example therefore validates px >= 3 up front and reports it in plain language.
+ *
+ *  Usage:  mpirun -np <N> ./mpiperiodic [--laps L] [--verbose]
+ *          N must be >= 3. Every available process is used, so px = N.
+ */
+//=================================================================================================
+
 
 //*************************************************************************************************
 // Platform/compiler-specific includes
@@ -12,130 +54,16 @@
 
 #include <pe/engine.h>
 #include <pe/support.h>
+
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <iomanip>
 #include <iostream>
+#include <string>
 #include <vector>
-#include <pe/vtk.h>
-#include <boost/filesystem.hpp>
-#include <pe/util/Checkpointer.h>
-#include <pe/interface/decompose.h>
-#include <sstream>
-#include <random>
-#include <algorithm>
+
 using namespace pe;
-using namespace pe::timing;
-using namespace pe::povray;
-using boost::filesystem::path;
-
-std::vector<Vec3> planePoints;
-
-
-
-std::vector<Vec3> planeNormals;
-
-// Assert statically that only the FFD solver or a hard contact solver is used since parameters are tuned for them.
-#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C) typedef \
-   pe::CONSTRAINT_TEST< \
-      pe::CONSTRAINT_MUST_BE_SAME_TYPE_FAILED< \
-         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value \
-      >::value > \
-   pe_JOIN( CONSTRAINT_MUST_BE_SAME_TYPE_TYPEDEF, __LINE__ );
-
-typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
-typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
-pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
-
-// Function to load planes from file and create HalfSpace instances
-void makePlanesAndCreateHalfSpaces(std::vector<HalfSpace> &halfSpaces) {
-
-    int counter = 0;
-    for(auto idx(0); idx < planePoints.size(); ++idx) {
-
-        // Create a Vec3 for the normal vector
-        Vec3 normal = planeNormals[idx];
-        if (normal[0] > 0.0) {
-          normal = -normal;
-        }
-        Vec3 point = planePoints[idx];
-
-        bool originOutside = (trans(-point) * normal < 0.0);
-        //*  - > 0: The global origin is outside the half space\n
-        //*  - < 0: The global origin is inside the half space\n
-        //*  - = 0: The global origin is on the surface of the half space
-        
-        // Calculate the distance from the origin using the point-normal formula
-        double dO = std::abs(trans(point) * normal) / normal.length();
-        if (!originOutside) {
-          dO = -dO; 
-        } 
-        
-        // Create the HalfSpace instance
-        halfSpaces.emplace_back(normal, dO);
-        counter++;
-    }
-
-pe_EXCLUSIVE_SECTION(0) {   
-    // Use the print function to print each HalfSpace to stdout
-    for (const auto& hs : halfSpaces) {
-        hs.print(std::cout, "\t");  // Passing std::cout for stdout and "\t" for tabbing
-    }
-}
-    
-}
-
-// Function to load planes from file and create HalfSpace instances
-void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<HalfSpace> &halfSpaces) {
-    std::ifstream file(filename);
-    std::string line;
-    
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << "\n";
-        return;
-    }
-    int counter = 0;
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        double px, py, pz, nx, ny, nz;
-        
-        // Read the plane's point and normal from the line
-        if (!(iss >> px >> py >> pz >> nx >> ny >> nz)) {
-            std::cerr << "Error: Malformed line: " << line << "\n";
-            continue;
-        }
-
-        // Create a Vec3 for the normal vector
-        Vec3 normal(nx, ny, nz);
-        if (normal[0] > 0.0) {
-          normal = -normal;
-        }
-        Vec3 point(px, py, pz);
-
-        //std::cout << "Plane " << counter << " If " << trans(-point) * normal << " < 0 then the origin is outside." << std::endl;
-
-        bool originOutside = (trans(-point) * normal < 0.0);
-        //*  - > 0: The global origin is outside the half space\n
-        //*  - < 0: The global origin is inside the half space\n
-        //*  - = 0: The global origin is on the surface of the half space
-        
-        // Calculate the distance from the origin using the point-normal formula
-        double dO = std::abs(nx * px + ny * py + nz * pz) / normal.length();
-        if (!originOutside) {
-          dO = -dO; 
-        } 
-        
-        // Create the HalfSpace instance
-        halfSpaces.emplace_back(normal, dO);
-        counter++;
-    }
-    
-//    // Use the print function to print each HalfSpace to stdout
-//    for (const auto& hs : halfSpaces) {
-//        hs.print(std::cout, "\t");  // Passing std::cout for stdout and "\t" for tabbing
-//    }
-    
-    file.close();
-}
 
 
 //=================================================================================================
@@ -144,400 +72,241 @@ void loadPlanesAndCreateHalfSpaces(const std::string& filename, std::vector<Half
 //
 //=================================================================================================
 
-
-
-//*************************************************************************************************
-/*!\brief Main function for the mpinano example.
- *
- * \param argc Number of command line arguments.
- * \param argv Array of command line arguments.
- * \return Success of the simulation.
- *
- * Particles in a non-periodic box with non-zero initial velocities.
- */
 int main( int argc, char** argv )
 {
-
-   planePoints.push_back(Vec3(-1.047705888748169, -2.5512213706970215, 0.24490927159786224 ));
-   planePoints.push_back(Vec3(-0.035260219126939774, -2.7580153942108154, 0.1991162747144699));
-   planePoints.push_back(Vec3(1.0637520551681519, -2.544778823852539, 0.14949828386306763));
-   planePoints.push_back(Vec3(2.1019248962402344, -1.9163930416107178, 0.02711978182196617));
-
-   planeNormals.push_back(Vec3(-0.9239068627357483, 0.3802013397216797  , 0.042931802570819855));
-   planeNormals.push_back(Vec3(-0.9990096688270569, 0.012757861986756325, 0.04262349754571915));
-   planeNormals.push_back(Vec3(-0.9221128225326538, -0.38450124859809875, 0.043206337839365005));
-   planeNormals.push_back(Vec3(-0.7013657689094543, -0.7127944231033325 , -0.0031759117264300585));
-
    /////////////////////////////////////////////////////
    // Simulation parameters
 
-   // Particle parameters
-   const bool   spheres ( true   );  // Switch between spheres and granular particles
-   const real   radius  ( 0.05  );  // The radius of spheres of the granular media
-   const real   spacing ( 0.001  );  // Initial spacing in-between two spheres
-   const real   velocity( 0.0025 );  // Initial maximum velocity of the spheres
+   const real   lx       ( 1.0   );  // Length of the periodic box in x
+   const real   radius   ( 0.02  );  // Radius of the travelling sphere
+   const real   speed    ( 0.5   );  // Speed of the sphere along +x
+   const real   stepsize ( 0.001 );  // Size of a single time step
 
-   // Time parameters
-   const size_t initsteps     ( 2000  );  // Initialization steps with closed outlet door
-   const size_t timesteps     ( 5000  );  // Number of time steps for the flowing granular media
-   const real   stepsize      ( 0.005  );  // Size of a single time step
+   size_t requiredLaps( 2 );         // Laps the sphere must complete (>= 2 by the task)
+   bool   verbose     ( false );
 
-   // Process parameters
-   const int processesX( 4 );  // Number of processes in x-direction
-   const int processesZ( 1 );  // Number of processes in z-direction
-
-   // Random number generator parameters
-   const size_t seed( 12345 );
-
-   // Verbose mode
-   const bool verbose( false );  // Switches the output of the simulation on and off
-
-   // Visualization
-   bool povray( false );  // Switches the POV-Ray visualization on and off
-   bool   vtk( true );
-
-   // Visualization parameters
-   const bool   colorProcesses( false );  // Switches the processes visualization on and off
-   const bool   animation     (  true );  // Switches the animation of the POV-Ray camera on and off
-   const size_t visspacing    (   10  );  // Number of time steps in-between two POV-Ray files
-   const size_t colorwidth    (   51  );  // Number of particles in x-dimension with a specific color
+   for( int i = 1; i < argc; ++i ) {
+      const std::string arg( argv[i] );
+      if( arg == "--verbose" ) verbose = true;
+      else if( arg == "--laps" && i+1 < argc ) requiredLaps = static_cast<size_t>( std::atoi( argv[++i] ) );
+   }
 
    /////////////////////////////////////////////////////
    // MPI Initialization
 
    MPI_Init( &argc, &argv );
 
-   /////////////////////////////////////////////////////
-   // Initial setups
-
-   // Configuration of the simulation world
-   WorldID world = theWorld();
-   world->setGravity( 0.0, 0.0, -0.0 );
-   world->setViscosity( 373e-3 );
-
-   // Configuration of the MPI system
+   WorldID     world     = theWorld();
    MPISystemID mpisystem = theMPISystem();
 
-   // Checking the size of the particles
-   if( radius > real(0.3) ) {
-      std::cerr << pe_RED
-                << "\n Invalid radius for particles! Choose a radius of at maximum 0.3!\n\n"
-                << pe_OLDCOLOR;
+   const int px( mpisystem->getSize() );  // One slab per process
+
+   // A periodic axis needs at least three processes -- see the header comment. Checked here so
+   // the failure is a clear message instead of an exception from inside connect().
+   if( px < 3 ) {
+      pe_EXCLUSIVE_SECTION( 0 ) {
+         std::cerr << "\n Invalid number of MPI processes: " << px << "\n"
+                   << " A periodic axis needs at least 3 processes (with 1 a process would have to\n"
+                   << " connect to itself, with 2 its west and east neighbour are the same rank).\n"
+                   << " Re-run with e.g.  mpirun -np 3 ./mpiperiodic\n" << std::endl;
+      }
+      MPI_Finalize();
       return EXIT_FAILURE;
    }
 
-   // Checking the total number of MPI processes
-   if( processesX != 4 || processesZ < 1 || processesX*processesZ != mpisystem->getSize() ) {
-      std::cerr << pe_RED
-                << "\n Invalid number of MPI processes!\n\n"
-                << processesX*processesZ << " : " << mpisystem->getSize()
-                << pe_OLDCOLOR;
-      return EXIT_FAILURE;
-   }
-
-   std::string fileName = std::string("archimedes.obj");
-
-   // Setup of the random number generation
-   setSeed( seed );
-
-   // Creating the material for the particles
-   MaterialID granular = createMaterial( "granular", 1.0, 0.04, 0.1, 0.1, 0.3, 300, 1e6, 1e5, 2e5 );
-
-   // Fixed simulation parameters
-   const real L(0.1);
-
-   // Cube domain
-   const real lx( L );                         // Size of the domain in x-direction
-   const real ly( L );                         // Size of the domain in y-direction
-   const real lz( L );                         // Size of the domain in z-direction
-   const real space( real(2)*radius+spacing );  // Space initially required by a single particle
+   const real dx( lx / px );  // Width of one process slab
 
    /////////////////////////////////////////////////////
-   // Setup of the MPI processes: Periodic 2D Regular Domain Decomposition
+   // Setup of the MPI processes: 1D periodic domain decomposition along x
 
-   const real lpx( lx / processesX );  // Size of a process subdomain in x-direction
-   const real lpz( lz / processesZ );  // Size of a process subdomain in z-direction
+   int dims   [] = { px   };
+   int periods[] = { true };
 
-   int dims   [] = { processesX, processesZ };
-   int periods[] = { false     , false      };
-
-   int rank;           // Rank of the neighboring process
-   int center[2];      // Definition of the coordinates array 'center'
+   int rank;           // Rank of the neighbouring process
+   int center[1];      // Cartesian coordinate of this process (1D topology -> ONE entry)
    MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
 
-   std::vector<HalfSpace> halfSpaces;
-   loadPlanesAndCreateHalfSpaces("planes.txt", halfSpaces);
+   MPI_Cart_create( MPI_COMM_WORLD, 1, dims, periods, false, &cartcomm );
+   if( cartcomm == MPI_COMM_NULL ) {
+      MPI_Finalize();
+      return EXIT_SUCCESS;
+   }
 
-// makePlanesAndCreateHalfSpaces(halfSpaces);
-//   MPI_Barrier(MPI_COMM_WORLD);
-//   MPI_Finalize();
-//   return EXIT_SUCCESS;
-
-
-   MPI_Cart_create( MPI_COMM_WORLD, 2, dims, periods, false, &cartcomm );
    mpisystem->setComm( cartcomm );
-   MPI_Cart_coords( cartcomm, mpisystem->getRank(), 2, center );
+   MPI_Cart_coords( cartcomm, mpisystem->getRank(), 1, center );
 
-   int west     [] = { center[0]-1, center[1]  , center[2] };
-   int east     [] = { center[0]+1, center[1]  , center[2] };
-   int south    [] = { center[0]  , center[1]-1, center[2] };
-   int north    [] = { center[0]  , center[1]+1, center[2] };
-   int southwest[] = { center[0]-1, center[1]-1, center[2] };
-   int southeast[] = { center[0]+1, center[1]-1, center[2] };
-   int northwest[] = { center[0]-1, center[1]+1, center[2] };
-   int northeast[] = { center[0]+1, center[1]+1, center[2] };
+   int west[] = { center[0]-1 };
+   int east[] = { center[0]+1 };
 
-   int bottom    [] = { center[0]  , center[1]-1 };
-   int bottomwest[] = { center[0]-1, center[1]-1 };
-   int bottomeast[] = { center[0]+1, center[1]-1 };
+   // The local slab, in unwrapped coordinates: x in [ center*dx, east*dx ]. For the last process
+   // east[0] == px, so the upper bound is px*dx == lx -- exactly the box edge. Unbounded in y
+   // and z: the sphere only ever moves along x.
+   defineLocalDomain( intersect(
+      HalfSpace( Vec3(+1,0,0), +center[0]*dx ),
+      HalfSpace( Vec3(-1,0,0), -east[0]*dx ) ) );
 
-   int top       [] = { center[0]  , center[1]+1 };
-   int topwest   [] = { center[0]-1, center[1]+1 };
-   int topeast   [] = { center[0]+1, center[1]+1 };
-
-//   Vec3 p1 = Vec3(-1.4170880317687988, -2.5206289291381836, 0.4262872040271759);
-//   Vec3 p2 = Vec3(-0.44539201259613037, -2.9075939655303955, 0.3683735132217407);
-//   Vec3 p3 = Vec3(0.700677216053009, -2.8551599979400635, 0.3209492862224579);
-//   Vec3 p4 = Vec3(1.7178499698638916, -2.3712100982666016, 0.27770888805389404);
-
-   //Vec3 testPos(-1.4, -2.6, 0.14);
-   Vec3 testPos(-1.4, -2.8, 0.14);
-
-   Vec3 testPosD2(-0.3, -2.8, 0.14);
-
-   Vec3 testPosD3( 0.5, -2.8, 0.14);
-
-   Vec3 testPosD4( 1.5, -2.44, 0.14);
-
-   Vec3 p1 = Vec3(-1.1335910558700562, -2.659374952316284, 0.41303178668022156);
-   p1 = testPos;
-   Vec3 p2 = Vec3(-0.5, -2.6, 0.14);
-   //Vec3 p2 = Vec3(-1.0874,-2.67839,0.410885);
-   //Vec3 p2 = Vec3(-0.0776035264134407, -2.939215898513794, 0.3535797894001007);
-   Vec3 p3 = Vec3(1.0964399576187134, -2.727055072784424, 0.30383288860321045);
-   Vec3 p4 = Vec3(2.1420280933380127, -2.0990099906921387, 0.22060100734233856);
-
-   pe_LOG_INFO_SECTION( log ) {
-     log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
+   // Connecting the west neighbour. Its geometry is everything left of our lower face, expressed
+   // in its own coordinates; the offset carries it across the periodic seam when it wraps.
+   {
+      const Vec3 offset( ( west[0] < 0 ) ? ( lx ) : ( 0 ), 0, 0 );
+      MPI_Cart_rank( cartcomm, west, &rank );
+      connect( rank, HalfSpace( Vec3(-1,0,0), -center[0]*dx ), offset );
    }
 
-   if (west[0] < 0) {
-      defineLocalDomain(
-         halfSpaces[center[0]]
-      );
-
-      pe_LOG_INFO_SECTION( log ) {
-      std::ostringstream oss;
-      halfSpaces[center[0]].print(oss, "\t");
-      
-      log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
-      log << oss.str() << "\n";
-      }
-      pe_LOG_INFO_SECTION( log ) {
-      
-      log << ") test point " << p1 << theWorld()->ownsPoint(p1)  << "\n";
-      log << ") test point " << p2 << theWorld()->ownsPoint(p2)  << "\n";
-      log << ") test point " << p3 << theWorld()->ownsPoint(p3)  << "\n";
-      log << ") test point " << p4 << theWorld()->ownsPoint(p4)  << "\n";
-      }
-//   } else if (east[0] >= processesX) {
-//      HalfSpace hs = halfSpaces[center[0]-1];
-//      HalfSpace hs_flip = HalfSpace(-hs.getNormal(), hs.getDisplacement());
-//      defineLocalDomain(
-//         hs_flip
-//      );
-//
-//      pe_LOG_INFO_SECTION( log ) {
-//      std::ostringstream oss;
-//      hs_flip.print(oss, "\t");
-//      
-//      log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
-//      log << oss.str() << "\n";
-//      }
-//
-//      pe_LOG_INFO_SECTION( log ) {
-//      
-//      log << ") test point " << p1 << theWorld()->ownsPoint(p1)  << "\n";
-//      log << ") test point " << p2 << theWorld()->ownsPoint(p2)  << "\n";
-//      log << ") test point " << p3 << theWorld()->ownsPoint(p3)  << "\n";
-//      log << ") test point " << p4 << theWorld()->ownsPoint(p4)  << "\n";
-//      } 
-   } else {
-      // -x of halfSpaces[mpisystem->getRank()] and +x of halfSpaces[mpisystem->getRank()-1]
-      HalfSpace hs = halfSpaces[center[0]-1];
-      HalfSpace hs_flip = HalfSpace(-hs.getNormal(),-hs.getDisplacement());
-      defineLocalDomain(intersect(
-         halfSpaces[center[0]],
-         hs_flip
-         )
-      );
-
-      pe_LOG_INFO_SECTION( log ) {
-      std::ostringstream oss;
-      halfSpaces[center[0]].print(oss, "\t");
-      hs_flip.print(oss, "\t");
-      
-      log << "Rank: " << mpisystem->getRank() << " center " << Vec3(center[0], center[1], center[2])  << "\n";
-      log << oss.str() << "\n";
-      }
-
-      pe_LOG_INFO_SECTION( log ) {
-      
-      log << ") test point " << p1 << theWorld()->ownsPoint(p1)  << "\n";
-      log << ") test point " << p2 << theWorld()->ownsPoint(p2)  << "\n";
-      log << ") test point " << p3 << theWorld()->ownsPoint(p3)  << "\n";
-      log << ") test point " << p4 << theWorld()->ownsPoint(p4)  << "\n";
-
-      HalfSpace hs = halfSpaces[center[0]-1];
-      HalfSpace hs_flip = HalfSpace(-hs.getNormal(),-hs.getDisplacement());
-      HalfSpace mine = halfSpaces[center[0]];
-
-//      log << ") mine " << p2 << mine.containsPoint(p2)  << "\n";
-//      log << ") flip " << p2 << hs_flip.containsPoint(p2)  << "\n";
-      }
-
-   }
-
-  pe_EXCLUSIVE_SECTION(1) {
-
-        HalfSpace hs = halfSpaces[center[0]-1];
-        HalfSpace hs_flip = HalfSpace(-hs.getNormal(),-hs.getDisplacement());
-        real val = ( trans(hs_flip.getNormal()) * p1 ) - hs_flip.getDisplacement();
-        pe_LOG_INFO_SECTION( log ) {
-  
-        log << ") flipped plane " << p1 << val  << "\n";
-        }
-  
-  }
-
-  // Connecting the west neighbor
-  if( west[0] > 0 ) {
-     MPI_Cart_rank( cartcomm, west, &rank );
-
-      HalfSpace hs1 = halfSpaces[west[0]];
-      HalfSpace hs = halfSpaces[west[0]-1];
-
-      HalfSpace hs_flip = HalfSpace(-hs.getNormal(),-hs.getDisplacement());
-
-      connect(rank, 
-         intersect(
-         hs1, 
-         hs_flip)
-      );
-  }
-
-  if( west[0] == 0 ) {
-     MPI_Cart_rank( cartcomm, west, &rank );
-
-      HalfSpace hs1 = halfSpaces[west[0]];
-
-      connect(rank, 
-         hs1 
-      );
-  }
-
-  // Connecting the east neighbor
-  if( east[0] < processesX ) {
-     MPI_Cart_rank( cartcomm, east, &rank );
-
-      HalfSpace hs1 = halfSpaces[east[0]];
-      HalfSpace hs = halfSpaces[east[0]-1];
-
-      HalfSpace hs_flip = HalfSpace(-hs.getNormal(),-hs.getDisplacement());
-
-      connect(rank, 
-         intersect(
-         hs1, 
-         hs_flip)
-      );
-
-  }
-
-   //Checking the process setup
-   theMPISystem()->checkProcesses();
-
-   // Setup of the VTK visualization
-   if( vtk ) {
-      vtk::WriterID vtkw = vtk::activateWriter( "./paraview", visspacing, 0, timesteps, false);
-   }
-
-   // Creates the material "myMaterial" with the following material properties:
-   //  - material density               : 2.54
-   //  - coefficient of restitution     : 0.8
-   //  - coefficient of static friction : 0.1
-   //  - coefficient of dynamic friction: 0.05
-   //  - Poisson's ratio                : 0.2
-   //  - Young's modulus                : 80
-   //  - Contact stiffness              : 100
-   //  - dampingN                       : 10
-   //  - dampingT                       : 11
-   //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
-   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-   theCollisionSystem()->setSlipLength(1.5);
-   theCollisionSystem()->setMinEps(0.01);
-
-  //======================================================================================== 
-  // The way we atm include lubrication by increasing contact threshold
-  // has problems: the particles get distributed to more domain bc the threshold AABB
-  // is much larger than the particle actually is.
-  // We can even run into the "registering distant domain" error when the AABB of the 
-  // particle is close in size to the size of a domain part!
-  //======================================================================================== 
-  BodyID particle;
-  Vec3 gpos (p1);
-  Vec3 vel(0.025, 0.0, 0.0);
-  int id = 0;
-
-  //======================================================================================== 
-  Vec3 archimedesPos(0.0274099, -2.56113, 0.116155);
-  TriangleMeshID archimedes;
-  pe_GLOBAL_SECTION {
-    MaterialID archi  = createMaterial( "archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-    archimedes = createTriangleMesh(++id, Vec3(0, 0, 0.0), fileName, archi, true, true, Vec3(1.0,1.0,1.0), false, false);
-    archimedes->setPosition(archimedesPos);
-    archimedes->setFixed(true);
-  }
-
-  testPos += Vec3(2.5 * radius,1.0 * radius,0);
-  if( world->ownsPoint( gpos ) ) {
-     particle = createSphere( id++, testPos, radius, elastic );
-     particle->setLinearVel( Vec3(1, 0, 0) );
-  }
-
-  //======================================================================================== 
-  // Here is how to create some random positions on a grid up to a certain
-  // volume fraction.
-  //======================================================================================== 
-  // const real   radius  ( 0.005  );
-  //======================================================================================== 
-
-  // Synchronization of the MPI processes
-  world->synchronize();
-
-
-  pe_EXCLUSIVE_SECTION( 0 ) {
-    std::cout << "\n--" << "SIMULATION SETUP"
-      << "--------------------------------------------------------------\n"
-      << " Total number of MPI processes           = " << processesX * processesZ << "\n"
-      << " Total timesteps                         = " << timesteps << "\n"
-      << " Timestep size                           = " << stepsize << "\n" << std::endl;
-    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
-  }
-
-
-  for( unsigned int timestep=0; timestep <= timesteps; ++timestep ) {
-    pe_EXCLUSIVE_SECTION( 0 ) {
-     std::cout << "\r Time step " << timestep+1 << " of " << timesteps << "   " << std::flush;
-    }
-    world->simulationStep( stepsize );
-   }
-   pe_EXCLUSIVE_SECTION( 0 ) {
-     std::cout << std::endl;
+   // Connecting the east neighbour.
+   {
+      const Vec3 offset( ( east[0] == px ) ? ( -lx ) : ( 0 ), 0, 0 );
+      MPI_Cart_rank( cartcomm, east, &rank );
+      connect( rank, HalfSpace( Vec3(+1,0,0), +east[0]*dx ), offset );
    }
 
    /////////////////////////////////////////////////////
-   // MPI Finalization
+   // Setup of the simulation
+
+   MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+
+   world->setGravity( 0.0, 0.0, 0.0 );  // Pure ballistic transport: no gravity, nothing to hit
+
+   // Launch the sphere from the middle of the first slab, so it starts well inside one process.
+   const Vec3 start( real(0.5)*dx, 0.0, 0.0 );
+
+   if( world->ownsPoint( start ) ) {
+      SphereID sphere = createSphere( 1, start, radius, elastic );
+      sphere->setLinearVel( Vec3( speed, 0.0, 0.0 ) );
+   }
+
+   world->synchronize();
+
+   // Size the run so the sphere completes the required laps with margin.
+   const real    distance ( real(requiredLaps) * lx + real(0.5) * lx );
+   const size_t  timesteps( static_cast<size_t>( distance / ( speed * stepsize ) ) + 1 );
+
+   pe_EXCLUSIVE_SECTION( 0 ) {
+      std::cout << "\n--PERIODIC TRANSPORT TEST-------------------------------------------------------\n"
+                << " MPI processes (px)                      = " << px        << "\n"
+                << " Box length lx                           = " << lx        << "\n"
+                << " Slab width dx                           = " << dx        << "\n"
+                << " Sphere radius                           = " << radius    << "\n"
+                << " Sphere speed                            = " << speed     << "\n"
+                << " Time step size                          = " << stepsize  << "\n"
+                << " Number of time steps                    = " << timesteps << "\n"
+                << " Required laps                           = " << requiredLaps << "\n"
+                << "--------------------------------------------------------------------------------\n"
+                << std::endl;
+   }
+
+   /////////////////////////////////////////////////////
+   // Simulation loop with periodic-transport bookkeeping
+   //
+   // Ownership of the sphere moves between processes, so the position is gathered globally each
+   // step: the owning rank contributes x, everyone else contributes a sentinel, and MPI_Allreduce
+   // gives every rank the same value. That doubles as a migration check -- exactly one process
+   // must own the sphere at any time; zero means it was lost, more than one means it was
+   // duplicated instead of migrated.
+
+   const double sentinel( -1.0e300 );
+
+   double xPrev      ( 0.0 );   // Previous global x, for wrap-corrected delta
+   double travelled  ( 0.0 );   // Unwrapped distance travelled
+   bool   haveFirst  ( false );
+   size_t crossings  ( 0 );     // Slab-boundary crossings
+   int    slabPrev   ( -1 );
+   size_t lostSteps  ( 0 );     // Steps with no owner
+   size_t dupSteps   ( 0 );     // Steps with more than one owner
+
+   std::vector<size_t> visits( static_cast<size_t>(px), 0 );  // Times each slab was entered
+
+   for( size_t timestep = 0; timestep < timesteps; ++timestep )
+   {
+      world->simulationStep( stepsize );
+
+      // Find the sphere among the LOCAL bodies (shadow copies are excluded via isRemote()).
+      double xLocal( sentinel );
+      int    owners( 0 );
+
+      for( World::SizeType i = 0; i < world->size(); ++i ) {
+         BodyID body = world->getBody( static_cast<unsigned int>( i ) );
+         if( body->getType() == sphereType && !body->isRemote() ) {
+            xLocal = body->getPosition()[0];
+            ++owners;
+         }
+      }
+
+      double xGlobal( sentinel );
+      int    ownersTotal( 0 );
+      MPI_Allreduce( &xLocal, &xGlobal,     1, MPI_DOUBLE, MPI_MAX, cartcomm );
+      MPI_Allreduce( &owners, &ownersTotal, 1, MPI_INT,    MPI_SUM, cartcomm );
+
+      if( ownersTotal == 0 ) { ++lostSteps; continue; }
+      if( ownersTotal >  1 ) { ++dupSteps; }
+
+      // Wrap-corrected displacement: a jump larger than half the box is a periodic wrap, not
+      // motion. Accumulating this gives the true unwrapped distance travelled.
+      if( haveFirst ) {
+         double delta = xGlobal - xPrev;
+         if     ( delta >  0.5*lx ) delta -= lx;
+         else if( delta < -0.5*lx ) delta += lx;
+         travelled += delta;
+      }
+      xPrev = xGlobal;
+      haveFirst = true;
+
+      // Which slab is it in, and did it just change?
+      int slab = static_cast<int>( xGlobal / dx );
+      if( slab <   0 ) slab = 0;
+      if( slab >= px ) slab = px - 1;
+
+      if( slab != slabPrev ) {
+         if( slabPrev >= 0 ) ++crossings;
+         ++visits[ static_cast<size_t>( slab ) ];
+         slabPrev = slab;
+      }
+
+      if( verbose ) {
+         pe_EXCLUSIVE_SECTION( 0 ) {
+            std::cout << " step " << std::setw(6) << timestep
+                      << "  x = "         << std::fixed << std::setprecision(4) << xGlobal
+                      << "  travelled = " << travelled
+                      << "  slab = "      << slab
+                      << "  owners = "    << ownersTotal << "\n";
+         }
+      }
+   }
+
+   /////////////////////////////////////////////////////
+   // Verdict
+
+   const double laps( travelled / lx );
+
+   size_t minVisits( visits.empty() ? 0 : visits[0] );
+   for( size_t i = 0; i < visits.size(); ++i )
+      if( visits[i] < minVisits ) minVisits = visits[i];
+
+   const bool okLaps    ( laps >= static_cast<double>( requiredLaps ) );
+   const bool okVisits  ( minVisits >= requiredLaps );
+   const bool okOwners  ( lostSteps == 0 && dupSteps == 0 );
+   const bool okCrossing( crossings >= requiredLaps * static_cast<size_t>( px ) );
+   const bool passed    ( okLaps && okVisits && okOwners && okCrossing );
+
+   pe_EXCLUSIVE_SECTION( 0 ) {
+      std::cout << "\n--RESULT------------------------------------------------------------------------\n"
+                << " Distance travelled (unwrapped)          = " << travelled << "\n"
+                << " Laps completed                          = " << laps
+                << "   [" << ( okLaps ? "PASS" : "FAIL" ) << ", need >= " << requiredLaps << "]\n"
+                << " Slab-boundary crossings                 = " << crossings
+                << "   [" << ( okCrossing ? "PASS" : "FAIL" ) << ", need >= " << requiredLaps*px << "]\n"
+                << " Least-visited slab entered              = " << minVisits << " times"
+                << "   [" << ( okVisits ? "PASS" : "FAIL" ) << ", need >= " << requiredLaps << "]\n"
+                << " Steps with no owner / duplicated        = " << lostSteps << " / " << dupSteps
+                << "   [" << ( okOwners ? "PASS" : "FAIL" ) << ", need 0 / 0]\n"
+                << "--------------------------------------------------------------------------------\n"
+                << ( passed ? " PERIODIC TRANSPORT TEST PASSED" : " PERIODIC TRANSPORT TEST FAILED" )
+                << "\n--------------------------------------------------------------------------------\n"
+                << std::endl;
+   }
+
    MPI_Finalize();
 
+   return passed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 //*************************************************************************************************
