@@ -130,4 +130,6 @@ cmake -S . -B build-cmake-verify -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release 
 cmake --build build-cmake-verify -- -j 2
 ```
 
-That configuration completed successfully with warnings. A cached examples-enabled build can fail on stale examples; for example, `examples/box_domain/box_domain.cpp` currently calls `setSlipLength()` on the configured `CollisionSystem`, which does not provide that member.
+That configuration completed successfully with warnings.
+
+Examples-enabled builds can still fail on examples that constrain the solver at compile time. `examples/mpiperiodic`, `examples/mpiperiodic_dev` and `examples/mpiplanedecomposition` assert that `pe_CONSTRAINT_SOLVER` is either `pe::response::HardContactSemiImplicitTimesteppingSolvers` or `pe::response::HardContactAndFluid`, because their parameters are tuned for those; build them with e.g. `-DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid"`. `examples/lubrication_demo` needs a stage-capable solver too, but refuses at runtime rather than at compile time, so it builds in any configuration.
