@@ -14,6 +14,19 @@ lubrication blend parameters (`pe::lubrication::setContactHysteresisDelta` /
 `pe_LOG_DEBUG_SECTION`, making it easy
 to inspect force magnitudes, blend weights, and gap trajectories in the log (ensure the build uses
 `pe::logging::debug` or lower to enable debug logging).  The runs complete entirely in serial mode
-and rely on the `HardContactAndFluid` solver stack, which invokes the shared lubrication stage.
+and rely on a solver stack that invokes the shared lubrication stage.
+
+The demos contain no solver-specific code, so they build under any `pe_CONSTRAINT_SOLVER`. They
+refuse to run at startup, before enabling lubrication, unless the selected solver actually invokes
+the stage -- `pe::response::HardContactAndFluid` or
+`pe::response::HardContactSemiImplicitTimesteppingSolvers`, the two that declare
+`hasLubricationStage`. Without that check they would run to completion under, say, the default
+`HardContactEulerLagrange` and print a gap trace with no lubrication in it. Configure with e.g.
+
+```bash
+cmake -S . -B build-lub -DPE_BUILD_EXAMPLES=ON \
+  -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid"
+```
+
 Lubrication itself is a runtime switch: the demos call `pe::lubrication::setEnabled( true )` during
-setup, so configure `pe_CONSTRAINT_SOLVER` as `pe::response::HardContactAndFluid` when building.
+setup.

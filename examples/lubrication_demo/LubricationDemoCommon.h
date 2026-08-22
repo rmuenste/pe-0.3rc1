@@ -3,32 +3,16 @@
 #include <algorithm>
 #include <cstddef>
 #include <string_view>
-#include <type_traits>
+#include <iostream>
 #include <pe/core/CollisionSystemID.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Settings.h>
 #include <pe/core/Configuration.h>
-#include <pe/core/collisionsystem/HardContactAndFluid.h>
 #include <pe/core/lubrication/Params.h>
 #include <pe/core/Types.h>
+#include <pe/interface/setup_optional_collision_params.h>
 
 namespace pe::examples::lubrication {
-
-namespace detail {
-
-using LubricatedConfig = pe::Configuration<
-   pe_COARSE_COLLISION_DETECTOR,
-   pe_FINE_COLLISION_DETECTOR,
-   pe_BATCH_GENERATOR,
-   pe::response::HardContactAndFluid
->::Config;
-
-static_assert( std::is_same<LubricatedConfig, pe::Config>::value,
-   "examples/lubrication_demo requires pe::response::HardContactAndFluid as pe_CONSTRAINT_SOLVER\n"
-   "(configure with -Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid).\n"
-   "Lubrication itself is a runtime switch: pe::lubrication::setEnabled( true )." );
-
-} // namespace detail
 
 struct DemoConfig {
    pe::real dt{ pe::real(1e-4) };
@@ -49,10 +33,48 @@ struct DemoConfig {
    bool verbose{ true };
 };
 
+//! Whether the compile-time selected solver actually invokes the lubrication stage.
+/*! This demo has no solver-specific code -- it configures everything through the
+    pe::lubrication:: free functions -- so it COMPILES under any pe_CONSTRAINT_SOLVER. It
+    only produces meaningful numbers under a stage-capable one, and there are two:
+    HardContactAndFluid and HardContactSemiImplicitTimesteppingSolvers, both of which
+    declare hasLubricationStage. pe::HasLubricationStage is the library's single source of
+    truth for that (pe/interface/setup_optional_collision_params.h).
+
+    This used to be a static_assert demanding type-identity with HardContactAndFluid, which
+    was both stricter than the requirement (it rejected the equally stage-capable
+    semi-implicit solver) and unbuildable: nothing in the CMake wiring selects a solver for
+    the examples, so the assert fired in every default PE_BUILD_EXAMPLES=ON build. It is now
+    a runtime refusal, matching what applyOptionalLubricationParams already does for the
+    same condition. */
+inline bool lubricationStageAvailable()
+{
+   return pe::HasLubricationStage< pe::CollisionSystem<pe::Config> >::value;
+}
+
+//! Refuses to run under a solver that would silently apply no lubrication force.
+/*! MUST be called before enableLubrication(): setEnabled( true ) inflates AABBs and makes
+    fine detection emit pre-contact pairs, so under a non-stage-capable solver the demo would
+    run to completion and print a gap trace with no lubrication in it at all. Returns false
+    when the caller should bail out with a non-zero exit code. */
+inline bool requireLubricationStage()
+{
+   if( lubricationStageAvailable() ) return true;
+
+   std::cerr << "examples/lubrication_demo requires a pe_CONSTRAINT_SOLVER that invokes the\n"
+                "lubrication stage -- pe::response::HardContactAndFluid or\n"
+                "pe::response::HardContactSemiImplicitTimesteppingSolvers. The active solver\n"
+                "does not, so no lubrication force would be applied and the gap trace would be\n"
+                "meaningless. Reconfigure with e.g.\n"
+                "  -DCMAKE_CXX_FLAGS=\"-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactAndFluid\"\n"
+                "Lubrication itself remains a runtime switch: pe::lubrication::setEnabled( true )."
+             << std::endl;
+   return false;
+}
+
 //! Master switch for the lubrication stage.
-/*! Lubrication used to be implied by selecting the HardContactLubricated solver at compile
-    time. With the stage-based HardContactAndFluid solver it is a runtime switch, so the demo
-    turns it on explicitly. */
+/*! Lubrication used to be implied by selecting a dedicated solver at compile time. With the
+    stage-based solvers it is a runtime switch, so the demo turns it on explicitly. */
 inline void enableLubrication()
 {
    pe::lubrication::setEnabled( true );
