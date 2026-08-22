@@ -235,16 +235,19 @@ int main( int argc, char* argv[] )
    world->setLiquidDensity( simRho );
  
    // Particle Bench Config 
-   real slipLength( 0.01 );
    real minEps( 0.01 );
    world->setLiquidSolid(true);
    world->setDamping( 1.0 );
  
-   // Lubrication switch
-   bool useLubrication(true);
-   theCollisionSystem()->setSlipLength(slipLength);
+   // NOTE: this example used to call setSlipLength(0.01) and setLubrication(true) on the
+   // collision system. Both were empty inline stubs -- no-ops -- and exist today only on
+   // HardContactAndFluid, so they no longer compile under the default solver. This example
+   // therefore never had lubrication, and the calls are dropped rather than ported: the
+   // runtime equivalents live in the shared store but are NOT the same quantities
+   // (slip length -> pe::lubrication::setEpsCritical( h_c / a_ref ), relative to radius),
+   // and pe::lubrication::setEnabled( true ) would genuinely switch lubrication and AABB
+   // inflation on here for the first time. See examples/basic_lubrication for the pattern.
    theCollisionSystem()->setMinEps(minEps);
-   theCollisionSystem()->setLubrication( useLubrication );
 
    // Setup of the VTK visualization
    if( vtk ) {
@@ -358,7 +361,6 @@ int main( int argc, char* argv[] )
    real phi = (particlesTotal * partVol)/domainVol * 100.0;
  
    std::string resOut = (resume) ? " resuming " : " not resuming ";
-   std::string useLub = (useLubrication) ? "enabled" : "disabled";
  
    pe_EXCLUSIVE_SECTION( 0 ) {
      std::cout << "\n--" << "SIMULATION SETUP"
@@ -369,8 +371,6 @@ int main( int argc, char* argv[] )
        << " particle volume                         = " << partVol << "\n"
        << " Fluid Viscosity                         = " << simViscosity << "\n"
        << " Fluid Density                           = " << simRho << "\n"
-       << " Lubrication                             = " << useLub << "\n"
-       << " Lubrication h_c                         = " << slipLength << "\n"
        << " Lubrication threshold                   = " << lubricationThreshold << "\n"
        << " Contact threshold                       = " << contactThreshold << "\n"
        << " eps_init                                = " << lubricationThreshold / radius2 << "\n"
