@@ -45,6 +45,7 @@
 #include <pe/interface/decompose.h>
 #include <random>
 #include <algorithm>
+#include <examples/common/SolverConstraint.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -53,17 +54,32 @@ using boost::filesystem::path;
 
 
 
-// Assert statically that only the FFD solver or a hard contact solver is used since parameters are tuned for them.
-#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C) typedef \
-   pe::CONSTRAINT_TEST< \
-      pe::CONSTRAINT_MUST_BE_SAME_TYPE_FAILED< \
-         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value \
-      >::value > \
-   pe_JOIN( CONSTRAINT_MUST_BE_SAME_TYPE_TYPEDEF, __LINE__ );
+//=================================================================================================
+// SOLVER CONSTRAINT
+//
+// This example is only valid under the constraint solvers listed below; its contact and
+// time-integration parameters are tuned for them and other pipelines would produce
+// meaningless results.
+//
+//   pe::response::HardContactSemiImplicitTimesteppingSolvers
+//   pe::response::HardContactAndFluid
+//
+// This used to be a compile-time pe_CONSTRAINT_MUST_BE_EITHER_TYPE assertion, so a build with
+// any other solver simply failed to compile. That guarantee is worth keeping -- nobody should
+// be able to run this example under a pipeline it was never tuned for -- but failing the build
+// also meant the example was never compile-checked in the default configuration, which let
+// unrelated rot accumulate unnoticed. The check is now enforced at startup instead: the example
+// builds under any solver and refuses to run under an unintended one, before creating a body.
+//=================================================================================================
 
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
-pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
+
+static const char* const intendedSolvers =
+   "   pe::response::HardContactSemiImplicitTimesteppingSolvers\n   pe::response::HardContactAndFluid\n";
+static const char* const solverRationale =
+   "mpibench's contact and time-integration parameters are tuned for those\n"
+   "      pipelines; any other solver would produce meaningless results.";
 
 
 
@@ -115,6 +131,16 @@ int main( int argc, char** argv )
 
    MPI_Init( &argc, &argv );
 
+   // Enforce the solver constraint documented at the top of this file. Placed immediately
+   // after MPI_Init so the banner is printed by rank 0 alone, and before any world or body
+   // setup so an unintended configuration never simulates anything. The predicate is a
+   // compile-time constant, so all ranks agree and this cannot deadlock.
+   if( !pe::examples::requireIntendedSolver<TargetConfig2, TargetConfig3>(
+          "mpibench", intendedSolvers, solverRationale ) ) {
+      MPI_Finalize();
+      return EXIT_FAILURE;
+   }
+
 
    /////////////////////////////////////////////////////
    // Simulation parameters
@@ -142,7 +168,11 @@ int main( int argc, char** argv )
    //*************************************************************************************************
    // The Checkpointer
    path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
-   Checkpointer checkpointer = Checkpointer(checkpoint_path, visspacing, 0, timesteps);
+   // NOTE: Checkpointer's constructors are private; activateCheckpointer() is the supported
+   // way to obtain one (see pe/util/Checkpointer.h and the pe/interface/setup_*.h callers).
+   // This example used to construct it directly, which stopped compiling when the class was
+   // streamlined -- masked until now by the compile-time solver constraint above.
+   CheckpointerID checkpointer = activateCheckpointer( checkpoint_path, visspacing, 0, timesteps );
    std::string startFile;
 
    /////////////////////////////////////////////////////
@@ -322,7 +352,7 @@ int main( int argc, char** argv )
       }
     }
     else {
-      checkpointer.read( "../start.1" );
+      checkpointer->read( "../start.1" );
       int i(0);
       for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
          World::SizeType widx = static_cast<World::SizeType>(i);
@@ -421,8 +451,8 @@ int main( int argc, char** argv )
 
      if(timestep % visspacing == 0) {
        // Write out checkpoint
-       checkpointer.setPath( checkpoint_path );
-       checkpointer.write( "checkpoint");
+       checkpointer->setPath( checkpoint_path );
+       checkpointer->write( "checkpoint");
      }
    }
 
