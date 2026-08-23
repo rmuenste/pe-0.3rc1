@@ -2107,20 +2107,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             w_[j] = body->getAngularVel();
          }
 
-         // Diagnostic only: report implausibly fast or stuck bodies. This used to also
-         // CLAMP the velocity (|v| > 32 -> 12.3), which is removed -- see the commit
-         // that deleted the integratePositions limiter. The 32.0 below is a reporting
-         // threshold, not physics; it changes no state.
-         const real velocityMagnitude = v_[j].length();
-         if (velocityMagnitude > real(32.0) || body->isStuck_) {
+         // Diagnostic only: report bodies the serial interface tooling has flagged as stuck
+         // (isStuck_ is set in pe/interface/sim_setup_serial_features.h). Changes no state.
+         if( body->isStuck_ ) {
             pe_LOG_INFO_SECTION( log ) {
-               if (body->isStuck_) {
-                  log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n";
-               }
-               if (velocityMagnitude > real(32.0)) {
-                  log << "  HIGH VELOCITY DETECTED for Particle (ID=" << body->getSystemID() << ")\n";
-               }
-               log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
+               log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n"
+                   << "  Velocity: " << v_[j] << "\n";
             }
          }
       }
