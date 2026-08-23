@@ -1976,9 +1976,6 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          diag[8]     += b1->getInvMass() + b2->getInvMass();
          diag         = trans( contactframe ) * diag * contactframe;
 
-         // DEBUG: Print effective mass diagnostics for zero-translation-DOF contacts
-         bool bothTranslationLocked = (b1->getInvMass() == real(0) && b2->getInvMass() == real(0));
-
          // Diagonal block is know to be positive-definite and thus inverse always exists.
          diag_nto_[j] = diag;
          diag_nto_inv_[j]  = inv( diag );
@@ -2107,20 +2104,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
             w_[j] = body->getAngularVel();
          }
 
-         // Diagnostic only: report implausibly fast or stuck bodies. This used to also
-         // CLAMP the velocity (|v| > 32 -> 12.3), which is removed -- see the commit
-         // that deleted the integratePositions limiter. The 32.0 below is a reporting
-         // threshold, not physics; it changes no state.
-         const real velocityMagnitude = v_[j].length();
-         if (velocityMagnitude > real(32.0) || body->isStuck_) {
+         // Diagnostic only: report bodies the serial interface tooling has flagged as stuck
+         // (isStuck_ is set in pe/interface/sim_setup_serial_features.h). Changes no state.
+         if( body->isStuck_ ) {
             pe_LOG_INFO_SECTION( log ) {
-               if (body->isStuck_) {
-                  log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n";
-               }
-               if (velocityMagnitude > real(32.0)) {
-                  log << "  HIGH VELOCITY DETECTED for Particle (ID=" << body->getSystemID() << ")\n";
-               }
-               log << "  Velocity: " << v_[j] << " (magnitude: " << velocityMagnitude << ")\n";
+               log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n"
+                   << "  Velocity: " << v_[j] << "\n";
             }
          }
       }
@@ -2386,15 +2375,8 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
       // The constraint in normal direction is actually a positional constraint but instead of g_n we use g_n/dt equivalently and call it gdot_n
       gdot_nto[0] += ( /* + trans( n_[i] ) * ( body1_[i]->getPosition() + r1_[i] ) - ( body2_[i]->getPosition() + r2_[i] ) */ + dist_[i] ) * dtinv;
 
-      // DEBUG: Track solver behavior for translation-locked contacts
-      bool bothTranslationLocked = (body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0));
-
       if( gdot_nto[0] >= 0 ) {
          // Contact is separating if no contact reaction is present at contact i.
-
-//          if( bothTranslationLocked && iteration_ == 0 ) {
-//             std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
-//          }
 
          delta_max = std::max( delta_max, std::max( std::abs( p_[i][0] ), std::max( std::abs( p_[i][1] ), std::abs( p_[i][2] ) ) ) );
          p_[i] = Vec3();
@@ -2408,14 +2390,6 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
          Vec3 p_wf( n_[i] * ( -diag_n_inv_[i] * gdot_nto[0] ) );
          Vec3 dp( p_[i] - p_wf );
          delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
-
-//          if( bothTranslationLocked && iteration_ == 0 ) {
-//             std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
-//             std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
-//             std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
-//             std::cout << "    Impulse (world): " << p_wf << "\n";
-//             std::cout << "    Delta impulse: " << dp.length() << "\n";
-//          }
 
          p_[i] = p_wf;
 
@@ -2495,9 +2469,6 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
       // The constraint in normal direction is actually a positional constraint but instead of g_n we use g_n/dt equivalently and call it gdot_n
       gdot_nto[0] += ( /* + trans( n_[i] ) * ( body1_[i]->getPosition() + r1_[i] ) - ( body2_[i]->getPosition() + r2_[i] ) */ + dist_[i] ) * dtinv;
 
-      // DEBUG: Track solver behavior for translation-locked contacts
-      bool bothTranslationLocked = (body1_[i]->getInvMass() == real(0) && body2_[i]->getInvMass() == real(0));
-
       // Detect kinematic bodies (bodies with prescribed motion that act as motors/actuators)
       // A kinematic body is translation-locked but has non-zero angular velocity
       const real angVelThreshold = real(1e-8);
@@ -2509,10 +2480,6 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
 
       if( gdot_nto[0] >= 0 ) {
          // Contact is separating if no contact reaction is present at contact i.
-
-//          if( bothTranslationLocked && iteration_ == 0 ) {
-//             std::cout << "  Iter " << iteration_ << " Contact " << i << " SEPARATING: gdot_nto[0] = " << gdot_nto[0] << "\n";
-//          }
 
          delta_max = std::max( delta_max, std::max( std::abs( p_[i][0] ), std::max( std::abs( p_[i][1] ), std::abs( p_[i][2] ) ) ) );
          p_[i] = Vec3();
@@ -2591,26 +2558,6 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
          Vec3 p_wf( contactframe * p_cf );
          Vec3 dp( p_[i] - p_wf );
          delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
-
-//          if( bothTranslationLocked && iteration_ == 0 ) {
-//             std::cout << "  Iter " << iteration_ << " Contact " << i << " PERSISTING:\n";
-//             std::cout << "    Kinematic body: " << (hasKinematicBody ? "YES" : "NO") << "\n";
-//             if( hasKinematicBody ) {
-//                std::cout << "      Body1 kinematic: " << isKinematic1 << ", ω1 = " << w_[body1_[i]->index_] << "\n";
-//                std::cout << "      Body2 kinematic: " << isKinematic2 << ", ω2 = " << w_[body2_[i]->index_] << "\n";
-//                std::cout << "      Using dynamic friction (sliding contact)\n";
-//             }
-
-//              
-//             std::cout << "    R1: " << r1_[i] << "\n";
-//             std::cout << "    R2: " << r2_[i] << "\n";
-//             std::cout << "    R1/R2: " << r1_[i].length()/r2_[i].length() << "\n";
-//             std::cout << "    Relative vel (normal): " << gdot_nto[0] << "\n";
-//             std::cout << "    Impulse (contact frame): " << p_cf << "\n";
-//             std::cout << "    Impulse magnitude: " << p_wf.length() << "\n";
-//             std::cout << "    Impulse (world): " << p_wf << "\n";
-//             std::cout << "    Delta impulse: " << dp.length() << "\n";
-//          }
 
          p_[i] = p_wf;
 

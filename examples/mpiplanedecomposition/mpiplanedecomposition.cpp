@@ -23,6 +23,7 @@
 #include <sstream>
 #include <random>
 #include <algorithm>
+#include <examples/common/SolverConstraint.h>
 using namespace pe;
 using namespace pe::timing;
 using namespace pe::povray;
@@ -31,17 +32,37 @@ using boost::filesystem::path;
 
 
 
-// Assert statically that only the FFD solver or a hard contact solver is used since parameters are tuned for them.
-#define pe_CONSTRAINT_MUST_BE_EITHER_TYPE(A, B, C) typedef \
-   pe::CONSTRAINT_TEST< \
-      pe::CONSTRAINT_MUST_BE_SAME_TYPE_FAILED< \
-         pe::IsSame<A,B>::value | pe::IsSame<A,C>::value \
-      >::value > \
-   pe_JOIN( CONSTRAINT_MUST_BE_SAME_TYPE_TYPEDEF, __LINE__ );
+//=================================================================================================
+// SOLVER CONSTRAINT
+//
+// This is a PURE RIGID BODY simulation. Its contact, damping and time-step parameters are tuned
+// for the semi-implicit hard-contact pipeline, and it must NOT be run with lubrication.
+// It is therefore valid under exactly two constraint solvers:
+//
+//   pe::response::HardContactSemiImplicitTimesteppingSolvers
+//   pe::response::HardContactAndFluid
+//
+// (An earlier comment here claimed the FFD solver was also accepted. It never was in this
+// example -- the text was copied from an ancestor such as examples/mpispheres, whose list does
+// start at a TargetConfig1 = response::FFDSolver. That is why the typedefs below begin at 2.)
+//
+// This used to be a compile-time pe_CONSTRAINT_MUST_BE_EITHER_TYPE assertion, so a build with any
+// other solver simply failed. The guarantee it provided is worth keeping -- nobody should be able
+// to run this example under a pipeline it was never tuned for -- but making the build fail also
+// meant the example was never compile-checked in the default configuration, which let unrelated
+// rot accumulate silently. The check is now enforced at startup instead: the example builds under
+// any solver and refuses to run under an unintended one, before creating a single body.
+//=================================================================================================
 
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactSemiImplicitTimesteppingSolvers>::Config TargetConfig2;
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR, response::HardContactAndFluid>::Config TargetConfig3;
-pe_CONSTRAINT_MUST_BE_EITHER_TYPE(Config, TargetConfig2, TargetConfig3);
+
+static const char* const intendedSolvers =
+   "   pe::response::HardContactSemiImplicitTimesteppingSolvers\n"
+   "   pe::response::HardContactAndFluid\n";
+static const char* const solverRationale =
+   "mpiplanedecomposition is pure rigid body physics; its contact and damping parameters are\n"
+   "      tuned for those hard-contact pipelines, and it must not be run with lubrication.";
 
 
 // Function to generate random positions within a cubic domain
@@ -201,6 +222,16 @@ int main( int argc, char** argv )
    // MPI Initialization
 
    MPI_Init( &argc, &argv );
+
+   // Enforce the solver constraint documented at the top of this file. Placed immediately after
+   // MPI_Init so the banner can be printed by rank 0 alone, and before any body or world setup so
+   // that an unintended configuration never simulates anything. The predicate is a compile-time
+   // constant, so all ranks reach the same verdict and this cannot deadlock.
+   if( !pe::examples::requireIntendedSolver<TargetConfig2, TargetConfig3>(
+          "mpiplanedecomposition", intendedSolvers, solverRationale ) ) {
+      MPI_Finalize();
+      return EXIT_FAILURE;
+   }
 
    /////////////////////////////////////////////////////
    // Initial setups
@@ -366,7 +397,11 @@ int main( int argc, char** argv )
    //  - dampingT                       : 11
    //MaterialID myMaterial = createMaterial( "myMaterial", 2.54, 0.8, 0.1, 0.05, 0.2, 80, 100, 10, 11 );
    MaterialID elastic = createMaterial( "elastic", 1.0, 1.0, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-   theCollisionSystem()->setSlipLength(1.5);
+   // NOTE: setSlipLength(1.5) used to be called here. It was an empty inline stub -- a
+   // no-op -- and survives today only on HardContactAndFluid, so it no longer compiles
+   // under the default solver. Dropped rather than ported: the runtime equivalent
+   // pe::lubrication::setEpsCritical() takes h_c / a_ref (relative to radius), not an
+   // absolute length, and this example never applied lubrication in the first place.
    theCollisionSystem()->setMinEps(0.01);
 
   //======================================================================================== 

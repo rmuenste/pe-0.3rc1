@@ -114,6 +114,11 @@ int main( int argc, char* argv[] )
       return EXIT_FAILURE;
    }
 
+   // Must precede enableLubrication(): see requireLubricationStage() in the common header.
+   if( !requireLubricationStage() ) {
+      return EXIT_FAILURE;
+   }
+
    enableLubrication();
    applyBlendParameters( cfg.contactBlend, cfg.lubricationBlend );
    logConfiguration( cfg );
