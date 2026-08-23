@@ -63,17 +63,33 @@ The generated VTI file is written in the case-local run directory, for example:
 build-interface-tests-cgal/tests/interface/serial-runs/atc-cgal-distancemap/atc_boundary_distancemap.vti
 ```
 
-## Parallel Frozen-Field Tracer
+## MPI Coverage
 
-With MPI and CGAL enabled, `pe_frozen_field_trace_mpi` registers two-rank OFF and OBJ cases. They
-verify callback-driven passive advection, rank migration, exact unit-cube exit attribution, and
-survivor reporting:
+MPI has an independent build and test path; CGAL is not required. The
+`pe-checkpoint-metadata-mpi` test exercises the collective checkpoint write,
+including the rank-invariant scratch filename and cross-rank body-count
+reduction:
 
 ```bash
-cmake -S . -B build-interface-mpi -G Ninja \
-  -DLIBRARY_TYPE=STATIC -DBUILD_TESTING=ON -DMPI=ON -DCGAL=ON -DUSE_JSON=ON
-cmake --build build-interface-mpi --target pe_frozen_field_trace_mpi
-ctest --test-dir build-interface-mpi -R pe-interface-frozen-field --output-on-failure
+cmake --preset mpi
+cmake --build --preset build-mpi
+ctest --preset test-mpi -L mpi
+```
+
+## Combined MPI and CGAL Coverage
+
+The frozen-field tracer genuinely requires both optional features. With MPI and
+CGAL enabled, `pe_frozen_field_trace_mpi` registers two-rank OFF and OBJ cases.
+They verify callback-driven passive advection, rank migration, exact unit-cube
+exit attribution, and survivor reporting:
+
+```bash
+cmake -S . -B build-interface-mpi-cgal -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC -DBUILD_TESTING=ON \
+  -DPE_BUILD_INTERFACE_TESTS=ON -DPE_USE_MPI=ON -DPE_USE_CGAL=ON \
+  -DPE_USE_JSON=ON -DPE_USE_EIGEN=ON
+cmake --build build-interface-mpi-cgal
+ctest --test-dir build-interface-mpi-cgal -L mpi --output-on-failure
 ```
 
 ## Lubrication Tests

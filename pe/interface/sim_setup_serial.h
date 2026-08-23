@@ -1008,7 +1008,7 @@ inline void setupATCSerial(int cfd_rank) {
   applyOptionalLubricationParams(*cs, config);
 
   // Enable adaptive Baumgarte capping for contact stabilization (EL solver only)
-  setOptionalAdaptiveBaumgarteCapping(theCollisionSystem(), true, real(50.0));
+  setOptionalAdaptiveBaumgarteCapping(cs.get(), true, real(50.0));
 
   // Set gravity from configuration
   world->setGravity( config.getGravity() );

@@ -9,6 +9,38 @@ This note explains the normal CMake build flow for PE. The repository still cont
 - Boost libraries: thread, system, filesystem, program_options, random
 - Optional: Ninja, MPI, CGAL, Eigen, OpenCL, Irrlicht
 
+## Build and Test Presets
+
+The checked-in presets provide reproducible development and CI configurations.
+They require CMake 3.21 or newer; the explicit CMake commands below remain
+available when using the project's minimum supported CMake version.
+
+The feature presets are deliberately independent:
+
+- `serial`: Release build with MPI and CGAL disabled.
+- `debug`: Debug counterpart of the serial build.
+- `mpi`: Release build with MPI enabled and CGAL disabled.
+- `cgal`: Release build with CGAL enabled and MPI disabled.
+
+All four presets build a static library, enable the complete applicable CTest
+suite, disable examples and interactive tools, and use separate build trees
+under `build/presets/`.
+
+```bash
+cmake --preset serial
+cmake --build --preset build-serial
+ctest --preset test-serial
+
+cmake --preset mpi
+cmake --build --preset build-mpi
+ctest --preset test-mpi
+```
+
+Replace `serial` with `debug` or `cgal` in the three preset names to use
+those configurations. CTest labels such as `unit`, `integration`, `serial`,
+`mpi`, `cgal`, `interface`, `checkpoint`, and `lubrication` support
+focused runs, for example `ctest --preset test-mpi -L mpi`.
+
 ## Recommended Default Build
 
 Use an out-of-source build directory. The default development build should keep examples disabled unless you specifically need them.

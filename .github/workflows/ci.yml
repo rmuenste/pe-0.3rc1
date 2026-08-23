@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc-serial
+            preset: serial
+            cc: gcc
+            cxx: g++
+            packages: g++
+            cxxflags: ""
+
+          - name: clang-serial
+            preset: serial
+            cc: clang
+            cxx: clang++
+            packages: clang
+            # Keep legacy template warnings from overwhelming the Actions log.
+            cxxflags: -w
+
+          - name: mpi
+            preset: mpi
+            cc: gcc
+            cxx: g++
+            packages: g++ libopenmpi-dev openmpi-bin
+            cxxflags: ""
+
+          - name: cgal
+            preset: cgal
+            cc: gcc
+            cxx: g++
+            packages: g++ libcgal-dev libgmp-dev libmpfr-dev
+            cxxflags: ""
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      CXXFLAGS: ${{ matrix.cxxflags }}
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CTEST_PARALLEL_LEVEL: 2
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            cmake \
+            git \
+            ninja-build \
+            libboost-all-dev \
+            ${{ matrix.packages }}
+
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+
+      - name: Build
+        run: cmake --build --preset "build-${{ matrix.preset }}"
+
+      - name: Test
+        run: ctest --preset "test-${{ matrix.preset }}"
