@@ -956,8 +956,8 @@ that the vertices are in counterclockwise order.
 ---------------------------------------------------------------------*/
 void	Consistency( void )
 {
-   register tEdge  e;
-   register int    i, j;
+   tEdge  e;
+   int    i, j;
 
    e = edges;
 
@@ -994,8 +994,8 @@ and therefore the hull is convex.
 ---------------------------------------------------------------------*/
 void	Convexity( void )
 {
-   register tFace    f;
-   register tVertex  v;
+   tFace    f;
+   tVertex  v;
    int               vol;
 
    f = faces;

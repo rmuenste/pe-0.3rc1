@@ -23,6 +23,9 @@ add_test(
   NAME pe-el-semi-implicit-drag
   COMMAND pe_el_semi_implicit_drag_test
 )
+set_tests_properties(pe-el-semi-implicit-drag PROPERTIES
+  LABELS "unit;serial"
+)
 
 # Pure-arithmetic unit test for the pairwise lubrication model (Kroupa et al. 2016).
 # Header-only physics + Vec3; no world/MPI setup, so it is a plain add_test rather
@@ -34,6 +37,9 @@ target_link_libraries(pe_lubrication_model_test PRIVATE pe_static)
 add_test(
   NAME pe-lubrication-model
   COMMAND pe_lubrication_model_test
+)
+set_tests_properties(pe-lubrication-model PROPERTIES
+  LABELS "unit;serial;lubrication"
 )
 
 # The tests below drive the shared lubrication stage through a real collision pipeline, so
@@ -58,6 +64,9 @@ add_test(
   NAME pe-lubrication-legacy-regression
   COMMAND pe_lubrication_legacy_regression_test
 )
+set_tests_properties(pe-lubrication-legacy-regression PROPERTIES
+  LABELS "integration;serial;lubrication"
+)
 
 # Level 1 lubrication validation (Kroupa-2016 model through the full solver pipeline).
 # Both link a stage-capable library variant, so neither can skip.
@@ -69,6 +78,9 @@ add_test(
   NAME pe-lubrication-two-sphere-approach
   COMMAND pe_lubrication_two_sphere_approach_test
 )
+set_tests_properties(pe-lubrication-two-sphere-approach PROPERTIES
+  LABELS "integration;serial;lubrication"
+)
 
 add_executable(pe_lubrication_bounce_stokes_test
   pe_lubrication_bounce_stokes_test.cpp
@@ -77,6 +89,9 @@ target_link_libraries(pe_lubrication_bounce_stokes_test PRIVATE pe_static_lubsta
 add_test(
   NAME pe-lubrication-bounce-stokes
   COMMAND pe_lubrication_bounce_stokes_test
+)
+set_tests_properties(pe-lubrication-bounce-stokes PROPERTIES
+  LABELS "integration;serial;lubrication"
 )
 
 # Contract tests for the checkpoint identity sidecar: metadata roundtrip, legacy (sidecar-less)
@@ -91,15 +106,13 @@ add_test(
   NAME pe-checkpoint-metadata
   COMMAND pe_checkpoint_metadata_test
 )
+set_tests_properties(pe-checkpoint-metadata PROPERTIES
+  LABELS "integration;serial;checkpoint"
+)
 
 # Two-rank counterpart. The collective parts of the checkpoint write -- the rank-invariant scratch
 # filename MPI_File_open demands, and the cross-rank body-count reduction -- cannot be reached by
 # any serial test, and a mistake in either is silent in a serial-only suite.
-#
-# NOTE: the guard is PE_USE_MPI/MPI_FOUND, not the bare `MPI` used by the frozen-field test below.
-# Nothing in this project ever sets a variable named `MPI`, so that guard is always false and the
-# test it protects is silently never built. Left alone here rather than enabled as a drive-by, but
-# it means the frozen-field MPI coverage does not currently exist. See PR_DESCRIPTION.md.
 if(PE_USE_MPI AND MPI_FOUND)
   add_executable(pe_checkpoint_metadata_mpi
     pe_checkpoint_metadata_mpi.cpp
@@ -113,6 +126,9 @@ if(PE_USE_MPI AND MPI_FOUND)
       $<TARGET_FILE:pe_checkpoint_metadata_mpi>
       ${MPIEXEC_POSTFLAGS}
   )
+  set_tests_properties(pe-checkpoint-metadata-mpi PROPERTIES
+    LABELS "integration;mpi;checkpoint"
+  )
 endif()
 
 function(pe_add_interface_serial_test test_name case_name)
@@ -122,6 +138,10 @@ function(pe_add_interface_serial_test test_name case_name)
       --case ${case_name}
       --fixtures "${PE_INTERFACE_SERIAL_FIXTURE_DIR}"
       --work-root "${PE_INTERFACE_SERIAL_WORK_ROOT}"
+  )
+  set(test_labels integration serial interface ${ARGN})
+  set_tests_properties(${test_name} PROPERTIES
+    LABELS "${test_labels}"
   )
 endfunction()
 
@@ -137,10 +157,12 @@ if(PE_USE_CGAL)
   pe_add_interface_serial_test(
     pe-interface-serial-atc-cgal-distancemap
     atc-cgal-distancemap
+    cgal
   )
   pe_add_interface_serial_test(
     pe-interface-serial-span-complex-distancemaps
     span-complex-distancemaps
+    cgal
   )
 endif()
 pe_add_interface_serial_test(
@@ -152,7 +174,7 @@ pe_add_interface_serial_test(
   fluidization-srr-resume-roundtrip
 )
 
-if(MPI AND CGAL)
+if(PE_USE_MPI AND MPI_FOUND AND PE_USE_CGAL)
   add_executable(pe_frozen_field_trace_mpi
     pe_frozen_field_trace_mpi.cpp
   )
@@ -174,6 +196,7 @@ if(MPI AND CGAL)
     )
     set_tests_properties(pe-interface-frozen-field-${mesh_format} PROPERTIES
       WORKING_DIRECTORY "${PE_FROZEN_FIELD_FIXTURE_DIR}"
+      LABELS "integration;mpi;cgal;interface"
     )
   endforeach()
 endif()
@@ -191,6 +214,9 @@ add_test(
   NAME pe-lubrication-serial-coverage
   COMMAND pe_lubrication_serial_coverage_test
 )
+set_tests_properties(pe-lubrication-serial-coverage PROPERTIES
+  LABELS "integration;serial;lubrication"
+)
 
 # AABB neutrality gate: lubrication OFF must mean no bounding-box inflation at all.
 # Bounding-box size feeds the HashGrids broad phase, so a stray padding term is a silent
@@ -203,6 +229,9 @@ target_link_libraries(pe_lubrication_aabb_neutrality_test PRIVATE pe_static_lubs
 add_test(
   NAME pe-lubrication-aabb-neutrality
   COMMAND pe_lubrication_aabb_neutrality_test
+)
+set_tests_properties(pe-lubrication-aabb-neutrality PROPERTIES
+  LABELS "integration;serial;lubrication"
 )
 
 # Refusal guard (D2.2 §3.5): lubricationEnabled_ must never be a silent no-op.
@@ -218,4 +247,7 @@ target_link_libraries(pe_lubrication_refusal_test PRIVATE pe_static)
 add_test(
   NAME pe-lubrication-refusal
   COMMAND pe_lubrication_refusal_test
+)
+set_tests_properties(pe-lubrication-refusal PROPERTIES
+  LABELS "integration;serial;lubrication"
 )

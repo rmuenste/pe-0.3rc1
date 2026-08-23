@@ -69,7 +69,7 @@ protected:
    /*!\name Constructor */
    //@{
    explicit EllipsoidTrait( size_t sid, size_t uid, const Vec3& gpos,
-                         real radius, MaterialID material, bool visible );
+                         real a, real b, real c, MaterialID material, bool visible );
    //@}
    //**********************************************************************************************
 
@@ -119,8 +119,8 @@ template< template<typename> class CD                           // Type of the c
                   , template<typename,typename,typename> class  // Template signature of the collision response algorithm
                   > class C >                                   // Type of the configuration
 EllipsoidTrait< C<CD,FD,BG,response::OpenCLSolver> >::EllipsoidTrait( size_t sid, size_t uid, const Vec3& gpos,
-                                                             real radius, MaterialID material, bool visible )
-   : Parent( sid, uid, gpos, radius, material, visible )  // Initialization of the parent class
+                                                             real a, real b, real c, MaterialID material, bool visible )
+   : Parent( sid, uid, gpos, a, b, c, material, visible )  // Initialization of the parent class
 {}
 //*************************************************************************************************
 

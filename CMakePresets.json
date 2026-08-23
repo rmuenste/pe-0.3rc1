@@ -1,129 +1,171 @@
 {
     "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
     "configurePresets": [
         {
-            "name": "default",
-            "displayName": "Default Config",
-            "description": "Default build configuration",
-            "generator": "Unix Makefiles",
-            "binaryDir": "${sourceDir}/build",
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "PE_LIBRARY_TYPE": "STATIC",
+                "BUILD_TESTING": "ON",
+                "PE_BUILD_INTERFACE_TESTS": "ON",
+                "PE_BUILD_EXAMPLES": "OFF",
+                "PE_BUILD_LIVE_VIEWER": "OFF",
                 "PE_USE_MPI": "OFF",
+                "PE_MPI_PREINCLUDE": "OFF",
+                "PE_USE_CGAL": "OFF",
+                "PE_USE_EIGEN": "ON",
+                "PE_USE_JSON": "ON",
                 "PE_USE_BLAS": "OFF",
                 "PE_USE_OPENCL": "OFF",
                 "PE_USE_IRRLICHT": "OFF",
-                "PE_BUILD_EXAMPLES": "ON",
-                "PE_USE_EIGEN": "ON",
-                "PE_USE_CGAL": "OFF",
-                "PE_USE_JSON": "ON"
+                "PE_USE_ACCELERATED_POINT_QUERY": "OFF",
+                "PE_VERIFY_HASHGRID": "OFF"
             }
         },
         {
+            "name": "serial",
+            "displayName": "Serial Release",
+            "description": "Static Release build with the complete serial CTest suite",
+            "inherits": "base",
+            "binaryDir": "${sourceDir}/build/presets/serial"
+        },
+        {
             "name": "debug",
-            "displayName": "Debug Config",
-            "description": "Debug build configuration",
-            "generator": "Unix Makefiles",
-            "binaryDir": "${sourceDir}/build-debug",
+            "displayName": "Serial Debug",
+            "description": "Static Debug build with the complete serial CTest suite",
+            "inherits": "base",
+            "binaryDir": "${sourceDir}/build/presets/debug",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "PE_LIBRARY_TYPE": "STATIC",
-                "PE_USE_MPI": "OFF",
-                "PE_USE_BLAS": "OFF",
-                "PE_USE_OPENCL": "OFF",
-                "PE_USE_IRRLICHT": "OFF",
-                "PE_BUILD_EXAMPLES": "ON",
-                "PE_USE_EIGEN": "ON",
-                "PE_USE_CGAL": "OFF",
-                "PE_USE_JSON": "ON"
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "mpi",
+            "displayName": "MPI Release",
+            "description": "Static Release build with MPI enabled independently of CGAL",
+            "inherits": "base",
+            "binaryDir": "${sourceDir}/build/presets/mpi",
+            "cacheVariables": {
+                "PE_USE_MPI": "ON"
+            }
+        },
+        {
+            "name": "cgal",
+            "displayName": "CGAL Release",
+            "description": "Static Release build with CGAL and DistanceMap coverage, without MPI",
+            "inherits": "base",
+            "binaryDir": "${sourceDir}/build/presets/cgal",
+            "cacheVariables": {
+                "PE_USE_CGAL": "ON"
             }
         }
     ],
     "buildPresets": [
         {
-            "name": "library-only",
-            "displayName": "Build Main Library Only",
-            "description": "Build only the PE library (static/shared)",
-            "configurePreset": "debug",
-            "jobs": 2,
-            "targets": [
-                "pe_static",
-                "pe_shared"
-            ]
+            "name": "build-serial",
+            "displayName": "Build Serial Release",
+            "configurePreset": "serial",
+            "jobs": 2
         },
         {
-            "name": "all-examples",
-            "displayName": "Build All Serial Examples",
-            "description": "Build all serial example applications",
-            "configurePreset": "debug",
-            "jobs": 2,
-            "targets": [
-                "boxstack",
-                "chain",
-                "cradle",
-                "domino",
-                "granular",
-                "nano",
-                "well",
-                "shaker"
-            ]
-        },
-        {
-            "name": "single-example-boxstack",
-            "displayName": "Build BoxStack Example",
-            "description": "Build only the boxstack example",
-            "configurePreset": "debug",
-            "jobs": 2,
-            "targets": [
-                "boxstack"
-            ]
-        },
-        {
-            "name": "single-example-chain",
-            "displayName": "Build Chain Example",
-            "description": "Build only the chain example",
-            "configurePreset": "debug",
-            "jobs": 2,
-            "targets": [
-                "chain"
-            ]
-        },
-        {
-            "name": "single-example-granular",
-            "displayName": "Build Granular Example",
-            "description": "Build only the granular example",
-            "configurePreset": "debug",
-            "jobs": 2,
-            "targets": [
-                "granular"
-            ]
-        },
-        {
-            "name": "library-and-examples",
-            "displayName": "Build Library + All Examples",
-            "description": "Build the PE library and all serial examples",
-            "configurePreset": "debug",
-            "jobs": 2,
-            "targets": [
-                "pe_static",
-                "pe_shared",
-                "boxstack",
-                "chain",
-                "cradle",
-                "domino",
-                "granular",
-                "nano",
-                "well",
-                "shaker"
-            ]
-        },
-        {
-            "name": "fast-build",
-            "displayName": "Fast Parallel Build",
-            "description": "Build everything with maximum parallelization",
+            "name": "build-debug",
+            "displayName": "Build Serial Debug",
             "configurePreset": "debug",
             "jobs": 2
+        },
+        {
+            "name": "build-mpi",
+            "displayName": "Build MPI Release",
+            "configurePreset": "mpi",
+            "jobs": 2
+        },
+        {
+            "name": "build-cgal",
+            "displayName": "Build CGAL Release",
+            "configurePreset": "cgal",
+            "jobs": 2
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-serial",
+            "displayName": "Test Serial Release",
+            "configurePreset": "serial",
+            "filter": {
+                "include": {
+                    "label": "serial"
+                }
+            },
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error",
+                "timeout": 180
+            }
+        },
+        {
+            "name": "test-debug",
+            "displayName": "Test Serial Debug",
+            "configurePreset": "debug",
+            "filter": {
+                "include": {
+                    "label": "serial"
+                }
+            },
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error",
+                "timeout": 180
+            }
+        },
+        {
+            "name": "test-mpi",
+            "displayName": "Test MPI Release",
+            "configurePreset": "mpi",
+            "filter": {
+                "include": {
+                    "label": "mpi"
+                }
+            },
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error",
+                "timeout": 180
+            }
+        },
+        {
+            "name": "test-cgal",
+            "displayName": "Test CGAL Release",
+            "configurePreset": "cgal",
+            "filter": {
+                "include": {
+                    "label": "cgal"
+                }
+            },
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error",
+                "timeout": 180
+            }
         }
     ]
 }
