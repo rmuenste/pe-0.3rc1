@@ -5,6 +5,8 @@
 #include <pe/interface/el_optional_api.h>
 
 #include <iostream>
+#include <type_traits>
+#include <utility>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -45,6 +47,92 @@ extern "C" void set_lubrication_threshold(double *threshold)
  * value is identical on every rank, so per-rank PE instances stay deterministic.
  * Idempotent; a no-op while lubrication is disabled or the clamp factor is 0.
  */
+//=================================================================================================
+/*!\brief Reports whether the lubrication add-on master switch is on (1) or off (0).
+ *
+ * Lets the CFD layer gate its per-step DNS_LUB diagnostic print without touching json
+ * parsing on the Fortran side; with the switch off the print is skipped entirely, so
+ * lubrication-off runs keep byte-identical stdout.
+ */
+// Bound to Fortran function get_lubrication_enabled() in
+// source/src_particles/dem_query.f90
+extern "C" int get_lubrication_enabled()
+{
+   return pe::lubrication::isEnabled() ? 1 : 0;
+}
+//=================================================================================================
+
+
+//=================================================================================================
+// Accessor detection for the per-step lubrication stage diagnostics: only collision
+// systems that RETAIN the diagnostics (HardContactAndFluid, HCSITS) expose
+// lubricationStageDiag(). Detected structurally so this translation unit still compiles
+// when the active pe_CONSTRAINT_SOLVER is any other solver (e.g. the EL family) - the
+// query then reports zeros.
+namespace pe_query_detail {
+
+template <typename CS, typename = void>
+struct HasLubStageDiag : std::false_type {};
+
+template <typename CS>
+struct HasLubStageDiag<CS, std::void_t<decltype(std::declval<const CS&>().lubricationStageDiag())>>
+    : std::true_type {};
+
+// Template so the if-constexpr false branch is genuinely discarded (in a plain
+// function both branches would be instantiated and an EL-solver build would fail
+// to compile the accessor call).
+template <typename CS>
+inline void readLubStageDiag(const CS& cs, double *totalForce, double *dissipation,
+                             double *maxNormalImpulse, int *numContacts, int *numSaturated)
+{
+   if constexpr( HasLubStageDiag<CS>::value ) {
+      const auto& d = cs.lubricationStageDiag();
+      *totalForce       = static_cast<double>( d.totalForce );
+      *dissipation      = static_cast<double>( d.dissipation );
+      *maxNormalImpulse = static_cast<double>( d.maxNormalImpulse );
+      *numContacts      = static_cast<int>( d.numContacts );
+      *numSaturated     = static_cast<int>( d.numSaturated );
+   }
+   else {
+      (void)cs;
+      (void)totalForce; (void)dissipation; (void)maxNormalImpulse;
+      (void)numContacts; (void)numSaturated;
+   }
+}
+
+}  // namespace pe_query_detail
+
+
+/*!\brief Reads the diagnostics of the most recent lubrication stage invocation.
+ *
+ * \param totalForce Sum of applied lubrication force magnitudes over the last macro step.
+ * \param dissipation Sum of J.g + L.w over the step (must be <= 0; sign-convention check).
+ * \param maxNormalImpulse Largest normal lubrication impulse applied.
+ * \param numContacts Lubrication contacts acted on.
+ * \param numSaturated Contacts inside the h_c saturation freeze.
+ *
+ * For a single sphere-wall pair (the G2 Brenner benchmark) totalForce IS the applied
+ * lubrication force and maxNormalImpulse/dt its normal component. Zeros while the
+ * add-on is off or the active solver does not run the stage.
+ */
+// Bound to Fortran subroutine get_lubrication_stage_diag(...) in
+// source/src_particles/dem_query.f90
+extern "C" void get_lubrication_stage_diag(double *totalForce, double *dissipation,
+                                           double *maxNormalImpulse, int *numContacts,
+                                           int *numSaturated)
+{
+   *totalForce       = 0.0;
+   *dissipation      = 0.0;
+   *maxNormalImpulse = 0.0;
+   *numContacts      = 0;
+   *numSaturated     = 0;
+
+   pe_query_detail::readLubStageDiag( *pe::theCollisionSystem(), totalForce, dissipation,
+                                      maxNormalImpulse, numContacts, numSaturated );
+}
+//=================================================================================================
+
+
 // Bound to Fortran subroutine set_lubrication_mesh_dx(dx) in
 // source/src_particles/dem_query.f90
 extern "C" void set_lubrication_mesh_dx(double *dx)

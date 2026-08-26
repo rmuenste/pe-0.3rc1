@@ -176,6 +176,12 @@ public:
    //! Opt-in marker: this pipeline invokes the shared lubrication stage.
    static constexpr bool hasLubricationStage = true;
 
+   //! Diagnostics of the most recent lubrication-stage invocation (zeros while the
+   //! add-on is off). Read by the extern-C query get_lubrication_stage_diag.
+   const lubrication::StageDiagnostics& lubricationStageDiag() const {
+      return lubricationStageDiag_;
+   }
+
    enum RelaxationModel {
       InelasticFrictionlessContact,
       ApproximateInelasticCoulombContactByDecoupling,
@@ -331,6 +337,10 @@ private:
 
    // contacts
    std::vector<bool> contactsMask_;
+
+   // Last resolveContacts() lubrication-stage diagnostics (zeros while the add-on is
+   // off). Read through lubricationStageDiag() by the extern-C interface query.
+   lubrication::StageDiagnostics lubricationStageDiag_;
    std::vector<Vec3> r1_, r2_;
    std::vector<BodyID> body1_, body2_;
    std::vector<Vec3> n_, t_, o_;
@@ -1963,7 +1973,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       // Off by default -- one predictable branch, and the extra velocity
       // synchronization (an MPI collective) is never reached.
       if( lubrication::isEnabled() ) {
-         lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
+         // Retain the per-step diagnostics, mirrored from HardContactAndFluid; read
+         // through lubricationStageDiag() by the extern-C interface query.
+         lubricationStageDiag_ =
+            lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
          synchronizeVelocities();
       }
    }
