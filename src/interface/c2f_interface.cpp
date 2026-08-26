@@ -5,6 +5,7 @@
 #include <pe/interface/c_interface_queries.h>
 #include <pe/interface/c_interface_particle_fbm.h>
 #include <pe/interface/c_interface_particle_getset.h>
+#include <pe/interface/setup_optional_collision_params.h>
 
 #if HAVE_MPI
 #include <pe/interface/sim_setup.h>
@@ -34,6 +35,11 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
       CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
       //printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
       setupParticleBench(CcommEx0);
+      // Central lubrication-config application (D2.2): the serial setups apply this
+      // internally, but most parallel setups never did, so lubricationEnabled_ was a
+      // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+      // idempotent, and refuses loudly on a solver without the lubrication stage.
+      pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
     } 
 }
 //=================================================================================================
@@ -56,6 +62,11 @@ extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *
     if (remRank != 0) {
       CcommEx0 = MPI_Comm_f2c(*FcommEx0);
       setupFluidization(CcommEx0);
+      // Central lubrication-config application (D2.2): the serial setups apply this
+      // internally, but most parallel setups never did, so lubricationEnabled_ was a
+      // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+      // idempotent, and refuses loudly on a solver without the lubrication stage.
+      pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
     }
 }
 //=================================================================================================
@@ -82,6 +93,11 @@ extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
        return;
     }
     setup2x2x2(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   } 
 }
 //=================================================================================================
@@ -108,6 +124,11 @@ extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
        return;
     }
     setupCyl(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   } 
 }
 //=================================================================================================
@@ -136,6 +157,11 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
     // (Ex0) so passive PE use (queries, synchronizeForces) is safe; creates
     // no world content.
     setupGeneralInit(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   }
 }
 //=================================================================================================
@@ -161,6 +187,11 @@ extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
        return;
     }
     setupSpan(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   } 
 }
 //=================================================================================================
@@ -186,6 +217,11 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
        return;
     }
     setupKroupa(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   } 
 }
 //=================================================================================================
@@ -211,6 +247,11 @@ extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
        return;
     }
     setupCreep(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   } 
 }
 //=================================================================================================
@@ -259,6 +300,11 @@ extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
     }
 
     setupELFrozenTrace(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   }
 }
 //=================================================================================================
@@ -288,6 +334,11 @@ extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx
     }
 
     setupELTerminalVelocity(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   }
 }
 //=================================================================================================
@@ -313,6 +364,11 @@ extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *re
        return;
     }
     setupArchimedes(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   } 
 }
 //=================================================================================================
@@ -339,6 +395,11 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
        return;
     }
     setupDraftKissTumbBench(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   }
 }
 //=================================================================================================
@@ -412,6 +473,11 @@ extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
        return;
     }
     setupATC(CcommEx0);
+    // Central lubrication-config application (D2.2): the serial setups apply this
+    // internally, but most parallel setups never did, so lubricationEnabled_ was a
+    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
+    // idempotent, and refuses loudly on a solver without the lubrication stage.
+    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
   }
 }
 //=================================================================================================

@@ -1,7 +1,10 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/CollisionSystem.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/interface/el_optional_api.h>
+
+#include <iostream>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -25,6 +28,45 @@ bool check_rem_id(int fbmid, int id) {
 extern "C" void set_lubrication_threshold(double *threshold)
 {
    pe::lubrication::setLubricationThreshold( static_cast<pe::real>(*threshold) );
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*!\brief Pushes the resolved CFD mesh width into the lubrication mesh clamp from Fortran.
+ *
+ * \param dx Pointer to the finest resolved CFD element width (global h_min).
+ * \return void
+ *
+ * Arms the mesh clamp: with lubricationMeshClampFactor_ = c > 0 the effective outer
+ * cutoff becomes min(cutoffFactor*aRef, c*dx), so lubrication activates exactly where
+ * the CFD mesh stops resolving the squeeze film instead of at a hand-computed per-case
+ * cutoff. Called from the CFD layer (ComputeCFL) once the global h_min is known; the
+ * value is identical on every rank, so per-rank PE instances stay deterministic.
+ * Idempotent; a no-op while lubrication is disabled or the clamp factor is 0.
+ */
+// Bound to Fortran subroutine set_lubrication_mesh_dx(dx) in
+// source/src_particles/dem_query.f90
+extern "C" void set_lubrication_mesh_dx(double *dx)
+{
+   pe::lubrication::setMeshDx( static_cast<pe::real>(*dx) );
+
+   // One-time arming announcement on the representative rank only (in PE serial mode
+   // every CFD rank runs this on its own PE instance): grep-able run evidence that the
+   // clamp is live. The opposite failure - clamp configured but dx never pushed - warns
+   // loudly in applyLubricationStage.
+   if( pe::lubrication::isEnabled() &&
+       pe::lubrication::getMeshClampFactor() > pe::real(0) && *dx > 0.0 &&
+       pe::SimulationConfig::getInstance().getCfdRank() == 1 ) {
+      static bool announced = false;
+      if( !announced ) {
+         announced = true;
+         std::cout << "PE_LUB_MESHDX armed: dx= " << *dx
+                   << " clamp_factor= " << pe::lubrication::getMeshClampFactor()
+                   << " activation_gap= "
+                   << pe::lubrication::getMeshClampFactor() * (*dx) << std::endl;
+      }
+   }
 }
 //=================================================================================================
 

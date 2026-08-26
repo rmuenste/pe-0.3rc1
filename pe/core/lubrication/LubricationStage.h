@@ -56,6 +56,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iostream>
 #include <vector>
 
 
@@ -141,6 +142,21 @@ inline StageDiagnostics applyLubricationStage( const Contacts& contacts,
    const ModelConfig lubCfg = currentModelConfig();
    if( !lubCfg.enabled )
       return diag;
+
+   // A configured mesh clamp with no pushed dx silently degrades to the bare relative
+   // cutoff (cutoffFactor*aRef) - the run then applies lubrication over a band the case
+   // design did not choose. Warn once, loudly, instead of guessing (same policy as the
+   // solver-capability refusal in applyOptionalLubricationParams).
+   if( getMeshClampFactor() > real(0) && getMeshDx() <= real(0) ) {
+      static bool warned = false;
+      if( !warned ) {
+         warned = true;
+         std::cerr << "[pe] WARNING: lubricationMeshClampFactor_ > 0 but no CFD mesh "
+                      "width was pushed (set_lubrication_mesh_dx never called); the "
+                      "mesh clamp is DISARMED and the outer cutoff falls back to "
+                      "cutoffFactor*aRef alone.\n";
+      }
+   }
 
    // (1 - exp(-x))/x clamp factor for explicit modes: ~1 for soft modes, prevents
    // overshoot for stiff ones (exact integration of a linear drag mode over dt).
