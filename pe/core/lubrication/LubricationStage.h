@@ -316,6 +316,8 @@ inline StageDiagnostics applyLubricationStage( const Contacts& contacts,
       kin.v1 = v1_pre;  kin.v2 = v2_pre;
       kin.w1 = w1_pre;  kin.w2 = w2_pre;
       kin.aRef = aRef;  kin.wall = wall;
+      kin.hCut = lubricationCutoff( aRef );   // activation gap (mesh clamp included);
+                                              // consumed by modelKroupaDeficit only
 
       const PairWrench wr = computeWrench( kin, lubCfg );
 
@@ -326,13 +328,13 @@ inline StageDiagnostics applyLubricationStage( const Contacts& contacts,
          // Normal mode: exact exponential update of the relative normal velocity.
          // |Jn| < m_eff |vrn| by construction: unconditionally stable, no cap needed.
          if( vrn < real(0) || lubCfg.resistSeparation ) {
-            const real Kn = normalResistance( h, aRef, wall, lubCfg );
+            const real Kn = normalResistance( h, aRef, wall, lubCfg, kin.hCut );
             J = -m_eff * ( real(1) - std::exp( -Kn * dt / m_eff ) ) * vrn * n;
          }
 
          // Tangential force: explicit, with the exponential clamp of its own mode
          // (soft O(log eps) resistance, clamp ~1 in practice).
-         const real Ks = slidingResistance( h, aRef, wall, lubCfg );
+         const real Ks = slidingResistance( h, aRef, wall, lubCfg, kin.hCut );
          J += wr.Ft * ( dt * expClamp( Ks * dt / m_eff ) );
 
          // Pure torques: twist component clamped against its own resistance, the
@@ -343,7 +345,7 @@ inline StageDiagnostics applyLubricationStage( const Contacts& contacts,
          real cSlide = real(1);
          if( invIn > real(0) ) {
             const real I_eff = real(1) / invIn;
-            const real Kt = twistingResistance( h, aRef, wall, lubCfg );
+            const real Kt = twistingResistance( h, aRef, wall, lubCfg, kin.hCut );
             cTwist = expClamp( Kt * dt / I_eff );
             cSlide = expClamp( Ks * aRef * aRef * dt / I_eff );
          }

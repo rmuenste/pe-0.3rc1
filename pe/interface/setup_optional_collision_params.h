@@ -123,7 +123,9 @@ inline void applyOptionalLubricationParams(CollisionSystemT& cs, const Simulatio
   lubrication::setEnabled(enabled);
   lubrication::setModel(config.getLubricationModel() == "legacy"
                             ? lubrication::modelLegacy
-                            : lubrication::modelKroupa2016);
+                            : config.getLubricationModel() == "kroupaDeficit"
+                                  ? lubrication::modelKroupaDeficit
+                                  : lubrication::modelKroupa2016);
   lubrication::setScheme(config.getLubricationIntegration() == "explicit-capped"
                              ? lubrication::schemeExplicitCapped
                              : lubrication::schemeSemiImplicit);

@@ -68,7 +68,7 @@ extern bool securityZoneFlag;   //!< Mirror of the security zone; write via setS
 inline bool isEnabled() { return detail::enabledFlag; }
 void setEnabled( bool enabled );
 
-// Force model: 0 = Kroupa 2016, 1 = legacy (ModelKind)
+// Force model: 0 = Kroupa 2016, 1 = legacy, 2 = kroupaDeficit (ModelKind)
 int  getModel();
 void setModel( int model );
 

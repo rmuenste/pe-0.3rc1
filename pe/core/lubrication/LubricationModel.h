@@ -57,8 +57,17 @@ namespace lubrication {
 //*************************************************************************************************
 /*!\brief Selects the pairwise lubrication force model. */
 enum ModelKind {
-   modelKroupa2016 = 0,  //!< Full resistance set of Kroupa et al. 2016 (default)
-   modelLegacy     = 1   //!< Pre-2026 PE model: leading-order normal term, approach-only
+   modelKroupa2016   = 0,  //!< Full resistance set of Kroupa et al. 2016 (default)
+   modelLegacy       = 1,  //!< Pre-2026 PE model: leading-order normal term, approach-only
+   modelKroupaDeficit = 2  //!< Kroupa resistances MINUS their value at the pair's activation
+                           //!< gap hCut (deficit form): every coefficient C(eps) becomes
+                           //!< max(0, C(eps) - C(eps_cut)), so the force rises continuously
+                           //!< from zero at activation and only the part of the film the
+                           //!< resolved CFD flow does NOT already carry is added. Reduces to
+                           //!< ten Cate (2002) eq. 10 in the leading normal term; keeps the
+                           //!< h_c saturation. Decided by gate G2 (d22_g2_brenner): the full
+                           //!< resistance set double-counts the FBM-resolved film by ~+75%
+                           //!< in the 1-2h band, the deficit form lands at +7%.
 };
 
 /*!\brief Selects the time-integration scheme used by the solver for lubrication impulses. */
@@ -118,6 +127,9 @@ struct PairKinematics {
    Vec3 w2;    //!< Angular velocity of body 2
    real aRef;  //!< Reference radius for eps (see above)
    bool wall;  //!< True for sphere-plane pairs (body 1 = sphere)
+   real hCut = real(0);  //!< Pair's effective activation gap (lubricationCutoff(aRef), mesh
+                         //!< clamp included), set by the stage. Consumed by modelKroupaDeficit
+                         //!< as the subtraction reference; 0 = unknown -> deficit inactive.
 };
 //*************************************************************************************************
 
@@ -282,12 +294,19 @@ inline real slip( real hEff, real aRef, const ModelConfig& cfg )
 //*************************************************************************************************
 /*!\brief Normal squeeze resistance K_n >= 0 such that F_n = -K_n * vrn * n.
  */
-inline real normalResistance( real h, real aRef, bool wall, const ModelConfig& cfg )
+inline real normalResistance( real h, real aRef, bool wall, const ModelConfig& cfg,
+                              real hCut = real(0) )
 {
    real hEff, eps;
    detail::gapAndEps( h, aRef, cfg, hEff, eps );
    const bool useWall = wall && cfg.wallTerms;
-   return real(6) * M_PI * cfg.viscosity * aRef * detail::coeffNormal( eps, useWall )
+   real c = detail::coeffNormal( eps, useWall );
+   if( cfg.model == modelKroupaDeficit && hCut > real(0) ) {
+      real hEffCut, epsCut;
+      detail::gapAndEps( hCut, aRef, cfg, hEffCut, epsCut );
+      c = std::max( real(0), c - detail::coeffNormal( epsCut, useWall ) );
+   }
+   return real(6) * M_PI * cfg.viscosity * aRef * c
           * detail::slip( hEff, aRef, cfg );
 }
 //*************************************************************************************************
@@ -296,12 +315,19 @@ inline real normalResistance( real h, real aRef, bool wall, const ModelConfig& c
 //*************************************************************************************************
 /*!\brief Sliding resistance K_s >= 0 (v_s self-coefficient) such that F_t ~ -K_s * v_s.
  */
-inline real slidingResistance( real h, real aRef, bool wall, const ModelConfig& cfg )
+inline real slidingResistance( real h, real aRef, bool wall, const ModelConfig& cfg,
+                               real hCut = real(0) )
 {
    real hEff, eps;
    detail::gapAndEps( h, aRef, cfg, hEff, eps );
    const bool useWall = wall && cfg.wallTerms;
-   return real(6) * M_PI * cfg.viscosity * aRef * detail::coeffSlideVs( eps, useWall )
+   real c = detail::coeffSlideVs( eps, useWall );
+   if( cfg.model == modelKroupaDeficit && hCut > real(0) ) {
+      real hEffCut, epsCut;
+      detail::gapAndEps( hCut, aRef, cfg, hEffCut, epsCut );
+      c = std::max( real(0), c - detail::coeffSlideVs( epsCut, useWall ) );
+   }
+   return real(6) * M_PI * cfg.viscosity * aRef * c
           * detail::slip( hEff, aRef, cfg );
 }
 //*************************************************************************************************
@@ -310,12 +336,19 @@ inline real slidingResistance( real h, real aRef, bool wall, const ModelConfig& 
 //*************************************************************************************************
 /*!\brief Twisting resistance K_t >= 0 such that M_t1 = -K_t * ((w1-w2).n) * n.
  */
-inline real twistingResistance( real h, real aRef, bool wall, const ModelConfig& cfg )
+inline real twistingResistance( real h, real aRef, bool wall, const ModelConfig& cfg,
+                                real hCut = real(0) )
 {
    real hEff, eps;
    detail::gapAndEps( h, aRef, cfg, hEff, eps );
    const bool useWall = wall && cfg.wallTerms;
-   return real(8) * M_PI * cfg.viscosity * aRef * aRef * detail::coeffTwist( eps, useWall )
+   real c = detail::coeffTwist( eps, useWall );
+   if( cfg.model == modelKroupaDeficit && hCut > real(0) ) {
+      real hEffCut, epsCut;
+      detail::gapAndEps( hCut, aRef, cfg, hEffCut, epsCut );
+      c = std::max( real(0), c - detail::coeffTwist( epsCut, useWall ) );
+   }
+   return real(8) * M_PI * cfg.viscosity * aRef * aRef * c
           * detail::slip( hEff, aRef, cfg );
 }
 //*************************************************************************************************
@@ -365,17 +398,32 @@ inline PairWrench computeWrench( const PairKinematics& k, const ModelConfig& cfg
       return wr;
    }
 
-   // ---- Kroupa 2016 model ----
+   // ---- Kroupa 2016 model (full or deficit form) ----
    real hEff, eps;
    detail::gapAndEps( k.h, k.aRef, cfg, hEff, eps );
    const bool useWall = k.wall && cfg.wallTerms;
    const real fs      = detail::slip( hEff, k.aRef, cfg );
+
+   // Deficit form: every coefficient is evaluated relative to its value at the pair's
+   // activation gap, clamped at zero - continuous onset, and only the unresolved part
+   // of the film is added (see modelKroupaDeficit). Slip stays evaluated at the pair's
+   // own gap and multiplies the deficit coefficient.
+   const bool deficit = ( cfg.model == modelKroupaDeficit && k.hCut > real(0) );
+   real epsCut = real(0);
+   if( deficit ) {
+      real hEffCut;
+      detail::gapAndEps( k.hCut, k.aRef, cfg, hEffCut, epsCut );
+   }
+   auto dc = [&]( real (*coeff)( real, bool ) ) {
+      const real c = coeff( eps, useWall );
+      return deficit ? std::max( real(0), c - coeff( epsCut, useWall ) ) : c;
+   };
    const real preF    = real(6) * M_PI * cfg.viscosity * k.aRef * fs;
    const real preM    = real(8) * M_PI * cfg.viscosity * k.aRef * k.aRef * fs;
 
    // Normal squeeze force: F_n = -K_n vrn n (resists approach AND separation unless disabled)
    if( vrn < real(0) || cfg.resistSeparation ) {
-      wr.Fn = -( preF * detail::coeffNormal( eps, useWall ) ) * vrn * k.n;
+      wr.Fn = -( preF * dc( detail::coeffNormal ) ) * vrn * k.n;
    }
 
    if( cfg.tangential ) {
@@ -384,13 +432,13 @@ inline PairWrench computeWrench( const PairKinematics& k, const ModelConfig& cfg
       const Vec3 vcs = vcsFull - ( trans( vcsFull ) * k.n ) * k.n;
 
       // Sliding force on body 1 (paper eq 13/17; no n-dependence, transcribes directly)
-      wr.Ft = -preF * ( detail::coeffSlideVs( eps, useWall ) * vs
-                      + detail::coeffSlideVcs( eps, useWall ) * vcs );
+      wr.Ft = -preF * ( dc( detail::coeffSlideVs ) * vs
+                      + dc( detail::coeffSlideVcs ) * vcs );
 
       // Sliding torque (paper eq 14/18 uses the paper normal n_p = -n; the flip makes the
       // leading sign positive in PE convention). Same vector on both bodies for pairs.
-      const Vec3 Msl = preM * ( detail::coeffTorqueVs( eps, useWall ) * ( k.n % vs )
-                              + detail::coeffTorqueVcs( eps, useWall ) * ( k.n % vcs ) );
+      const Vec3 Msl = preM * ( dc( detail::coeffTorqueVs ) * ( k.n % vs )
+                              + dc( detail::coeffTorqueVcs ) * ( k.n % vcs ) );
       wr.M1 += Msl;
       if( !k.wall ) wr.M2 += Msl;
    }
@@ -398,7 +446,7 @@ inline PairWrench computeWrench( const PairKinematics& k, const ModelConfig& cfg
    if( cfg.twisting ) {
       // Twisting torque: dissipative form M_t1 = -K_t spin n (sign-corrected vs printed eq 15/19)
       const real spin = trans( k.n ) * ( k.w1 - k.w2 );
-      const Vec3 Mt   = -( preM * detail::coeffTwist( eps, useWall ) ) * spin * k.n;
+      const Vec3 Mt   = -( preM * dc( detail::coeffTwist ) ) * spin * k.n;
       wr.M1 += Mt;
       if( !k.wall ) wr.M2 -= Mt;
    }

@@ -42,6 +42,21 @@ set_tests_properties(pe-lubrication-model PROPERTIES
   LABELS "unit;serial;lubrication"
 )
 
+# Pure-arithmetic unit test for modelKroupaDeficit (gate-G2 deficit form): subtraction
+# identity, continuous onset at the activation gap, full-model inertness, hCut=0
+# fail-safe. Same harness class as pe_lubrication_model_test.
+add_executable(pe_lubrication_deficit_test
+  pe_lubrication_deficit_test.cpp
+)
+target_link_libraries(pe_lubrication_deficit_test PRIVATE pe_static)
+add_test(
+  NAME pe-lubrication-deficit
+  COMMAND pe_lubrication_deficit_test
+)
+set_tests_properties(pe-lubrication-deficit PROPERTIES
+  LABELS "unit;serial;lubrication"
+)
+
 # The tests below drive the shared lubrication stage through a real collision pipeline, so
 # they need a stage-capable pe_CONSTRAINT_SOLVER. That CANNOT be selected per target with
 # target_compile_definitions -- pe_CONSTRAINT_SOLVER feeds the global Config typedef and

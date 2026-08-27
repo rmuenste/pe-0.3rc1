@@ -301,9 +301,9 @@ public:
     void setLubricationEnabled(bool value) { lubricationEnabled_ = value; }
     const std::string& getLubricationModel() const { return lubricationModel_; }
     void setLubricationModel(const std::string& value) {
-        if (value != "kroupa2016" && value != "legacy")
+        if (value != "kroupa2016" && value != "legacy" && value != "kroupaDeficit")
             throw std::invalid_argument("Unknown lubricationModel_: " + value +
-                                        " (expected \"kroupa2016\" or \"legacy\")");
+                                        " (expected \"kroupa2016\", \"kroupaDeficit\" or \"legacy\")");
         lubricationModel_ = value;
     }
     const std::string& getLubricationIntegration() const { return lubricationIntegration_; }
