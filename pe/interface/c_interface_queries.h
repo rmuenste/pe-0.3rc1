@@ -348,7 +348,26 @@ extern "C" double getParticleRadius(int *idx) {
 extern "C" bool isTypeSphere(int *idx) {
 
   int ridx = *idx;
-  return isSphereType(ridx); 
+  return isSphereType(ridx);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief World-frame direction of the body-frame x axis of particle idx
+ *
+ * For an ellipsoid this is the a-axis (semiAxes_ convention, D6.1). Valid for
+ * any body type; a sphere returns the (physically meaningless) first rotation
+ * column.
+ * \param idx The id of the local particle
+ * \param axis Output: unit vector, world frame
+ */
+// Bound to Fortran subroutine getParticleOrientation(idx, axis) in
+// source/src_particles/dem_query.f90
+extern "C" void getParticleOrientation(int *idx, double axis[3]) {
+  int ridx = *idx;
+  getObjOrientation(ridx, axis);
 }
 //=================================================================================================
 

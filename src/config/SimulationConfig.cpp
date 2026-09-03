@@ -101,6 +101,9 @@ SimulationConfig::SimulationConfig()
     , domainBoundaryDistanceMapVtiFile_("atc_boundary_distancemap.vti")
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
+    , particleShape_("sphere")
+    , semiAxes_(0.0, 0.0, 0.0)
+    , particleAxis_(1.0, 0.0, 0.0)
     , particleDensity_(1.0)
     , fluidViscosity_(1.0)
     , fluidDensity_(1.0)
@@ -424,6 +427,26 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("xyzFilePath_"))
         config.setXyzFilePath(boost::filesystem::path(j["xyzFilePath_"].get<std::string>()));
+
+    // D6.1 non-spherical DNS drag (setter validates the shape string)
+    if (j.contains("particleShape_"))
+        config.setParticleShape(j["particleShape_"].get<std::string>());
+
+    if (j.contains("semiAxes_")) {
+        if (!j["semiAxes_"].is_array() || j["semiAxes_"].size() != 3)
+            throw std::invalid_argument("semiAxes_ must be an array of 3 reals");
+        config.setSemiAxes(Vec3(j["semiAxes_"][0].get<real>(),
+                                j["semiAxes_"][1].get<real>(),
+                                j["semiAxes_"][2].get<real>()));
+    }
+
+    if (j.contains("particleAxis_")) {
+        if (!j["particleAxis_"].is_array() || j["particleAxis_"].size() != 3)
+            throw std::invalid_argument("particleAxis_ must be an array of 3 reals");
+        config.setParticleAxis(Vec3(j["particleAxis_"][0].get<real>(),
+                                    j["particleAxis_"][1].get<real>(),
+                                    j["particleAxis_"][2].get<real>()));
+    }
 
     // Set particle density
     if (j.contains("particleDensity_"))

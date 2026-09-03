@@ -1178,6 +1178,15 @@ double getObjRadius(int idx) {
 
     body = world->getBody(static_cast<unsigned int>(widx));
 
+    if(body->getType() == ellipsoidType) {
+      // D6.1 convention: an ellipsoid reports its SMALLEST semi-axis - the
+      // resolution-setting length for the CFD diagnostics.
+      Ellipsoid *e = static_cast<Ellipsoid*>(body);
+      const Vec3 axes = e->getRadius();
+      rad = (double)std::min(axes[0], std::min(axes[1], axes[2]));
+      return rad;
+    }
+
     if(!isSphereType(idx)) {
       std::stringstream msg;
       msg << "Radius queried for non-sphere object " << idx << "." << "\n";
@@ -1202,9 +1211,40 @@ double getObjRadius(int idx) {
 
 //=================================================================================================
 /*
+ *!\brief World-frame direction of the body-frame x axis of particle idx
+ *
+ * For an ellipsoid this is the a-axis (D6.1 orientation record). The rotation
+ * matrix maps body to world frame, so the body x axis is the first column.
+ * \param idx The index of the particle
+ * \param axis Output: unit vector, world frame
+ */
+// Called from the extern-C wrapper getParticleOrientation() in
+// pe/interface/c_interface_queries.h
+void getObjOrientation(int idx, double axis[3]) {
+
+  WorldID world = theWorld();
+  World::SizeType widx = static_cast<World::SizeType>(idx);
+
+  if ( widx >= world->size() ) {
+    std::stringstream msg;
+    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
+    throw std::out_of_range(msg.str());
+  }
+
+  BodyID body = world->getBody(static_cast<unsigned int>(widx));
+  const Vec3 u = body->getRotation() * Vec3(1.0, 0.0, 0.0);
+  axis[0] = u[0];
+  axis[1] = u[1];
+  axis[2] = u[2];
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
  *!\brief The function returns the particle idx as a struct
  * \param idx The index of the particle
- * \param particle A pointer to the particle structure 
+ * \param particle A pointer to the particle structure
  */
 // Bound to Fortran function getParticle2(idx, particle) in
 // source/src_particles/dem_query.f90 line 80
@@ -1255,6 +1295,10 @@ void getPartStructByIdx(int idx, particleData_t *particle) {
     }
     else if(body->getType() == ellipsoidType) {
       EllipsoidID e = static_body_cast<Ellipsoid>(body);
+      // Smallest semi-axis: the resolution-setting length for the CFD-side
+      // diagnostics (DNS_RESOLUTION D_over_h, particle CFL) - D6.1 convention.
+      const Vec3 eaxes = e->getRadius();
+      particle->radius = std::min(eaxes[0], std::min(eaxes[1], eaxes[2]));
       mat = e->getMaterial();
     }
     else if(body->getType() == cylinderType) {
@@ -1503,6 +1547,10 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     }
     else if(body->getType() == ellipsoidType) {
       EllipsoidID e = static_body_cast<Ellipsoid>(body);
+      // Smallest semi-axis: the resolution-setting length for the CFD-side
+      // diagnostics (DNS_RESOLUTION D_over_h, particle CFL) - D6.1 convention.
+      const Vec3 eaxes = e->getRadius();
+      particle->radius = std::min(eaxes[0], std::min(eaxes[1], eaxes[2]));
       mat = e->getMaterial();
     }
     else if(body->getType() == cylinderType) {

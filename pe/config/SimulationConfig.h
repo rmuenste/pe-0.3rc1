@@ -275,6 +275,18 @@ public:
     PackingMethod getPackingMethod() const { return packingMethod_; }
     void setXyzFilePath(const boost::filesystem::path& path) { xyzFilePath_ = path; }
     const boost::filesystem::path& getXyzFilePath() const { return xyzFilePath_; }
+    //! Particle shape for the DNS-drag xyz path (D6.1): "sphere" (default) or "ellipsoid".
+    void setParticleShape(const std::string& shape) {
+        if (shape != "sphere" && shape != "ellipsoid")
+            throw std::invalid_argument(
+                "particleShape_ must be 'sphere' or 'ellipsoid', got '" + shape + "'");
+        particleShape_ = shape;
+    }
+    const std::string& getParticleShape() const { return particleShape_; }
+    void setSemiAxes(const Vec3& axes) { semiAxes_ = axes; }
+    const Vec3& getSemiAxes() const { return semiAxes_; }
+    void setParticleAxis(const Vec3& axis) { particleAxis_ = axis; }
+    const Vec3& getParticleAxis() const { return particleAxis_; }
     //@}
     //**************************************************************************************
 
@@ -465,6 +477,9 @@ private:
     // Packing parameters
     PackingMethod packingMethod_; //!< Particle packing method
     boost::filesystem::path xyzFilePath_; //!< Path to external particle position file
+    std::string particleShape_;  //!< DNS-drag xyz-path shape: "sphere" (default) or "ellipsoid"
+    Vec3 semiAxes_;              //!< Ellipsoid semi-axes (a,b,c); a lies along body-frame x
+    Vec3 particleAxis_;          //!< World-frame direction of the ellipsoid a-axis at creation
 
     // Physical parameters
     real particleDensity_;       //!< Particle material density

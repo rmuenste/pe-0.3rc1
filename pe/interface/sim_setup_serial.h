@@ -1325,8 +1325,19 @@ inline void setupDNSDragSerial(int cfd_rank) {
 
   TimeStep::stepsize(config.getStepsize());
 
+  // D6.1: optional non-spherical body for the xyz-file path. The Kroupa
+  // lubrication model is sphere-only (pair and wall resistances are built on
+  // sphere radii), so a non-sphere body with lubrication enabled is refused
+  // loudly rather than silently applying wrong-geometry corrections.
+  const bool isEllipsoid = (config.getParticleShape() == "ellipsoid");
+  if (isEllipsoid && config.getLubricationEnabled()) {
+    throw std::runtime_error(
+        "setupDNSDragSerial: lubricationEnabled_ is true but particleShape_ is 'ellipsoid' - "
+        "the lubrication model is sphere-only; disable lubrication for non-spherical bodies");
+  }
+
   const real radius = config.getBenchRadius();
-  if (radius <= 0.0) {
+  if (radius <= 0.0 && !isEllipsoid) {
     throw std::runtime_error("setupDNSDragSerial: benchRadius must be > 0");
   }
 
@@ -1353,6 +1364,53 @@ inline void setupDNSDragSerial(int cfd_rank) {
     }
     MaterialID arrayMaterial = createMaterial(
         "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    if (isEllipsoid) {
+      // D6.1 Oberbeck path: one FIXED ellipsoid per xyz line, semi-axes from
+      // semiAxes_ (a along body-frame x), a-axis rotated onto particleAxis_.
+      const Vec3 axes = config.getSemiAxes();
+      if (axes[0] <= 0.0 || axes[1] <= 0.0 || axes[2] <= 0.0) {
+        throw std::runtime_error(
+            "setupDNSDragSerial: particleShape_ 'ellipsoid' requires semiAxes_ = [a,b,c] > 0");
+      }
+      Vec3 dir = config.getParticleAxis();
+      const real dirLen = dir.length();
+      if (dirLen < real(1e-12)) {
+        throw std::runtime_error("setupDNSDragSerial: particleAxis_ must be a nonzero vector");
+      }
+      dir /= dirLen;
+      const Vec3 bodyX(1.0, 0.0, 0.0);
+      const real cosang = trans(bodyX) * dir;
+      int eidx = 0;
+      for (const auto& pos : positions) {
+        EllipsoidID ell =
+            createEllipsoid(++eidx, pos, axes[0], axes[1], axes[2], arrayMaterial, true);
+        if (cosang < real(1) - real(1e-12)) {
+          if (cosang > real(-1) + real(1e-12)) {
+            Vec3 rotAxis = bodyX % dir;
+            rotAxis /= rotAxis.length();
+            ell->rotate(rotAxis, std::acos(cosang));
+          } else {
+            ell->rotate(Vec3(0.0, 0.0, 1.0), M_PI);  // anti-parallel: any perpendicular axis
+          }
+        }
+        ell->setFixed(true);
+        ell->setLinearVel(0.0, 0.0, 0.0);
+        ell->setAngularVel(0.0, 0.0, 0.0);
+      }
+      const real ellVol = (4.0 / 3.0) * M_PI * axes[0] * axes[1] * axes[2];
+      if (isRepresentative) {
+        std::cout << "\n--DNS DRAG SETUP (ellipsoid array from file)-----------------\n"
+                  << " Position file                           = " << dragXyzPath << "\n"
+                  << " Number of ellipsoids                    = " << positions.size() << "\n"
+                  << " Semi-axes (a,b,c)                       = " << axes << "\n"
+                  << " a-axis direction (world)                = " << dir << "\n"
+                  << " Achieved volume fraction                = "
+                  << positions.size() * ellVol / domainVolume << "\n"
+                  << "-------------------------------------------------------------\n"
+                  << std::endl;
+      }
+      return;
+    }
     int aidx = 0;
     for (const auto& pos : positions) {
       SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
@@ -1371,6 +1429,12 @@ inline void setupDNSDragSerial(int cfd_rank) {
                 << std::endl;
     }
     return;
+  }
+
+  if (isEllipsoid) {
+    throw std::runtime_error(
+        "setupDNSDragSerial: particleShape_ 'ellipsoid' requires xyzFilePath_ "
+        "(the legacy lattice path is sphere-only)");
   }
 
   int targetCount = 1;
