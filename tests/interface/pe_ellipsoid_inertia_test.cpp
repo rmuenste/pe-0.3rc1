@@ -84,6 +84,26 @@ int main()
    expect( close( Ie[0], real(0.4) * esp->getMass() * r * r ),
           "degenerate ellipsoid I_xx = (2/5) m r^2" );
 
+   // --- 4. point containment (defect D-4: the live test dropped the z-term,
+   // ---    making the "ellipsoid" an infinite elliptic cylinder) ------------
+   expect(  ell->containsPoint( Vec3( 1.9, 0.0, 0.0 ) ), "inside along a" );
+   expect( !ell->containsPoint( Vec3( 2.1, 0.0, 0.0 ) ), "outside along a" );
+   expect(  ell->containsPoint( Vec3( 0.0, 2.9, 0.0 ) ), "inside along b" );
+   expect( !ell->containsPoint( Vec3( 0.0, 3.1, 0.0 ) ), "outside along b" );
+   expect(  ell->containsPoint( Vec3( 0.0, 0.0, 3.9 ) ), "inside along c" );
+   expect( !ell->containsPoint( Vec3( 0.0, 0.0, 4.1 ) ),
+           "outside along c (cylinder-bug detector: z-term must participate)" );
+   expect( !ell->containsRelPoint( real(0), real(0), real(4.1) ),
+           "containsRelPoint scales by the semi-axes" );
+
+   // --- 5. containment under rotation: a-axis rotated from x onto z ---------
+   EllipsoidID rot = createEllipsoid( 4, Vec3( 60, 0, 0 ), real(2), real(1), real(1), mat );
+   rot->rotate( Vec3( 0, 1, 0 ), real(-M_PI/2.0) );  // body x -> world z
+   expect(  rot->containsPoint( Vec3( 60.0, 0.0,  1.9 ) ), "rotated: inside along world z (a)" );
+   expect( !rot->containsPoint( Vec3( 60.0, 0.0,  2.1 ) ), "rotated: outside along world z (a)" );
+   expect(  rot->containsPoint( Vec3( 60.9, 0.0,  0.0 ) ), "rotated: inside along world x (c)" );
+   expect( !rot->containsPoint( Vec3( 61.1, 0.0,  0.0 ) ), "rotated: outside along world x (c)" );
+
    if( failures == 0 ) {
       std::printf( "pe_ellipsoid_inertia_test: all checks passed\n" );
       return EXIT_SUCCESS;
