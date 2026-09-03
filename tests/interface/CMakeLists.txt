@@ -57,6 +57,21 @@ set_tests_properties(pe-lubrication-deficit PROPERTIES
   LABELS "unit;serial;lubrication"
 )
 
+# Pins the solid-ellipsoid inertia tensor (torque-path review defect D-1: I_zz carried
+# a 1/4 factor where the solid-ellipsoid value is 1/5 on all three principal axes).
+# Serial world, no MPI.
+add_executable(pe_ellipsoid_inertia_test
+  pe_ellipsoid_inertia_test.cpp
+)
+target_link_libraries(pe_ellipsoid_inertia_test PRIVATE pe_static)
+add_test(
+  NAME pe-ellipsoid-inertia
+  COMMAND pe_ellipsoid_inertia_test
+)
+set_tests_properties(pe-ellipsoid-inertia PROPERTIES
+  LABELS "unit;serial;rigidbody"
+)
+
 # The tests below drive the shared lubrication stage through a real collision pipeline, so
 # they need a stage-capable pe_CONSTRAINT_SOLVER. That CANNOT be selected per target with
 # target_compile_definitions -- pe_CONSTRAINT_SOLVER feeds the global Config typedef and

@@ -2104,6 +2104,18 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
+           else if(body->getType() == ellipsoidType) {
+             BodyID b( *body );
+             EllipsoidID ell = static_body_cast<Ellipsoid>(b);
+             mat = ell->getMaterial();
+             real rho = Material::getDensity( mat );
+
+             real vol = ell->getVolume();
+
+             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
+             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
+           }
            else {
             v_[j] = body->getLinearVel() + Settings::gravity() * dt;
             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );

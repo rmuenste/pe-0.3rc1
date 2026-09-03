@@ -251,8 +251,6 @@ void synchronizeForces() {
                  (body->getType() == cylinderType && !body->isFixed()) ||
                  (body->getType() == triangleMeshType && !body->isFixed())
                  ) {
-            Vec3 tau = body->getTorque();
-            body->setTorque(tau);
             printForceData(body);
             printTorqueData(body);
         }
