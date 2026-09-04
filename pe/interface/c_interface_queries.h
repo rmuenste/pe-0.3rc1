@@ -372,6 +372,23 @@ extern "C" void getParticleOrientation(int *idx, double axis[3]) {
 //=================================================================================================
 
 
+//=================================================================================================
+/*
+ *!\brief We return whether the world body with id idx is an ellipsoid
+ *
+ * The DNS_PART_AXIS record filters on this rather than "not a sphere", so
+ * that wall planes/boxes in wall-bounded cases stay silent.
+ * \param idx The id of the local body
+ */
+// Bound to Fortran function isEllipsoid(idx) via isTypeEllipsoid in
+// source/src_particles/dem_query.f90
+extern "C" bool isTypeEllipsoid(int *idx) {
+  int ridx = *idx;
+  return isEllipsoidType(ridx);
+}
+//=================================================================================================
+
+
 #ifdef PE_USE_CGAL
 //=================================================================================================
 /*

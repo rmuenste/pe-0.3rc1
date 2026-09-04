@@ -1018,6 +1018,23 @@ bool isPlaneType(int idx) {
  *
  * \param idx The id of the local particle
  */
+// Called from the extern-C wrapper isTypeEllipsoid() in
+// pe/interface/c_interface_queries.h
+bool isEllipsoidType(int idx) {
+
+  WorldID world = theWorld();
+  World::SizeType widx = static_cast<World::SizeType>(idx);
+
+  if ( widx < world->size() ) {
+    return world->getBody(static_cast<unsigned int>(widx))->getType() == ellipsoidType;
+  }
+  std::stringstream msg;
+  msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
+  throw std::out_of_range(msg.str());
+}
+//=================================================================================================
+
+
 // Bound to Fortran function isSphere(idx) via isTypeSphere in
 // source/src_particles/dem_query.f90 line 184
 bool isSphereType(int idx) {
