@@ -287,6 +287,16 @@ public:
     const Vec3& getSemiAxes() const { return semiAxes_; }
     void setParticleAxis(const Vec3& axis) { particleAxis_ = axis; }
     const Vec3& getParticleAxis() const { return particleAxis_; }
+    //! Body motion for the DNS-drag xyz path: "fixed" (default, D6.1) or
+    //! "rotationOnly" (translation locked via the linear DOF mask, rotation
+    //! free - D6.2 Jeffery).
+    void setParticleMotion(const std::string& motion) {
+        if (motion != "fixed" && motion != "rotationOnly")
+            throw std::invalid_argument(
+                "particleMotion_ must be 'fixed' or 'rotationOnly', got '" + motion + "'");
+        particleMotion_ = motion;
+    }
+    const std::string& getParticleMotion() const { return particleMotion_; }
     //@}
     //**************************************************************************************
 
@@ -478,6 +488,7 @@ private:
     PackingMethod packingMethod_; //!< Particle packing method
     boost::filesystem::path xyzFilePath_; //!< Path to external particle position file
     std::string particleShape_;  //!< DNS-drag xyz-path shape: "sphere" (default) or "ellipsoid"
+    std::string particleMotion_; //!< DNS-drag xyz-path motion: "fixed" (default) or "rotationOnly"
     Vec3 semiAxes_;              //!< Ellipsoid semi-axes (a,b,c); a lies along body-frame x
     Vec3 particleAxis_;          //!< World-frame direction of the ellipsoid a-axis at creation
 

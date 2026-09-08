@@ -1393,7 +1393,13 @@ inline void setupDNSDragSerial(int cfd_rank) {
             ell->rotate(Vec3(0.0, 0.0, 1.0), M_PI);  // anti-parallel: any perpendicular axis
           }
         }
-        ell->setFixed(true);
+        if (config.getParticleMotion() == "rotationOnly") {
+          // D6.2: translation locked, rotation free - the FBM torque drives
+          // the orientation dynamics (Jeffery orbit).
+          ell->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
+        } else {
+          ell->setFixed(true);
+        }
         ell->setLinearVel(0.0, 0.0, 0.0);
         ell->setAngularVel(0.0, 0.0, 0.0);
       }
@@ -1414,7 +1420,11 @@ inline void setupDNSDragSerial(int cfd_rank) {
     int aidx = 0;
     for (const auto& pos : positions) {
       SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
-      sphere->setFixed(true);
+      if (config.getParticleMotion() == "rotationOnly") {
+        sphere->setLinearDofMask(Vec3(0.0, 0.0, 0.0));  // D6.2 V0 spin control
+      } else {
+        sphere->setFixed(true);
+      }
       sphere->setLinearVel(0.0, 0.0, 0.0);
       sphere->setAngularVel(0.0, 0.0, 0.0);
     }

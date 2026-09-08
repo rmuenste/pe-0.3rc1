@@ -102,6 +102,7 @@ SimulationConfig::SimulationConfig()
     , packingMethod_(PackingMethod::Grid)
     , xyzFilePath_("")
     , particleShape_("sphere")
+    , particleMotion_("fixed")
     , semiAxes_(0.0, 0.0, 0.0)
     , particleAxis_(1.0, 0.0, 0.0)
     , particleDensity_(1.0)
@@ -431,6 +432,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // D6.1 non-spherical DNS drag (setter validates the shape string)
     if (j.contains("particleShape_"))
         config.setParticleShape(j["particleShape_"].get<std::string>());
+
+    if (j.contains("particleMotion_"))
+        config.setParticleMotion(j["particleMotion_"].get<std::string>());
 
     if (j.contains("semiAxes_")) {
         if (!j["semiAxes_"].is_array() || j["semiAxes_"].size() != 3)
