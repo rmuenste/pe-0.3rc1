@@ -35,6 +35,7 @@
 #include <pe/core/BodyBinaryWriter.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPITrait.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 
 
 namespace pe {
@@ -74,6 +75,7 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
 
    marshal( buffer_, UniqueID<RigidBody>::counter_ );
    bodies += marshalAllPrimitives<Sphere>      ( buffer_, world );
+   bodies += marshalAllPrimitives<Ellipsoid>   ( buffer_, world );
    bodies += marshalAllPrimitives<Box>         ( buffer_, world );
    bodies += marshalAllPrimitives<Capsule>     ( buffer_, world );
    bodies += marshalAllPrimitives<Cylinder>    ( buffer_, world );
@@ -87,6 +89,7 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
       // marshal global bodies
       marshal( globals_, UniqueID<RigidBody>::globalCounter_ );
       bodies += marshalAllPrimitives<Sphere>      ( globals_, world, true );
+      bodies += marshalAllPrimitives<Ellipsoid>   ( globals_, world, true );
       bodies += marshalAllPrimitives<Box>         ( globals_, world, true );
       bodies += marshalAllPrimitives<Capsule>     ( globals_, world, true );
       bodies += marshalAllPrimitives<Cylinder>    ( globals_, world, true );

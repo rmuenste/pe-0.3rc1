@@ -72,6 +72,22 @@ set_tests_properties(pe-ellipsoid-inertia PROPERTIES
   LABELS "unit;serial;rigidbody"
 )
 
+# Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
+# rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
+# the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.
+# Serial world, no MPI; writes into ./_ckpt_roundtrip_test/.
+add_executable(pe_checkpoint_roundtrip_test
+  pe_checkpoint_roundtrip_test.cpp
+)
+target_link_libraries(pe_checkpoint_roundtrip_test PRIVATE pe_static)
+add_test(
+  NAME pe-checkpoint-roundtrip
+  COMMAND pe_checkpoint_roundtrip_test
+)
+set_tests_properties(pe-checkpoint-roundtrip PROPERTIES
+  LABELS "unit;serial;checkpoint"
+)
+
 # The tests below drive the shared lubrication stage through a real collision pipeline, so
 # they need a stage-capable pe_CONSTRAINT_SOLVER. That CANNOT be selected per target with
 # target_compile_definitions -- pe_CONSTRAINT_SOLVER feeds the global Config typedef and

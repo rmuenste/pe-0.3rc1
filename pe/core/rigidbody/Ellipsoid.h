@@ -537,7 +537,7 @@ inline size_t polymorphicCount<Ellipsoid>( RigidBody *const * first,
 
    size_t count( 0 );
    for( RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -564,7 +564,7 @@ inline size_t polymorphicCount<const Ellipsoid>( RigidBody *const * first,
 
    size_t count( 0 );
    for( RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -591,7 +591,7 @@ inline size_t polymorphicCount<Ellipsoid>( const RigidBody *const * first,
 
    size_t count( 0 );
    for( const RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -618,7 +618,7 @@ inline size_t polymorphicCount<const Ellipsoid>( const RigidBody *const * first,
 
    size_t count( 0 );
    for( const RigidBody *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -645,7 +645,7 @@ inline size_t polymorphicCount<Ellipsoid>( GeomPrimitive *const * first,
 
    size_t count( 0 );
    for( GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -672,7 +672,7 @@ inline size_t polymorphicCount<const Ellipsoid>( GeomPrimitive *const * first,
 
    size_t count( 0 );
    for( GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -699,7 +699,7 @@ inline size_t polymorphicCount<Ellipsoid>( const GeomPrimitive *const * first,
 
    size_t count( 0 );
    for( const GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -726,7 +726,7 @@ inline size_t polymorphicCount<const Ellipsoid>( const GeomPrimitive *const * fi
 
    size_t count( 0 );
    for( const GeomPrimitive *const * it=first; it!=last; ++it )
-      if( (*it)->getType() == sphereType ) ++count;
+      if( (*it)->getType() == ellipsoidType ) ++count;
    return count;
 }
 /*! \endcond */
@@ -759,7 +759,7 @@ inline RigidBody *const * polymorphicFind<Ellipsoid>( RigidBody *const * first,
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Ellipsoid, RigidBody );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -784,7 +784,7 @@ inline RigidBody *const * polymorphicFind<const Ellipsoid>( RigidBody *const * f
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Ellipsoid, RigidBody );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -809,7 +809,7 @@ inline const RigidBody *const * polymorphicFind<Ellipsoid>( const RigidBody *con
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Ellipsoid, const RigidBody );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -834,7 +834,7 @@ inline const RigidBody *const * polymorphicFind<const Ellipsoid>( const RigidBod
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Ellipsoid, const RigidBody );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -859,7 +859,7 @@ inline GeomPrimitive *const * polymorphicFind<Ellipsoid>( GeomPrimitive *const *
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Ellipsoid, GeomPrimitive );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -884,7 +884,7 @@ inline GeomPrimitive *const * polymorphicFind<const Ellipsoid>( GeomPrimitive *c
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Ellipsoid, GeomPrimitive );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -909,7 +909,7 @@ inline const GeomPrimitive *const * polymorphicFind<Ellipsoid>( const GeomPrimit
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( Ellipsoid, const GeomPrimitive );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */
@@ -934,7 +934,7 @@ inline const GeomPrimitive *const * polymorphicFind<const Ellipsoid>( const Geom
 {
    pe_CONSTRAINT_MUST_BE_STRICTLY_DERIVED_FROM( const Ellipsoid, const GeomPrimitive );
 
-   while( first != last && (*first)->getType() != sphereType ) ++first;
+   while( first != last && (*first)->getType() != ellipsoidType ) ++first;
    return first;
 }
 /*! \endcond */

@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <pe/vtk/UtilityWriters.h>
 #include <pe/core/detection/fine/DistanceMap.h>
+#include <pe/util/Checkpointer.h>
+#include <pe/config/SimulationConfig.h>
 #include <pe/util/logging/Logger.h>
 #include <pe/core/TimeStep.h>
 #include <pe/config/SimulationConfig.h>
@@ -75,6 +77,30 @@ void set_pe_checkpoint_identity_(const double *simTime, const int *step, const c
   setCheckpointIdentity(static_cast<real>(*simTime),
                         static_cast<uint64_t>(*step),
                         tag != nullptr ? std::string(tag) : std::string());
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Writes a pe checkpoint on demand, named by the driver.
+ *
+ * The driver calls this at the instant it writes its own restart dump, so the pair
+ * (`<name>.peb` + `<name>.peinfo`, driver dump) is the same time step by construction. In PE
+ * serial mode every CFD rank holds the identical body state, so the driver calls this on its
+ * representative rank only. The identity handed over by set_pe_checkpoint_identity_ for the
+ * current step goes into the sidecar; the checkpoint lands in the configured checkpoint_path_
+ * (created on demand). Use a name that mirrors the driver's dump slot (e.g. "ffdump.3") so the
+ * resume side can point at both with one number.
+ *
+ * \param name Null-terminated checkpoint base name (no extension).
+ */
+extern "C"
+void pe_write_checkpoint_(const char *name) {
+  if (name == nullptr || *name == '\0') {
+    throw std::invalid_argument("pe_write_checkpoint_: empty checkpoint name");
+  }
+  const auto& config = pe::SimulationConfig::getInstance();
+  pe::writeCheckpoint(config.getCheckpointPath(), std::string(name));
 }
 //*************************************************************************************************
 

@@ -40,6 +40,7 @@
 #include <pe/core/MPISettings.h>
 #include <pe/core/ProfilingSection.h>
 #include <pe/core/rigidbody/UnionSection.h>
+#include <pe/core/rigidbody/Ellipsoid.h>
 #include <pe/core/World.h>
 #include <pe/util/logging/DebugSection.h>
 
@@ -600,6 +601,24 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                if( reassignSystemID )
                   objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
                SphereID obj = instantiateSphere( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.radius_, objparam.material_, objparam.visible_, objparam.fixed_, false );
+               obj->setCollisionEnabled( objparam.collisionEnabled_ );
+               obj->setLinearVel( objparam.v_ );
+               obj->setAngularVel( objparam.w_ );
+               obj->setRemote( false );
+               if( global ) obj->setGlobal();
+               manager->add( obj );
+            }
+            break;
+         }
+         case ellipsoidType: {
+            // Ellipsoids were marshallable (Marshalling.h) but never written or read by the
+            // checkpointer; added for the D6.2 resume path (rotating spheroid across segments).
+            for( size_t i = 0; i < size; ++i ) {
+               Ellipsoid::Parameters objparam;
+               unmarshal( buffer, objparam, false );
+               if( reassignSystemID )
+                  objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
+               EllipsoidID obj = instantiateEllipsoid( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.radiusA_, objparam.radiusB_, objparam.radiusC_, objparam.material_, objparam.visible_, objparam.fixed_, false );
                obj->setCollisionEnabled( objparam.collisionEnabled_ );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
