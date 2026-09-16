@@ -153,8 +153,7 @@ inline Vec3 EllipsoidBase::getRadius() const
  */
 inline real EllipsoidBase::getVolume() const
 {
-   //return real(4.0)/real(3.0) * M_PI * radiusA_ * radiusB_ * radiusC_;
-   return M_PI * radiusA_ * radiusB_ * radiusC_;
+   return real(4.0)/real(3.0) * M_PI * radiusA_ * radiusB_ * radiusC_;
 }
 //*************************************************************************************************
 
@@ -185,9 +184,7 @@ inline real EllipsoidBase::getMass() const
  */
 inline real EllipsoidBase::calcVolume( real A, real B, real C )
 {
-   //return real(4.0)/real(3.0) * M_PI * A * B * C;
-   return M_PI * A * B * C;
-
+   return real(4.0)/real(3.0) * M_PI * A * B * C;
 }
 //*************************************************************************************************
 
@@ -201,8 +198,7 @@ inline real EllipsoidBase::calcVolume( real A, real B, real C )
  */
 inline real EllipsoidBase::calcMass( real A, real B, real C, real density )
 {
-   //return real(4.0)/real(3.0) * M_PI * radius * radius * radius * density;
-   return M_PI * A * B * C * density;
+   return real(4.0)/real(3.0) * M_PI * A * B * C * density;
 }
 //*************************************************************************************************
 
@@ -291,12 +287,10 @@ inline void EllipsoidBase::calcBoundingBox()
  */
 inline void EllipsoidBase::calcInertia()
 {
-//   I_[0] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusC_ * radiusC_);
-//   I_[4] = real(0.2) * mass_ *(radiusA_ * radiusA_ + radiusC_ * radiusC_);
-//   I_[8] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
+   // Solid ellipsoid: I_ii = (1/5) m (r_j^2 + r_k^2) for all three principal axes.
    I_[0] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusC_ * radiusC_);
    I_[4] = real(0.2) * mass_ *(radiusA_ * radiusA_ + radiusC_ * radiusC_);
-   I_[8] = real(0.25) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
+   I_[8] = real(0.2) * mass_ *(radiusB_ * radiusB_ + radiusA_ * radiusA_);
    Iinv_ = I_.getInverse();
 }
 //*************************************************************************************************

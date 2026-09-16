@@ -121,6 +121,12 @@ bool pointInsideParticles(int* inpr, double pos[3]);
  */
 double getObjRadius(int idx);
 
+// World-frame direction of the body-frame x axis (ellipsoid a-axis, D6.1)
+void getObjOrientation(int idx, double axis[3]);
+
+// True iff world body idx is an Ellipsoid (D6.1 DNS_PART_AXIS filter)
+bool isEllipsoidType(int idx);
+
 /*
  *!\brief The function returns if the object is a sphere
  */

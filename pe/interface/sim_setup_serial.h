@@ -1325,8 +1325,19 @@ inline void setupDNSDragSerial(int cfd_rank) {
 
   TimeStep::stepsize(config.getStepsize());
 
+  // D6.1: optional non-spherical body for the xyz-file path. The Kroupa
+  // lubrication model is sphere-only (pair and wall resistances are built on
+  // sphere radii), so a non-sphere body with lubrication enabled is refused
+  // loudly rather than silently applying wrong-geometry corrections.
+  const bool isEllipsoid = (config.getParticleShape() == "ellipsoid");
+  if (isEllipsoid && config.getLubricationEnabled()) {
+    throw std::runtime_error(
+        "setupDNSDragSerial: lubricationEnabled_ is true but particleShape_ is 'ellipsoid' - "
+        "the lubrication model is sphere-only; disable lubrication for non-spherical bodies");
+  }
+
   const real radius = config.getBenchRadius();
-  if (radius <= 0.0) {
+  if (radius <= 0.0 && !isEllipsoid) {
     throw std::runtime_error("setupDNSDragSerial: benchRadius must be > 0");
   }
 
@@ -1346,17 +1357,106 @@ inline void setupDNSDragSerial(int cfd_rank) {
   // Overlap/periodic-image validity is the generator's responsibility.
   const std::string dragXyzPath = config.getXyzFilePath().string();
   if (!dragXyzPath.empty()) {
+    // Material first, on both paths: checkpointed bodies index the material table.
+    MaterialID arrayMaterial = createMaterial(
+        "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    if (config.getResume()) {
+      // Segmented-run resume (D6.2 chain): the pe checkpoint written by the driver at its
+      // dump instant carries position, orientation, linear and angular velocity of the body,
+      // so the orbit continues instead of restarting from particleAxis_ with omega = 0.
+      // DOF locks are setup state, not body state: re-apply them after the load.
+      resumeFromConfiguredCheckpoint(config);
+      const bool rotationOnly = (config.getParticleMotion() == "rotationOnly");
+      int restored = 0;
+      for (auto it = world->begin(); it != world->end(); ++it) {
+        if (it->getType() != sphereType && it->getType() != ellipsoidType) continue;
+        if (rotationOnly) {
+          it->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
+        } else {
+          it->setFixed(true);
+        }
+        ++restored;
+      }
+      if (restored == 0) {
+        throw std::runtime_error("setupDNSDragSerial: resume checkpoint '" +
+                                 config.getResumeCheckpointFile() + "' holds no bodies");
+      }
+      if (isRepresentative) {
+        std::cout << "\n--DNS DRAG SETUP (RESUMED from pe checkpoint)----------------\n"
+                  << " Checkpoint                              = " << config.getResumeCheckpointFile() << "\n"
+                  << " Bodies restored                         = " << restored << "\n"
+                  << " Motion                                  = " << (rotationOnly ? "rotationOnly" : "fixed") << "\n"
+                  << "-------------------------------------------------------------\n"
+                  << std::endl;
+      }
+      return;
+    }
     std::vector<Vec3> positions = readVectorsFromFile(dragXyzPath);
     if (positions.empty()) {
       throw std::runtime_error("setupDNSDragSerial: xyzFilePath_ set but no positions read from '" +
                                dragXyzPath + "'");
     }
-    MaterialID arrayMaterial = createMaterial(
-        "dns_drag_particle", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+    if (isEllipsoid) {
+      // D6.1 Oberbeck path: one FIXED ellipsoid per xyz line, semi-axes from
+      // semiAxes_ (a along body-frame x), a-axis rotated onto particleAxis_.
+      const Vec3 axes = config.getSemiAxes();
+      if (axes[0] <= 0.0 || axes[1] <= 0.0 || axes[2] <= 0.0) {
+        throw std::runtime_error(
+            "setupDNSDragSerial: particleShape_ 'ellipsoid' requires semiAxes_ = [a,b,c] > 0");
+      }
+      Vec3 dir = config.getParticleAxis();
+      const real dirLen = dir.length();
+      if (dirLen < real(1e-12)) {
+        throw std::runtime_error("setupDNSDragSerial: particleAxis_ must be a nonzero vector");
+      }
+      dir /= dirLen;
+      const Vec3 bodyX(1.0, 0.0, 0.0);
+      const real cosang = trans(bodyX) * dir;
+      int eidx = 0;
+      for (const auto& pos : positions) {
+        EllipsoidID ell =
+            createEllipsoid(++eidx, pos, axes[0], axes[1], axes[2], arrayMaterial, true);
+        if (cosang < real(1) - real(1e-12)) {
+          if (cosang > real(-1) + real(1e-12)) {
+            Vec3 rotAxis = bodyX % dir;
+            rotAxis /= rotAxis.length();
+            ell->rotate(rotAxis, std::acos(cosang));
+          } else {
+            ell->rotate(Vec3(0.0, 0.0, 1.0), M_PI);  // anti-parallel: any perpendicular axis
+          }
+        }
+        if (config.getParticleMotion() == "rotationOnly") {
+          // D6.2: translation locked, rotation free - the FBM torque drives
+          // the orientation dynamics (Jeffery orbit).
+          ell->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
+        } else {
+          ell->setFixed(true);
+        }
+        ell->setLinearVel(0.0, 0.0, 0.0);
+        ell->setAngularVel(0.0, 0.0, 0.0);
+      }
+      const real ellVol = (4.0 / 3.0) * M_PI * axes[0] * axes[1] * axes[2];
+      if (isRepresentative) {
+        std::cout << "\n--DNS DRAG SETUP (ellipsoid array from file)-----------------\n"
+                  << " Position file                           = " << dragXyzPath << "\n"
+                  << " Number of ellipsoids                    = " << positions.size() << "\n"
+                  << " Semi-axes (a,b,c)                       = " << axes << "\n"
+                  << " a-axis direction (world)                = " << dir << "\n"
+                  << " Achieved volume fraction                = "
+                  << positions.size() * ellVol / domainVolume << "\n"
+                  << "-------------------------------------------------------------\n"
+                  << std::endl;
+      }
+      return;
+    }
     int aidx = 0;
     for (const auto& pos : positions) {
       SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
-      sphere->setFixed(true);
+      if (config.getParticleMotion() == "rotationOnly") {
+        sphere->setLinearDofMask(Vec3(0.0, 0.0, 0.0));  // D6.2 V0 spin control
+      } else {
+        sphere->setFixed(true);
+      }
       sphere->setLinearVel(0.0, 0.0, 0.0);
       sphere->setAngularVel(0.0, 0.0, 0.0);
     }
@@ -1371,6 +1471,12 @@ inline void setupDNSDragSerial(int cfd_rank) {
                 << std::endl;
     }
     return;
+  }
+
+  if (isEllipsoid) {
+    throw std::runtime_error(
+        "setupDNSDragSerial: particleShape_ 'ellipsoid' requires xyzFilePath_ "
+        "(the legacy lattice path is sphere-only)");
   }
 
   int targetCount = 1;
@@ -1472,9 +1578,10 @@ inline void setupDraftKissTumbSerial(int cfd_rank) {
   // The PE stepsize must match the CFD deck TimeStep; take it from the config
   TimeStep::stepsize(config.getStepsize());
 
-  // Floor contact plane at z = 0
+  // Materials are registered on BOTH paths and in this fixed order: checkpointed bodies carry a
+  // bare index into the material table (see setupATCSerial), so a resumed run must build the
+  // same table before it reads the checkpoint.
   MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
 
   // Contact material from config: restitution_/staticFriction_/dynamicFriction_
   // json keys (defaults 0.0/0.1/0.05 reproduce the former hard-coded values)
@@ -1483,25 +1590,56 @@ inline void setupDraftKissTumbSerial(int cfd_rank) {
                      config.getStaticFriction(), config.getDynamicFriction(),
                      0.2, 80, 100, 10, 11);
 
-  // Sphere positions are read from the external xyz file
+  const bool resume = config.getResume();
   const std::string xyzPath = config.getXyzFilePath().string();
-  std::vector<Vec3> spherePositions = readVectorsFromFile(xyzPath);
-
-  if (spherePositions.empty()) {
-    std::cerr << "ERROR: DKT setup could not read any particle positions from '"
-              << xyzPath << "'" << std::endl;
-    throw std::runtime_error("setupDraftKissTumbSerial: no particle positions read from '" +
-                             xyzPath + "'");
-  }
-
+  std::vector<Vec3> spherePositions;
   int idx = 0;
   int particlesCreated = 0;
-  for (const auto &spherePos : spherePositions) {
-    createSphere(idx++, spherePos, sphereRad, particleMaterial);
-    ++particlesCreated;
+
+  if (resume) {
+    // Segmented-run resume (row d52_v25f_l4_protocol): the driver's dump restores only the
+    // fluid, and re-creating the cloud from the xyz file re-inserts it at rest. The pe
+    // checkpoint written by the driver at its dump instant (pe_write_checkpoint_) carries
+    // positions, orientations, linear AND angular velocities of every body, including the
+    // ground plane (global body), so nothing is created here. Loads on every rank: each CFD
+    // rank runs its own serial pe instance.
+    resumeFromConfiguredCheckpoint(config);
+    for (auto it = world->begin(); it != world->end(); ++it) {
+      if (it->getType() == sphereType) ++particlesCreated;
+    }
+    if (particlesCreated == 0) {
+      throw std::runtime_error("setupDraftKissTumbSerial: resume checkpoint '" +
+                               config.getResumeCheckpointFile() + "' holds no spheres");
+    }
+  } else {
+    // Floor contact plane at z = 0
+    createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+    // Sphere positions are read from the external xyz file
+    spherePositions = readVectorsFromFile(xyzPath);
+
+    if (spherePositions.empty()) {
+      std::cerr << "ERROR: DKT setup could not read any particle positions from '"
+                << xyzPath << "'" << std::endl;
+      throw std::runtime_error("setupDraftKissTumbSerial: no particle positions read from '" +
+                               xyzPath + "'");
+    }
+
+    for (const auto &spherePos : spherePositions) {
+      createSphere(idx++, spherePos, sphereRad, particleMaterial);
+      ++particlesCreated;
+    }
   }
 
-  if (isRepresentative) {
+  if (isRepresentative && resume) {
+    std::cout << "\n--" << "DKT SETUP (RESUMED from pe checkpoint)"
+              << "----------------------------------------------\n"
+              << " Checkpoint                              = " << config.getResumeCheckpointFile() << "\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << "--------------------------------------------------------------------------------\n"
+              << std::endl;
+  } else if (isRepresentative) {
     std::cout << "\n--" << "DKT SETUP"
               << "--------------------------------------------------------------\n"
               << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"

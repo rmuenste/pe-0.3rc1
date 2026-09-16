@@ -897,12 +897,9 @@ void Ellipsoid::rotateAroundPoint( const Vec3& point, const Vec3& euler )
  */
 bool Ellipsoid::containsRelPoint( real px, real py, real pz ) const
 {
-   if( (px * px + py * py + pz * pz) <= 1.0) {
-      return true;
-   }
-   else {
-      return false;
-   }
+   return ( px * px ) / ( radiusA_ * radiusA_ ) +
+          ( py * py ) / ( radiusB_ * radiusB_ ) +
+          ( pz * pz ) / ( radiusC_ * radiusC_ ) <= real(1);
 }
 //*************************************************************************************************
 
@@ -915,16 +912,7 @@ bool Ellipsoid::containsRelPoint( real px, real py, real pz ) const
  */
 bool Ellipsoid::containsRelPoint( const Vec3& rpos ) const
 {
-   real px = rpos[0];
-   real py = rpos[1];
-   real pz = rpos[2];
-
-   if( (px * px + py * py + pz * pz) <= 1.0) {
-      return true;
-   }
-   else {
-      return false;
-   }
+   return containsRelPoint( rpos[0], rpos[1], rpos[2] );
 }
 //*************************************************************************************************
 
@@ -940,15 +928,8 @@ bool Ellipsoid::containsRelPoint( const Vec3& rpos ) const
 bool Ellipsoid::containsPoint( real px, real py, real pz ) const
 {
    const Vec3 gpos( px, py, pz );
-   Vec3 rp = trans(R_) * ( gpos - gpos_ );
-
-   //if((  (rp[0] * rp[0]) / (radiusA_ * radiusA_) + (rp[1] * rp[1]) / (radiusB_ * radiusB_) + (rp[2] * rp[2]) / (radiusC_ * radiusC_)) <= 1.0) {
-   if((  (rp[0] * rp[0]) / (radiusA_ * radiusA_) + (rp[1] * rp[1]) / (radiusB_ * radiusB_)) <= 1.0) {
-      return true;
-   }
-   else {
-      return false;
-   }
+   const Vec3 rp = trans(R_) * ( gpos - gpos_ );
+   return containsRelPoint( rp[0], rp[1], rp[2] );
 }
 //*************************************************************************************************
 
@@ -962,15 +943,8 @@ bool Ellipsoid::containsPoint( real px, real py, real pz ) const
 bool Ellipsoid::containsPoint( const Vec3& gpos ) const
 {
 
-   Vec3 rp = trans(R_) * ( gpos - gpos_ );
-
-   //if((  (rp[0] * rp[0]) / (radiusA_ * radiusA_) + (rp[1] * rp[1]) / (radiusB_ * radiusB_) + (rp[2] * rp[2]) / (radiusC_ * radiusC_)) <= 1.0) {
-   if((  (rp[0] * rp[0]) / (radiusA_ * radiusA_) + (rp[1] * rp[1]) / (radiusB_ * radiusB_)) <= 1.0) {
-      return true;
-   }
-   else {
-      return false;
-   }
+   const Vec3 rp = trans(R_) * ( gpos - gpos_ );
+   return containsRelPoint( rp[0], rp[1], rp[2] );
 }
 //*************************************************************************************************
 
@@ -987,8 +961,13 @@ bool Ellipsoid::containsPoint( const Vec3& gpos ) const
  */
 bool Ellipsoid::isSurfaceRelPoint( real px, real py, real pz ) const
 {
-   const Vec3 rpos( px, py, pz );
-   return ( std::fabs( rpos.sqrLength() - ( radiusA_*radiusA_ ) ) <= surfaceThreshold*surfaceThreshold );
+   // Approximate signed distance: (|q| - 1) * min(a,b,c) with q the point
+   // scaled to the unit sphere. Exact for a=b=c; a conservative proxy else.
+   const real qlen = std::sqrt( ( px * px ) / ( radiusA_ * radiusA_ ) +
+                                ( py * py ) / ( radiusB_ * radiusB_ ) +
+                                ( pz * pz ) / ( radiusC_ * radiusC_ ) );
+   const real rmin = std::min( radiusA_, std::min( radiusB_, radiusC_ ) );
+   return std::fabs( ( qlen - real(1) ) * rmin ) <= surfaceThreshold;
 }
 //*************************************************************************************************
 
@@ -1003,7 +982,7 @@ bool Ellipsoid::isSurfaceRelPoint( real px, real py, real pz ) const
  */
 bool Ellipsoid::isSurfaceRelPoint( const Vec3& rpos ) const
 {
-   return ( std::fabs( rpos.sqrLength() - ( radiusA_*radiusA_ ) ) <= surfaceThreshold*surfaceThreshold );
+   return isSurfaceRelPoint( rpos[0], rpos[1], rpos[2] );
 }
 //*************************************************************************************************
 
@@ -1021,7 +1000,8 @@ bool Ellipsoid::isSurfaceRelPoint( const Vec3& rpos ) const
 bool Ellipsoid::isSurfacePoint( real px, real py, real pz ) const
 {
    const Vec3 gpos( px, py, pz );
-   return ( std::fabs( ( gpos - gpos_ ).sqrLength() - ( radiusA_*radiusA_ ) ) <= surfaceThreshold*surfaceThreshold );
+   const Vec3 rp = trans(R_) * ( gpos - gpos_ );
+   return isSurfaceRelPoint( rp[0], rp[1], rp[2] );
 }
 //*************************************************************************************************
 
@@ -1036,7 +1016,8 @@ bool Ellipsoid::isSurfacePoint( real px, real py, real pz ) const
  */
 bool Ellipsoid::isSurfacePoint( const Vec3& gpos ) const
 {
-   return ( std::fabs( ( gpos - gpos_ ).sqrLength() - ( radiusA_*radiusA_ ) ) <= surfaceThreshold*surfaceThreshold );
+   const Vec3 rp = trans(R_) * ( gpos - gpos_ );
+   return isSurfaceRelPoint( rp[0], rp[1], rp[2] );
 }
 //*************************************************************************************************
 

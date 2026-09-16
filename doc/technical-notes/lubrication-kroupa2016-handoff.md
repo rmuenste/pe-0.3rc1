@@ -103,8 +103,13 @@ Build + run: see "Running the Level 0–2 tests" in the design note. In short:
    (`setup_el_terminal_velocity`) — lubrication must not change a single
    particle; (b) DKT (`setup_dkt`) with/without lubrication vs published
    benchmarks; (c) CFD-resolved bounce to calibrate the mesh clamp
-   (`lubricationMeshClampFactor_`; `lubrication::setMeshDx()` hook exists,
-   currently only unit-tested — the CFD interface layer must call it).
+   (`lubricationMeshClampFactor_`; `lubrication::setMeshDx()` is WIRED:
+   the CFD layer pushes its reduced global h_min through the extern-C
+   entry `set_lubrication_mesh_dx` (`pe/interface/c_interface_queries.h`)
+   from FeatFloWer's ComputeCFL, setup-function-agnostic and identical on
+   every rank; arming prints a one-time `PE_LUB_MESHDX` line, and a
+   configured clamp with no pushed dx warns loudly at the first stage
+   sweep instead of silently degrading to the bare relative cutoff).
    Record recommended cutoff settings per mesh-resolution regime in the docs
    (design note §2.4 has the two coupling regimes).
 4. **Enhancements**: Jeffrey–Onishi β-dependent log coefficients for strongly

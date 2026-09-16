@@ -275,6 +275,28 @@ public:
     PackingMethod getPackingMethod() const { return packingMethod_; }
     void setXyzFilePath(const boost::filesystem::path& path) { xyzFilePath_ = path; }
     const boost::filesystem::path& getXyzFilePath() const { return xyzFilePath_; }
+    //! Particle shape for the DNS-drag xyz path (D6.1): "sphere" (default) or "ellipsoid".
+    void setParticleShape(const std::string& shape) {
+        if (shape != "sphere" && shape != "ellipsoid")
+            throw std::invalid_argument(
+                "particleShape_ must be 'sphere' or 'ellipsoid', got '" + shape + "'");
+        particleShape_ = shape;
+    }
+    const std::string& getParticleShape() const { return particleShape_; }
+    void setSemiAxes(const Vec3& axes) { semiAxes_ = axes; }
+    const Vec3& getSemiAxes() const { return semiAxes_; }
+    void setParticleAxis(const Vec3& axis) { particleAxis_ = axis; }
+    const Vec3& getParticleAxis() const { return particleAxis_; }
+    //! Body motion for the DNS-drag xyz path: "fixed" (default, D6.1) or
+    //! "rotationOnly" (translation locked via the linear DOF mask, rotation
+    //! free - D6.2 Jeffery).
+    void setParticleMotion(const std::string& motion) {
+        if (motion != "fixed" && motion != "rotationOnly")
+            throw std::invalid_argument(
+                "particleMotion_ must be 'fixed' or 'rotationOnly', got '" + motion + "'");
+        particleMotion_ = motion;
+    }
+    const std::string& getParticleMotion() const { return particleMotion_; }
     //@}
     //**************************************************************************************
 
@@ -301,9 +323,9 @@ public:
     void setLubricationEnabled(bool value) { lubricationEnabled_ = value; }
     const std::string& getLubricationModel() const { return lubricationModel_; }
     void setLubricationModel(const std::string& value) {
-        if (value != "kroupa2016" && value != "legacy")
+        if (value != "kroupa2016" && value != "legacy" && value != "kroupaDeficit")
             throw std::invalid_argument("Unknown lubricationModel_: " + value +
-                                        " (expected \"kroupa2016\" or \"legacy\")");
+                                        " (expected \"kroupa2016\", \"kroupaDeficit\" or \"legacy\")");
         lubricationModel_ = value;
     }
     const std::string& getLubricationIntegration() const { return lubricationIntegration_; }
@@ -465,6 +487,10 @@ private:
     // Packing parameters
     PackingMethod packingMethod_; //!< Particle packing method
     boost::filesystem::path xyzFilePath_; //!< Path to external particle position file
+    std::string particleShape_;  //!< DNS-drag xyz-path shape: "sphere" (default) or "ellipsoid"
+    std::string particleMotion_; //!< DNS-drag xyz-path motion: "fixed" (default) or "rotationOnly"
+    Vec3 semiAxes_;              //!< Ellipsoid semi-axes (a,b,c); a lies along body-frame x
+    Vec3 particleAxis_;          //!< World-frame direction of the ellipsoid a-axis at creation
 
     // Physical parameters
     real particleDensity_;       //!< Particle material density

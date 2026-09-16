@@ -180,6 +180,12 @@ public:
    //! lubricationEnabled_ (see pe/interface/setup_optional_collision_params.h).
    static constexpr bool hasLubricationStage = true;
 
+   //! Diagnostics of the most recent lubrication-stage invocation (zeros while the
+   //! add-on is off). Read by the extern-C query get_lubrication_stage_diag.
+   const lubrication::StageDiagnostics& lubricationStageDiag() const {
+      return lubricationStageDiag_;
+   }
+
    enum RelaxationModel {
       InelasticFrictionlessContact,
       ApproximateInelasticCoulombContactByDecoupling,
@@ -350,6 +356,10 @@ private:
    std::vector<Mat2> diag_to_inv_;
    std::vector<real> diag_n_inv_;
    std::vector<Vec3> p_;
+
+   // Last resolveContacts() lubrication-stage diagnostics (zeros while the add-on is
+   // off). Read through lubricationStageDiag() by the extern-C interface query.
+   lubrication::StageDiagnostics lubricationStageDiag_;
 
    //**********************************************************************************************
    /*! \cond PE_INTERNAL */
@@ -2094,6 +2104,18 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
              w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
            }
+           else if(body->getType() == ellipsoidType) {
+             BodyID b( *body );
+             EllipsoidID ell = static_body_cast<Ellipsoid>(b);
+             mat = ell->getMaterial();
+             real rho = Material::getDensity( mat );
+
+             real vol = ell->getVolume();
+
+             real buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
+             v_[j] = body->getLinearVel() + buoyancy * Settings::gravity() * dt;
+             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
+           }
            else {
             v_[j] = body->getLinearVel() + Settings::gravity() * dt;
             w_[j] = body->getAngularVel() + dt * ( body->getInvInertia() * ( ( body->getInertia() * body->getAngularVel() ) % body->getAngularVel() ) );
@@ -2135,7 +2157,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       // tagged pre-contact pairs before the hard-contact solver runs below.
       // See pe/core/lubrication/LubricationStage.h.
       if( lubrication::isEnabled() ) {
-         lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
+         // Retain the per-step diagnostics (G2 instrumentation): for the campaign's
+         // single sphere-wall benchmarks totalForce/maxNormalImpulse ARE the applied
+         // lubrication force record, queried per step via get_lubrication_stage_diag.
+         lubricationStageDiag_ =
+            lubrication::applyLubricationStage( contacts, contactsMask_, v_, w_, dv_, dw_, dt );
 
          // Shadow copies must see the lubrication corrections before the constraint
          // solver consumes these velocities.

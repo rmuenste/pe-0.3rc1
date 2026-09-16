@@ -1,7 +1,12 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/CollisionSystem.h>
+#include <pe/core/lubrication/Params.h>
 #include <pe/interface/el_optional_api.h>
+
+#include <iostream>
+#include <type_traits>
+#include <utility>
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -25,6 +30,131 @@ bool check_rem_id(int fbmid, int id) {
 extern "C" void set_lubrication_threshold(double *threshold)
 {
    pe::lubrication::setLubricationThreshold( static_cast<pe::real>(*threshold) );
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*!\brief Pushes the resolved CFD mesh width into the lubrication mesh clamp from Fortran.
+ *
+ * \param dx Pointer to the finest resolved CFD element width (global h_min).
+ * \return void
+ *
+ * Arms the mesh clamp: with lubricationMeshClampFactor_ = c > 0 the effective outer
+ * cutoff becomes min(cutoffFactor*aRef, c*dx), so lubrication activates exactly where
+ * the CFD mesh stops resolving the squeeze film instead of at a hand-computed per-case
+ * cutoff. Called from the CFD layer (ComputeCFL) once the global h_min is known; the
+ * value is identical on every rank, so per-rank PE instances stay deterministic.
+ * Idempotent; a no-op while lubrication is disabled or the clamp factor is 0.
+ */
+//=================================================================================================
+/*!\brief Reports whether the lubrication add-on master switch is on (1) or off (0).
+ *
+ * Lets the CFD layer gate its per-step DNS_LUB diagnostic print without touching json
+ * parsing on the Fortran side; with the switch off the print is skipped entirely, so
+ * lubrication-off runs keep byte-identical stdout.
+ */
+// Bound to Fortran function get_lubrication_enabled() in
+// source/src_particles/dem_query.f90
+extern "C" int get_lubrication_enabled()
+{
+   return pe::lubrication::isEnabled() ? 1 : 0;
+}
+//=================================================================================================
+
+
+//=================================================================================================
+// Accessor detection for the per-step lubrication stage diagnostics: only collision
+// systems that RETAIN the diagnostics (HardContactAndFluid, HCSITS) expose
+// lubricationStageDiag(). Detected structurally so this translation unit still compiles
+// when the active pe_CONSTRAINT_SOLVER is any other solver (e.g. the EL family) - the
+// query then reports zeros.
+namespace pe_query_detail {
+
+template <typename CS, typename = void>
+struct HasLubStageDiag : std::false_type {};
+
+template <typename CS>
+struct HasLubStageDiag<CS, std::void_t<decltype(std::declval<const CS&>().lubricationStageDiag())>>
+    : std::true_type {};
+
+// Template so the if-constexpr false branch is genuinely discarded (in a plain
+// function both branches would be instantiated and an EL-solver build would fail
+// to compile the accessor call).
+template <typename CS>
+inline void readLubStageDiag(const CS& cs, double *totalForce, double *dissipation,
+                             double *maxNormalImpulse, int *numContacts, int *numSaturated)
+{
+   if constexpr( HasLubStageDiag<CS>::value ) {
+      const auto& d = cs.lubricationStageDiag();
+      *totalForce       = static_cast<double>( d.totalForce );
+      *dissipation      = static_cast<double>( d.dissipation );
+      *maxNormalImpulse = static_cast<double>( d.maxNormalImpulse );
+      *numContacts      = static_cast<int>( d.numContacts );
+      *numSaturated     = static_cast<int>( d.numSaturated );
+   }
+   else {
+      (void)cs;
+      (void)totalForce; (void)dissipation; (void)maxNormalImpulse;
+      (void)numContacts; (void)numSaturated;
+   }
+}
+
+}  // namespace pe_query_detail
+
+
+/*!\brief Reads the diagnostics of the most recent lubrication stage invocation.
+ *
+ * \param totalForce Sum of applied lubrication force magnitudes over the last macro step.
+ * \param dissipation Sum of J.g + L.w over the step (must be <= 0; sign-convention check).
+ * \param maxNormalImpulse Largest normal lubrication impulse applied.
+ * \param numContacts Lubrication contacts acted on.
+ * \param numSaturated Contacts inside the h_c saturation freeze.
+ *
+ * For a single sphere-wall pair (the G2 Brenner benchmark) totalForce IS the applied
+ * lubrication force and maxNormalImpulse/dt its normal component. Zeros while the
+ * add-on is off or the active solver does not run the stage.
+ */
+// Bound to Fortran subroutine get_lubrication_stage_diag(...) in
+// source/src_particles/dem_query.f90
+extern "C" void get_lubrication_stage_diag(double *totalForce, double *dissipation,
+                                           double *maxNormalImpulse, int *numContacts,
+                                           int *numSaturated)
+{
+   *totalForce       = 0.0;
+   *dissipation      = 0.0;
+   *maxNormalImpulse = 0.0;
+   *numContacts      = 0;
+   *numSaturated     = 0;
+
+   pe_query_detail::readLubStageDiag( *pe::theCollisionSystem(), totalForce, dissipation,
+                                      maxNormalImpulse, numContacts, numSaturated );
+}
+//=================================================================================================
+
+
+// Bound to Fortran subroutine set_lubrication_mesh_dx(dx) in
+// source/src_particles/dem_query.f90
+extern "C" void set_lubrication_mesh_dx(double *dx)
+{
+   pe::lubrication::setMeshDx( static_cast<pe::real>(*dx) );
+
+   // One-time arming announcement on the representative rank only (in PE serial mode
+   // every CFD rank runs this on its own PE instance): grep-able run evidence that the
+   // clamp is live. The opposite failure - clamp configured but dx never pushed - warns
+   // loudly in applyLubricationStage.
+   if( pe::lubrication::isEnabled() &&
+       pe::lubrication::getMeshClampFactor() > pe::real(0) && *dx > 0.0 &&
+       pe::SimulationConfig::getInstance().getCfdRank() == 1 ) {
+      static bool announced = false;
+      if( !announced ) {
+         announced = true;
+         std::cout << "PE_LUB_MESHDX armed: dx= " << *dx
+                   << " clamp_factor= " << pe::lubrication::getMeshClampFactor()
+                   << " activation_gap= "
+                   << pe::lubrication::getMeshClampFactor() * (*dx) << std::endl;
+      }
+   }
 }
 //=================================================================================================
 
@@ -218,7 +348,43 @@ extern "C" double getParticleRadius(int *idx) {
 extern "C" bool isTypeSphere(int *idx) {
 
   int ridx = *idx;
-  return isSphereType(ridx); 
+  return isSphereType(ridx);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief World-frame direction of the body-frame x axis of particle idx
+ *
+ * For an ellipsoid this is the a-axis (semiAxes_ convention, D6.1). Valid for
+ * any body type; a sphere returns the (physically meaningless) first rotation
+ * column.
+ * \param idx The id of the local particle
+ * \param axis Output: unit vector, world frame
+ */
+// Bound to Fortran subroutine getParticleOrientation(idx, axis) in
+// source/src_particles/dem_query.f90
+extern "C" void getParticleOrientation(int *idx, double axis[3]) {
+  int ridx = *idx;
+  getObjOrientation(ridx, axis);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief We return whether the world body with id idx is an ellipsoid
+ *
+ * The DNS_PART_AXIS record filters on this rather than "not a sphere", so
+ * that wall planes/boxes in wall-bounded cases stay silent.
+ * \param idx The id of the local body
+ */
+// Bound to Fortran function isEllipsoid(idx) via isTypeEllipsoid in
+// source/src_particles/dem_query.f90
+extern "C" bool isTypeEllipsoid(int *idx) {
+  int ridx = *idx;
+  return isEllipsoidType(ridx);
 }
 //=================================================================================================
 
