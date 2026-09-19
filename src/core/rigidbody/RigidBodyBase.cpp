@@ -72,6 +72,7 @@ RigidBodyBase::RigidBodyBase( BodyID body )
    , prevFluidTorque_()       // Previous fluid torque (mean-force stabilization)
    , hasPrevFluidForce_(false) // No previous fluid force yet
    , linearDofMask_(1,1,1)   // Linear DOF mask (all axes free by default)
+   , angularDofMask_(1,1,1)  // Angular DOF mask (all axes free by default)
    , I_()                     // Moment of inertia
    , Iinv_()                  // Inverse moment of inertia
    , q_()                     // Orientation of the body frame

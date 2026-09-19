@@ -198,6 +198,11 @@ void SphereTrait<C>::move( real dt )
 
          // Updating the angular velocity
          w_ += wdot * dt;
+
+         // Enforce angular DOF constraints (world axes)
+         w_[0] *= angularDofMask_[0];
+         w_[1] *= angularDofMask_[1];
+         w_[2] *= angularDofMask_[2];
       }
 
       // Calculating the translational displacement

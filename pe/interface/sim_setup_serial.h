@@ -1336,6 +1336,11 @@ inline void setupDNSDragSerial(int cfd_rank) {
         "the lubrication model is sphere-only; disable lubrication for non-spherical bodies");
   }
 
+  // Optional per-axis angular lock (world frame) for the rotationOnly path; refused loudly
+  // under any other particleMotion_ so it can never be a silent no-op. Default (1,1,1).
+  checkAngularDofMaskRequiresRotationOnly(config);
+  const Vec3 angularDofMask = config.getAngularDofMask();
+
   const real radius = config.getBenchRadius();
   if (radius <= 0.0 && !isEllipsoid) {
     throw std::runtime_error("setupDNSDragSerial: benchRadius must be > 0");
@@ -1372,6 +1377,7 @@ inline void setupDNSDragSerial(int cfd_rank) {
         if (it->getType() != sphereType && it->getType() != ellipsoidType) continue;
         if (rotationOnly) {
           it->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
+          it->setAngularDofMask(angularDofMask);
         } else {
           it->setFixed(true);
         }
@@ -1386,6 +1392,8 @@ inline void setupDNSDragSerial(int cfd_rank) {
                   << " Checkpoint                              = " << config.getResumeCheckpointFile() << "\n"
                   << " Bodies restored                         = " << restored << "\n"
                   << " Motion                                  = " << (rotationOnly ? "rotationOnly" : "fixed") << "\n"
+                  << " Angular DOF mask                        = (" << angularDofMask[0] << ", "
+                  << angularDofMask[1] << ", " << angularDofMask[2] << ")\n"
                   << "-------------------------------------------------------------\n"
                   << std::endl;
       }
@@ -1429,6 +1437,7 @@ inline void setupDNSDragSerial(int cfd_rank) {
           // D6.2: translation locked, rotation free - the FBM torque drives
           // the orientation dynamics (Jeffery orbit).
           ell->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
+          ell->setAngularDofMask(angularDofMask);
         } else {
           ell->setFixed(true);
         }
@@ -1444,6 +1453,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
                   << " a-axis direction (world)                = " << dir << "\n"
                   << " Achieved volume fraction                = "
                   << positions.size() * ellVol / domainVolume << "\n"
+                  << " Motion                                  = " << config.getParticleMotion() << "\n"
+                  << " Angular DOF mask                        = (" << angularDofMask[0] << ", "
+                  << angularDofMask[1] << ", " << angularDofMask[2] << ")\n"
                   << "-------------------------------------------------------------\n"
                   << std::endl;
       }
@@ -1454,6 +1466,7 @@ inline void setupDNSDragSerial(int cfd_rank) {
       SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
       if (config.getParticleMotion() == "rotationOnly") {
         sphere->setLinearDofMask(Vec3(0.0, 0.0, 0.0));  // D6.2 V0 spin control
+        sphere->setAngularDofMask(angularDofMask);
       } else {
         sphere->setFixed(true);
       }
@@ -1467,6 +1480,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
                 << " Radius                                  = " << radius << "\n"
                 << " Achieved volume fraction                = "
                 << positions.size() * sphereVol / domainVolume << "\n"
+                << " Motion                                  = " << config.getParticleMotion() << "\n"
+                << " Angular DOF mask                        = (" << angularDofMask[0] << ", "
+                << angularDofMask[1] << ", " << angularDofMask[2] << ")\n"
                 << "-------------------------------------------------------------\n"
                 << std::endl;
     }
