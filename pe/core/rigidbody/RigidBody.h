@@ -200,6 +200,8 @@ public:
    inline void setAngularVel   ( const Vec3& avel );
    inline void setLinearDofMask( const Vec3& mask );
    inline const Vec3& getLinearDofMask() const;
+   inline void setAngularDofMask( const Vec3& mask );
+   inline const Vec3& getAngularDofMask() const;
    //@}
    //**********************************************************************************************
 
@@ -1682,6 +1684,10 @@ inline void RigidBody::applyFluidForces( real dt, real relaxation )
 
    v_ += invMass_ * dt * effForce;
    w_ += dt * ( getInvInertia() * effTorque );
+   // Enforce angular DOF constraints (world axes)
+   w_[0] *= angularDofMask_[0];
+   w_[1] *= angularDofMask_[1];
+   w_[2] *= angularDofMask_[2];
    // Enforce linear DOF constraints
    v_[0] *= linearDofMask_[0];
    v_[1] *= linearDofMask_[1];
@@ -1712,6 +1718,35 @@ inline void RigidBody::setLinearDofMask( const Vec3& mask )
 inline const Vec3& RigidBody::getLinearDofMask() const
 {
    return linearDofMask_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the per-axis angular DOF constraint mask.
+ *
+ * \param mask Vec3 where each component is 1 (free) or 0 (locked).
+ *
+ * Use this to constrain a rigid body to rotate only about certain world axes.
+ * For example, setAngularDofMask(Vec3(0,1,0)) allows rotation about the world
+ * y-axis only. The mask is applied component-wise to the angular velocity
+ * directly after the angular-velocity update in applyFluidForces() and in the
+ * sphere/ellipsoid move() routines; forces, torques, inertia and the
+ * orientation update are not affected.
+ */
+inline void RigidBody::setAngularDofMask( const Vec3& mask )
+{
+   angularDofMask_ = mask;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the per-axis angular DOF constraint mask.
+ */
+inline const Vec3& RigidBody::getAngularDofMask() const
+{
+   return angularDofMask_;
 }
 //*************************************************************************************************
 

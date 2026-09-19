@@ -153,6 +153,7 @@ protected:
    Vec3 prevFluidTorque_;  //!< Previous timestep's fluid torque (for mean-force stabilization).
    bool hasPrevFluidForce_;  //!< False until the first fluid force has been applied.
    Vec3 linearDofMask_;  //!< Per-axis mask for linear DOF constraints (1=free, 0=locked).
+   Vec3 angularDofMask_; //!< Per-axis (world frame) mask for angular DOF constraints (1=free, 0=locked).
    Mat3 I_;          //!< The moment of inertia in reference to the body's own body frame.
                      /*!< The moment of inertia quantifies the rotational inertia of a rigid
                           body, i.e. its inertia with respect to rotational motion, in a manner
