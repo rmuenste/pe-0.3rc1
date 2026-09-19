@@ -72,6 +72,39 @@ set_tests_properties(pe-ellipsoid-inertia PROPERTIES
   LABELS "unit;serial;rigidbody"
 )
 
+# Pins the per-axis angular DOF mask (RigidBody::setAngularDofMask), the angular mirror of
+# the linear mask: a sphere and an ellipsoid under mask (0,1,0) keep w_y bit-for-bit and get
+# w_x = w_z = 0 exactly after applyFluidForces and after move; mask (1,1,1) is bit-identical
+# to no mask; the linear mask and v are untouched. Serial world, no MPI.
+add_executable(pe_angular_dof_mask_test
+  pe_angular_dof_mask_test.cpp
+)
+target_link_libraries(pe_angular_dof_mask_test PRIVATE pe_static)
+add_test(
+  NAME pe-angular-dof-mask
+  COMMAND pe_angular_dof_mask_test
+)
+set_tests_properties(pe-angular-dof-mask PROPERTIES
+  LABELS "unit;serial;rigidbody"
+)
+
+# Contract test for the optional angularDofMask_ deck key: absent -> (1,1,1); [0,1,0] ->
+# (0,1,0); wrong shape / non-0-or-1 entries -> std::invalid_argument naming the key; and the
+# setup-time guard (checkAngularDofMaskRequiresRotationOnly) refuses the key under any
+# particleMotion_ other than rotationOnly. Config singleton only, no world/MPI; writes decks
+# into ./_angmask_config_test/.
+add_executable(pe_angular_dof_mask_config_test
+  pe_angular_dof_mask_config_test.cpp
+)
+target_link_libraries(pe_angular_dof_mask_config_test PRIVATE pe_static)
+add_test(
+  NAME pe-angular-dof-mask-config
+  COMMAND pe_angular_dof_mask_config_test
+)
+set_tests_properties(pe-angular-dof-mask-config PROPERTIES
+  LABELS "unit;serial;interface"
+)
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.
