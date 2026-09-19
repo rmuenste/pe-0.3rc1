@@ -12,15 +12,25 @@
  *       2A - delta: exactly one contact, penetration -delta, normal along x, contact point at
  *       the overlap midpoint; both dispatch orders agree;
  *    2. the same pair rotated by 30 degrees about z with the separation along the rotated axis;
- *    3. a separated pair (2A + 1e-3 and 2A + 1e-6): no contact (the latter also pins the
- *       GJK squared-distance fix in gjkEPAcollideHybrid);
+ *    3. a separated pair (2A + 1e-3 and 2A + 1e-6): no contact;
  *    4. ellipsoid-sphere and ellipsoid-box penetration along x;
  *    5. ellipsoid-plane: spheroid tilted 40 degrees above a horizontal plane; penetration equals
  *       the analytic plane height minus lowest surface point, which for a spheroid with axis at
  *       angle theta from the normal is sqrt(A^2 cos^2 theta + B^2 sin^2 theta) below the center;
  *       both dispatch orders agree; a spheroid above the threshold yields no contact;
  *    6. a random sweep of triaxial pairs: contacts are finite, at most one per pair, and pairs
- *       whose bounding spheres do not overlap produce none.
+ *       whose bounding spheres do not overlap produce none;
+ *    7. reviewer case: an oblique, exactly touching (0.5, 0.25, 0.15) pair (EPA reported a
+ *       -7.07e-5 penetration with a wrong normal): depth 0 to 1e-12, geometric normal to 1e-6;
+ *    8. reviewer case: the same shapes 5e-9 apart (contactThreshold 1e-8), dropped before by
+ *       GJK's unconverged first-separating-plane distance: contact with dist +5e-9 and the
+ *       geometric normal; 1.5 * contactThreshold apart: none;
+ *    9. reviewer case: ellipsoid (0.2, 0.930, 0.917) penetrating the wall of an inner cylinder
+ *       of radius 0.93932 by 1.9485e-5, missed by the unconverged radial search: one wall
+ *       contact whose depth matches a 10^6-sample brute-force extent to 1e-10;
+ *   10. an oblique random-orientation sweep (100 pairs, independent random rotations, exact
+ *       touch along a random direction through the support functions): depth 0 to 1e-10,
+ *       geometric normal and touch point to 1e-8.
  *
  *  Serial world setup, no MPI.
  */
@@ -335,6 +345,166 @@ int main()
       expect( atMostOne, "random sweep: at most one contact per pair" );
       expect( noneWhenApart, "random sweep: no contact when the bounding spheres are apart" );
       expect( negativeWhenOverlappingCenters, "random sweep: penetrating contact when the inscribed spheres overlap" );
+   }
+
+   // --- 7. reviewer: oblique exactly touching pair (EPA false penetration) ----------------------
+   // Two triaxial (0.5, 0.25, 0.15) ellipsoids, b = a shifted by 2 support(n): they touch at
+   // support(n) with the geometric normal -n (from b to a). EPA used to report a penetration of
+   // -7.07e-5 along (-0.194, 0.282, 0.940); accepted unchecked that gave spurious impulses.
+   {
+      EllipsoidID a = createEllipsoid( 1001, Vec3( 0, 0, 0 ), real(0.5), real(0.25), real(0.15), mat );
+      EllipsoidID b = createEllipsoid( 1002, Vec3( 0, 0, 0 ), real(0.5), real(0.25), real(0.15), mat );
+      const int k( 23 );
+      Vec3 n( real(1), real(0.13) + k * real(0.013), real(0.07) + k * real(0.007) );
+      n.normalize();
+      b->setPosition( real(2) * a->support( n ) );
+
+      log.clear();
+      MaxContacts::collide( a, b, log );
+      expect( log.entries.size() == 1, "reviewer touching pair: exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         const Vec3 nn( c.g1 == a ? c.normal : -c.normal );
+         std::printf( "reviewer touching pair: dist=%.3e, normal error=%.3e\n", c.dist, ( nn + n ).length() );
+         expect( close( c.dist, real(0), real(1e-12) ), "reviewer touching pair: depth 0 (1e-12)" );
+         expect( ( nn + n ).length() <= real(1e-6), "reviewer touching pair: geometric normal (1e-6)" );
+         expect( ( c.pos - a->support( n ) ).length() <= real(1e-6), "reviewer touching pair: contact point at the touch point" );
+      }
+      log.clear();
+      MaxContacts::collide( b, a, log );
+      expect( log.entries.size() == 1 && close( log.entries[0].dist, real(0), real(1e-12) ), "reviewer touching pair (reversed order): same depth" );
+
+      // --- 8. reviewer: sub-threshold gap rejected by the unconverged GJK distance -----------
+      // Gap 5e-9 (threshold 1e-8): GJK's first separating plane reported 1.85e-7 and the
+      // contact was dropped; the threshold-grown test is exact and must keep it.
+      {
+         const int k2( 2 );
+         const real gap( real(5e-9) );
+         Vec3 n2( real(1), real(0.13) + k2 * real(0.013), real(0.07) + k2 * real(0.007) );
+         n2.normalize();
+         b->setPosition( real(2) * a->support( n2 ) + gap * n2 );
+
+         log.clear();
+         MaxContacts::collide( a, b, log );
+         expect( log.entries.size() == 1, "reviewer 5e-9 gap: exactly one contact" );
+         if( log.entries.size() == 1 ) {
+            const ContactLog::Entry& c( log.entries[0] );
+            const Vec3 nn( c.g1 == a ? c.normal : -c.normal );
+            std::printf( "reviewer 5e-9 gap: dist=%.12e, normal error=%.3e\n", c.dist, ( nn + n2 ).length() );
+            expect( close( c.dist, gap, real(1e-12) ), "reviewer 5e-9 gap: dist = +5e-9 (positive = separation)" );
+            expect( ( nn + n2 ).length() <= real(1e-6), "reviewer 5e-9 gap: geometric normal (1e-6)" );
+         }
+
+         // and the same direction just outside the band: no contact
+         b->setPosition( real(2) * a->support( n2 ) + real(1.5) * contactThreshold * n2 );
+         log.clear();
+         MaxContacts::collide( a, b, log );
+         expect( log.entries.empty(), "reviewer direction, gap 1.5*contactThreshold: no contact" );
+      }
+      destroy( a );
+      destroy( b );
+   }
+
+   // --- 9. reviewer: inner-cylinder wall penetration missed by the unconverged search ---------
+   // Ellipsoid (0.2, 0.930, 0.917) tilted about x inside a cylinder of radius 0.93932 (axis x):
+   // the surface reaches 0.9393395 from the axis, a penetration of 1.9485e-5 that the 64-step
+   // fixed-point iteration missed. Reference: brute-force radial extent over 10^6 azimuths.
+   {
+      InnerCylinderID cyl = createInnerCylinder( 1003, Vec3( 0, 0, 0 ), real(0.93932), real(10), mat );
+      EllipsoidID e = createEllipsoid( 1004, Vec3( 0, real(-0.010616516792026215), real(-0.0020341444415746396) ),
+                                       real(0.2), real(0.9300185014917651), real(0.9168575207622052), mat );
+      e->rotate( Vec3( 1, 0, 0 ), real(-0.43934643468388357) );
+
+      real rmax( 0 );
+      real tbest( 0 );
+      const int M( 1000000 );
+      for( int i=0; i<M; ++i ) {
+         const real t( real(2) * M_PI * real(i) / real(M) );
+         const Vec3 p( e->support( Vec3( 0, std::cos( t ), std::sin( t ) ) ) );
+         const real r( std::sqrt( p[1]*p[1] + p[2]*p[2] ) );
+         if( r > rmax ) { rmax = r; tbest = t; }
+      }
+      const real expectedDist( real(0.93932) - rmax );
+
+      log.clear();
+      MaxContacts::collide( e, cyl, log );
+      expect( log.entries.size() == 1, "reviewer inner cylinder: exactly one (wall) contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         std::printf( "reviewer inner cylinder: dist=%.12e (brute force %.12e), normal=(%.6f,%.6f,%.6f)\n",
+                      c.dist, expectedDist, c.normal[0], c.normal[1], c.normal[2] );
+         expect( c.g1 == e && c.g2 == cyl, "reviewer inner cylinder: ellipsoid is body 1" );
+         expect( close( c.dist, real(-1.9485495e-5), real(1e-8) ), "reviewer inner cylinder: depth = -1.9485e-5 (1e-8)" );
+         expect( close( c.dist, expectedDist, real(1e-10) ), "reviewer inner cylinder: depth matches the 10^6-sample brute force (1e-10)" );
+         const Vec3 nExp( 0, -std::cos( tbest ), -std::sin( tbest ) );   // inward radial at the extremal azimuth
+         expect( ( c.normal - nExp ).length() <= real(1e-4), "reviewer inner cylinder: inward normal at the extremal azimuth" );
+         expect( close( std::sqrt( c.pos[1]*c.pos[1] + c.pos[2]*c.pos[2] ), rmax + real(0.5) * c.dist, real(1e-9) ),
+                 "reviewer inner cylinder: contact point midway between surface and wall" );
+      }
+      log.clear();
+      MaxContacts::collide( cyl, e, log );
+      expect( log.entries.size() == 1 && log.entries[0].g1 == e, "reviewer inner cylinder (reversed order): same contact" );
+
+      // Same ellipsoid with clearance: a cylinder 2*contactThreshold wider than the extent
+      InnerCylinderID cyl2 = createInnerCylinder( 1005, Vec3( 0, 0, 0 ), rmax + real(2) * contactThreshold, real(10), mat );
+      log.clear();
+      MaxContacts::collide( e, cyl2, log );
+      expect( log.entries.empty(), "reviewer inner cylinder widened by 2*contactThreshold: no contact" );
+
+      destroy( cyl2 );
+      destroy( e );
+      destroy( cyl );
+   }
+
+   // --- 10. oblique random-orientation sweep at exact touch -----------------------------------
+   // Pairs with independent random orientations, placed at exact touch along a random
+   // direction through the support functions: b = a.support(n) - b0.support(-n) with b0 the
+   // second body at the origin, so the touch point is a.support(n) and the normal (b to a) is
+   // -n. Half of the sweep uses the reviewer's shape for both bodies, half random triaxial
+   // shapes. Head-on-only coverage is gone with this.
+   {
+      std::mt19937 rng( 20260919u );
+      std::uniform_real_distribution<real> U( real(-1), real(1) );
+      std::uniform_real_distribution<real> S( real(0.1), real(0.8) );
+      auto randUnit = [&]() {
+         Vec3 v;
+         do { v = Vec3( U(rng), U(rng), U(rng) ); } while( v.sqrLength() < real(1e-3) || v.sqrLength() > real(1) );
+         return v.getNormalized();
+      };
+
+      int found( 0 );
+      real worstDepth( 0 ), worstNormal( 0 ), worstPoint( 0 );
+      const int sweep( 100 );
+      for( int k=0; k<sweep; ++k ) {
+         real a1( real(0.5) ), b1( real(0.25) ), c1( real(0.15) ), a2( a1 ), b2( b1 ), c2( c1 );
+         if( k >= sweep/2 ) { a1 = S(rng); b1 = S(rng); c1 = S(rng); a2 = S(rng); b2 = S(rng); c2 = S(rng); }
+         EllipsoidID x1 = createEllipsoid( 2000 + 2*k,     Vec3( 0, 0, 0 ), a1, b1, c1, mat );
+         EllipsoidID x2 = createEllipsoid( 2000 + 2*k + 1, Vec3( 0, 0, 0 ), a2, b2, c2, mat );
+         x1->rotate( randUnit(), U(rng) * real(3) );
+         x2->rotate( randUnit(), U(rng) * real(3) );
+         const Vec3 n( randUnit() );
+         const Vec3 touch( x1->support( n ) );
+         x2->setPosition( touch - x2->support( -n ) );
+
+         log.clear();
+         MaxContacts::collide( x1, x2, log );
+         if( log.entries.size() == 1 ) {
+            ++found;
+            const ContactLog::Entry& c( log.entries[0] );
+            const Vec3 nn( c.g1 == x1 ? c.normal : -c.normal );
+            worstDepth  = std::max( worstDepth,  std::fabs( c.dist ) );
+            worstNormal = std::max( worstNormal, ( nn + n ).length() );
+            worstPoint  = std::max( worstPoint,  ( c.pos - touch ).length() );
+         }
+         destroy( x1 );
+         destroy( x2 );
+      }
+      std::printf( "oblique touch sweep: %d/%d contacts, worst |depth|=%.3e, worst normal error=%.3e, worst point error=%.3e\n",
+                   found, sweep, worstDepth, worstNormal, worstPoint );
+      expect( found == sweep, "oblique touch sweep: one contact for every pair" );
+      expect( worstDepth <= real(1e-10), "oblique touch sweep: depth 0 (1e-10)" );
+      expect( worstNormal <= real(1e-8), "oblique touch sweep: geometric normal (1e-8)" );
+      expect( worstPoint <= real(1e-8), "oblique touch sweep: contact point at the touch point (1e-8)" );
    }
 
    if( failures == 0 ) {
