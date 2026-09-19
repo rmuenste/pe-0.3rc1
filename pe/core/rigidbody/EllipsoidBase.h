@@ -29,6 +29,7 @@
 // Includes
 //*************************************************************************************************
 
+#include <cmath>
 #include <pe/core/rigidbody/GeomPrimitive.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Types.h>
@@ -301,12 +302,33 @@ inline void EllipsoidBase::calcInertia()
  *
  * \param d The normalized search direction in world-frame coordinates.
  * \return The support point in world-frame coordinates in direction a\ d.
+ *
+ * The support point of an ellipsoid with semi-axes \f$ (A,B,C) \f$ along its body axes is
+ * computed in the body frame from \f$ d_b = R^T d \f$:
+ *
+ * \f[ v = ( A^2 d_{b,x}, B^2 d_{b,y}, C^2 d_{b,z} ), \quad
+ *     p_b = \frac{v}{\sqrt{ A^2 d_{b,x}^2 + B^2 d_{b,y}^2 + C^2 d_{b,z}^2 }} \f]
+ *
+ * and returned as \f$ g + R\,p_b \f$. The point lies exactly on the surface and its outward
+ * normal \f$ (p_x/A^2, p_y/B^2, p_z/C^2) \f$ is parallel to \f$ d_b \f$. A degenerate zero
+ * direction yields the center of mass, consistent with the other primitives.
  */
 inline Vec3 EllipsoidBase::support( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised" );
-   return gpos_ + radiusA_*d;
+
+   const Vec3 bfD( vectorFromWFtoBF( d ) );  // d in body frame coordinates
+
+   const Vec3 v( radiusA_ * radiusA_ * bfD[0],
+                 radiusB_ * radiusB_ * bfD[1],
+                 radiusC_ * radiusC_ * bfD[2] );
+   const real denom( std::sqrt( trans( v ) * bfD ) );  // sqrt( A^2 dx^2 + B^2 dy^2 + C^2 dz^2 )
+
+   if( denom <= real(0) )
+      return gpos_;
+
+   return gpos_ + vectorFromBFtoWF( v / denom );
 }
 //*************************************************************************************************
 
@@ -317,12 +339,15 @@ inline Vec3 EllipsoidBase::support( const Vec3& d ) const
  * \param d The normalized search direction in world-frame coordinates
  * \return The support point in world-frame coordinates in direction a\ d extended by a vector in
  *         direction \a d of length \a pe::contactThreshold.
+ *
+ * This is the exact support point of the Minkowski sum of the ellipsoid with a ball of radius
+ * pe::contactThreshold.
  */
 inline Vec3 EllipsoidBase::supportContactThreshold( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised" );
-   return gpos_ + d*(radiusA_ + contactThreshold);
+   return support( d ) + d * contactThreshold;
 }
 //*************************************************************************************************
 
