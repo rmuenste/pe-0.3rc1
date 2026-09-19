@@ -295,49 +295,57 @@ protected:
 //================================================================================================
 
 //*************************************************************************************************
-/*!\brief TODO
+/*!\brief Contact query for two convex bodies given by their support mappings.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
+ * \param contactPoint Output: midpoint of the two witness points.
+ * \param penetrationDepth Output: signed distance (negative = penetration).
+ * \return \a true if a contact within pe::contactThreshold was found.
+ *
+ * Accept/reject is decided solely by the threshold-grown GJK test
+ * GJK::doGJKcontactThreshold(): it answers exactly (a separating plane or the origin inside the
+ * simplex, both certificates) whether the Minkowski difference of the two bodies grown by
+ * pe::contactThreshold each contains the origin, i.e. whether the separation is at most
+ * 2 * contactThreshold. If it does not, there is certainly no contact. If it does, the contact
+ * geometry (normal, witness points, signed distance) comes from EPA validated and refined
+ * against the support functions (validatedPenetration()), which also makes the final
+ * comparison with contactThreshold on a converged distance.
+ *
+ * The former hybrid (van den Bergen p. 166) started with the ungrown GJK::doGJK() and rejected
+ * the pair when the distance it returned exceeded contactThreshold. That distance is the
+ * distance of the origin to the simplex GJK held when it met its FIRST separating support
+ * plane; it is an upper bound of the separation and not a converged minimum, so a pair 5e-9
+ * apart was reported at 1.85e-7 and dropped. Both that value and the normal derived from the
+ * same simplex ("close but separated" branch) were unfit for a decision, hence neither is used
+ * any more. The threshold-grown test costs the same as the ungrown one for separated bodies
+ * (it stops at the first separating plane as well), so the fast path is preserved.
  */
 template < typename Type1 , typename Type2 >
 inline bool MaxContacts::gjkEPAcollideHybrid(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
 {
-   // For more information on hybrid GJK/EPA see page 166 in "Collision Detecton in Interactive 3D
-   // Environments" by Gino van den Bergen.
-
    GJK gjk;
-   // GJK::calcDistance() returns the SQUARED separation of the two bodies (0 when they
-   // overlap); take the root so that the comparisons against contactThreshold below and the
-   // separation handed out as contact distance are in length units.
-   penetrationDepth = std::sqrt( std::max( gjk.doGJK< Type1, Type2 >(geom1, geom2, normal, contactPoint), real(0) ) );
-   if(penetrationDepth > contactThreshold) {
-      // not close enough create no contact
+   if( !gjk.doGJKcontactThreshold<Type1, Type2>(geom1, geom2) ) {
+      // Certified: the bodies are more than 2 * contactThreshold apart.
       return false;
    }
-   else if(penetrationDepth < 0.01*contactThreshold) {
-      // objects are quite close use GJKcontactTrashold + EPAcontactTrashold to calc distance
-      if(gjk.doGJKcontactThreshold<Type1, Type2>(geom1, geom2)) {
-         //possible penetration
-         //
-         // EPA's result is never handed out as is: its depth is the distance of a face of a
-         // polytope inscribed in the Minkowski difference and is only meaningful when the
-         // expansion converged, which the return value does not certify (an exactly touching
-         // pair of ellipsoids came back as a 7e-5 penetration with a normal 80 degrees off).
-         // validatedPenetration() recomputes the depth along EPA's normal from the support
-         // functions, refines it, and accepts the direction with the smallest certified depth.
-         // When EPA fails altogether (no polytope around the origin for shallow overlaps where
-         // the GJK simplex is a sliver next to the boundary) the same routine works without it.
-         EPA epa;
-         Vec3 epaNormal, epaPoint;
-         real epaDepth( real(0) );
-         const bool epaValid( epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, epaNormal, epaPoint, epaDepth) );
-         return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaDepth, normal, contactPoint, penetrationDepth);
-      }
-   }
-   else {
-      // objects are close but separated use data calculated by GJK
-      return true;
-   }
-   //never to be reached
-   return false;
+
+   // Separation at most 2 * contactThreshold (or penetration): converged geometry required.
+   //
+   // EPA's result is never handed out as is: its depth is the distance of a face of a polytope
+   // inscribed in the Minkowski difference and is only meaningful when the expansion converged,
+   // which the return value does not certify (an exactly touching pair of ellipsoids came back
+   // as a 7e-5 penetration with a normal 80 degrees off). validatedPenetration() recomputes the
+   // depth along EPA's normal from the support functions, refines it, and accepts the direction
+   // with the smallest certified depth. When EPA fails altogether (no polytope around the
+   // origin for shallow overlaps where the GJK simplex is a sliver next to the boundary) the
+   // same routine works without it.
+   EPA epa;
+   Vec3 epaNormal, epaPoint;
+   real epaDepth( real(0) );
+   const bool epaValid( epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, epaNormal, epaPoint, epaDepth) );
+   return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaDepth, normal, contactPoint, penetrationDepth);
 }
 //*************************************************************************************************
 
