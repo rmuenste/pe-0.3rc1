@@ -105,6 +105,8 @@ SimulationConfig::SimulationConfig()
     , particleMotion_("fixed")
     , semiAxes_(0.0, 0.0, 0.0)
     , particleAxis_(1.0, 0.0, 0.0)
+    , angularDofMask_(1.0, 1.0, 1.0)
+    , hasAngularDofMask_(false)
     , particleDensity_(1.0)
     , fluidViscosity_(1.0)
     , fluidDensity_(1.0)
@@ -450,6 +452,25 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
         config.setParticleAxis(Vec3(j["particleAxis_"][0].get<real>(),
                                     j["particleAxis_"][1].get<real>(),
                                     j["particleAxis_"][2].get<real>()));
+    }
+
+    // Optional angular DOF mask for the rotationOnly path: exactly 3 entries, each exactly
+    // 0 or 1 (a mask multiplies the angular velocity component-wise, so anything else would
+    // be a silent damping factor rather than a lock).
+    if (j.contains("angularDofMask_")) {
+        const auto& m = j["angularDofMask_"];
+        if (!m.is_array() || m.size() != 3)
+            throw std::invalid_argument("angularDofMask_ must be an array of 3 entries, each 0 or 1");
+        Vec3 mask;
+        for (std::size_t i = 0; i < 3; ++i) {
+            if (!m[i].is_number())
+                throw std::invalid_argument("angularDofMask_ must be an array of 3 entries, each 0 or 1");
+            const real value = m[i].get<real>();
+            if (value != real(0) && value != real(1))
+                throw std::invalid_argument("angularDofMask_ entries must be exactly 0 or 1");
+            mask[i] = value;
+        }
+        config.setAngularDofMask(mask);
     }
 
     // Set particle density

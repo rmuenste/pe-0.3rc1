@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <vector>
@@ -778,6 +779,17 @@ class SerialStepFeatureSet {
     sphereLogFeature_->afterMainStep(ctx);
   }
 };
+
+// Setup-time guard for the optional angularDofMask_ deck key (DNS-drag xyz path only).
+// The mask is applied to bodies on the rotationOnly path; under any other particleMotion_
+// it would be silently ignored, so its presence is refused instead. Called once from
+// setupDNSDragSerial after SimulationConfig::loadFromFile; a free function so the contract
+// is testable without a world/MPI/CFD context.
+inline void checkAngularDofMaskRequiresRotationOnly(const SimulationConfig& config) {
+  if (config.hasAngularDofMask() && config.getParticleMotion() != "rotationOnly") {
+    throw std::invalid_argument("angularDofMask_ requires particleMotion_ = rotationOnly");
+  }
+}
 
 inline SerialStepFeatureSet& serialStepFeatureSet() {
   static SerialStepFeatureSet featureSet;

@@ -297,6 +297,15 @@ public:
         particleMotion_ = motion;
     }
     const std::string& getParticleMotion() const { return particleMotion_; }
+    //! Per-axis (world frame) angular DOF mask for the DNS-drag rotationOnly path:
+    //! 1 = free, 0 = locked. Defaults to (1,1,1) (all axes free); the json key
+    //! angularDofMask_ is optional and hasAngularDofMask() reports whether it was set.
+    void setAngularDofMask(const Vec3& mask) {
+        angularDofMask_ = mask;
+        hasAngularDofMask_ = true;
+    }
+    const Vec3& getAngularDofMask() const { return angularDofMask_; }
+    bool hasAngularDofMask() const { return hasAngularDofMask_; }
     //@}
     //**************************************************************************************
 
@@ -491,6 +500,8 @@ private:
     std::string particleMotion_; //!< DNS-drag xyz-path motion: "fixed" (default) or "rotationOnly"
     Vec3 semiAxes_;              //!< Ellipsoid semi-axes (a,b,c); a lies along body-frame x
     Vec3 particleAxis_;          //!< World-frame direction of the ellipsoid a-axis at creation
+    Vec3 angularDofMask_;        //!< World-frame angular DOF mask (1=free, 0=locked), default (1,1,1)
+    bool hasAngularDofMask_;     //!< True once angularDofMask_ was explicitly set (json key present)
 
     // Physical parameters
     real particleDensity_;       //!< Particle material density
