@@ -4633,12 +4633,25 @@ void MaxContacts::collideEllipsoidCylinder( EllipsoidID e, CylinderID c, CC& con
  * route on the convex hull does not apply. Mirroring collideSphereInnerCylinder(), the
  * lateral wall and the two end caps are treated separately:
  *
- * - Lateral wall: the ellipsoid surface point farthest from the cylinder axis is found by the
- *   monotone fixed-point iteration \f$ p_{k+1} = \mathrm{support}( \hat{r}(p_k) ) \f$ with
- *   \f$ \hat{r} \f$ the unit radial direction from the axis (the radial distance is a convex
- *   function, so the iteration ascends; several starts are tried and the best kept). The gap
- *   to the wall is \f$ R_c - |r(p)| \f$; the contact normal points inward (from the wall to the
- *   ellipsoid), as in the sphere case.
+ * - Lateral wall: the radial extent of the ellipsoid, i.e. the largest distance of one of its
+ *   surface points from the cylinder axis, is
+ *   \f$ \max_\theta f(\theta) \f$ with \f$ f(\theta) = ( s(\hat{r}(\theta)) - c ) \cdot
+ *   \hat{r}(\theta) \f$, \f$ \hat{r}(\theta) = \cos\theta\, v + \sin\theta\, w \f$ a unit
+ *   radial direction, \f$ s \f$ the support mapping and \f$ c \f$ a point on the axis: for
+ *   every point \f$ |r(p)| = \max_\theta (p - c) \cdot \hat{r}(\theta) \f$ and the two maxima
+ *   commute. \f$ f \f$ is the support function of the projected ellipse, a smooth periodic
+ *   function whose stationary points are those of the radial distance on that ellipse (at most
+ *   four, hence at most two local maxima). It is sampled on a 1-degree grid, every grid local
+ *   maximum is refined by golden-section search to an azimuth tolerance of 1e-12 (the value is
+ *   then accurate to rounding since it is stationary there), and the best is kept. A certified
+ *   upper bound of the extent, radial center offset plus the largest semi-axis, skips the
+ *   search when it already proves clearance; an unconverged search (defensive, the bracketed
+ *   golden section cannot fail) falls back to that upper bound instead of concluding clearance
+ *   from a partial maximisation, which is only a LOWER bound of the extent. The former
+ *   fixed-point iteration \f$ p_{k+1} = s( \hat{r}(p_k) ) \f$ stopped after 64 unconverged steps
+ *   and missed a 1.9e-5 wall penetration of a nearly axisymmetric ellipsoid that way.
+ *   The gap to the wall is \f$ R_c - |r(p)| \f$; the contact normal points inward (from the
+ *   wall to the ellipsoid), as in the sphere case.
  * - End caps: the deepest points towards the caps are the support points along \f$ \pm u \f$
  *   (\f$ u \f$ the axis direction); their gaps to the cap planes give plane-like contacts with
  *   the normal pointing from the cap into the cylinder.
@@ -4652,51 +4665,105 @@ void MaxContacts::collideEllipsoidInnerCylinder( EllipsoidID e, InnerCylinderID 
    const real  Rcyl( c->getRadius() );
    const real  hlength( real(0.5) * c->getLength() );
 
-   // Unit radial direction (perpendicular to the axis) of a world-frame vector; false if degenerate
-   const auto radialDir = []( const Vec3& v, const Vec3& axis, Vec3& out ) -> bool {
-      const Vec3 r( v - ( trans( axis ) * v ) * axis );
-      const real len( r.length() );
-      if( len <= real(1e-14) ) return false;
-      out = r / len;
-      return true;
-   };
-
    //----- Lateral wall --------------------------------------------------------------------------
    {
-      const Rot3& Re( e->getRotation() );
-      Vec3 starts[4];
-      size_t numStarts( 0 );
-      Vec3 dir;
-      if( radialDir( e->getPosition() - cpos, u, dir ) ) starts[numStarts++] = dir;
-      for( size_t j=0; j<3; ++j ) {
-         const Vec3 axisE( Re[j], Re[3+j], Re[6+j] );  // body axis j of the ellipsoid
-         if( radialDir( axisE, u, dir ) ) starts[numStarts++] = dir;
-      }
+      // Orthonormal basis ( v, w ) of the plane perpendicular to the axis
+      Vec3 v( std::fabs( u[0] ) < real(0.9) ? Vec3( 1, 0, 0 ) : Vec3( 0, 1, 0 ) );
+      v -= ( trans( u ) * v ) * u;
+      v.normalize();
+      const Vec3 w( u % v );
 
-      real bestRadial( -real(1) );
-      Vec3 bestPoint, bestDir;
-      for( size_t s=0; s<numStarts; ++s ) {
-         Vec3 d( starts[s] );
-         Vec3 p( e->support( d ) );
-         for( size_t iter=0; iter<64; ++iter ) {
-            Vec3 dNew;
-            if( !radialDir( p - cpos, u, dNew ) ) break;
-            const Vec3 pNew( e->support( dNew ) );
-            const bool converged( ( dNew - d ).sqrLength() < real(1e-28) );
-            d = dNew;
-            p = pNew;
-            if( converged ) break;
-         }
+      // Radial extent of a world point and radial support function f(theta)
+      const auto radialLength = [&]( const Vec3& p ) -> real {
          const Vec3 r( p - cpos );
-         const real radial( ( r - ( trans( u ) * r ) * u ).length() );
-         if( radial > bestRadial ) {
-            bestRadial = radial;
-            bestPoint  = p;
-            bestDir    = d;
-         }
-      }
+         return ( r - ( trans( u ) * r ) * u ).length();
+      };
+      const auto radialSupport = [&]( real theta, Vec3& dir, Vec3& p ) -> real {
+         dir = std::cos( theta ) * v + std::sin( theta ) * w;
+         p   = e->support( dir );
+         return trans( p - cpos ) * dir;
+      };
 
-      if( bestRadial >= real(0) ) {
+      // Certified upper bound of the radial extent: the ellipsoid lies inside the sphere of
+      // radius max( A, B, C ) about its center.
+      const Vec3 semi( e->getRadius() );
+      const real radialUpper( radialLength( e->getPosition() ) + std::max( semi[0], std::max( semi[1], semi[2] ) ) );
+
+      if( Rcyl - radialUpper < contactThreshold ) {
+         // Clearance is not certified by the bound: locate the radial extent.
+         const size_t numSamples( 360 );
+         const real   dTheta( real(2) * M_PI / real(numSamples) );
+         real  fs[numSamples];
+         Vec3  dirTmp, pTmp;
+         for( size_t i=0; i<numSamples; ++i )
+            fs[i] = radialSupport( real(i) * dTheta, dirTmp, pTmp );
+
+         // Grid local maxima (plateaus excluded; if none qualifies, the grid argmax is used)
+         size_t candidates[numSamples];
+         size_t numCandidates( 0 );
+         size_t argmax( 0 );
+         for( size_t i=0; i<numSamples; ++i ) {
+            const real fPrev( fs[( i + numSamples - 1 ) % numSamples] );
+            const real fNext( fs[( i + 1 ) % numSamples] );
+            if( fs[i] >= fPrev && fs[i] >= fNext && ( fs[i] > fPrev || fs[i] > fNext ) )
+               candidates[numCandidates++] = i;
+            if( fs[i] > fs[argmax] ) argmax = i;
+         }
+         if( numCandidates == 0 )
+            candidates[numCandidates++] = argmax;
+         // Keep the best few candidates only (rounding noise on a numerically flat f, e.g. a
+         // spheroid coaxial with the cylinder, can flag many grid points).
+         const size_t maxRefine( 16 );
+         if( numCandidates > maxRefine ) {
+            std::sort( candidates, candidates + numCandidates,
+                       [&]( size_t a, size_t b ) { return fs[a] > fs[b]; } );
+            numCandidates = maxRefine;
+         }
+
+         // Golden-section refinement of each bracket [ theta_{i-1}, theta_{i+1} ]
+         const real thetaTol( real(1e-12) );
+         const real invPhi( real(0.5) * ( std::sqrt( real(5) ) - real(1) ) );   // 0.618...
+         bool converged( true );
+         real bestRadial( -real(1) );
+         Vec3 bestPoint, bestDir;
+         for( size_t k=0; k<numCandidates; ++k ) {
+            real a( ( real(candidates[k]) - real(1) ) * dTheta );
+            real b( ( real(candidates[k]) + real(1) ) * dTheta );
+            real x1( b - invPhi * ( b - a ) ), x2( a + invPhi * ( b - a ) );
+            real f1( radialSupport( x1, dirTmp, pTmp ) ), f2( radialSupport( x2, dirTmp, pTmp ) );
+            size_t iter( 0 );
+            for( ; iter<200 && ( b - a ) > thetaTol; ++iter ) {
+               if( f1 < f2 ) { a = x1; x1 = x2; f1 = f2; x2 = a + invPhi * ( b - a ); f2 = radialSupport( x2, dirTmp, pTmp ); }
+               else          { b = x2; x2 = x1; f2 = f1; x1 = b - invPhi * ( b - a ); f1 = radialSupport( x1, dirTmp, pTmp ); }
+            }
+            if( ( b - a ) > thetaTol )
+               converged = false;
+            Vec3 dir, p;
+            radialSupport( real(0.5) * ( a + b ), dir, p );
+            const real radial( radialLength( p ) );      // = f at the maximiser, exact radial distance of p
+            if( radial > bestRadial ) {
+               bestRadial = radial;
+               bestPoint  = p;
+               bestDir    = dir;
+            }
+         }
+
+         if( !converged ) {
+            // Never conclude clearance from an unconverged maximisation: use the certified upper
+            // bound of the extent (conservative: may overstate the penetration, never miss it).
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "      Ellipsoid " << e->getID() << " / inner cylinder " << c->getID()
+                   << ": radial maximisation did not converge, using the upper bound";
+            }
+            bestRadial = radialUpper;
+            Vec3 dir( e->getPosition() - cpos );
+            dir -= ( trans( u ) * dir ) * u;
+            if( dir.sqrLength() < real(1e-28) ) dir = v; else dir.normalize();
+            bestDir   = dir;
+            // point at the bound distance from the axis, in the axial plane of the center
+            bestPoint = cpos + ( trans( u ) * ( e->getPosition() - cpos ) ) * u + radialUpper * dir;
+         }
+
          const real dist( Rcyl - bestRadial );
          if( dist < contactThreshold ) {
             // Contact point midway between the ellipsoid surface and the wall, normal inward
