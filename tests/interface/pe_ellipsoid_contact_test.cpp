@@ -1,0 +1,346 @@
+//=================================================================================================
+/*!
+ *  \file tests/interface/pe_ellipsoid_contact_test.cpp
+ *  \brief Narrow-phase contact generation for ellipsoids through MaxContacts::collide().
+ *
+ *  Before this test MaxContacts::collide() had no ellipsoidType case at all, so ellipsoid pairs
+ *  generated no contacts. The dispatch now routes ellipsoid-{ellipsoid, sphere, box, capsule,
+ *  cylinder, mesh} through the hybrid GJK/EPA helper on the exact support mapping, and
+ *  ellipsoid-plane through the analytic support(-n) formula. Asserted here with a recording
+ *  contact container (no solver involved):
+ *    1. two axis-aligned prolate spheroids (A=0.5, B=C=0.25) on the x axis at separation
+ *       2A - delta: exactly one contact, penetration -delta, normal along x, contact point at
+ *       the overlap midpoint; both dispatch orders agree;
+ *    2. the same pair rotated by 30 degrees about z with the separation along the rotated axis;
+ *    3. a separated pair (2A + 1e-3 and 2A + 1e-6): no contact (the latter also pins the
+ *       GJK squared-distance fix in gjkEPAcollideHybrid);
+ *    4. ellipsoid-sphere and ellipsoid-box penetration along x;
+ *    5. ellipsoid-plane: spheroid tilted 40 degrees above a horizontal plane; penetration equals
+ *       the analytic plane height minus lowest surface point, which for a spheroid with axis at
+ *       angle theta from the normal is sqrt(A^2 cos^2 theta + B^2 sin^2 theta) below the center;
+ *       both dispatch orders agree; a spheroid above the threshold yields no contact;
+ *    6. a random sweep of triaxial pairs: contacts are finite, at most one per pair, and pairs
+ *       whose bounding spheres do not overlap produce none.
+ *
+ *  Serial world setup, no MPI.
+ */
+//=================================================================================================
+
+#include <pe/core.h>
+#include <pe/core/detection/fine/MaxContacts.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <random>
+#include <vector>
+
+using namespace pe;
+using pe::detection::fine::MaxContacts;
+
+static int failures = 0;
+
+static void expect( bool ok, const char* what )
+{
+   if( !ok ) {
+      std::printf( "FAIL: %s\n", what );
+      ++failures;
+   }
+}
+
+static bool close( real x, real y, real tol )
+{
+   return std::fabs( x - y ) <= tol;
+}
+
+static bool finite3( const Vec3& v )
+{
+   return std::isfinite( v[0] ) && std::isfinite( v[1] ) && std::isfinite( v[2] );
+}
+
+// Recording contact container: the minimal interface MaxContacts expects.
+struct ContactLog
+{
+   struct Entry { GeomID g1; GeomID g2; Vec3 pos; Vec3 normal; real dist; };
+   std::vector<Entry> entries;
+
+   void addVertexFaceContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, real dist ) {
+      entries.push_back( Entry{ g1, g2, gpos, normal, dist } );
+   }
+   void addLubricationContact( GeomID, GeomID, const Vec3&, const Vec3&, real, real = real(1) ) {}
+   void addEdgeEdgeContact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal,
+                            const Vec3&, const Vec3&, real dist ) {
+      entries.push_back( Entry{ g1, g2, gpos, normal, dist } );
+   }
+   void clear() { entries.clear(); }
+};
+
+// Signed component of the contact normal along 'axis' as seen from body 'ref' (normal must
+// point from the other body towards 'ref', i.e. from body2 to body1).
+static real normalTowards( const ContactLog::Entry& c, BodyID ref, const Vec3& axisFromOtherToRef )
+{
+   const Vec3 n( c.g1 == ref ? c.normal : -c.normal );
+   return trans( n ) * axisFromOtherToRef;
+}
+
+int main()
+{
+   WorldID world = theWorld();
+   (void)world;
+
+   MaterialID mat = createMaterial( "contact_test", real(1), real(0.1), real(0.05), real(0.05),
+                                    real(0.2), real(80), real(100), real(10), real(11) );
+
+   const real A = real(0.5), B = real(0.25), C = real(0.25);
+   const real delta = real(0.01);
+   const real tolDepth = real(1e-8);
+   ContactLog log;
+
+   // Bodies far apart by default; each case positions what it needs.
+   EllipsoidID e1 = createEllipsoid( 1, Vec3( 0, 0, 0 ), A, B, C, mat );
+   EllipsoidID e2 = createEllipsoid( 2, Vec3( 100, 0, 0 ), A, B, C, mat );
+   SphereID    sp = createSphere   ( 3, Vec3( 200, 0, 0 ), real(0.2), mat );
+   BoxID       bx = createBox      ( 4, Vec3( 300, 0, 0 ), Vec3( 1, 1, 1 ), mat );
+   PlaneID     pl = createPlane    ( 5, Vec3( 0, 0, 1 ), real(0), mat );
+
+   // --- 1. axis-aligned spheroids ---------------------------------------------------------------
+   {
+      e1->setPosition( Vec3( 0, 0, 0 ) );
+      e2->setPosition( Vec3( real(2)*A - delta, 0, 0 ) );
+
+      log.clear();
+      MaxContacts::collide( e1, e2, log );
+      expect( log.entries.size() == 1, "axis-aligned pair: exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         std::printf( "axis-aligned pair: dist=%.12e (expected %.12e), normal=(%.10f,%.10f,%.10f), point=(%.10f,%.10f,%.10f)\n",
+                      c.dist, -delta, c.normal[0], c.normal[1], c.normal[2], c.pos[0], c.pos[1], c.pos[2] );
+         expect( close( c.dist, -delta, tolDepth ), "axis-aligned pair: penetration depth = -delta (1e-8)" );
+         expect( normalTowards( c, e1, Vec3( -1, 0, 0 ) ) > real(1) - real(1e-8), "axis-aligned pair: normal along x (from e2 to e1)" );
+         expect( close( c.pos[0], A - real(0.5)*delta, real(1e-6) ) && close( c.pos[1], 0, real(1e-8) ) && close( c.pos[2], 0, real(1e-8) ),
+                 "axis-aligned pair: contact point at the overlap midpoint" );
+      }
+
+      log.clear();
+      MaxContacts::collide( e2, e1, log );   // reversed dispatch order
+      expect( log.entries.size() == 1, "axis-aligned pair (reversed order): exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         expect( close( c.dist, -delta, tolDepth ), "axis-aligned pair (reversed order): penetration depth = -delta" );
+         expect( normalTowards( c, e1, Vec3( -1, 0, 0 ) ) > real(1) - real(1e-8), "axis-aligned pair (reversed order): normal along x" );
+      }
+
+      // Touching within the threshold band: contact with |dist| <= contactThreshold
+      e2->setPosition( Vec3( real(2)*A, 0, 0 ) );
+      log.clear();
+      MaxContacts::collide( e1, e2, log );
+      expect( log.entries.size() == 1, "touching pair: one contact" );
+      if( log.entries.size() == 1 )
+         expect( std::fabs( log.entries[0].dist ) <= real(2) * contactThreshold + real(1e-12), "touching pair: |dist| within the threshold" );
+
+      // Shallow head-on overlaps: EPA cannot start from the sliver simplex GJK returns here, the
+      // support-descent fallback of gjkEPAcollideHybrid must deliver the exact depth (mirrors
+      // the analytic sphere-sphere behaviour row for row).
+      {
+         const real offsets[] = { real(-1e-4), real(-1e-5), real(-1e-6), real(-1e-7), real(-1e-8), real(0), real(5e-9), real(9e-9) };
+         bool allFound = true, allExact = true, allAlongX = true;
+         for( real o : offsets ) {
+            e2->setPosition( Vec3( real(2)*A + o, 0, 0 ) );
+            log.clear();
+            MaxContacts::collide( e1, e2, log );
+            if( log.entries.size() != 1 ) { allFound = false; std::printf( "  head-on offset %+.1e: %zu contacts\n", o, log.entries.size() ); continue; }
+            const ContactLog::Entry& c( log.entries[0] );
+            if( !close( c.dist, o, real(1e-10) ) ) { allExact = false; std::printf( "  head-on offset %+.1e: dist %+.3e\n", o, c.dist ); }
+            if( normalTowards( c, e1, Vec3( -1, 0, 0 ) ) <= real(1) - real(1e-8) ) allAlongX = false;
+         }
+         expect( allFound,   "shallow head-on overlaps down to exact touch: one contact each" );
+         expect( allExact,   "shallow head-on overlaps: dist equals the offset (1e-10)" );
+         expect( allAlongX,  "shallow head-on overlaps: normal along x" );
+
+         e2->setPosition( Vec3( real(2)*A + real(1.1) * contactThreshold, 0, 0 ) );
+         log.clear();
+         MaxContacts::collide( e1, e2, log );
+         expect( log.entries.empty(), "head-on gap of 1.1*contactThreshold: no contact" );
+      }
+   }
+
+   // --- 2. tilted spheroids ---------------------------------------------------------------------
+   {
+      const real ang( real(30) * M_PI / real(180) );
+      const Vec3 axis( std::cos( ang ), std::sin( ang ), 0 );
+      e1->setOrientation( Quat() );
+      e2->setOrientation( Quat() );
+      e1->rotate( Vec3( 0, 0, 1 ), ang );
+      e2->rotate( Vec3( 0, 0, 1 ), ang );
+      e1->setPosition( Vec3( 0, 0, 0 ) );
+      e2->setPosition( axis * ( real(2)*A - delta ) );
+
+      log.clear();
+      MaxContacts::collide( e1, e2, log );
+      expect( log.entries.size() == 1, "tilted pair: exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         std::printf( "tilted pair: dist=%.12e (expected %.12e), normal.axis=%.12f\n",
+                      c.dist, -delta, normalTowards( c, e1, -axis ) );
+         expect( close( c.dist, -delta, tolDepth ), "tilted pair: penetration depth = -delta (1e-8)" );
+         expect( normalTowards( c, e1, -axis ) > real(1) - real(1e-8), "tilted pair: normal along the rotated axis" );
+         const Vec3 expectedPoint( axis * ( A - real(0.5)*delta ) );
+         expect( ( c.pos - expectedPoint ).length() < real(1e-6), "tilted pair: contact point at the overlap midpoint" );
+      }
+      e1->setOrientation( Quat() );
+      e2->setOrientation( Quat() );
+   }
+
+   // --- 3. separated pairs ----------------------------------------------------------------------
+   {
+      e1->setPosition( Vec3( 0, 0, 0 ) );
+      e2->setPosition( Vec3( real(2)*A + real(1e-3), 0, 0 ) );
+      log.clear();
+      MaxContacts::collide( e1, e2, log );
+      expect( log.entries.empty(), "separated pair (gap 1e-3): no contact" );
+
+      e2->setPosition( Vec3( real(2)*A + real(1e-6), 0, 0 ) );
+      log.clear();
+      MaxContacts::collide( e1, e2, log );
+      expect( log.entries.empty(), "separated pair (gap 1e-6 > contactThreshold): no contact" );
+
+      e2->setPosition( Vec3( 100, 0, 0 ) );
+   }
+
+   // --- 4. ellipsoid-sphere and ellipsoid-box ---------------------------------------------------
+   {
+      e1->setPosition( Vec3( 0, 0, 0 ) );
+      sp->setPosition( Vec3( A + sp->getRadius() - delta, 0, 0 ) );
+      log.clear();
+      MaxContacts::collide( e1, sp, log );
+      expect( log.entries.size() == 1, "ellipsoid-sphere: exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         std::printf( "ellipsoid-sphere: dist=%.12e (expected %.12e)\n", c.dist, -delta );
+         expect( close( c.dist, -delta, tolDepth ), "ellipsoid-sphere: penetration depth = -delta (1e-8)" );
+         expect( normalTowards( c, e1, Vec3( -1, 0, 0 ) ) > real(1) - real(1e-8), "ellipsoid-sphere: normal along x" );
+      }
+      log.clear();
+      MaxContacts::collide( sp, e1, log );   // sphere first
+      expect( log.entries.size() == 1, "sphere-ellipsoid (reversed order): exactly one contact" );
+      if( log.entries.size() == 1 )
+         expect( close( log.entries[0].dist, -delta, tolDepth ), "sphere-ellipsoid (reversed order): penetration depth = -delta" );
+      sp->setPosition( Vec3( 200, 0, 0 ) );
+
+      bx->setPosition( Vec3( A + real(0.5) - delta, 0, 0 ) );
+      log.clear();
+      MaxContacts::collide( e1, bx, log );
+      expect( log.entries.size() == 1, "ellipsoid-box: exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         std::printf( "ellipsoid-box: dist=%.12e (expected %.12e)\n", c.dist, -delta );
+         expect( close( c.dist, -delta, tolDepth ), "ellipsoid-box: penetration depth = -delta (1e-8)" );
+         expect( normalTowards( c, e1, Vec3( -1, 0, 0 ) ) > real(1) - real(1e-8), "ellipsoid-box: normal along x" );
+      }
+      log.clear();
+      MaxContacts::collide( bx, e1, log );
+      expect( log.entries.size() == 1, "box-ellipsoid (reversed order): exactly one contact" );
+      bx->setPosition( Vec3( 300, 0, 0 ) );
+   }
+
+   // --- 5. ellipsoid-plane ----------------------------------------------------------------------
+   {
+      const real tilt( real(40) * M_PI / real(180) );   // above the horizontal
+      e1->setOrientation( Quat() );
+      e1->rotate( Vec3( 0, 1, 0 ), -tilt );             // body x tilted towards +z
+      const Rot3& R( e1->getRotation() );
+      const Vec3 u( R[0], R[3], R[6] );                  // world direction of the a-axis
+      const real theta( std::acos( std::fabs( u[2] ) ) );  // angle between axis and plane normal
+      expect( close( theta, M_PI/real(2) - tilt, real(1e-12) ), "ellipsoid-plane: axis is 50 degrees from the normal" );
+      const real h( std::sqrt( A*A * std::cos( theta )*std::cos( theta ) + B*B * std::sin( theta )*std::sin( theta ) ) );
+
+      e1->setPosition( Vec3( 0, 0, h - delta ) );
+      log.clear();
+      MaxContacts::collide( e1, pl, log );
+      expect( log.entries.size() == 1, "ellipsoid-plane: exactly one contact" );
+      if( log.entries.size() == 1 ) {
+         const ContactLog::Entry& c( log.entries[0] );
+         std::printf( "ellipsoid-plane: dist=%.12e (expected %.12e), h=%.12f, point z=%.3e\n", c.dist, -delta, h, c.pos[2] );
+         expect( close( c.dist, -delta, real(1e-12) ), "ellipsoid-plane: penetration = plane height minus lowest surface point" );
+         expect( c.g1 == e1 && c.g2 == pl, "ellipsoid-plane: ellipsoid is body 1" );
+         expect( close( c.normal[2], real(1), real(1e-15) ), "ellipsoid-plane: normal is the plane normal" );
+         expect( close( c.pos[2], real(0), real(1e-12) ), "ellipsoid-plane: contact point on the plane surface" );
+         // the deepest point is the support in -n; its horizontal position is the contact point
+         const Vec3 deepest( e1->support( Vec3( 0, 0, -1 ) ) );
+         expect( close( deepest[2], -delta, real(1e-12) ), "ellipsoid-plane: support(-n) is delta below the plane" );
+         expect( close( c.pos[0], deepest[0], real(1e-12) ) && close( c.pos[1], deepest[1], real(1e-12) ), "ellipsoid-plane: contact point below the deepest point" );
+      }
+      log.clear();
+      MaxContacts::collide( pl, e1, log );
+      expect( log.entries.size() == 1 && log.entries[0].g1 == e1 && close( log.entries[0].dist, -delta, real(1e-12) ),
+              "plane-ellipsoid (reversed order): same contact" );
+
+      e1->setPosition( Vec3( 0, 0, h + real(1e-6) ) );
+      log.clear();
+      MaxContacts::collide( e1, pl, log );
+      expect( log.entries.empty(), "ellipsoid-plane: no contact when 1e-6 above the plane" );
+
+      e1->setPosition( Vec3( 0, 0, h + real(0.5) * contactThreshold ) );
+      log.clear();
+      MaxContacts::collide( e1, pl, log );
+      expect( log.entries.size() == 1 && log.entries[0].dist > real(0), "ellipsoid-plane: positive-distance contact inside the threshold band" );
+
+      e1->setOrientation( Quat() );
+      e1->setPosition( Vec3( 0, 0, 50 ) );
+   }
+
+   // --- 6. random sweep -------------------------------------------------------------------------
+   {
+      std::mt19937 rng( 4711u );
+      std::uniform_real_distribution<real> U( real(-1), real(1) );
+      std::uniform_real_distribution<real> S( real(0.1), real(0.6) );
+      auto randUnit = [&]() {
+         Vec3 v;
+         do { v = Vec3( U(rng), U(rng), U(rng) ); } while( v.sqrLength() < real(1e-3) || v.sqrLength() > real(1) );
+         return v.getNormalized();
+      };
+
+      bool allFinite = true, atMostOne = true, noneWhenApart = true, negativeWhenOverlappingCenters = true;
+      int contacts = 0, pairs = 0;
+      for( int k=0; k<300; ++k ) {
+         const real a1( S(rng) ), b1( S(rng) ), c1( S(rng) );
+         const real a2( S(rng) ), b2( S(rng) ), c2( S(rng) );
+         EllipsoidID x1 = createEllipsoid( 100 + 2*k,     Vec3( 0, 0, 0 ), a1, b1, c1, mat );
+         EllipsoidID x2 = createEllipsoid( 100 + 2*k + 1, Vec3( 0, 0, 0 ), a2, b2, c2, mat );
+         x1->rotate( randUnit(), U(rng) * real(3) );
+         x2->rotate( randUnit(), U(rng) * real(3) );
+         const real rmax1( std::max( a1, std::max( b1, c1 ) ) ), rmax2( std::max( a2, std::max( b2, c2 ) ) );
+         const real rmin1( std::min( a1, std::min( b1, c1 ) ) ), rmin2( std::min( a2, std::min( b2, c2 ) ) );
+         const real sep( ( real(0.2) + real(0.7) * ( U(rng) + real(1) ) ) * ( rmax1 + rmax2 ) );  // 0.2 .. 1.6 x
+         x2->setPosition( randUnit() * sep );
+         ++pairs;
+
+         log.clear();
+         MaxContacts::collide( x1, x2, log );
+         if( log.entries.size() > 1 ) atMostOne = false;
+         for( const ContactLog::Entry& c : log.entries ) {
+            ++contacts;
+            if( !finite3( c.pos ) || !finite3( c.normal ) || !std::isfinite( c.dist ) ) allFinite = false;
+            if( c.dist > contactThreshold ) allFinite = false;
+         }
+         if( sep > rmax1 + rmax2 + real(1e-6) && !log.entries.empty() ) noneWhenApart = false;
+         if( sep < rmin1 + rmin2 && ( log.entries.size() != 1 || log.entries[0].dist >= real(0) ) ) negativeWhenOverlappingCenters = false;
+
+         destroy( x1 );
+         destroy( x2 );
+      }
+      std::printf( "random sweep: %d pairs, %d contacts\n", pairs, contacts );
+      expect( allFinite, "random sweep: all contact data finite and dist <= contactThreshold" );
+      expect( atMostOne, "random sweep: at most one contact per pair" );
+      expect( noneWhenApart, "random sweep: no contact when the bounding spheres are apart" );
+      expect( negativeWhenOverlappingCenters, "random sweep: penetrating contact when the inscribed spheres overlap" );
+   }
+
+   if( failures == 0 ) {
+      std::printf( "pe_ellipsoid_contact_test: all checks passed\n" );
+      return EXIT_SUCCESS;
+   }
+   std::printf( "pe_ellipsoid_contact_test: %d check(s) FAILED\n", failures );
+   return EXIT_FAILURE;
+}

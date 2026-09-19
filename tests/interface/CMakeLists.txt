@@ -105,6 +105,37 @@ set_tests_properties(pe-angular-dof-mask-config PROPERTIES
   LABELS "unit;serial;interface"
 )
 
+# Pins the ellipsoid support mapping (was a sphere of the semi-major radius), the exact
+# bounding box of a rotated ellipsoid (was the positive axis tips only) and the radial depth.
+# Serial world, no MPI; pure geometry, no solver.
+add_executable(pe_ellipsoid_support_test
+  pe_ellipsoid_support_test.cpp
+)
+target_link_libraries(pe_ellipsoid_support_test PRIVATE pe_static)
+add_test(
+  NAME pe-ellipsoid-support
+  COMMAND pe_ellipsoid_support_test
+)
+set_tests_properties(pe-ellipsoid-support PROPERTIES
+  LABELS "unit;serial;rigidbody"
+)
+
+# Narrow-phase contact generation for ellipsoid pairs through MaxContacts::collide() with a
+# recording contact container (ellipsoid-ellipsoid, -sphere, -box via GJK/EPA; -plane analytic).
+# Serial world, no MPI; the solver is not involved. Timeout guards against a GJK/EPA stall.
+add_executable(pe_ellipsoid_contact_test
+  pe_ellipsoid_contact_test.cpp
+)
+target_link_libraries(pe_ellipsoid_contact_test PRIVATE pe_static)
+add_test(
+  NAME pe-ellipsoid-contact
+  COMMAND pe_ellipsoid_contact_test
+)
+set_tests_properties(pe-ellipsoid-contact PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 300
+)
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.
@@ -171,6 +202,23 @@ add_test(
 )
 set_tests_properties(pe-lubrication-bounce-stokes PROPERTIES
   LABELS "integration;serial;lubrication"
+)
+
+# Dynamics smoke test: a tilted prolate spheroid dropped on a plane settles broadside at
+# height B; a second one dropped crosswise onto it is deflected without interpenetration. Needs a solver that applies gravity
+# itself, so it links the plain hard-contact variant (the shipped HardContactEulerLagrange
+# default leaves body forces to the CFD driver).
+add_executable(pe_ellipsoid_settle_test
+  pe_ellipsoid_settle_test.cpp
+)
+target_link_libraries(pe_ellipsoid_settle_test PRIVATE pe_static_lubstage_plain)
+add_test(
+  NAME pe-ellipsoid-settle
+  COMMAND pe_ellipsoid_settle_test
+)
+set_tests_properties(pe-ellipsoid-settle PROPERTIES
+  LABELS "integration;serial;rigidbody"
+  TIMEOUT 600
 )
 
 # Contract tests for the checkpoint identity sidecar: metadata roundtrip, legacy (sidecar-less)
