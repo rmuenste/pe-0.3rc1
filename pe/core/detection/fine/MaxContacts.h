@@ -233,6 +233,15 @@ public:
    template< typename CC > static inline void collideTMeshTMesh           ( TriangleMeshID  m1   , TriangleMeshID m2    , CC& contacts );
    template< typename CC > static inline void collideTMeshUnion           ( TriangleMeshID  m    , UnionID u    , CC& contacts );
    template< typename CC > static inline void collideUnionUnion           ( UnionID u1   , UnionID u2   , CC& contacts );
+   template< typename CC > static        void collideEllipsoidEllipsoid   ( EllipsoidID e1, EllipsoidID e2, CC& contacts );
+   template< typename CC > static        void collideEllipsoidSphere      ( EllipsoidID e, SphereID s    , CC& contacts );
+   template< typename CC > static        void collideEllipsoidBox         ( EllipsoidID e, BoxID b       , CC& contacts );
+   template< typename CC > static        void collideEllipsoidCapsule     ( EllipsoidID e, CapsuleID c   , CC& contacts );
+   template< typename CC > static        void collideEllipsoidCylinder    ( EllipsoidID e, CylinderID c  , CC& contacts );
+   template< typename CC > static        void collideEllipsoidInnerCylinder( EllipsoidID e, InnerCylinderID c, CC& contacts );
+   template< typename CC > static inline void collideEllipsoidPlane       ( EllipsoidID e, PlaneID p     , CC& contacts );
+   template< typename CC > static        void collideEllipsoidTMesh       ( EllipsoidID e, TriangleMeshID m, CC& contacts );
+   template< typename CC > static inline void collideEllipsoidUnion       ( EllipsoidID e, UnionID u     , CC& contacts );
    //@}
    //**********************************************************************************************
 
@@ -400,6 +409,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideSphereUnion( static_body_cast<Sphere>( b1 ),
                                    static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidSphere( static_body_cast<Ellipsoid>( b2 ),
+                                       static_body_cast<Sphere>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -438,6 +451,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
             case unionType:
                collideBoxUnion( static_body_cast<Box>( b1 ),
                                 static_body_cast<Union>( b2 ), contacts );
+               break;
+            case ellipsoidType:
+               collideEllipsoidBox( static_body_cast<Ellipsoid>( b2 ),
+                                    static_body_cast<Box>( b1 ), contacts );
                break;
             default:
                std::ostringstream oss;
@@ -478,6 +495,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideCapsuleUnion( static_body_cast<Capsule>( b1 ),
                                     static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidCapsule( static_body_cast<Ellipsoid>( b2 ),
+                                        static_body_cast<Capsule>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -517,6 +538,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideCylinderUnion( static_body_cast<Cylinder>( b1 ),
                                      static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidCylinder( static_body_cast<Ellipsoid>( b2 ),
+                                         static_body_cast<Cylinder>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -554,6 +579,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
             case unionType:
                collidePlaneUnion( static_body_cast<Plane>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
+               break;
+            case ellipsoidType:
+               collideEllipsoidPlane( static_body_cast<Ellipsoid>( b2 ),
+                                      static_body_cast<Plane>( b1 ), contacts );
                break;
             default:
                std::ostringstream oss;
@@ -594,6 +623,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideTMeshUnion( static_body_cast<TriangleMesh>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidTMesh( static_body_cast<Ellipsoid>( b2 ),
+                                      static_body_cast<TriangleMesh>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -633,6 +666,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideUnionUnion( static_body_cast<Union>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidUnion( static_body_cast<Ellipsoid>( b2 ),
+                                      static_body_cast<Union>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -650,6 +687,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideSphereInnerCylinder( static_body_cast<Sphere>( b2 ),
                                            static_body_cast<InnerCylinder>( b1 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidInnerCylinder( static_body_cast<Ellipsoid>( b2 ),
+                                              static_body_cast<InnerCylinder>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -658,6 +699,53 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
          }
          break;
 
+
+      // Performing a collision test between an ellipsoid and the second rigid body
+      case ellipsoidType:
+         switch( b2->getType() ) {
+            case sphereType:
+               collideEllipsoidSphere( static_body_cast<Ellipsoid>( b1 ),
+                                       static_body_cast<Sphere>( b2 ), contacts );
+               break;
+            case boxType:
+               collideEllipsoidBox( static_body_cast<Ellipsoid>( b1 ),
+                                    static_body_cast<Box>( b2 ), contacts );
+               break;
+            case capsuleType:
+               collideEllipsoidCapsule( static_body_cast<Ellipsoid>( b1 ),
+                                        static_body_cast<Capsule>( b2 ), contacts );
+               break;
+            case cylinderType:
+               collideEllipsoidCylinder( static_body_cast<Ellipsoid>( b1 ),
+                                         static_body_cast<Cylinder>( b2 ), contacts );
+               break;
+            case innerCylinderType:
+               collideEllipsoidInnerCylinder( static_body_cast<Ellipsoid>( b1 ),
+                                              static_body_cast<InnerCylinder>( b2 ), contacts );
+               break;
+            case planeType:
+               collideEllipsoidPlane( static_body_cast<Ellipsoid>( b1 ),
+                                      static_body_cast<Plane>( b2 ), contacts );
+               break;
+            case triangleMeshType:
+               collideEllipsoidTMesh( static_body_cast<Ellipsoid>( b1 ),
+                                      static_body_cast<TriangleMesh>( b2 ), contacts );
+               break;
+            case unionType:
+               collideEllipsoidUnion( static_body_cast<Ellipsoid>( b1 ),
+                                      static_body_cast<Union>( b2 ), contacts );
+               break;
+            case ellipsoidType:
+               collideEllipsoidEllipsoid( static_body_cast<Ellipsoid>( b1 ),
+                                          static_body_cast<Ellipsoid>( b2 ), contacts );
+               break;
+            default:
+               std::ostringstream oss;
+               oss << "Unknown body type (" << b2->getType() << ")!";
+               throw std::runtime_error( oss.str() );
+               break;
+         }
+         break;
 
       // Treatment of unknown rigid body types
       default:
@@ -4039,6 +4127,380 @@ inline void MaxContacts::collideUnionUnion( UnionID u1, UnionID u2, CC& contacts
       for( Union::Iterator it2=u2->begin(); it2!=u2->end(); ++it2 ) {
          collide( *it1, *it2, contacts );
       }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between two colliding Ellipsoid primitives.
+ * \ingroup contact_generation
+ *
+ * \param e1 The first colliding ellipsoid.
+ * \param e2 The second colliding ellipsoid.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Two ellipsoids are handled by the hybrid GJK/EPA algorithm on their exact support mappings
+ * (see EllipsoidBase::support()). A single contact is generated at the midpoint of the two
+ * witness points; the normal points from \a e2 to \a e1 and a negative distance denotes
+ * penetration, as for all other contact functions.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidEllipsoid( EllipsoidID e1, EllipsoidID e2, CC& contacts )
+{
+   // Force a defined order of collision detection across processes
+   if( e2->getSystemID() < e1->getSystemID() )
+      std::swap( e1, e2 );
+
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, EllipsoidID >(e1, e2, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (e2) to object1 (e1)
+      contacts.addVertexFaceContact( e1, e2, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e1->getID()
+            << " and ellipsoid " << e2->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Sphere.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param s The colliding sphere.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the sphere to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidSphere( EllipsoidID e, SphereID s, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, SphereID >(e, s, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (s) to object1 (e)
+      contacts.addVertexFaceContact( e, s, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and sphere " << s->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Box.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param b The colliding box.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the box to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidBox( EllipsoidID e, BoxID b, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, BoxID >(e, b, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (b) to object1 (e)
+      contacts.addVertexFaceContact( e, b, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and box " << b->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Capsule.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param c The colliding capsule.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the capsule to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidCapsule( EllipsoidID e, CapsuleID c, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, CapsuleID >(e, c, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (c) to object1 (e)
+      contacts.addVertexFaceContact( e, c, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and capsule " << c->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Cylinder.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param c The colliding cylinder.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the cylinder to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidCylinder( EllipsoidID e, CylinderID c, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, CylinderID >(e, c, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (c) to object1 (e)
+      contacts.addVertexFaceContact( e, c, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and an InnerCylinder.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param c The colliding inner cylinder.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * The inner cylinder is a hollow container (the ellipsoid lives inside it), so the GJK/EPA
+ * route on the convex hull does not apply. Mirroring collideSphereInnerCylinder(), the
+ * lateral wall and the two end caps are treated separately:
+ *
+ * - Lateral wall: the ellipsoid surface point farthest from the cylinder axis is found by the
+ *   monotone fixed-point iteration \f$ p_{k+1} = \mathrm{support}( \hat{r}(p_k) ) \f$ with
+ *   \f$ \hat{r} \f$ the unit radial direction from the axis (the radial distance is a convex
+ *   function, so the iteration ascends; several starts are tried and the best kept). The gap
+ *   to the wall is \f$ R_c - |r(p)| \f$; the contact normal points inward (from the wall to the
+ *   ellipsoid), as in the sphere case.
+ * - End caps: the deepest points towards the caps are the support points along \f$ \pm u \f$
+ *   (\f$ u \f$ the axis direction); their gaps to the cap planes give plane-like contacts with
+ *   the normal pointing from the cap into the cylinder.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidInnerCylinder( EllipsoidID e, InnerCylinderID c, CC& contacts )
+{
+   const Rot3& Rc( c->getRotation() );
+   const Vec3  u( Rc[0], Rc[3], Rc[6] );          // cylinder axis (body x) in world frame
+   const Vec3& cpos( c->getPosition() );
+   const real  Rcyl( c->getRadius() );
+   const real  hlength( real(0.5) * c->getLength() );
+
+   // Unit radial direction (perpendicular to the axis) of a world-frame vector; false if degenerate
+   const auto radialDir = []( const Vec3& v, const Vec3& axis, Vec3& out ) -> bool {
+      const Vec3 r( v - ( trans( axis ) * v ) * axis );
+      const real len( r.length() );
+      if( len <= real(1e-14) ) return false;
+      out = r / len;
+      return true;
+   };
+
+   //----- Lateral wall --------------------------------------------------------------------------
+   {
+      const Rot3& Re( e->getRotation() );
+      Vec3 starts[4];
+      size_t numStarts( 0 );
+      Vec3 dir;
+      if( radialDir( e->getPosition() - cpos, u, dir ) ) starts[numStarts++] = dir;
+      for( size_t j=0; j<3; ++j ) {
+         const Vec3 axisE( Re[j], Re[3+j], Re[6+j] );  // body axis j of the ellipsoid
+         if( radialDir( axisE, u, dir ) ) starts[numStarts++] = dir;
+      }
+
+      real bestRadial( -real(1) );
+      Vec3 bestPoint, bestDir;
+      for( size_t s=0; s<numStarts; ++s ) {
+         Vec3 d( starts[s] );
+         Vec3 p( e->support( d ) );
+         for( size_t iter=0; iter<64; ++iter ) {
+            Vec3 dNew;
+            if( !radialDir( p - cpos, u, dNew ) ) break;
+            const Vec3 pNew( e->support( dNew ) );
+            const bool converged( ( dNew - d ).sqrLength() < real(1e-28) );
+            d = dNew;
+            p = pNew;
+            if( converged ) break;
+         }
+         const Vec3 r( p - cpos );
+         const real radial( ( r - ( trans( u ) * r ) * u ).length() );
+         if( radial > bestRadial ) {
+            bestRadial = radial;
+            bestPoint  = p;
+            bestDir    = d;
+         }
+      }
+
+      if( bestRadial >= real(0) ) {
+         const real dist( Rcyl - bestRadial );
+         if( dist < contactThreshold ) {
+            // Contact point midway between the ellipsoid surface and the wall, normal inward
+            const Vec3 gPos( bestPoint + ( real(0.5) * dist ) * bestDir );
+            const Vec3 normal( -bestDir );
+
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "      Contact created between ellipsoid " << e->getID()
+                   << " and inner cylinder wall " << c->getID() << " (dist=" << dist << ")";
+            }
+
+            contacts.addVertexFaceContact( e, c, gPos, normal, dist );
+         }
+      }
+   }
+
+   //----- End caps ------------------------------------------------------------------------------
+   {
+      // Cap at +u
+      const Vec3 pUp( e->support( u ) );
+      const real distUp( hlength - trans( u ) * ( pUp - cpos ) );
+      if( distUp < contactThreshold ) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between ellipsoid " << e->getID()
+                << " and inner cylinder cap " << c->getID() << " (dist=" << distUp << ")";
+         }
+         contacts.addVertexFaceContact( e, c, pUp + ( real(0.5) * distUp ) * u, -u, distUp );
+      }
+
+      // Cap at -u
+      const Vec3 pDn( e->support( -u ) );
+      const real distDn( hlength + trans( u ) * ( pDn - cpos ) );
+      if( distDn < contactThreshold ) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between ellipsoid " << e->getID()
+                << " and inner cylinder cap " << c->getID() << " (dist=" << distDn << ")";
+         }
+         contacts.addVertexFaceContact( e, c, pDn - ( real(0.5) * distDn ) * u, u, distDn );
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Plane.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param p The colliding plane.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Analytic, mirroring collideSpherePlane(): the deepest point of the ellipsoid with respect
+ * to the plane is its support point in direction \f$ -n \f$ (\f$ n \f$ the plane normal). The
+ * signed gap is \f$ n \cdot p_{deep} - d \f$ with \f$ d \f$ the plane displacement (negative
+ * means penetration); the contact point is the deepest point shifted onto the plane surface
+ * and the contact normal is the plane normal (pointing from the plane to the ellipsoid).
+ */
+template< typename CC >  // Type of the contact container
+inline void MaxContacts::collideEllipsoidPlane( EllipsoidID e, PlaneID p, CC& contacts )
+{
+   const Vec3& n( p->getNormal() );
+   const Vec3 deepest( e->support( -n ) );
+   const real k( trans( n ) * deepest );
+   const real dist( k - p->getDisplacement() );
+
+   if( dist < contactThreshold ) {
+      const Vec3 gPos( deepest - dist * n );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+             << " and plane " << p->getID() << " (dist=" << dist << ")";
+      }
+
+      contacts.addVertexFaceContact( e, p, gPos, n, dist );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Triangle Mesh.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param m The colliding triangle mesh.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings (the mesh is treated through its convex support
+ * mapping, as for boxes and capsules); the normal points from the mesh to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidTMesh( EllipsoidID e, TriangleMeshID m, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, TriangleMeshID >(e, m, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (m) to object1 (e)
+      contacts.addVertexFaceContact( e, m, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and triangle mesh " << m->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Union.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param u The colliding union.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * The collision between an ellipsoid and a union is treated as collisions between the
+ * ellipsoid and all the subbodies of the union.
+ */
+template< typename CC >  // Type of the contact container
+inline void MaxContacts::collideEllipsoidUnion( EllipsoidID e, UnionID u, CC& contacts )
+{
+   for( Union::Iterator it=u->begin(); it!=u->end(); ++it ) {
+      collide( e, *it, contacts );
    }
 }
 //*************************************************************************************************

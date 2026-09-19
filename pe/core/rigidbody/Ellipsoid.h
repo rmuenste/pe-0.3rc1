@@ -28,6 +28,7 @@
 // Includes
 //*************************************************************************************************
 
+#include <algorithm>
 #include <cmath>
 #include <iosfwd>
 #include <pe/core/Configuration.h>
@@ -266,35 +267,44 @@ protected:
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Calculates the depth of a point relative to the sphere's geometric center.
+/*!\brief Calculates the depth of a point relative to the ellipsoid's geometric center.
  *
  * \param px The x-component of the relative coordinate.
  * \param py The y-component of the relative coordinate.
  * \param pz The z-component of the relative coordinate.
  * \return Depth of the relative point.
  *
- * Returns a positive value, if the point lies inside the sphere and a negative value,
- * if the point lies outside the sphere.
+ * Returns a positive value, if the point lies inside the ellipsoid and a negative value,
+ * if the point lies outside the ellipsoid. The depth is measured radially, i.e. along the ray
+ * from the center through the point to the surface: with \f$ q = (x/A, y/B, z/C) \f$ the
+ * surface point on that ray is \f$ p/|q| \f$ and the depth is \f$ |p| (1/|q| - 1) \f$. This is
+ * exact for a sphere (\f$ A = B = C \f$) and reduces to the sphere formula \f$ r - |p| \f$.
  */
 inline real Ellipsoid::getRelDepth( real px, real py, real pz ) const
 {
-   return ( radiusA_ - Vec3( px, py, pz ).length() );
+   const real qlen( std::sqrt( ( px * px ) / ( radiusA_ * radiusA_ ) +
+                               ( py * py ) / ( radiusB_ * radiusB_ ) +
+                               ( pz * pz ) / ( radiusC_ * radiusC_ ) ) );
+   if( qlen <= real(0) )
+      return std::min( radiusA_, std::min( radiusB_, radiusC_ ) );
+   const real plen( Vec3( px, py, pz ).length() );
+   return plen * ( real(1) - qlen ) / qlen;
 }
 //*************************************************************************************************
 
 
 //*************************************************************************************************
-/*!\brief Calculates the depth of a point relative to the sphere's geometric center.
+/*!\brief Calculates the depth of a point relative to the ellipsoid's geometric center.
  *
  * \param rpos The relative coordinate.
  * \return Depth of the relative point.
  *
- * Returns a positive value, if the point lies inside the sphere and a negative value,
- * if the point lies outside the sphere.
+ * Returns a positive value, if the point lies inside the ellipsoid and a negative value,
+ * if the point lies outside the ellipsoid (radial depth, see getRelDepth(real,real,real)).
  */
 inline real Ellipsoid::getRelDepth( const Vec3& rpos ) const
 {
-   return ( radiusA_ - rpos.length() );
+   return getRelDepth( rpos[0], rpos[1], rpos[2] );
 }
 //*************************************************************************************************
 
@@ -307,13 +317,12 @@ inline real Ellipsoid::getRelDepth( const Vec3& rpos ) const
  * \param pz The z-component of the global coordinate.
  * \return Depth of the global point.
  *
- * Returns a positive value, if the point lies inside the sphere and a negative value,
- * if the point lies outside the sphere.
+ * Returns a positive value, if the point lies inside the ellipsoid and a negative value,
+ * if the point lies outside the ellipsoid (radial depth, see getRelDepth(real,real,real)).
  */
 inline real Ellipsoid::getDepth( real px, real py, real pz ) const
 {
-   const Vec3 gpos( px, py, pz );
-   return ( radiusA_ - ( gpos - gpos_ ).length() );
+   return getDepth( Vec3( px, py, pz ) );
 }
 //*************************************************************************************************
 
@@ -324,12 +333,13 @@ inline real Ellipsoid::getDepth( real px, real py, real pz ) const
  * \param gpos The global coordinate.
  * \return Depth of the global point.
  *
- * Returns a positive value, if the point lies inside the sphere and a negative value,
- * if the point lies outside the sphere.
+ * Returns a positive value, if the point lies inside the ellipsoid and a negative value,
+ * if the point lies outside the ellipsoid (radial depth, see getRelDepth(real,real,real)).
  */
 inline real Ellipsoid::getDepth( const Vec3& gpos ) const
 {
-   return ( radiusA_ - ( gpos - gpos_ ).length() );
+   const Vec3 rpos( trans( R_ ) * ( gpos - gpos_ ) );
+   return getRelDepth( rpos[0], rpos[1], rpos[2] );
 }
 //*************************************************************************************************
 
