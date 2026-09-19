@@ -112,8 +112,29 @@ private:
 
 private:
    //EPA constants
-   static const size_t maxSupportPoints_ = 100;
-   static const size_t maxTriangles_     = 200;
+   //
+   // Every expansion adds one support point and |silhouette| (>= 3) triangles; obsolete
+   // triangles are never removed from the entry buffer, whose capacity must never be exceeded
+   // because the heap and the adjacency links hold raw pointers into it. The two caps are
+   // therefore independent: the triangle cap bounds the memory (~144 bytes per triangle), the
+   // support-point cap bounds the number of expansions. Smooth bodies (spheres, capsules,
+   // cylinders, ellipsoids) need many more expansions than polytopes to reach a tight
+   // tolerance, which is why the old 100/100 limits (effectively ~25 expansions) went with a
+   // loose termination tolerance.
+   static const size_t maxSupportPoints_ = 300;
+   static const size_t maxTriangles_     = 800;
+
+   // Termination: stop when upperBoundSqr <= relativeToleranceSqr_ * lowerBoundSqr, i.e. when
+   // the penetration depth is known to within a relative sqrt(relativeToleranceSqr_) - 1.
+   // Polytopes terminate exactly (repeated support point) long before this matters.
+   static constexpr real relativeToleranceSqr_ = real(1) + real(1e-10);
+
+   // A polytope face whose squared distance to the origin is below this is treated as passing
+   // through the origin (degenerate GJK start, see createInitialSimplex()). The value must be
+   // far below (2 * contactThreshold)^2 = 4e-16, the squared distance of a regular face for
+   // two bodies that exactly touch, since the threshold-grown support mapping turns touching
+   // into a penetration of 2 * contactThreshold. Genuinely degenerate faces sit at ~1e-30.
+   static constexpr real degenerateSqrDist_ = real(1e-26);
 };
 //*************************************************************************************************
 
@@ -188,6 +209,7 @@ public:
    inline size_t      operator[]( unsigned char i )                    const;
    inline const Vec3& getClosest()                                     const;
    inline const Vec3& getNormal()                                      const;
+   inline Vec3        getExpansionDirection()                          const;
    inline Vec3        getClosestPoint(const std::vector<Vec3>& points) const;
    inline real        getSqrDist()                                     const;
    inline bool        isObsolete()                                     const;
@@ -419,6 +441,25 @@ inline const Vec3& EPA::EPA_Triangle::getNormal() const
 
 
 //*************************************************************************************************
+/*! \brief Returns the unit direction in which the polytope has to be expanded through this triangle.
+ *
+ * For a regular triangle this is the direction of the closest point of its affine hull to the
+ * origin. If the triangle's plane passes through the origin (sqrDist_ == 0, which happens for
+ * symmetric configurations where the GJK simplex ends with the origin on one of its faces) that
+ * direction is undefined and the outward face normal is used instead. The face normal is
+ * outward by construction: the initial tetrahedron inherits the orientation GJK::simplex4()
+ * relies on, and every triangle added by the silhouette expansion keeps the winding.
+ */
+inline Vec3 EPA::EPA_Triangle::getExpansionDirection() const
+{
+   if( sqrDist_ >= degenerateSqrDist_ )
+      return closest_.getNormalized();
+   return normal_.getNormalized();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*! \brief Calculates the corresponding closest point form the given points, using barycentric coordinates.
  */
 inline Vec3 EPA::EPA_Triangle::getClosestPoint(const std::vector<Vec3>& points) const
@@ -455,9 +496,15 @@ inline bool EPA::EPA_Triangle::isObsolete() const
  */
 inline bool EPA::EPA_Triangle::isClosestInternal() const
 {
-   return bar_[0] >= real(0.0)
-            && bar_[1] >= real(0.0)
-            && bar_[2] >= real(0.0);
+   // Tolerant test: when the closest boundary point of the polytope is one of the vertices
+   // (or on an edge) the barycentric coordinates of the incident triangles carry rounding
+   // noise of either sign, and a strict test would drop the minimal face from the candidate
+   // heap. This happens systematically after a face through the origin has been expanded
+   // (symmetric configurations, e.g. two spheroids meeting tip to tip).
+   const real tol( -real(1e-12) );
+   return bar_[0] >= tol
+            && bar_[1] >= tol
+            && bar_[2] >= tol;
 }
 //*************************************************************************************************
 
@@ -521,10 +568,14 @@ inline void EPA::EPA_Triangle::silhouette( unsigned char index, const Vec3& w,
                                            EPA_EdgeBuffer& edgeBuffer )
 {
    if (!obsolete_) {
-      real test = (trans(closest_) * w);
-      // TODO
-      //if ((trans(closest_) * w) < sqrDist_) {
-      if (test < sqrDist_) {
+      // The facet is visible from w if w lies on the outer side of its plane. For a regular
+      // facet the plane is closest_ . x = sqrDist_; for a facet through the origin (sqrDist_
+      // == 0, closest_ == 0) that test degenerates to "0 < 0" and would mark the facet visible
+      // from every point, so the outward normal is used there.
+      const bool hidden = ( sqrDist_ >= degenerateSqrDist_ )
+                          ? ( (trans(closest_) * w) < sqrDist_ )
+                          : ( (trans(normal_) * w) <= real(0) );
+      if (hidden) {
          edgeBuffer.push_back(EPA_Edge(this, index));
       }
       else {
@@ -603,8 +654,6 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
    real lowerBoundSqr = 0.0;
    real upperBoundSqr = Limits<real>::inf();
 
-   Vec3T rightDirechtionT = trans(geom2->getPosition() - geom1->getPosition());
-
    //create an Initial simplex
    if(numPoints == 1) {
       //Bodys are in contact, as they are grown by contactThreshold within the support function
@@ -618,14 +667,18 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
    for(EPA_EntryBuffer::iterator it=entryBuffer.begin(); it != entryBuffer.end(); ++it) {
       if(it->isClosestInternal()) {
          //triangle is candidate
-         if(it->getSqrDist() < Limits<real>::fpuAccuracy()) {
-            //triangle contains the origin so we have zero penetration and touching contact.
-            return false;
-         }
-
-         if(rightDirechtionT * it->getClosest() > 0){ //check if the triangle ist in the generll right direktion
-            entryHeap.push_back(&(*it));
-         }
+         //
+         // A triangle whose plane passes through the origin is NOT a touching contact: the
+         // initial polytope is only a subset of the Minkowski difference, so the origin lying
+         // on one of its faces says nothing about the distance to the real boundary. Such a
+         // face is expanded along its outward normal like any other (getExpansionDirection());
+         // the touching case is detected in the loop when the support point does not advance.
+         //
+         // Every candidate is kept. The former "generally right direction" filter (expansion
+         // direction against the center difference) dropped faces whose normal is nearly
+         // perpendicular to that difference -- exactly the sliver faces of a degenerate GJK
+         // tetrahedron whose noise-dominated sign then hid the true closest boundary point.
+         entryHeap.push_back(&(*it));
       }
    }
 
@@ -644,32 +697,44 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
       entryHeap.pop_back(); //TODO might be better to keep track of the end and not pop the last element but just overwrite it if needed
 
       if(!current->isObsolete()) {
-         pe_INTERNAL_ASSERT(current->getSqrDist() > real(0.0), "EPA_Trianalge distant negativ must be possitive");
+         pe_INTERNAL_ASSERT(current->getSqrDist() >= real(0.0), "EPA_Trianalge distant negativ must be possitive");
          lowerBoundSqr = current->getSqrDist();
 
          if(epaVolume.size() == maxSupportPoints_) {
-            pe_INTERNAL_ASSERT(false, "EPA no convergece");
-            //TODO wie soll ich das behandeln.
-            return false;
+            // No convergence within the expansion budget: keep the current closest face as the
+            // result. Its distance is a lower bound of the penetration depth, which is far
+            // better for the response than dropping the contact altogether.
+            break;
          }
 
-         Vec3 normal = current->getClosest().getNormalized();
+         // Unit expansion direction: closest point direction, or the outward face normal for a
+         // face through the origin (see EPA_Triangle::getExpansionDirection()).
+         const Vec3 normal = current->getExpansionDirection();
 
          supportA.push_back(geom1->supportContactThreshold(normal));
          supportB.push_back(geom2->supportContactThreshold(-normal));
          support = supportA.back() - supportB.back();
          epaVolume.push_back(support);
 
-         real farDist = trans(support) * current->getClosest(); //not yet squared
+         // Distance of the new support point along the expansion direction: an upper bound of
+         // the penetration depth (for a regular face this equals support.closest/|closest|).
+         const real farDist = trans(support) * normal;
 
-         pe_INTERNAL_ASSERT(farDist > real(0.0), "EPA support mapping gave invalid point in expansion direction");
+         pe_INTERNAL_ASSERT(farDist >= real(0.0), "EPA support mapping gave invalid point in expansion direction");
 
-         upperBoundSqr = std::min(upperBoundSqr, farDist*farDist / lowerBoundSqr);
+         upperBoundSqr = std::min(upperBoundSqr, farDist*farDist);
+
+         if( lowerBoundSqr < degenerateSqrDist_ && farDist*farDist < degenerateSqrDist_ ) {
+            // The face through the origin cannot be advanced: the origin lies on the boundary
+            // of the (threshold-grown) Minkowski difference, i.e. the bodies are exactly 2 *
+            // contactThreshold apart. No contact.
+            return false;
+         }
 
          //terminating criteria's
          //- we found that the two bounds are close enough
          //- the added support point was already in the epaVolumn
-         if( upperBoundSqr <= 1.0006 * lowerBoundSqr //TODO remove magic number
+         if( upperBoundSqr <= relativeToleranceSqr_ * lowerBoundSqr
             || support == epaVolume[(*current)[0]]
          || support == epaVolume[(*current)[1]]
          || support == epaVolume[(*current)[2]])
@@ -688,8 +753,9 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
             return false;
          }
 
-         if(entryBuffer.size() == maxSupportPoints_) {
-            //"out of memory" so stop here
+         if(entryBuffer.size() + edgeBuffer.size() > maxTriangles_) {
+            // "out of memory": the entry buffer must never reallocate (the heap and the
+            // adjacency links hold raw pointers into it), so stop here with the current result
             break;
          }
 
@@ -712,10 +778,7 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
 
          ++it;
          for(; it != edgeBuffer.end(); ++it){
-            if(entryBuffer.size() == maxSupportPoints_) {
-               //"out of memory" so stop here
-               break;
-            }
+            pe_INTERNAL_ASSERT(entryBuffer.size() < maxTriangles_, "EPA entry buffer capacity exceeded");
 
             entryBuffer.push_back(EPA_Triangle(it->getEnd(), it->getStart(), epaVolume.size()-1, epaVolume));
 
@@ -723,8 +786,7 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
             //if it is expanding candidate add to heap
             if(newTriangle->isClosestInternal()
                && newTriangle->getSqrDist() > lowerBoundSqr
-               && newTriangle->getSqrDist() < upperBoundSqr
-               && rightDirechtionT * newTriangle->getClosest() > 0) //check if the triangle ist in the generll right direktion
+               && newTriangle->getSqrDist() < upperBoundSqr)
             {
                entryHeap.push_back(newTriangle);
                std::push_heap(entryHeap.begin(), entryHeap.end(), triangleComp);
@@ -752,8 +814,7 @@ inline bool EPA::doEPAcontactThreshold( Type1 geom1, Type2 geom2, const GJK& gjk
    } while (entryHeap.size() > 0 && entryHeap[0]->getSqrDist() <= upperBoundSqr);
    //} while (entryHeap.size() > 0 && lowerBoundSqr <= upperBoundSqr);
 
-   retNormal   = -current->getClosest().getNormalized();
-   //retNormal   = -current->getNormal().getNormalized();
+   retNormal   = -current->getExpansionDirection();
 
    const Vec3 wittnesA = current->getClosestPoint(supportA);
    const Vec3 wittnesB = current->getClosestPoint(supportB);
@@ -1096,6 +1157,33 @@ inline void EPA::createInitialSimplex( unsigned char numPoints, Type1 geom1, Typ
       }
    case 4:
       {
+         // Degenerate start: GJK accepts the origin lying ON a face of its final tetrahedron.
+         // For symmetric configurations (e.g. two spheroids meeting tip to tip with the fixed
+         // GJK start direction) that tetrahedron is a flat sliver whose face contains both the
+         // origin and the direction of the real penetration, and expanding it face by face
+         // never recovers. Rebuild the initial polytope from that face instead, exactly as for
+         // a triangle simplex: support points in +/- the face normal give a proper double
+         // pyramid with the origin strictly inside.
+         static const size_t faces[4][3] = { {3,2,1}, {3,1,0}, {3,0,2}, {0,1,2} };
+         for( size_t f=0; f<4; ++f ) {
+            const EPA_Triangle tri( faces[f][0], faces[f][1], faces[f][2], epaVolume );
+            if( tri.getSqrDist() < degenerateSqrDist_ && tri.isClosestInternal() ) {
+               const std::vector<Vec3> v ( epaVolume );
+               const std::vector<Vec3> sa( supportA );
+               const std::vector<Vec3> sb( supportB );
+               epaVolume.resize( 3 );
+               supportA.resize( 3 );
+               supportB.resize( 3 );
+               for( size_t k=0; k<3; ++k ) {
+                  epaVolume[2-k] = v [faces[f][k]];
+                  supportA [2-k] = sa[faces[f][k]];
+                  supportB [2-k] = sb[faces[f][k]];
+               }
+               createInitialSimplex< Type1, Type2 >( 3, geom1, geom2, supportA, supportB, epaVolume, entryBuffer );
+               return;
+            }
+         }
+
          createInitialTetrahedron(3,2,1,0, epaVolume, entryBuffer);
          break;
       }

@@ -257,6 +257,9 @@ protected:
 
    template< typename Type >
    static inline bool gjkEPAcollide(Type geom, TriangleMeshID mesh, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+
+   template < typename Type1 , typename Type2 >
+   static inline bool supportDescentPenetration(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
    
    // DistanceMap-based collision detection helpers
    template< typename CC >
@@ -288,7 +291,10 @@ inline bool MaxContacts::gjkEPAcollideHybrid(Type1 geom1, Type2 geom2, Vec3& nor
    // Environments" by Gino van den Bergen.
 
    GJK gjk;
-   penetrationDepth = gjk.doGJK< Type1, Type2 >(geom1, geom2, normal, contactPoint);
+   // GJK::calcDistance() returns the SQUARED separation of the two bodies (0 when they
+   // overlap); take the root so that the comparisons against contactThreshold below and the
+   // separation handed out as contact distance are in length units.
+   penetrationDepth = std::sqrt( std::max( gjk.doGJK< Type1, Type2 >(geom1, geom2, normal, contactPoint), real(0) ) );
    if(penetrationDepth > contactThreshold) {
       // not close enough create no contact
       return false;
@@ -298,7 +304,13 @@ inline bool MaxContacts::gjkEPAcollideHybrid(Type1 geom1, Type2 geom2, Vec3& nor
       if(gjk.doGJKcontactThreshold<Type1, Type2>(geom1, geom2)) {
          //possible penetration
          EPA epa;
-         return epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, normal, contactPoint, penetrationDepth);
+         if(epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, normal, contactPoint, penetrationDepth))
+            return true;
+         // EPA could not build a polytope around the origin. This happens for shallow overlaps
+         // (penetration well below 1e-4 in symmetric, e.g. head-on, configurations) where the
+         // GJK simplex is a sliver next to the boundary of the Minkowski difference. Fall back
+         // to a direct minimisation of the support function, which needs no polytope.
+         return supportDescentPenetration<Type1, Type2>(geom1, geom2, normal, contactPoint, penetrationDepth);
       }
    }
    else {
@@ -307,6 +319,83 @@ inline bool MaxContacts::gjkEPAcollideHybrid(Type1 geom1, Type2 geom2, Vec3& nor
    }
    //never to be reached
    return false;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Penetration depth of two overlapping convex bodies by minimising the support function.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
+ * \param contactPoint Output: midpoint of the two witness points.
+ * \param penetrationDepth Output: signed distance (negative = penetration).
+ * \return \a true if a contact within pe::contactThreshold was found.
+ *
+ * For two convex bodies the signed distance is \f$ -\min_{|n|=1} h(n) \f$ with the support
+ * function of the Minkowski difference \f$ h(n) = s_1(n) \cdot n - s_2(-n) \cdot n \f$: when
+ * the bodies overlap the origin lies inside the difference, \f$ h \ge 0 \f$ everywhere and the
+ * minimum is the penetration depth along the minimising direction; when they are separated the
+ * minimum is minus the separation. The
+ * gradient of \f$ h \f$ on the unit sphere is the tangential part of the difference support
+ * point, so a projected gradient descent with backtracking converges to a local minimum for
+ * smooth bodies; it is started from the direction from \a geom1 to \a geom2, the basin that
+ * holds the shallow minimum EPA misses. This is the fallback of gjkEPAcollideHybrid() for the
+ * near-touch case and never replaces a successful EPA result.
+ */
+template < typename Type1 , typename Type2 >
+inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
+{
+   // Difference support point and support function value in direction n
+   const auto evaluate = [&]( const Vec3& n, Vec3& sA, Vec3& sB, Vec3& s ) -> real {
+      sA = geom1->support( n );
+      sB = geom2->support( -n );
+      s  = sA - sB;
+      return trans( s ) * n;
+   };
+
+   Vec3 n( geom2->getPosition() - geom1->getPosition() );
+   if( n.sqrLength() < real(1e-30) )
+      return false;
+   n.normalize();
+
+   Vec3 sA, sB, s;
+   real h( evaluate( n, sA, sB, s ) );
+   real alpha( real(1) );
+
+   for( size_t iter=0; iter<200; ++iter ) {
+      const Vec3 g( s - h * n );            // tangential gradient of h on the sphere
+      const real gLen( g.length() );
+      if( gLen < real(1e-13) )
+         break;
+
+      // Backtracking line search along the projected steepest-descent direction
+      bool accepted( false );
+      for( size_t bt=0; bt<40; ++bt ) {
+         Vec3 nTrial( n - ( alpha / gLen ) * g );
+         nTrial.normalize();
+         Vec3 sA2, sB2, s2;
+         const real h2( evaluate( nTrial, sA2, sB2, s2 ) );
+         if( h2 < h ) {
+            n = nTrial; sA = sA2; sB = sB2; s = s2; h = h2;
+            accepted = true;
+            alpha *= real(1.5);
+            break;
+         }
+         alpha *= real(0.5);
+      }
+      if( !accepted )
+         break;
+   }
+
+   penetrationDepth = -h;       // signed distance: negative for penetration
+   if( !std::isfinite( penetrationDepth ) || penetrationDepth > contactThreshold )
+      return false;
+
+   normal = -n;                 // from geom2 to geom1
+   contactPoint = real(0.5) * ( sA + sB );
+   return true;
 }
 //*************************************************************************************************
 
