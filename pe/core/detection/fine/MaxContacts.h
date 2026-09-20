@@ -314,7 +314,7 @@ protected:
  * \param geom1 The first body.
  * \param geom2 The second body.
  * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
- * \param contactPoint Output: midpoint of the two witness points.
+ * \param contactPoint Output: contact point placed by compatibleContactPoint().
  * \param penetrationDepth Output: signed distance (negative = penetration).
  * \return \a true if a contact within pe::contactThreshold was found.
  *
@@ -750,7 +750,7 @@ inline bool MaxContacts::supportSetProjection( TriangleMeshID m, const Vec3& n, 
  * \param epaNormal EPA's contact normal (from \a geom2 to \a geom1); ignored if !\a epaValid.
  * \param epaPoint EPA's contact point (midpoint of its interpolated witness points); ignored
  *        if !\a epaValid.
- * \return The contact point: midpoint of the two compatible witness points.
+ * \return The contact point, placed by pe's geometry-dependent convention (see below).
  *
  * The signed distance \f$ -h(n) \f$ does not depend on which point of a support set is taken,
  * but the contact point does. For a flat feature (box face or edge, cylinder cap or wall
@@ -761,10 +761,17 @@ inline bool MaxContacts::supportSetProjection( TriangleMeshID m, const Vec3& n, 
  * Rule: when one body's support set is a single point (strictly convex body) that point is
  * its witness, and the witness on a flat body is the point of its support set nearest to the
  * other body's witness (its projection along \a n onto the feature, clamped), so both
- * witnesses lie on the common contact patch. Two strictly convex bodies are unaffected. When
- * both support sets are flat, EPA's interpolated witness points are used if EPA converged to
- * the same normal (they are correct for polytope pairs), otherwise the projections are
- * alternated once (\a sA onto \a geom2's set, the result onto \a geom1's set).
+ * witnesses lie on the common contact patch.
+ *
+ * Placement follows the convention of the analytic pair functions, which is split by
+ * geometry: two strictly convex bodies get the overlap midpoint \f$ (s_A + s_B)/2 \f$
+ * (collideSphereSphere(); unchanged here), a strictly convex body against a flat one gets
+ * the point ON THE FLAT BODY'S SURFACE, i.e. the flat body's witness (collideSpherePlane(),
+ * collideSphereBox(), collideEllipsoidPlane()), so the ellipsoid-box and ellipsoid-plane paths
+ * report the same point for the same geometry. When both support sets are flat, EPA's
+ * interpolated witness midpoint is used if EPA converged to the same normal (correct for
+ * polytope pairs), otherwise the projections are alternated once (\a sA onto \a geom2's set,
+ * the result onto \a geom1's set) and the midpoint taken.
  */
 template < typename Type1 , typename Type2 >
 inline Vec3 MaxContacts::compatibleContactPoint( Type1 geom1, Type2 geom2, const Vec3& n, const Vec3& sA, const Vec3& sB,
@@ -775,11 +782,11 @@ inline Vec3 MaxContacts::compatibleContactPoint( Type1 geom1, Type2 geom2, const
    const bool flatB( supportSetProjection( geom2, -n, sA, b ) );
 
    if( !flatA && !flatB )
-      return real(0.5) * ( sA + sB );     // unique witnesses on both bodies
+      return real(0.5) * ( sA + sB );     // both strictly convex: overlap midpoint (sphere-sphere convention)
    if( !flatB )
-      return real(0.5) * ( a + sB );      // geom1 flat: its witness faces geom2's unique one
+      return a;                           // geom1 flat: the point on its surface facing geom2's unique witness
    if( !flatA )
-      return real(0.5) * ( sA + b );      // geom2 flat: its witness faces geom1's unique one
+      return b;                           // geom2 flat: the point on its surface facing geom1's unique witness
 
    // Both flat: EPA's interpolated witness points if it converged to this normal
    if( epaValid && std::isfinite( epaPoint[0] ) && std::isfinite( epaPoint[1] ) && std::isfinite( epaPoint[2] )
@@ -807,7 +814,7 @@ inline Vec3 MaxContacts::compatibleContactPoint( Type1 geom1, Type2 geom2, const
  * \param startNormal Start direction of the minimisation, given as a candidate contact normal
  *        (pointing from \a geom2 to \a geom1, e.g. the normal EPA returned).
  * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
- * \param contactPoint Output: midpoint of the two witness points.
+ * \param contactPoint Output: contact point placed by compatibleContactPoint().
  * \param penetrationDepth Output: signed distance (negative = penetration).
  * \return \a true if a contact within pe::contactThreshold was found.
  *
@@ -843,7 +850,7 @@ inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, con
  * \param geom1 The first body.
  * \param geom2 The second body.
  * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
- * \param contactPoint Output: midpoint of the two witness points.
+ * \param contactPoint Output: contact point placed by compatibleContactPoint().
  * \param penetrationDepth Output: signed distance (negative = penetration).
  * \return \a true if a contact within pe::contactThreshold was found.
  *
@@ -872,8 +879,9 @@ inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, Vec
  *        compatibleContactPoint().
  * \param epaDepth EPA's signed penetration depth; ignored if !\a epaValid.
  * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
- * \param contactPoint Output: midpoint of the two compatible witness points
- *        (compatibleContactPoint()).
+ * \param contactPoint Output: contact point from the compatible witness points
+ *        (compatibleContactPoint(): overlap midpoint for two strictly convex bodies, the
+ *        flat body's surface point for a strictly convex body against a flat one).
  * \param penetrationDepth Output: signed distance (negative = penetration).
  * \return \a true if a contact within pe::contactThreshold was found.
  *
