@@ -36,6 +36,7 @@
 #include <map>
 #include <utility>
 #include <set>
+#include <vector>
 
 #include <pe/core/detection/fine/GJK.h>
 #include <pe/core/detection/fine/EPA.h>
@@ -271,8 +272,21 @@ protected:
    static inline bool descendSupport(Type1 geom1, Type2 geom2, Vec3& n, Vec3& sA, Vec3& sB, real& h);
 
    template < typename Type1 , typename Type2 >
-   static inline bool validatedPenetration(Type1 geom1, Type2 geom2, bool epaValid, const Vec3& epaNormal, real epaDepth,
-                                           Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+   static inline bool validatedPenetration(Type1 geom1, Type2 geom2, bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint,
+                                           real epaDepth, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+
+   static inline real supportFlatTolerance();
+
+   template< typename Type >
+   static inline bool supportSetProjection( Type geom, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( BoxID b, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( CapsuleID c, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( CylinderID c, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( TriangleMeshID m, const Vec3& n, const Vec3& target, Vec3& witness );
+
+   template < typename Type1 , typename Type2 >
+   static inline Vec3 compatibleContactPoint( Type1 geom1, Type2 geom2, const Vec3& n, const Vec3& sA, const Vec3& sB,
+                                              bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint );
 
    // DistanceMap-based collision detection helpers
    template< typename CC >
@@ -345,7 +359,7 @@ inline bool MaxContacts::gjkEPAcollideHybrid(Type1 geom1, Type2 geom2, Vec3& nor
    Vec3 epaNormal, epaPoint;
    real epaDepth( real(0) );
    const bool epaValid( epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, epaNormal, epaPoint, epaDepth) );
-   return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaDepth, normal, contactPoint, penetrationDepth);
+   return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaPoint, epaDepth, normal, contactPoint, penetrationDepth);
 }
 //*************************************************************************************************
 
@@ -483,6 +497,309 @@ inline bool MaxContacts::descendSupport(Type1 geom1, Type2 geom2, Vec3& n, Vec3&
 
 
 //*************************************************************************************************
+/*!\brief Angular tolerance below which a support direction counts as normal to a flat feature.
+ *
+ * The support-function minimiser ends within rounding (about 1e-15) of a face normal when a
+ * smooth body rests on a flat face, but the sign of the remaining tangential components of the
+ * direction still selects one corner of that face in BoxBase::support() and its relatives. Any
+ * direction within this tolerance of a face (edge, cap, rim) normal is treated as exactly
+ * normal to it, so that the whole feature is taken as the support set. A genuinely tilted
+ * direction misclassified this way moves the witness by at most the tolerance times the
+ * feature size, and the clamping onto the feature keeps edge contacts on the edge.
+ */
+inline real MaxContacts::supportFlatTolerance()
+{
+   return real(1e-9);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a body's support set in direction \a n nearest to \a target (generic case).
+ *
+ * \param geom The body.
+ * \param n Unit direction.
+ * \param target The witness point on the other body.
+ * \param witness Output: unspecified for this overload.
+ * \return \a false: the support point of a strictly convex body (sphere, ellipsoid) is unique
+ *         and \a geom->support( n ) is already the witness.
+ *
+ * The overloads for boxes, capsules, cylinders and triangle meshes return \a true whenever the
+ * support set in direction \a n is a segment or a face (a set on which \f$ n \cdot x \f$ is
+ * constant), and then deliver the point of that set nearest to \a target: the projection of
+ * \a target along \a n onto the feature, clamped to it. Any body type without a dedicated
+ * overload is treated as strictly convex, which reproduces the former behaviour.
+ */
+template< typename Type >
+inline bool MaxContacts::supportSetProjection( Type /*geom*/, const Vec3& /*n*/, const Vec3& /*target*/, Vec3& /*witness*/ )
+{
+   return false;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a box's support set in direction \a n nearest to \a target.
+ *
+ * In the box frame every coordinate whose direction component vanishes (within
+ * supportFlatTolerance()) is free on the support feature, the others are fixed at the sign of
+ * the component. The free coordinates of \a target are clamped to the half lengths; a corner
+ * (no free coordinate) is unique and yields \a false.
+ */
+inline bool MaxContacts::supportSetProjection( BoxID b, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vec3 l( real(0.5) * b->getLengths() );
+   const Vec3 d( b->vectorFromWFtoBF( n ) );
+   Vec3 p( b->pointFromWFtoBF( target ) );
+   const real tol( supportFlatTolerance() );
+   bool flat( false );
+
+   for( size_t i=0; i<3; ++i ) {
+      if( std::fabs( d[i] ) <= tol ) {
+         flat = true;
+         if     ( p[i] < -l[i] ) p[i] = -l[i];
+         else if( p[i] >  l[i] ) p[i] =  l[i];
+      }
+      else {
+         p[i] = ( d[i] > real(0) ) ? l[i] : -l[i];
+      }
+   }
+
+   if( !flat )
+      return false;
+
+   witness = b->pointFromBFtoWF( p );
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a capsule's support set in direction \a n nearest to \a target.
+ *
+ * The support set is a single point of one hemispherical cap unless \a n is perpendicular to
+ * the axis (within supportFlatTolerance()); then it is the line segment of the cylindrical
+ * part at radius distance in direction \a n, and \a target is projected onto that segment.
+ */
+inline bool MaxContacts::supportSetProjection( CapsuleID c, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vec3 d( c->vectorFromWFtoBF( n ) );
+   if( std::fabs( d[0] ) > supportFlatTolerance() )
+      return false;
+
+   const real half( real(0.5) * c->getLength() );
+   const Vec3 axis( c->vectorFromBFtoWF( Vec3( 1, 0, 0 ) ) );
+   const Vec3 base( c->getPosition() + c->getRadius() * n );
+   real x( trans( target - base ) * axis );
+   if     ( x < -half ) x = -half;
+   else if( x >  half ) x =  half;
+
+   witness = base + x * axis;
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a cylinder's support set in direction \a n nearest to \a target.
+ *
+ * Three cases in the cylinder frame (axis along x): \a n perpendicular to the axis (within
+ * supportFlatTolerance()) gives a line segment of the lateral wall, \a n parallel to the axis
+ * gives an end cap disc, anything else a unique point of a rim. \a target is clamped onto the
+ * segment or the disc respectively.
+ */
+inline bool MaxContacts::supportSetProjection( CylinderID c, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vec3 d( c->vectorFromWFtoBF( n ) );
+   const real tol( supportFlatTolerance() );
+   const real half( real(0.5) * c->getLength() );
+   const real radius( c->getRadius() );
+   const real radial( std::sqrt( d[1]*d[1] + d[2]*d[2] ) );
+   Vec3 p( c->pointFromWFtoBF( target ) );
+
+   if( std::fabs( d[0] ) <= tol ) {
+      if( radial <= tol )
+         return false;   // degenerate direction
+      // lateral wall: segment parallel to the axis
+      if     ( p[0] < -half ) p[0] = -half;
+      else if( p[0] >  half ) p[0] =  half;
+      p[1] = radius * d[1] / radial;
+      p[2] = radius * d[2] / radial;
+   }
+   else if( radial <= tol ) {
+      // end cap: disc of radius 'radius'
+      p[0] = ( d[0] > real(0) ) ? half : -half;
+      const real r( std::sqrt( p[1]*p[1] + p[2]*p[2] ) );
+      if( r > radius ) {
+         p[1] *= radius / r;
+         p[2] *= radius / r;
+      }
+   }
+   else {
+      return false;      // rim point: unique
+   }
+
+   witness = c->pointFromBFtoWF( p );
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a triangle mesh's support set in direction \a n nearest to \a target.
+ *
+ * The support set is the convex hull of all vertices whose height \f$ n \cdot v \f$ lies within
+ * supportFlatTolerance() times the mesh extent of the maximum: one vertex (unique, \a false),
+ * an edge (segment) or a facet (convex polygon in the support plane). \a target is projected
+ * along \a n onto the support plane and clamped to the segment or the polygon (nearest point of
+ * the polygon: itself if inside, else the nearest point of the boundary). Costs one pass over
+ * the vertices, once per accepted contact.
+ */
+inline bool MaxContacts::supportSetProjection( TriangleMeshID m, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vertices& v( m->getWFVertices() );
+   if( v.size() < 2 )
+      return false;
+
+   const Vec3& gpos( m->getPosition() );
+   real hmax( -Limits<real>::inf() );
+   real extent( real(0) );
+   for( size_t i=0; i<v.size(); ++i ) {
+      hmax   = std::max( hmax, trans( n ) * v[i] );
+      extent = std::max( extent, ( v[i] - gpos ).length() );
+   }
+   const real tol( supportFlatTolerance() * ( real(1) + extent ) );
+
+   std::vector<Vec3> set;
+   for( size_t i=0; i<v.size(); ++i ) {
+      if( trans( n ) * v[i] >= hmax - tol )
+         set.push_back( v[i] );
+   }
+   if( set.size() < 2 )
+      return false;
+
+   // Projection of the target along n onto the support plane
+   const Vec3 t( target + ( hmax - trans( n ) * target ) * n );
+
+   const auto nearestOnSegment = [&]( const Vec3& a, const Vec3& b ) -> Vec3 {
+      const Vec3 ab( b - a );
+      const real len2( ab.sqrLength() );
+      if( len2 <= real(0) ) return a;
+      real s( ( trans( t - a ) * ab ) / len2 );
+      if( s < real(0) ) s = real(0); else if( s > real(1) ) s = real(1);
+      return a + s * ab;
+   };
+
+   if( set.size() == 2 ) {
+      witness = nearestOnSegment( set[0], set[1] );
+      return true;
+   }
+
+   // Convex polygon: order the vertices counter-clockwise about n around their centroid
+   Vec3 centroid( 0, 0, 0 );
+   for( size_t i=0; i<set.size(); ++i ) centroid += set[i];
+   centroid /= real( set.size() );
+   Vec3 t1( set[0] - centroid );
+   t1 -= ( trans( t1 ) * n ) * n;
+   if( t1.sqrLength() <= real(0) ) {
+      // set[0] coincides with the centroid: use any vertex off the centroid
+      for( size_t i=1; i<set.size() && t1.sqrLength() <= real(0); ++i ) {
+         t1 = set[i] - centroid;
+         t1 -= ( trans( t1 ) * n ) * n;
+      }
+      if( t1.sqrLength() <= real(0) ) { witness = centroid; return true; }
+   }
+   t1.normalize();
+   const Vec3 t2( n % t1 );
+   std::vector< std::pair<real, size_t> > order( set.size() );
+   for( size_t i=0; i<set.size(); ++i ) {
+      const Vec3 r( set[i] - centroid );
+      order[i] = std::make_pair( std::atan2( trans( r ) * t2, trans( r ) * t1 ), i );
+   }
+   std::sort( order.begin(), order.end() );
+
+   bool inside( true );
+   Vec3 best;
+   real bestDist2( Limits<real>::inf() );
+   for( size_t k=0; k<order.size(); ++k ) {
+      const Vec3& a( set[ order[k].second ] );
+      const Vec3& b( set[ order[ ( k + 1 ) % order.size() ].second ] );
+      if( trans( ( b - a ) % ( t - a ) ) * n < real(0) )
+         inside = false;
+      const Vec3 q( nearestOnSegment( a, b ) );
+      const real d2( ( q - t ).sqrLength() );
+      if( d2 < bestDist2 ) { bestDist2 = d2; best = q; }
+   }
+
+   witness = inside ? t : best;
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact point from witness points that lie on a common contact patch.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param n Final direction of the support-function minimisation (\a geom1 supported in \a n,
+ *        \a geom2 in \a -n; the contact normal handed out is \a -n).
+ * \param sA \a geom1->support( n ).
+ * \param sB \a geom2->support( -n ).
+ * \param epaValid \a true if EPA returned a result.
+ * \param epaNormal EPA's contact normal (from \a geom2 to \a geom1); ignored if !\a epaValid.
+ * \param epaPoint EPA's contact point (midpoint of its interpolated witness points); ignored
+ *        if !\a epaValid.
+ * \return The contact point: midpoint of the two compatible witness points.
+ *
+ * The signed distance \f$ -h(n) \f$ does not depend on which point of a support set is taken,
+ * but the contact point does. For a flat feature (box face or edge, cylinder cap or wall
+ * segment, capsule wall segment, mesh facet or edge) the support point is not unique and the
+ * primitive's support() picks a corner by the sign of tangential components of \a n that are
+ * pure rounding, so the midpoint of two independently picked support points was displaced
+ * sideways by up to half the feature size (an artificial moment arm for the normal impulse).
+ * Rule: when one body's support set is a single point (strictly convex body) that point is
+ * its witness, and the witness on a flat body is the point of its support set nearest to the
+ * other body's witness (its projection along \a n onto the feature, clamped), so both
+ * witnesses lie on the common contact patch. Two strictly convex bodies are unaffected. When
+ * both support sets are flat, EPA's interpolated witness points are used if EPA converged to
+ * the same normal (they are correct for polytope pairs), otherwise the projections are
+ * alternated once (\a sA onto \a geom2's set, the result onto \a geom1's set).
+ */
+template < typename Type1 , typename Type2 >
+inline Vec3 MaxContacts::compatibleContactPoint( Type1 geom1, Type2 geom2, const Vec3& n, const Vec3& sA, const Vec3& sB,
+                                                 bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint )
+{
+   Vec3 a, b;
+   const bool flatA( supportSetProjection( geom1,  n, sB, a ) );
+   const bool flatB( supportSetProjection( geom2, -n, sA, b ) );
+
+   if( !flatA && !flatB )
+      return real(0.5) * ( sA + sB );     // unique witnesses on both bodies
+   if( !flatB )
+      return real(0.5) * ( a + sB );      // geom1 flat: its witness faces geom2's unique one
+   if( !flatA )
+      return real(0.5) * ( sA + b );      // geom2 flat: its witness faces geom1's unique one
+
+   // Both flat: EPA's interpolated witness points if it converged to this normal
+   if( epaValid && std::isfinite( epaPoint[0] ) && std::isfinite( epaPoint[1] ) && std::isfinite( epaPoint[2] )
+       && epaNormal.sqrLength() > real(0.5) ) {
+      Vec3 nE( epaNormal );
+      nE.normalize();
+      if( ( nE + n ).length() <= real(1e-6) )
+         return epaPoint;
+   }
+
+   // Otherwise alternate the projections once: b faces sA, then a faces b
+   Vec3 a2;
+   if( !supportSetProjection( geom1, n, b, a2 ) )
+      a2 = sA;
+   return real(0.5) * ( a2 + b );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Penetration depth of two convex bodies by minimising the support function.
  *
  * \param geom1 The first body.
@@ -514,7 +831,7 @@ inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, con
       return false;
 
    normal = -n;                 // from geom2 to geom1
-   contactPoint = real(0.5) * ( sA + sB );
+   contactPoint = compatibleContactPoint( geom1, geom2, n, sA, sB, false, Vec3(), Vec3() );
    return true;
 }
 //*************************************************************************************************
@@ -551,9 +868,12 @@ inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, Vec
  * \param geom2 The second body.
  * \param epaValid \a true if EPA returned a result.
  * \param epaNormal EPA's contact normal (from \a geom2 to \a geom1); ignored if !\a epaValid.
+ * \param epaPoint EPA's contact point; used only when both support sets are flat, see
+ *        compatibleContactPoint().
  * \param epaDepth EPA's signed penetration depth; ignored if !\a epaValid.
  * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
- * \param contactPoint Output: midpoint of the two witness points.
+ * \param contactPoint Output: midpoint of the two compatible witness points
+ *        (compatibleContactPoint()).
  * \param penetrationDepth Output: signed distance (negative = penetration).
  * \return \a true if a contact within pe::contactThreshold was found.
  *
@@ -581,8 +901,8 @@ inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, Vec
  * A contact is reported if the resulting signed distance is below pe::contactThreshold.
  */
 template < typename Type1 , typename Type2 >
-inline bool MaxContacts::validatedPenetration(Type1 geom1, Type2 geom2, bool epaValid, const Vec3& epaNormal, real epaDepth,
-                                              Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
+inline bool MaxContacts::validatedPenetration(Type1 geom1, Type2 geom2, bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint,
+                                              real epaDepth, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
 {
    bool have( false );
    Vec3 bestN, bestA, bestB;
@@ -625,7 +945,7 @@ inline bool MaxContacts::validatedPenetration(Type1 geom1, Type2 geom2, bool epa
       return false;
 
    normal = -bestN;             // from geom2 to geom1
-   contactPoint = real(0.5) * ( bestA + bestB );
+   contactPoint = compatibleContactPoint( geom1, geom2, bestN, bestA, bestB, epaValid, epaNormal, epaPoint );
    return true;
 }
 //*************************************************************************************************
@@ -647,7 +967,7 @@ inline bool MaxContacts::gjkEPAcollide(Type1 geom1, Type2 geom2, Vec3& normal, V
       Vec3 epaNormal, epaPoint;
       real epaDepth( real(0) );
       const bool epaValid( epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, epaNormal, epaPoint, epaDepth) );
-      return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaDepth, normal, contactPoint, penetrationDepth);
+      return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaPoint, epaDepth, normal, contactPoint, penetrationDepth);
    }
 
    return false;
