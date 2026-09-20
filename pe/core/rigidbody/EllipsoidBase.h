@@ -29,6 +29,7 @@
 // Includes
 //*************************************************************************************************
 
+#include <cmath>
 #include <pe/core/rigidbody/GeomPrimitive.h>
 #include <pe/core/Thresholds.h>
 #include <pe/core/Types.h>
@@ -226,53 +227,38 @@ inline real EllipsoidBase::calcDensity( real radius, real mass )
 //=================================================================================================
 
 //*************************************************************************************************
-/*!\brief Calculation of the bounding box of the sphere.
+/*!\brief Calculation of the bounding box of the ellipsoid.
  *
  * \return void
  *
- * This function updates the axis-aligned bounding box of the sphere primitive according to the
- * current position and orientation of the sphere. Note that the bounding box is increased in
- * all dimensions by pe::contactThreshold to guarantee that rigid bodies in close proximity of
- * the sphere are also considered during the collision detection process.
+ * This function updates the axis-aligned bounding box of the ellipsoid primitive according to
+ * the current position and orientation of the ellipsoid. The half-extent of a rotated ellipsoid
+ * along world axis \f$ i \f$ is exact:
+ *
+ * \f[ e_i = \sqrt{ \sum_j R_{ij}^2 \, r_j^2 } \f]
+ *
+ * with \f$ r = (A, B, C) \f$ the semi-axes and \f$ R \f$ the body rotation matrix (the extent
+ * is the support distance of the ellipsoid in direction \f$ e_i \f$, i.e. the length of the
+ * vector \f$ (A R_{i0}, B R_{i1}, C R_{i2}) \f$). Note that the bounding box is increased in all
+ * dimensions by pe::contactThreshold to guarantee that rigid bodies in close proximity of the
+ * ellipsoid are also considered during the collision detection process.
  */
 inline void EllipsoidBase::calcBoundingBox()
 {
-
-   // Create the axis-aligned bounding box in body frame
-   Vec3 aabb[6];
-   aabb[0] = Vec3(radiusA_ + contactThreshold, 0, 0);
-   aabb[1] = Vec3(0, radiusB_ + contactThreshold, 0);
-   aabb[2] = Vec3(0, 0, radiusC_ + contactThreshold);
-   aabb[3] = Vec3(radiusA_ + contactThreshold, 0, 0);
-   aabb[4] = Vec3(0, radiusB_ + contactThreshold, 0);
-   aabb[5] = Vec3(0, 0, radiusC_ + contactThreshold);
-
-   real minX = std::numeric_limits<real>::max();
-   real minY = std::numeric_limits<real>::max();
-   real minZ = std::numeric_limits<real>::max();
-   real maxX = std::numeric_limits<real>::min();
-   real maxY = std::numeric_limits<real>::min();
-   real maxZ = std::numeric_limits<real>::min();
-
-   // Transform the axis-aligned bounding box to WF
-   for(int i(0); i < 6; ++i) {
-      Vec3 v( aabb[i] );
-      v = gpos_ + (R_ * v );
-      if(v[0] < minX) {minX = v[0];}
-      if(v[1] < minY) {minY = v[1];}
-      if(v[2] < minZ) {minZ = v[2];}
-
-      if(v[0] > maxX) {maxX = v[0];}
-      if(v[1] > maxY) {maxY = v[1];}
-      if(v[2] > maxZ) {maxZ = v[2];}
+   Vec3 extent;
+   for( size_t i=0; i<3; ++i ) {
+      const real ex( R_(i,0) * radiusA_ );
+      const real ey( R_(i,1) * radiusB_ );
+      const real ez( R_(i,2) * radiusC_ );
+      extent[i] = std::sqrt( ex*ex + ey*ey + ez*ez ) + contactThreshold;
    }
 
-   aabb_[0] = minX;
-   aabb_[1] = minY;
-   aabb_[2] = minZ;
-   aabb_[3] = maxX;
-   aabb_[4] = maxY;
-   aabb_[5] = maxZ;
+   aabb_[0] = gpos_[0] - extent[0];
+   aabb_[1] = gpos_[1] - extent[1];
+   aabb_[2] = gpos_[2] - extent[2];
+   aabb_[3] = gpos_[0] + extent[0];
+   aabb_[4] = gpos_[1] + extent[1];
+   aabb_[5] = gpos_[2] + extent[2];
 
    pe_INTERNAL_ASSERT( aabb_.isValid()        , "Invalid bounding box detected" );
    pe_INTERNAL_ASSERT( aabb_.contains( gpos_ ), "Invalid bounding box detected" );
@@ -301,12 +287,33 @@ inline void EllipsoidBase::calcInertia()
  *
  * \param d The normalized search direction in world-frame coordinates.
  * \return The support point in world-frame coordinates in direction a\ d.
+ *
+ * The support point of an ellipsoid with semi-axes \f$ (A,B,C) \f$ along its body axes is
+ * computed in the body frame from \f$ d_b = R^T d \f$:
+ *
+ * \f[ v = ( A^2 d_{b,x}, B^2 d_{b,y}, C^2 d_{b,z} ), \quad
+ *     p_b = \frac{v}{\sqrt{ A^2 d_{b,x}^2 + B^2 d_{b,y}^2 + C^2 d_{b,z}^2 }} \f]
+ *
+ * and returned as \f$ g + R\,p_b \f$. The point lies exactly on the surface and its outward
+ * normal \f$ (p_x/A^2, p_y/B^2, p_z/C^2) \f$ is parallel to \f$ d_b \f$. A degenerate zero
+ * direction yields the center of mass, consistent with the other primitives.
  */
 inline Vec3 EllipsoidBase::support( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised" );
-   return gpos_ + radiusA_*d;
+
+   const Vec3 bfD( vectorFromWFtoBF( d ) );  // d in body frame coordinates
+
+   const Vec3 v( radiusA_ * radiusA_ * bfD[0],
+                 radiusB_ * radiusB_ * bfD[1],
+                 radiusC_ * radiusC_ * bfD[2] );
+   const real denom( std::sqrt( trans( v ) * bfD ) );  // sqrt( A^2 dx^2 + B^2 dy^2 + C^2 dz^2 )
+
+   if( denom <= real(0) )
+      return gpos_;
+
+   return gpos_ + vectorFromBFtoWF( v / denom );
 }
 //*************************************************************************************************
 
@@ -317,12 +324,15 @@ inline Vec3 EllipsoidBase::support( const Vec3& d ) const
  * \param d The normalized search direction in world-frame coordinates
  * \return The support point in world-frame coordinates in direction a\ d extended by a vector in
  *         direction \a d of length \a pe::contactThreshold.
+ *
+ * This is the exact support point of the Minkowski sum of the ellipsoid with a ball of radius
+ * pe::contactThreshold.
  */
 inline Vec3 EllipsoidBase::supportContactThreshold( const Vec3& d ) const
 {
    pe_INTERNAL_ASSERT( d.sqrLength() != 0.0, "Zero length search direction" );
    pe_INTERNAL_ASSERT( 1.0-Limits<real>::fpuAccuracy() <= d.length() && d.length() <= 1.0+Limits<real>::fpuAccuracy(), "Search direction is not normalised" );
-   return gpos_ + d*(radiusA_ + contactThreshold);
+   return support( d ) + d * contactThreshold;
 }
 //*************************************************************************************************
 

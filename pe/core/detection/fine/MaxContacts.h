@@ -36,6 +36,7 @@
 #include <map>
 #include <utility>
 #include <set>
+#include <vector>
 
 #include <pe/core/detection/fine/GJK.h>
 #include <pe/core/detection/fine/EPA.h>
@@ -233,6 +234,15 @@ public:
    template< typename CC > static inline void collideTMeshTMesh           ( TriangleMeshID  m1   , TriangleMeshID m2    , CC& contacts );
    template< typename CC > static inline void collideTMeshUnion           ( TriangleMeshID  m    , UnionID u    , CC& contacts );
    template< typename CC > static inline void collideUnionUnion           ( UnionID u1   , UnionID u2   , CC& contacts );
+   template< typename CC > static        void collideEllipsoidEllipsoid   ( EllipsoidID e1, EllipsoidID e2, CC& contacts );
+   template< typename CC > static        void collideEllipsoidSphere      ( EllipsoidID e, SphereID s    , CC& contacts );
+   template< typename CC > static        void collideEllipsoidBox         ( EllipsoidID e, BoxID b       , CC& contacts );
+   template< typename CC > static        void collideEllipsoidCapsule     ( EllipsoidID e, CapsuleID c   , CC& contacts );
+   template< typename CC > static        void collideEllipsoidCylinder    ( EllipsoidID e, CylinderID c  , CC& contacts );
+   template< typename CC > static        void collideEllipsoidInnerCylinder( EllipsoidID e, InnerCylinderID c, CC& contacts );
+   template< typename CC > static inline void collideEllipsoidPlane       ( EllipsoidID e, PlaneID p     , CC& contacts );
+   template< typename CC > static        void collideEllipsoidTMesh       ( EllipsoidID e, TriangleMeshID m, CC& contacts );
+   template< typename CC > static inline void collideEllipsoidUnion       ( EllipsoidID e, UnionID u     , CC& contacts );
    //@}
    //**********************************************************************************************
 
@@ -248,7 +258,36 @@ protected:
 
    template< typename Type >
    static inline bool gjkEPAcollide(Type geom, TriangleMeshID mesh, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
-   
+
+   template < typename Type1 , typename Type2 >
+   static inline bool supportDescentPenetration(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+
+   template < typename Type1 , typename Type2 >
+   static inline bool supportDescentPenetration(Type1 geom1, Type2 geom2, const Vec3& startNormal, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+
+   template < typename Type1 , typename Type2 >
+   static inline real supportDifference(Type1 geom1, Type2 geom2, const Vec3& n, Vec3& sA, Vec3& sB);
+
+   template < typename Type1 , typename Type2 >
+   static inline bool descendSupport(Type1 geom1, Type2 geom2, Vec3& n, Vec3& sA, Vec3& sB, real& h);
+
+   template < typename Type1 , typename Type2 >
+   static inline bool validatedPenetration(Type1 geom1, Type2 geom2, bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint,
+                                           real epaDepth, Vec3& normal, Vec3& contactPoint, real& penetrationDepth);
+
+   static inline real supportFlatTolerance();
+
+   template< typename Type >
+   static inline bool supportSetProjection( Type geom, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( BoxID b, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( CapsuleID c, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( CylinderID c, const Vec3& n, const Vec3& target, Vec3& witness );
+   static inline bool supportSetProjection( TriangleMeshID m, const Vec3& n, const Vec3& target, Vec3& witness );
+
+   template < typename Type1 , typename Type2 >
+   static inline Vec3 compatibleContactPoint( Type1 geom1, Type2 geom2, const Vec3& n, const Vec3& sA, const Vec3& sB,
+                                              bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint );
+
    // DistanceMap-based collision detection helpers
    template< typename CC >
    static bool collideWithDistanceMap(TriangleMeshID mA, TriangleMeshID mB, CC& contacts);
@@ -270,49 +309,673 @@ protected:
 //================================================================================================
 
 //*************************************************************************************************
-/*!\brief TODO
+/*!\brief Contact query for two convex bodies given by their support mappings.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
+ * \param contactPoint Output: contact point placed by compatibleContactPoint().
+ * \param penetrationDepth Output: signed distance (negative = penetration).
+ * \return \a true if a contact within pe::contactThreshold was found.
+ *
+ * Accept/reject is decided solely by the threshold-grown GJK test
+ * GJK::doGJKcontactThreshold(): it answers exactly (a separating plane or the origin inside the
+ * simplex, both certificates) whether the Minkowski difference of the two bodies grown by
+ * pe::contactThreshold each contains the origin, i.e. whether the separation is at most
+ * 2 * contactThreshold. If it does not, there is certainly no contact. If it does, the contact
+ * geometry (normal, witness points, signed distance) comes from EPA validated and refined
+ * against the support functions (validatedPenetration()), which also makes the final
+ * comparison with contactThreshold on a converged distance.
+ *
+ * The former hybrid (van den Bergen p. 166) started with the ungrown GJK::doGJK() and rejected
+ * the pair when the distance it returned exceeded contactThreshold. That distance is the
+ * distance of the origin to the simplex GJK held when it met its FIRST separating support
+ * plane; it is an upper bound of the separation and not a converged minimum, so a pair 5e-9
+ * apart was reported at 1.85e-7 and dropped. Both that value and the normal derived from the
+ * same simplex ("close but separated" branch) were unfit for a decision, hence neither is used
+ * any more. The threshold-grown test costs the same as the ungrown one for separated bodies
+ * (it stops at the first separating plane as well), so the fast path is preserved.
  */
 template < typename Type1 , typename Type2 >
 inline bool MaxContacts::gjkEPAcollideHybrid(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
 {
-   // For more information on hybrid GJK/EPA see page 166 in "Collision Detecton in Interactive 3D
-   // Environments" by Gino van den Bergen.
-
    GJK gjk;
-   penetrationDepth = gjk.doGJK< Type1, Type2 >(geom1, geom2, normal, contactPoint);
-   if(penetrationDepth > contactThreshold) {
-      // not close enough create no contact
+   if( !gjk.doGJKcontactThreshold<Type1, Type2>(geom1, geom2) ) {
+      // Certified: the bodies are more than 2 * contactThreshold apart.
       return false;
    }
-   else if(penetrationDepth < 0.01*contactThreshold) {
-      // objects are quite close use GJKcontactTrashold + EPAcontactTrashold to calc distance
-      if(gjk.doGJKcontactThreshold<Type1, Type2>(geom1, geom2)) {
-         //possible penetration
-         EPA epa;
-         return epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, normal, contactPoint, penetrationDepth);
+
+   // Separation at most 2 * contactThreshold (or penetration): converged geometry required.
+   //
+   // EPA's result is never handed out as is: its depth is the distance of a face of a polytope
+   // inscribed in the Minkowski difference and is only meaningful when the expansion converged,
+   // which the return value does not certify (an exactly touching pair of ellipsoids came back
+   // as a 7e-5 penetration with a normal 80 degrees off). validatedPenetration() recomputes the
+   // depth along EPA's normal from the support functions, refines it, and accepts the direction
+   // with the smallest certified depth. When EPA fails altogether (no polytope around the
+   // origin for shallow overlaps where the GJK simplex is a sliver next to the boundary) the
+   // same routine works without it.
+   EPA epa;
+   Vec3 epaNormal, epaPoint;
+   real epaDepth( real(0) );
+   const bool epaValid( epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, epaNormal, epaPoint, epaDepth) );
+   return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaPoint, epaDepth, normal, contactPoint, penetrationDepth);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Support function of the Minkowski difference \a geom1 - \a geom2 in direction \a n.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param n Unit direction.
+ * \param sA Output: support point of \a geom1 in direction \a n.
+ * \param sB Output: support point of \a geom2 in direction \a -n.
+ * \return \f$ h(n) = s_1(n) \cdot n - s_2(-n) \cdot n \f$.
+ *
+ * For every unit direction \f$ -h(n) \f$ is an upper bound of the signed distance of the two
+ * bodies, and \f$ -\min_{|n|=1} h(n) \f$ IS the signed distance (penetration depth when the
+ * bodies overlap, minus the separation otherwise). Any contact geometry handed out by the
+ * GJK/EPA path is therefore certified through this function only.
+ */
+template < typename Type1 , typename Type2 >
+inline real MaxContacts::supportDifference(Type1 geom1, Type2 geom2, const Vec3& n, Vec3& sA, Vec3& sB)
+{
+   sA = geom1->support( n );
+   sB = geom2->support( -n );
+   return trans( sA - sB ) * n;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Local minimisation of the difference support function on the unit sphere.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param n In: start direction (any non-zero vector). Out: the minimising direction found.
+ * \param sA Output: support point of \a geom1 in direction \a n.
+ * \param sB Output: support point of \a geom2 in direction \a -n.
+ * \param h Output: \f$ h(n) \f$ at the returned direction.
+ * \return \a false if the start direction is degenerate or the support functions are not finite.
+ *
+ * The gradient of \f$ h \f$ on the unit sphere is the tangential part
+ * \f$ g = s - h n \f$ of the difference support point \f$ s = s_1(n) - s_2(-n) \f$. Each
+ * iteration first tries a Newton step with a finite-difference tangential Hessian (quadratic
+ * convergence for smooth bodies such as ellipsoids, spheres and capsules, where plain gradient
+ * descent creeps along the elongated valley of a triaxial body) and falls back to a projected
+ * steepest-descent step with backtracking. A step is accepted only if it lowers \f$ h \f$, or
+ * lowers \f$ |g| \f$ without raising \f$ h \f$ beyond rounding: close to the minimum the
+ * decrease of \f$ h \f$ is quadratic in the angular error and vanishes below the rounding of
+ * \f$ h \f$ long before the direction is converged, whereas \f$ |g| \f$ is linear in it. The
+ * loop stops at \f$ |g| < 10^{-13} \f$ or when no step is accepted (kink of a polytope's
+ * support function, or rounding floor). Since every evaluated \f$ h \f$ is an upper bound of
+ * the signed distance the routine can never make a candidate direction worse.
+ */
+template < typename Type1 , typename Type2 >
+inline bool MaxContacts::descendSupport(Type1 geom1, Type2 geom2, Vec3& n, Vec3& sA, Vec3& sB, real& h)
+{
+   if( !std::isfinite( n[0] ) || !std::isfinite( n[1] ) || !std::isfinite( n[2] ) || n.sqrLength() < real(1e-30) )
+      return false;
+   n.normalize();
+
+   h = supportDifference( geom1, geom2, n, sA, sB );
+   if( !std::isfinite( h ) )
+      return false;
+
+   Vec3 s( sA - sB );
+   Vec3 g( s - h * n );
+   real gLen( g.length() );
+   real alpha( real(1) );
+   const real gradTol( real(1e-13) );
+   const real fdStep( real(1e-6) );
+
+   for( size_t iter=0; iter<200 && gLen >= gradTol; ++iter ) {
+      const Vec3 t1( g / gLen );
+      const Vec3 t2( n % t1 );
+      bool accepted( false );
+
+      // Accept a trial direction if it improves h, or improves |g| without raising h beyond
+      // the rounding level of h itself.
+      const auto tryDirection = [&]( Vec3 nTrial ) -> bool {
+         nTrial.normalize();
+         Vec3 sA2, sB2;
+         const real h2( supportDifference( geom1, geom2, nTrial, sA2, sB2 ) );
+         if( !std::isfinite( h2 ) ) return false;
+         const Vec3 s2( sA2 - sB2 );
+         const Vec3 g2( s2 - h2 * nTrial );
+         const real g2Len( g2.length() );
+         const real roundoff( real(4) * Limits<real>::epsilon() * ( real(1) + std::fabs( h ) + sA.length() + sB.length() ) );
+         if( h2 < h || ( g2Len < gLen && h2 <= h + roundoff ) ) {
+            n = nTrial; sA = sA2; sB = sB2; s = s2; h = h2; g = g2; gLen = g2Len;
+            return true;
+         }
+         return false;
+      };
+
+      // Newton step in the tangent plane with a finite-difference Hessian of h
+      {
+         Vec3 a1, b1, a2, b2;
+         Vec3 n1( n + fdStep * t1 ); n1.normalize();
+         Vec3 n2( n + fdStep * t2 ); n2.normalize();
+         const real h1( supportDifference( geom1, geom2, n1, a1, b1 ) );
+         const real h2( supportDifference( geom1, geom2, n2, a2, b2 ) );
+         const Vec3 g1( ( a1 - b1 ) - h1 * n1 );
+         const Vec3 g2( ( a2 - b2 ) - h2 * n2 );
+         const real H11( ( trans( g1 - g ) * t1 ) / fdStep );
+         const real H21( ( trans( g1 - g ) * t2 ) / fdStep );
+         const real H12( ( trans( g2 - g ) * t1 ) / fdStep );
+         const real H22( ( trans( g2 - g ) * t2 ) / fdStep );
+         const real Hs ( real(0.5) * ( H12 + H21 ) );
+         const real det( H11 * H22 - Hs * Hs );
+         if( std::isfinite( det ) && H11 > real(0) && det > real(0) ) {
+            // solve H d = -g_t with g_t = ( gLen, 0 ) in the ( t1, t2 ) basis
+            const real d1( -( H22 * gLen ) / det );
+            const real d2(  ( Hs  * gLen ) / det );
+            if( std::isfinite( d1 ) && std::isfinite( d2 ) )
+               accepted = tryDirection( n + d1 * t1 + d2 * t2 );
+         }
       }
+
+      // Projected steepest descent with backtracking
+      if( !accepted ) {
+         for( size_t bt=0; bt<40 && !accepted; ++bt ) {
+            accepted = tryDirection( n - alpha * t1 );
+            if( accepted ) alpha *= real(1.5);
+            else           alpha *= real(0.5);
+         }
+      }
+
+      if( !accepted )
+         break;
    }
-   else {
-      // objects are close but separated use data calculated by GJK
-      return true;
-   }
-   //never to be reached
+
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Angular tolerance below which a support direction counts as normal to a flat feature.
+ *
+ * The support-function minimiser ends within rounding (about 1e-15) of a face normal when a
+ * smooth body rests on a flat face, but the sign of the remaining tangential components of the
+ * direction still selects one corner of that face in BoxBase::support() and its relatives. Any
+ * direction within this tolerance of a face (edge, cap, rim) normal is treated as exactly
+ * normal to it, so that the whole feature is taken as the support set. A genuinely tilted
+ * direction misclassified this way moves the witness by at most the tolerance times the
+ * feature size, and the clamping onto the feature keeps edge contacts on the edge.
+ */
+inline real MaxContacts::supportFlatTolerance()
+{
+   return real(1e-9);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a body's support set in direction \a n nearest to \a target (generic case).
+ *
+ * \param geom The body.
+ * \param n Unit direction.
+ * \param target The witness point on the other body.
+ * \param witness Output: unspecified for this overload.
+ * \return \a false: the support point of a strictly convex body (sphere, ellipsoid) is unique
+ *         and \a geom->support( n ) is already the witness.
+ *
+ * The overloads for boxes, capsules, cylinders and triangle meshes return \a true whenever the
+ * support set in direction \a n is a segment or a face (a set on which \f$ n \cdot x \f$ is
+ * constant), and then deliver the point of that set nearest to \a target: the projection of
+ * \a target along \a n onto the feature, clamped to it. Any body type without a dedicated
+ * overload is treated as strictly convex, which reproduces the former behaviour.
+ */
+template< typename Type >
+inline bool MaxContacts::supportSetProjection( Type /*geom*/, const Vec3& /*n*/, const Vec3& /*target*/, Vec3& /*witness*/ )
+{
    return false;
 }
 //*************************************************************************************************
 
 
 //*************************************************************************************************
-/*!\brief TODO
+/*!\brief Point of a box's support set in direction \a n nearest to \a target.
+ *
+ * In the box frame every coordinate whose direction component vanishes (within
+ * supportFlatTolerance()) is free on the support feature, the others are fixed at the sign of
+ * the component. The free coordinates of \a target are clamped to the half lengths; a corner
+ * (no free coordinate) is unique and yields \a false.
  */
-template < typename Type1 , typename Type2 > // ID-Type of the geometry 
+inline bool MaxContacts::supportSetProjection( BoxID b, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vec3 l( real(0.5) * b->getLengths() );
+   const Vec3 d( b->vectorFromWFtoBF( n ) );
+   Vec3 p( b->pointFromWFtoBF( target ) );
+   const real tol( supportFlatTolerance() );
+   bool flat( false );
+
+   for( size_t i=0; i<3; ++i ) {
+      if( std::fabs( d[i] ) <= tol ) {
+         flat = true;
+         if     ( p[i] < -l[i] ) p[i] = -l[i];
+         else if( p[i] >  l[i] ) p[i] =  l[i];
+      }
+      else {
+         p[i] = ( d[i] > real(0) ) ? l[i] : -l[i];
+      }
+   }
+
+   if( !flat )
+      return false;
+
+   witness = b->pointFromBFtoWF( p );
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a capsule's support set in direction \a n nearest to \a target.
+ *
+ * The support set is a single point of one hemispherical cap unless \a n is perpendicular to
+ * the axis (within supportFlatTolerance()); then it is the line segment of the cylindrical
+ * part at radius distance in direction \a n, and \a target is projected onto that segment.
+ */
+inline bool MaxContacts::supportSetProjection( CapsuleID c, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vec3 d( c->vectorFromWFtoBF( n ) );
+   if( std::fabs( d[0] ) > supportFlatTolerance() )
+      return false;
+
+   const real half( real(0.5) * c->getLength() );
+   const Vec3 axis( c->vectorFromBFtoWF( Vec3( 1, 0, 0 ) ) );
+   const Vec3 base( c->getPosition() + c->getRadius() * n );
+   real x( trans( target - base ) * axis );
+   if     ( x < -half ) x = -half;
+   else if( x >  half ) x =  half;
+
+   witness = base + x * axis;
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a cylinder's support set in direction \a n nearest to \a target.
+ *
+ * Three cases in the cylinder frame (axis along x): \a n perpendicular to the axis (within
+ * supportFlatTolerance()) gives a line segment of the lateral wall, \a n parallel to the axis
+ * gives an end cap disc, anything else a unique point of a rim. \a target is clamped onto the
+ * segment or the disc respectively.
+ */
+inline bool MaxContacts::supportSetProjection( CylinderID c, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vec3 d( c->vectorFromWFtoBF( n ) );
+   const real tol( supportFlatTolerance() );
+   const real half( real(0.5) * c->getLength() );
+   const real radius( c->getRadius() );
+   const real radial( std::sqrt( d[1]*d[1] + d[2]*d[2] ) );
+   Vec3 p( c->pointFromWFtoBF( target ) );
+
+   if( std::fabs( d[0] ) <= tol ) {
+      if( radial <= tol )
+         return false;   // degenerate direction
+      // lateral wall: segment parallel to the axis
+      if     ( p[0] < -half ) p[0] = -half;
+      else if( p[0] >  half ) p[0] =  half;
+      p[1] = radius * d[1] / radial;
+      p[2] = radius * d[2] / radial;
+   }
+   else if( radial <= tol ) {
+      // end cap: disc of radius 'radius'
+      p[0] = ( d[0] > real(0) ) ? half : -half;
+      const real r( std::sqrt( p[1]*p[1] + p[2]*p[2] ) );
+      if( r > radius ) {
+         p[1] *= radius / r;
+         p[2] *= radius / r;
+      }
+   }
+   else {
+      return false;      // rim point: unique
+   }
+
+   witness = c->pointFromBFtoWF( p );
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Point of a triangle mesh's support set in direction \a n nearest to \a target.
+ *
+ * The support set is the convex hull of all vertices whose height \f$ n \cdot v \f$ lies within
+ * supportFlatTolerance() times the mesh extent of the maximum: one vertex (unique, \a false),
+ * an edge (segment) or a facet (convex polygon in the support plane). \a target is projected
+ * along \a n onto the support plane and clamped to the segment or the polygon (nearest point of
+ * the polygon: itself if inside, else the nearest point of the boundary). Costs one pass over
+ * the vertices, once per accepted contact.
+ */
+inline bool MaxContacts::supportSetProjection( TriangleMeshID m, const Vec3& n, const Vec3& target, Vec3& witness )
+{
+   const Vertices& v( m->getWFVertices() );
+   if( v.size() < 2 )
+      return false;
+
+   const Vec3& gpos( m->getPosition() );
+   real hmax( -Limits<real>::inf() );
+   real extent( real(0) );
+   for( size_t i=0; i<v.size(); ++i ) {
+      hmax   = std::max( hmax, trans( n ) * v[i] );
+      extent = std::max( extent, ( v[i] - gpos ).length() );
+   }
+   const real tol( supportFlatTolerance() * ( real(1) + extent ) );
+
+   std::vector<Vec3> set;
+   for( size_t i=0; i<v.size(); ++i ) {
+      if( trans( n ) * v[i] >= hmax - tol )
+         set.push_back( v[i] );
+   }
+   if( set.size() < 2 )
+      return false;
+
+   // Projection of the target along n onto the support plane
+   const Vec3 t( target + ( hmax - trans( n ) * target ) * n );
+
+   const auto nearestOnSegment = [&]( const Vec3& a, const Vec3& b ) -> Vec3 {
+      const Vec3 ab( b - a );
+      const real len2( ab.sqrLength() );
+      if( len2 <= real(0) ) return a;
+      real s( ( trans( t - a ) * ab ) / len2 );
+      if( s < real(0) ) s = real(0); else if( s > real(1) ) s = real(1);
+      return a + s * ab;
+   };
+
+   if( set.size() == 2 ) {
+      witness = nearestOnSegment( set[0], set[1] );
+      return true;
+   }
+
+   // Convex polygon: order the vertices counter-clockwise about n around their centroid
+   Vec3 centroid( 0, 0, 0 );
+   for( size_t i=0; i<set.size(); ++i ) centroid += set[i];
+   centroid /= real( set.size() );
+   Vec3 t1( set[0] - centroid );
+   t1 -= ( trans( t1 ) * n ) * n;
+   if( t1.sqrLength() <= real(0) ) {
+      // set[0] coincides with the centroid: use any vertex off the centroid
+      for( size_t i=1; i<set.size() && t1.sqrLength() <= real(0); ++i ) {
+         t1 = set[i] - centroid;
+         t1 -= ( trans( t1 ) * n ) * n;
+      }
+      if( t1.sqrLength() <= real(0) ) { witness = centroid; return true; }
+   }
+   t1.normalize();
+   const Vec3 t2( n % t1 );
+   std::vector< std::pair<real, size_t> > order( set.size() );
+   for( size_t i=0; i<set.size(); ++i ) {
+      const Vec3 r( set[i] - centroid );
+      order[i] = std::make_pair( std::atan2( trans( r ) * t2, trans( r ) * t1 ), i );
+   }
+   std::sort( order.begin(), order.end() );
+
+   bool inside( true );
+   Vec3 best;
+   real bestDist2( Limits<real>::inf() );
+   for( size_t k=0; k<order.size(); ++k ) {
+      const Vec3& a( set[ order[k].second ] );
+      const Vec3& b( set[ order[ ( k + 1 ) % order.size() ].second ] );
+      if( trans( ( b - a ) % ( t - a ) ) * n < real(0) )
+         inside = false;
+      const Vec3 q( nearestOnSegment( a, b ) );
+      const real d2( ( q - t ).sqrLength() );
+      if( d2 < bestDist2 ) { bestDist2 = d2; best = q; }
+   }
+
+   witness = inside ? t : best;
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact point from witness points that lie on a common contact patch.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param n Final direction of the support-function minimisation (\a geom1 supported in \a n,
+ *        \a geom2 in \a -n; the contact normal handed out is \a -n).
+ * \param sA \a geom1->support( n ).
+ * \param sB \a geom2->support( -n ).
+ * \param epaValid \a true if EPA returned a result.
+ * \param epaNormal EPA's contact normal (from \a geom2 to \a geom1); ignored if !\a epaValid.
+ * \param epaPoint EPA's contact point (midpoint of its interpolated witness points); ignored
+ *        if !\a epaValid.
+ * \return The contact point, placed by pe's geometry-dependent convention (see below).
+ *
+ * The signed distance \f$ -h(n) \f$ does not depend on which point of a support set is taken,
+ * but the contact point does. For a flat feature (box face or edge, cylinder cap or wall
+ * segment, capsule wall segment, mesh facet or edge) the support point is not unique and the
+ * primitive's support() picks a corner by the sign of tangential components of \a n that are
+ * pure rounding, so the midpoint of two independently picked support points was displaced
+ * sideways by up to half the feature size (an artificial moment arm for the normal impulse).
+ * Rule: when one body's support set is a single point (strictly convex body) that point is
+ * its witness, and the witness on a flat body is the point of its support set nearest to the
+ * other body's witness (its projection along \a n onto the feature, clamped), so both
+ * witnesses lie on the common contact patch.
+ *
+ * Placement follows the convention of the analytic pair functions, which is split by
+ * geometry: two strictly convex bodies get the overlap midpoint \f$ (s_A + s_B)/2 \f$
+ * (collideSphereSphere(); unchanged here), a strictly convex body against a flat one gets
+ * the point ON THE FLAT BODY'S SURFACE, i.e. the flat body's witness (collideSpherePlane(),
+ * collideSphereBox(), collideEllipsoidPlane()), so the ellipsoid-box and ellipsoid-plane paths
+ * report the same point for the same geometry. When both support sets are flat, EPA's
+ * interpolated witness midpoint is used if EPA converged to the same normal (correct for
+ * polytope pairs), otherwise the projections are alternated once (\a sA onto \a geom2's set,
+ * the result onto \a geom1's set) and the midpoint taken.
+ */
+template < typename Type1 , typename Type2 >
+inline Vec3 MaxContacts::compatibleContactPoint( Type1 geom1, Type2 geom2, const Vec3& n, const Vec3& sA, const Vec3& sB,
+                                                 bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint )
+{
+   Vec3 a, b;
+   const bool flatA( supportSetProjection( geom1,  n, sB, a ) );
+   const bool flatB( supportSetProjection( geom2, -n, sA, b ) );
+
+   if( !flatA && !flatB )
+      return real(0.5) * ( sA + sB );     // both strictly convex: overlap midpoint (sphere-sphere convention)
+   if( !flatB )
+      return a;                           // geom1 flat: the point on its surface facing geom2's unique witness
+   if( !flatA )
+      return b;                           // geom2 flat: the point on its surface facing geom1's unique witness
+
+   // Both flat: EPA's interpolated witness points if it converged to this normal
+   if( epaValid && std::isfinite( epaPoint[0] ) && std::isfinite( epaPoint[1] ) && std::isfinite( epaPoint[2] )
+       && epaNormal.sqrLength() > real(0.5) ) {
+      Vec3 nE( epaNormal );
+      nE.normalize();
+      if( ( nE + n ).length() <= real(1e-6) )
+         return epaPoint;
+   }
+
+   // Otherwise alternate the projections once: b faces sA, then a faces b
+   Vec3 a2;
+   if( !supportSetProjection( geom1, n, b, a2 ) )
+      a2 = sA;
+   return real(0.5) * ( a2 + b );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Penetration depth of two convex bodies by minimising the support function.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param startNormal Start direction of the minimisation, given as a candidate contact normal
+ *        (pointing from \a geom2 to \a geom1, e.g. the normal EPA returned).
+ * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
+ * \param contactPoint Output: contact point placed by compatibleContactPoint().
+ * \param penetrationDepth Output: signed distance (negative = penetration).
+ * \return \a true if a contact within pe::contactThreshold was found.
+ *
+ * For two convex bodies the signed distance is \f$ -\min_{|n|=1} h(n) \f$ with the support
+ * function of the Minkowski difference \f$ h(n) = s_1(n) \cdot n - s_2(-n) \cdot n \f$: when
+ * the bodies overlap the origin lies inside the difference, \f$ h \ge 0 \f$ everywhere and the
+ * minimum is the penetration depth along the minimising direction; when they are separated the
+ * minimum is minus the separation. See descendSupport() for the minimiser.
+ */
+template < typename Type1 , typename Type2 >
+inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, const Vec3& startNormal, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
+{
+   Vec3 n( -startNormal );
+   Vec3 sA, sB;
+   real h;
+   if( !descendSupport( geom1, geom2, n, sA, sB, h ) )
+      return false;
+
+   penetrationDepth = -h;       // signed distance: negative for penetration
+   if( !std::isfinite( penetrationDepth ) || penetrationDepth >= contactThreshold )
+      return false;
+
+   normal = -n;                 // from geom2 to geom1
+   contactPoint = compatibleContactPoint( geom1, geom2, n, sA, sB, false, Vec3(), Vec3() );
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Penetration depth of two convex bodies by minimising the support function.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
+ * \param contactPoint Output: contact point placed by compatibleContactPoint().
+ * \param penetrationDepth Output: signed distance (negative = penetration).
+ * \return \a true if a contact within pe::contactThreshold was found.
+ *
+ * Starts the minimisation from the direction from \a geom1 to \a geom2, the basin that holds
+ * the shallow minimum EPA misses. Returns \a false if the two centers coincide.
+ */
+template < typename Type1 , typename Type2 >
+inline bool MaxContacts::supportDescentPenetration(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
+{
+   const Vec3 d( geom1->getPosition() - geom2->getPosition() );   // = -( direction from geom1 to geom2 )
+   if( d.sqrLength() < real(1e-30) )
+      return false;
+   return supportDescentPenetration<Type1, Type2>( geom1, geom2, d, normal, contactPoint, penetrationDepth );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Certified contact geometry after a GJK/EPA query, validating EPA's result.
+ *
+ * \param geom1 The first body.
+ * \param geom2 The second body.
+ * \param epaValid \a true if EPA returned a result.
+ * \param epaNormal EPA's contact normal (from \a geom2 to \a geom1); ignored if !\a epaValid.
+ * \param epaPoint EPA's contact point; used only when both support sets are flat, see
+ *        compatibleContactPoint().
+ * \param epaDepth EPA's signed penetration depth; ignored if !\a epaValid.
+ * \param normal Output: contact normal pointing from \a geom2 to \a geom1.
+ * \param contactPoint Output: contact point from the compatible witness points
+ *        (compatibleContactPoint(): overlap midpoint for two strictly convex bodies, the
+ *        flat body's surface point for a strictly convex body against a flat one).
+ * \param penetrationDepth Output: signed distance (negative = penetration).
+ * \return \a true if a contact within pe::contactThreshold was found.
+ *
+ * Acceptance criterion. EPA's depth is the distance of the closest face of a polytope
+ * inscribed in the (threshold-grown) Minkowski difference. That face is the answer only if the
+ * expansion converged, which the return value of doEPAcontactThreshold() does not certify:
+ * when the candidate heap runs dry or the expansion stalls on a sliver face (two exactly
+ * touching ellipsoids gave a depth of -7e-5 with a normal 80 degrees off the geometric one)
+ * the reported depth and normal are those of an arbitrary face. The certified quantity is
+ * \f$ h(n) \f$ of supportDifference(): for every unit direction \f$ -h(n) \f$ bounds the
+ * signed distance from above and the minimum over all directions is the signed distance. So
+ *
+ *  1. EPA's normal is only used as a direction: the depth along it is recomputed from the two
+ *     support functions (the witness points \f$ s_1(n), s_2(-n) \f$ are then consistent with
+ *     the normal by construction). EPA counts as converged if its own depth agrees with this
+ *     recomputed depth to a tolerance; the mismatch is logged, not acted upon, because the
+ *     decision below does not depend on EPA's depth at all;
+ *  2. the direction is refined by descendSupport() from EPA's normal and, independently, from
+ *     the direction between the two centers (the basin holding the shallow minimum EPA misses
+ *     and the only start when EPA fails);
+ *  3. the candidate with the smallest \f$ h \f$ wins. Every candidate is an upper bound of
+ *     the signed distance, so the smallest is the tightest; an exactly touching pair of
+ *     smooth bodies ends with \f$ h = 0 \f$ (to rounding) along the geometric normal.
+ *
+ * A contact is reported if the resulting signed distance is below pe::contactThreshold.
+ */
+template < typename Type1 , typename Type2 >
+inline bool MaxContacts::validatedPenetration(Type1 geom1, Type2 geom2, bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint,
+                                              real epaDepth, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
+{
+   bool have( false );
+   Vec3 bestN, bestA, bestB;
+   real bestH( real(0) );
+
+   const auto consider = [&]( Vec3 n ) {
+      Vec3 sA, sB;
+      real h;
+      if( !descendSupport( geom1, geom2, n, sA, sB, h ) )
+         return;
+      if( !have || h < bestH ) {
+         have = true; bestN = n; bestA = sA; bestB = sB; bestH = h;
+      }
+   };
+
+   // Candidate from the center direction
+   consider( geom2->getPosition() - geom1->getPosition() );
+
+   // Candidate from EPA's normal, after recomputing the depth along it
+   if( epaValid && std::isfinite( epaNormal[0] ) && std::isfinite( epaNormal[1] ) && std::isfinite( epaNormal[2] )
+       && epaNormal.sqrLength() > real(0.5) ) {
+      Vec3 nE( -epaNormal );
+      nE.normalize();
+      Vec3 sA, sB;
+      const real hE( supportDifference( geom1, geom2, nE, sA, sB ) );
+      pe_LOG_DEBUG_SECTION( log ) {
+         const real mismatch( std::fabs( hE + epaDepth ) );
+         if( mismatch > real(1e-8) * ( real(1) + std::fabs( hE ) ) ) {
+            log << "      EPA result not converged: depth " << epaDepth << " along its normal, recomputed " << -hE;
+         }
+      }
+      consider( nE );
+   }
+
+   if( !have )
+      return false;
+
+   penetrationDepth = -bestH;   // signed distance: negative for penetration
+   if( !std::isfinite( penetrationDepth ) || penetrationDepth >= contactThreshold )
+      return false;
+
+   normal = -bestN;             // from geom2 to geom1
+   contactPoint = compatibleContactPoint( geom1, geom2, bestN, bestA, bestB, epaValid, epaNormal, epaPoint );
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Threshold-grown GJK/EPA query with the validated contact geometry.
+ *
+ * Same accept/reject decision and result validation as gjkEPAcollideHybrid(); kept as a
+ * separate entry for callers that do not want the hybrid's fast path.
+ */
+template < typename Type1 , typename Type2 > // ID-Type of the geometry
 inline bool MaxContacts::gjkEPAcollide(Type1 geom1, Type2 geom2, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
 {
    GJK gjk;
    if(gjk.doGJKcontactThreshold<Type1, Type2>(geom1, geom2)) {
       //possible penetration
       EPA epa;
-      return epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, normal, contactPoint, penetrationDepth);
+      Vec3 epaNormal, epaPoint;
+      real epaDepth( real(0) );
+      const bool epaValid( epa.doEPAcontactThreshold<Type1, Type2>(geom1, geom2, gjk, epaNormal, epaPoint, epaDepth) );
+      return validatedPenetration<Type1, Type2>(geom1, geom2, epaValid, epaNormal, epaPoint, epaDepth, normal, contactPoint, penetrationDepth);
    }
 
    return false;
@@ -400,6 +1063,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideSphereUnion( static_body_cast<Sphere>( b1 ),
                                    static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidSphere( static_body_cast<Ellipsoid>( b2 ),
+                                       static_body_cast<Sphere>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -438,6 +1105,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
             case unionType:
                collideBoxUnion( static_body_cast<Box>( b1 ),
                                 static_body_cast<Union>( b2 ), contacts );
+               break;
+            case ellipsoidType:
+               collideEllipsoidBox( static_body_cast<Ellipsoid>( b2 ),
+                                    static_body_cast<Box>( b1 ), contacts );
                break;
             default:
                std::ostringstream oss;
@@ -478,6 +1149,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideCapsuleUnion( static_body_cast<Capsule>( b1 ),
                                     static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidCapsule( static_body_cast<Ellipsoid>( b2 ),
+                                        static_body_cast<Capsule>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -517,6 +1192,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideCylinderUnion( static_body_cast<Cylinder>( b1 ),
                                      static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidCylinder( static_body_cast<Ellipsoid>( b2 ),
+                                         static_body_cast<Cylinder>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -554,6 +1233,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
             case unionType:
                collidePlaneUnion( static_body_cast<Plane>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
+               break;
+            case ellipsoidType:
+               collideEllipsoidPlane( static_body_cast<Ellipsoid>( b2 ),
+                                      static_body_cast<Plane>( b1 ), contacts );
                break;
             default:
                std::ostringstream oss;
@@ -594,6 +1277,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideTMeshUnion( static_body_cast<TriangleMesh>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidTMesh( static_body_cast<Ellipsoid>( b2 ),
+                                      static_body_cast<TriangleMesh>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -633,6 +1320,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideUnionUnion( static_body_cast<Union>( b1 ),
                                   static_body_cast<Union>( b2 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidUnion( static_body_cast<Ellipsoid>( b2 ),
+                                      static_body_cast<Union>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -650,6 +1341,10 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
                collideSphereInnerCylinder( static_body_cast<Sphere>( b2 ),
                                            static_body_cast<InnerCylinder>( b1 ), contacts );
                break;
+            case ellipsoidType:
+               collideEllipsoidInnerCylinder( static_body_cast<Ellipsoid>( b2 ),
+                                              static_body_cast<InnerCylinder>( b1 ), contacts );
+               break;
             default:
                std::ostringstream oss;
                oss << "Unknown body type (" << b2->getType() << ")!";
@@ -658,6 +1353,53 @@ void MaxContacts::collide( BodyID b1, BodyID b2, CC& contacts )
          }
          break;
 
+
+      // Performing a collision test between an ellipsoid and the second rigid body
+      case ellipsoidType:
+         switch( b2->getType() ) {
+            case sphereType:
+               collideEllipsoidSphere( static_body_cast<Ellipsoid>( b1 ),
+                                       static_body_cast<Sphere>( b2 ), contacts );
+               break;
+            case boxType:
+               collideEllipsoidBox( static_body_cast<Ellipsoid>( b1 ),
+                                    static_body_cast<Box>( b2 ), contacts );
+               break;
+            case capsuleType:
+               collideEllipsoidCapsule( static_body_cast<Ellipsoid>( b1 ),
+                                        static_body_cast<Capsule>( b2 ), contacts );
+               break;
+            case cylinderType:
+               collideEllipsoidCylinder( static_body_cast<Ellipsoid>( b1 ),
+                                         static_body_cast<Cylinder>( b2 ), contacts );
+               break;
+            case innerCylinderType:
+               collideEllipsoidInnerCylinder( static_body_cast<Ellipsoid>( b1 ),
+                                              static_body_cast<InnerCylinder>( b2 ), contacts );
+               break;
+            case planeType:
+               collideEllipsoidPlane( static_body_cast<Ellipsoid>( b1 ),
+                                      static_body_cast<Plane>( b2 ), contacts );
+               break;
+            case triangleMeshType:
+               collideEllipsoidTMesh( static_body_cast<Ellipsoid>( b1 ),
+                                      static_body_cast<TriangleMesh>( b2 ), contacts );
+               break;
+            case unionType:
+               collideEllipsoidUnion( static_body_cast<Ellipsoid>( b1 ),
+                                      static_body_cast<Union>( b2 ), contacts );
+               break;
+            case ellipsoidType:
+               collideEllipsoidEllipsoid( static_body_cast<Ellipsoid>( b1 ),
+                                          static_body_cast<Ellipsoid>( b2 ), contacts );
+               break;
+            default:
+               std::ostringstream oss;
+               oss << "Unknown body type (" << b2->getType() << ")!";
+               throw std::runtime_error( oss.str() );
+               break;
+         }
+         break;
 
       // Treatment of unknown rigid body types
       default:
@@ -4039,6 +4781,447 @@ inline void MaxContacts::collideUnionUnion( UnionID u1, UnionID u2, CC& contacts
       for( Union::Iterator it2=u2->begin(); it2!=u2->end(); ++it2 ) {
          collide( *it1, *it2, contacts );
       }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between two colliding Ellipsoid primitives.
+ * \ingroup contact_generation
+ *
+ * \param e1 The first colliding ellipsoid.
+ * \param e2 The second colliding ellipsoid.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Two ellipsoids are handled by the hybrid GJK/EPA algorithm on their exact support mappings
+ * (see EllipsoidBase::support()). A single contact is generated at the midpoint of the two
+ * witness points; the normal points from \a e2 to \a e1 and a negative distance denotes
+ * penetration, as for all other contact functions.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidEllipsoid( EllipsoidID e1, EllipsoidID e2, CC& contacts )
+{
+   // Force a defined order of collision detection across processes
+   if( e2->getSystemID() < e1->getSystemID() )
+      std::swap( e1, e2 );
+
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, EllipsoidID >(e1, e2, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (e2) to object1 (e1)
+      contacts.addVertexFaceContact( e1, e2, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e1->getID()
+            << " and ellipsoid " << e2->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Sphere.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param s The colliding sphere.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the sphere to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidSphere( EllipsoidID e, SphereID s, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, SphereID >(e, s, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (s) to object1 (e)
+      contacts.addVertexFaceContact( e, s, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and sphere " << s->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Box.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param b The colliding box.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the box to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidBox( EllipsoidID e, BoxID b, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, BoxID >(e, b, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (b) to object1 (e)
+      contacts.addVertexFaceContact( e, b, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and box " << b->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Capsule.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param c The colliding capsule.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the capsule to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidCapsule( EllipsoidID e, CapsuleID c, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, CapsuleID >(e, c, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (c) to object1 (e)
+      contacts.addVertexFaceContact( e, c, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and capsule " << c->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Cylinder.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param c The colliding cylinder.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings; the normal points from the cylinder to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidCylinder( EllipsoidID e, CylinderID c, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, CylinderID >(e, c, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (c) to object1 (e)
+      contacts.addVertexFaceContact( e, c, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and an InnerCylinder.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param c The colliding inner cylinder.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * The inner cylinder is a hollow container (the ellipsoid lives inside it), so the GJK/EPA
+ * route on the convex hull does not apply. Mirroring collideSphereInnerCylinder(), the
+ * lateral wall and the two end caps are treated separately:
+ *
+ * - Lateral wall: the radial extent of the ellipsoid, i.e. the largest distance of one of its
+ *   surface points from the cylinder axis, is
+ *   \f$ \max_\theta f(\theta) \f$ with \f$ f(\theta) = ( s(\hat{r}(\theta)) - c ) \cdot
+ *   \hat{r}(\theta) \f$, \f$ \hat{r}(\theta) = \cos\theta\, v + \sin\theta\, w \f$ a unit
+ *   radial direction, \f$ s \f$ the support mapping and \f$ c \f$ a point on the axis: for
+ *   every point \f$ |r(p)| = \max_\theta (p - c) \cdot \hat{r}(\theta) \f$ and the two maxima
+ *   commute. \f$ f \f$ is the support function of the projected ellipse, a smooth periodic
+ *   function whose stationary points are those of the radial distance on that ellipse (at most
+ *   four, hence at most two local maxima). It is sampled on a 1-degree grid, every grid local
+ *   maximum is refined by golden-section search to an azimuth tolerance of 1e-12 (the value is
+ *   then accurate to rounding since it is stationary there), and the best is kept. A certified
+ *   upper bound of the extent, radial center offset plus the largest semi-axis, skips the
+ *   search when it already proves clearance; an unconverged search (defensive, the bracketed
+ *   golden section cannot fail) falls back to that upper bound instead of concluding clearance
+ *   from a partial maximisation, which is only a LOWER bound of the extent. The former
+ *   fixed-point iteration \f$ p_{k+1} = s( \hat{r}(p_k) ) \f$ stopped after 64 unconverged steps
+ *   and missed a 1.9e-5 wall penetration of a nearly axisymmetric ellipsoid that way.
+ *   The gap to the wall is \f$ R_c - |r(p)| \f$; the contact normal points inward (from the
+ *   wall to the ellipsoid), as in the sphere case.
+ * - End caps: the deepest points towards the caps are the support points along \f$ \pm u \f$
+ *   (\f$ u \f$ the axis direction); their gaps to the cap planes give plane-like contacts with
+ *   the normal pointing from the cap into the cylinder.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidInnerCylinder( EllipsoidID e, InnerCylinderID c, CC& contacts )
+{
+   const Rot3& Rc( c->getRotation() );
+   const Vec3  u( Rc[0], Rc[3], Rc[6] );          // cylinder axis (body x) in world frame
+   const Vec3& cpos( c->getPosition() );
+   const real  Rcyl( c->getRadius() );
+   const real  hlength( real(0.5) * c->getLength() );
+
+   //----- Lateral wall --------------------------------------------------------------------------
+   {
+      // Orthonormal basis ( v, w ) of the plane perpendicular to the axis
+      Vec3 v( std::fabs( u[0] ) < real(0.9) ? Vec3( 1, 0, 0 ) : Vec3( 0, 1, 0 ) );
+      v -= ( trans( u ) * v ) * u;
+      v.normalize();
+      const Vec3 w( u % v );
+
+      // Radial extent of a world point and radial support function f(theta)
+      const auto radialLength = [&]( const Vec3& p ) -> real {
+         const Vec3 r( p - cpos );
+         return ( r - ( trans( u ) * r ) * u ).length();
+      };
+      const auto radialSupport = [&]( real theta, Vec3& dir, Vec3& p ) -> real {
+         dir = std::cos( theta ) * v + std::sin( theta ) * w;
+         p   = e->support( dir );
+         return trans( p - cpos ) * dir;
+      };
+
+      // Certified upper bound of the radial extent: the ellipsoid lies inside the sphere of
+      // radius max( A, B, C ) about its center.
+      const Vec3 semi( e->getRadius() );
+      const real radialUpper( radialLength( e->getPosition() ) + std::max( semi[0], std::max( semi[1], semi[2] ) ) );
+
+      if( Rcyl - radialUpper < contactThreshold ) {
+         // Clearance is not certified by the bound: locate the radial extent.
+         const size_t numSamples( 360 );
+         const real   dTheta( real(2) * M_PI / real(numSamples) );
+         real  fs[numSamples];
+         Vec3  dirTmp, pTmp;
+         for( size_t i=0; i<numSamples; ++i )
+            fs[i] = radialSupport( real(i) * dTheta, dirTmp, pTmp );
+
+         // Grid local maxima (plateaus excluded; if none qualifies, the grid argmax is used)
+         size_t candidates[numSamples];
+         size_t numCandidates( 0 );
+         size_t argmax( 0 );
+         for( size_t i=0; i<numSamples; ++i ) {
+            const real fPrev( fs[( i + numSamples - 1 ) % numSamples] );
+            const real fNext( fs[( i + 1 ) % numSamples] );
+            if( fs[i] >= fPrev && fs[i] >= fNext && ( fs[i] > fPrev || fs[i] > fNext ) )
+               candidates[numCandidates++] = i;
+            if( fs[i] > fs[argmax] ) argmax = i;
+         }
+         if( numCandidates == 0 )
+            candidates[numCandidates++] = argmax;
+         // Keep the best few candidates only (rounding noise on a numerically flat f, e.g. a
+         // spheroid coaxial with the cylinder, can flag many grid points).
+         const size_t maxRefine( 16 );
+         if( numCandidates > maxRefine ) {
+            std::sort( candidates, candidates + numCandidates,
+                       [&]( size_t a, size_t b ) { return fs[a] > fs[b]; } );
+            numCandidates = maxRefine;
+         }
+
+         // Golden-section refinement of each bracket [ theta_{i-1}, theta_{i+1} ]
+         const real thetaTol( real(1e-12) );
+         const real invPhi( real(0.5) * ( std::sqrt( real(5) ) - real(1) ) );   // 0.618...
+         bool converged( true );
+         real bestRadial( -real(1) );
+         Vec3 bestPoint, bestDir;
+         for( size_t k=0; k<numCandidates; ++k ) {
+            real a( ( real(candidates[k]) - real(1) ) * dTheta );
+            real b( ( real(candidates[k]) + real(1) ) * dTheta );
+            real x1( b - invPhi * ( b - a ) ), x2( a + invPhi * ( b - a ) );
+            real f1( radialSupport( x1, dirTmp, pTmp ) ), f2( radialSupport( x2, dirTmp, pTmp ) );
+            size_t iter( 0 );
+            for( ; iter<200 && ( b - a ) > thetaTol; ++iter ) {
+               if( f1 < f2 ) { a = x1; x1 = x2; f1 = f2; x2 = a + invPhi * ( b - a ); f2 = radialSupport( x2, dirTmp, pTmp ); }
+               else          { b = x2; x2 = x1; f2 = f1; x1 = b - invPhi * ( b - a ); f1 = radialSupport( x1, dirTmp, pTmp ); }
+            }
+            if( ( b - a ) > thetaTol )
+               converged = false;
+            Vec3 dir, p;
+            radialSupport( real(0.5) * ( a + b ), dir, p );
+            const real radial( radialLength( p ) );      // = f at the maximiser, exact radial distance of p
+            if( radial > bestRadial ) {
+               bestRadial = radial;
+               bestPoint  = p;
+               bestDir    = dir;
+            }
+         }
+
+         if( !converged ) {
+            // Never conclude clearance from an unconverged maximisation: use the certified upper
+            // bound of the extent (conservative: may overstate the penetration, never miss it).
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "      Ellipsoid " << e->getID() << " / inner cylinder " << c->getID()
+                   << ": radial maximisation did not converge, using the upper bound";
+            }
+            bestRadial = radialUpper;
+            Vec3 dir( e->getPosition() - cpos );
+            dir -= ( trans( u ) * dir ) * u;
+            if( dir.sqrLength() < real(1e-28) ) dir = v; else dir.normalize();
+            bestDir   = dir;
+            // point at the bound distance from the axis, in the axial plane of the center
+            bestPoint = cpos + ( trans( u ) * ( e->getPosition() - cpos ) ) * u + radialUpper * dir;
+         }
+
+         const real dist( Rcyl - bestRadial );
+         if( dist < contactThreshold ) {
+            // Contact point midway between the ellipsoid surface and the wall, normal inward
+            const Vec3 gPos( bestPoint + ( real(0.5) * dist ) * bestDir );
+            const Vec3 normal( -bestDir );
+
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "      Contact created between ellipsoid " << e->getID()
+                   << " and inner cylinder wall " << c->getID() << " (dist=" << dist << ")";
+            }
+
+            contacts.addVertexFaceContact( e, c, gPos, normal, dist );
+         }
+      }
+   }
+
+   //----- End caps ------------------------------------------------------------------------------
+   {
+      // Cap at +u
+      const Vec3 pUp( e->support( u ) );
+      const real distUp( hlength - trans( u ) * ( pUp - cpos ) );
+      if( distUp < contactThreshold ) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between ellipsoid " << e->getID()
+                << " and inner cylinder cap " << c->getID() << " (dist=" << distUp << ")";
+         }
+         contacts.addVertexFaceContact( e, c, pUp + ( real(0.5) * distUp ) * u, -u, distUp );
+      }
+
+      // Cap at -u
+      const Vec3 pDn( e->support( -u ) );
+      const real distDn( hlength + trans( u ) * ( pDn - cpos ) );
+      if( distDn < contactThreshold ) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Contact created between ellipsoid " << e->getID()
+                << " and inner cylinder cap " << c->getID() << " (dist=" << distDn << ")";
+         }
+         contacts.addVertexFaceContact( e, c, pDn - ( real(0.5) * distDn ) * u, u, distDn );
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Plane.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param p The colliding plane.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Analytic, mirroring collideSpherePlane(): the deepest point of the ellipsoid with respect
+ * to the plane is its support point in direction \f$ -n \f$ (\f$ n \f$ the plane normal). The
+ * signed gap is \f$ n \cdot p_{deep} - d \f$ with \f$ d \f$ the plane displacement (negative
+ * means penetration); the contact point is the deepest point shifted onto the plane surface
+ * and the contact normal is the plane normal (pointing from the plane to the ellipsoid).
+ */
+template< typename CC >  // Type of the contact container
+inline void MaxContacts::collideEllipsoidPlane( EllipsoidID e, PlaneID p, CC& contacts )
+{
+   const Vec3& n( p->getNormal() );
+   const Vec3 deepest( e->support( -n ) );
+   const real k( trans( n ) * deepest );
+   const real dist( k - p->getDisplacement() );
+
+   if( dist < contactThreshold ) {
+      const Vec3 gPos( deepest - dist * n );
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+             << " and plane " << p->getID() << " (dist=" << dist << ")";
+      }
+
+      contacts.addVertexFaceContact( e, p, gPos, n, dist );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Triangle Mesh.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param m The colliding triangle mesh.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * Hybrid GJK/EPA on the support mappings (the mesh is treated through its convex support
+ * mapping, as for boxes and capsules); the normal points from the mesh to the ellipsoid.
+ */
+template< typename CC >  // Type of the contact container
+void MaxContacts::collideEllipsoidTMesh( EllipsoidID e, TriangleMeshID m, CC& contacts )
+{
+   Vec3 normal;
+   Vec3 contactPoint;
+   real penetrationDepth;
+
+   if(gjkEPAcollideHybrid< EllipsoidID, TriangleMeshID >(e, m, normal, contactPoint, penetrationDepth)) {
+      //bodys possibly overlap
+      //normal points form object2 (m) to object1 (e)
+      contacts.addVertexFaceContact( e, m, contactPoint, normal, penetrationDepth );
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      Contact created between ellipsoid " << e->getID()
+            << " and triangle mesh " << m->getID() << " (dist=" << penetrationDepth << ")";
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact generation between an Ellipsoid and a Union.
+ * \ingroup contact_generation
+ *
+ * \param e The colliding ellipsoid.
+ * \param u The colliding union.
+ * \param contacts Contact container for the generated contacts.
+ * \return void
+ *
+ * The collision between an ellipsoid and a union is treated as collisions between the
+ * ellipsoid and all the subbodies of the union.
+ */
+template< typename CC >  // Type of the contact container
+inline void MaxContacts::collideEllipsoidUnion( EllipsoidID e, UnionID u, CC& contacts )
+{
+   for( Union::Iterator it=u->begin(); it!=u->end(); ++it ) {
+      collide( e, *it, contacts );
    }
 }
 //*************************************************************************************************
