@@ -30,7 +30,22 @@
  *       contact whose depth matches a 10^6-sample brute-force extent to 1e-10;
  *   10. an oblique random-orientation sweep (100 pairs, independent random rotations, exact
  *       touch along a random direction through the support functions): depth 0 to 1e-10,
- *       geometric normal and touch point to 1e-8.
+ *       geometric normal and touch point to 1e-8;
+ *   11. reviewer case: the (0.5, 0.25, 0.15) ellipsoid at the origin against a unit box centred
+ *       at (0.99, 0.1, 0) (the contact point was (0.495, -0.2, 0), the midpoint with a box
+ *       CORNER picked by the rounding-level tangential components of the normal): dist -0.01,
+ *       normal (-1, 0, 0), contact point (0.495, 0, 0) to 1e-8; also at y = 0 and y = 0.3;
+ *   12. off-centre box-face sweep: 20 lateral (y, z) offsets of the box within the face
+ *       (|offset| < 0.4) for each of three small rotations of the ellipsoid: the contact point
+ *       equals the ellipsoid's deepest point shifted by half the penetration along the normal
+ *       (1e-8) and lies inside the face, never on an edge or corner; and the ellipsoid-plane
+ *       path (analytic reference: its point lies on the plane) reports the same distance,
+ *       normal and flat-body witness (box point shifted by the other half, 1e-8);
+ *   13. an ellipsoid with equal semi-axes against the box, unrotated and rotated, gives the same
+ *       distance, normal and box-surface witness as the analytic collideSphereBox() for a
+ *       sphere of that radius (1e-10). Placement convention: the GJK/EPA pairs report the
+ *       midpoint of the two witnesses, the analytic sphere-box and ellipsoid-plane functions
+ *       the witness on the flat body; the two differ by half the penetration along the normal.
  *
  *  Serial world setup, no MPI.
  */
@@ -505,6 +520,185 @@ int main()
       expect( worstDepth <= real(1e-10), "oblique touch sweep: depth 0 (1e-10)" );
       expect( worstNormal <= real(1e-8), "oblique touch sweep: geometric normal (1e-8)" );
       expect( worstPoint <= real(1e-8), "oblique touch sweep: contact point at the touch point (1e-8)" );
+   }
+
+   // --- 11. reviewer: off-centre box-face contact ---------------------------------------------
+   // The support point of a box face is not unique; the midpoint of two independently selected
+   // support points inherited half the offset of the corner picked by the 1e-18 tangential
+   // components of the normal. The contact point must lie on the common contact patch.
+   {
+      EllipsoidID e = createEllipsoid( 3000, Vec3( 0, 0, 0 ), real(0.5), real(0.25), real(0.15), mat );
+      BoxID       b = createBox( 3001, Vec3( real(0.99), real(0.1), 0 ), Vec3( 1, 1, 1 ), mat );
+      const real shifts[] = { real(0.1), real(0), real(0.3) };
+      for( real shift : shifts ) {
+         b->setPosition( Vec3( real(0.99), shift, 0 ) );
+         for( int order=0; order<2; ++order ) {
+            log.clear();
+            if( order == 0 ) MaxContacts::collide( e, b, log );
+            else             MaxContacts::collide( b, e, log );
+            char what[160];
+            std::snprintf( what, sizeof what, "reviewer box face (box y=%.1f, %s): exactly one contact", shift, order == 0 ? "e,b" : "b,e" );
+            expect( log.entries.size() == 1, what );
+            if( log.entries.size() != 1 ) continue;
+            const ContactLog::Entry& c( log.entries[0] );
+            const Vec3 nn( c.g1 == e ? c.normal : -c.normal );   // from the box to the ellipsoid
+            if( order == 0 )
+               std::printf( "reviewer box face (box y=%.1f): dist=%.15g normal=(%.3g,%.3g,%.3g) point=(%.15g,%.15g,%.15g)\n",
+                            shift, c.dist, nn[0], nn[1], nn[2], c.pos[0], c.pos[1], c.pos[2] );
+            std::snprintf( what, sizeof what, "reviewer box face (box y=%.1f, %s): dist = -0.01 (1e-12)", shift, order == 0 ? "e,b" : "b,e" );
+            expect( close( c.dist, real(-0.01), real(1e-12) ), what );
+            std::snprintf( what, sizeof what, "reviewer box face (box y=%.1f, %s): normal (-1,0,0) (1e-12)", shift, order == 0 ? "e,b" : "b,e" );
+            expect( ( nn - Vec3( -1, 0, 0 ) ).length() <= real(1e-12), what );
+            std::snprintf( what, sizeof what, "reviewer box face (box y=%.1f, %s): contact point (0.495,0,0) (1e-8)", shift, order == 0 ? "e,b" : "b,e" );
+            expect( ( c.pos - Vec3( real(0.495), 0, 0 ) ).length() <= real(1e-8), what );
+         }
+      }
+      destroy( e );
+      destroy( b );
+   }
+
+   // --- 12. off-centre box-face sweep with the ellipsoid-plane cross-check ---------------------
+   // The ellipsoid is placed so that its +x extreme is at x = 0.5 for each rotation; the unit
+   // box at x = 0.99 (face at x = 0.49, penetration 0.01) is offset laterally within the face.
+   // Expected contact point: the ellipsoid's deepest point shifted by half the penetration
+   // along the normal. The plane x = 0.49 (normal -x) is the analytic reference for the same
+   // geometry: its point is the witness on the flat body, i.e. the box point shifted by the
+   // other half of the penetration.
+   {
+      EllipsoidID e    = createEllipsoid( 3010, Vec3( 0, 0, 0 ), real(0.5), real(0.25), real(0.15), mat );
+      BoxID       b    = createBox( 3011, Vec3( real(0.99), 0, 0 ), Vec3( 1, 1, 1 ), mat );
+      PlaneID     face = createPlane( 3012, Vec3( -1, 0, 0 ), real(-0.49), mat );   // { x : -x = -0.49 }
+
+      std::mt19937 rng( 20260920u );
+      std::uniform_real_distribution<real> U( real(-0.4), real(0.4) );
+      const Vec3 axes[3]   = { Vec3( 0, 0, 1 ), Vec3( 0, 1, 0 ), Vec3( 1, 1, 0 ).getNormalized() };
+      const real angles[3] = { real(0.02), real(-0.05), real(0.04) };
+      const Vec3 ex( 1, 0, 0 );
+
+      int found( 0 ), planeFound( 0 ), configs( 0 );
+      real worstDepth( 0 ), worstNormal( 0 ), worstPoint( 0 ), worstPlaneDepth( 0 ), worstPlaneNormal( 0 ), worstPlanePoint( 0 );
+      bool insideFace( true );
+      for( int r=0; r<3; ++r ) {
+         e->setOrientation( Quat() );
+         e->setPosition( Vec3( 0, 0, 0 ) );
+         e->rotate( axes[r], angles[r] );
+         const Vec3 sx( e->support( ex ) );                 // +x extreme with the centre at the origin
+         e->setPosition( Vec3( real(0.5) - sx[0], 0, 0 ) );
+         const Vec3 deepest( e->support( ex ) );            // now at x = 0.5
+
+         for( int k=0; k<20; ++k ) {
+            const real oy( U(rng) ), oz( U(rng) );
+            b->setPosition( Vec3( real(0.99), oy, oz ) );
+            ++configs;
+
+            log.clear();
+            MaxContacts::collide( e, b, log );
+            if( log.entries.size() == 1 ) {
+               ++found;
+               const ContactLog::Entry c( log.entries[0] );   // copy: the log is reused below
+               const Vec3 nn( c.g1 == e ? c.normal : -c.normal );
+               const Vec3 expectedPoint( deepest - real(0.5) * c.dist * nn );
+               worstDepth  = std::max( worstDepth,  std::fabs( c.dist + real(0.01) ) );
+               worstNormal = std::max( worstNormal, ( nn - Vec3( -1, 0, 0 ) ).length() );
+               worstPoint  = std::max( worstPoint,  ( c.pos - expectedPoint ).length() );
+               if( std::fabs( c.pos[1] - oy ) > real(0.45) || std::fabs( c.pos[2] - oz ) > real(0.45) )
+                  insideFace = false;
+
+               // Plane reference for the same geometry
+               log.clear();
+               MaxContacts::collide( e, face, log );
+               if( log.entries.size() == 1 ) {
+                  ++planeFound;
+                  const ContactLog::Entry& p( log.entries[0] );
+                  const Vec3 np( p.g1 == e ? p.normal : -p.normal );
+                  const Vec3 boxWitness( c.pos - real(0.5) * c.dist * nn );   // the box-face point
+                  worstPlaneDepth  = std::max( worstPlaneDepth,  std::fabs( p.dist - c.dist ) );
+                  worstPlaneNormal = std::max( worstPlaneNormal, ( np - nn ).length() );
+                  worstPlanePoint  = std::max( worstPlanePoint,  ( p.pos - boxWitness ).length() );
+               }
+            }
+            else {
+               std::printf( "  box-face sweep rotation %d offset (%.3f,%.3f): %zu contacts\n", r, oy, oz, log.entries.size() );
+            }
+         }
+      }
+      std::printf( "box-face sweep: %d/%d contacts, worst |dist+0.01|=%.3e, worst normal error=%.3e, worst point error=%.3e; "
+                   "plane cross-check %d/%d: dist %.3e, normal %.3e, witness %.3e\n",
+                   found, configs, worstDepth, worstNormal, worstPoint, planeFound, configs, worstPlaneDepth, worstPlaneNormal, worstPlanePoint );
+      expect( found == configs,               "box-face sweep: one contact for every configuration" );
+      expect( worstDepth  <= real(1e-10),     "box-face sweep: dist = -0.01 (1e-10)" );
+      expect( worstNormal <= real(1e-10),     "box-face sweep: normal (-1,0,0) (1e-10)" );
+      expect( worstPoint  <= real(1e-8),      "box-face sweep: contact point = deepest point shifted by half the penetration (1e-8)" );
+      expect( insideFace,                     "box-face sweep: contact point inside the face, never on an edge or corner" );
+      expect( planeFound == configs,          "box-face sweep: plane reference contact for every configuration" );
+      expect( worstPlaneDepth  <= real(1e-10), "box-face sweep: plane dist equals the box dist (1e-10)" );
+      expect( worstPlaneNormal <= real(1e-10), "box-face sweep: plane normal equals the box normal (1e-10)" );
+      expect( worstPlanePoint  <= real(1e-8),  "box-face sweep: plane point equals the box-face witness (1e-8)" );
+
+      destroy( e );
+      destroy( b );
+      destroy( face );
+   }
+
+   // --- 13. equal semi-axes against the box vs the analytic sphere-box ------------------------
+   // Unrotated and rotated boxes whose face nearest to the origin is at distance 0.19 with the
+   // face centre offset laterally: the ellipsoid-box path must agree with collideSphereBox()
+   // for a sphere of radius 0.2 in distance, normal and box-surface witness.
+   {
+      const real r( real(0.2) );
+      EllipsoidID ball = createEllipsoid( 3020, Vec3( 0, 0, 0 ), r, r, r, mat );
+      SphereID    ref  = createSphere( 3021, Vec3( 0, 0, 0 ), r, mat );
+      BoxID       b    = createBox( 3022, Vec3( 10, 0, 0 ), Vec3( 1, 1, 1 ), mat );
+
+      struct Config { real theta; Vec3 axis; real offT; real offZ; };
+      const Config cfgs[] = {
+         { real(0),    Vec3( 0, 0, 1 ), real(0.1),  real(-0.05) },
+         { real(0),    Vec3( 0, 0, 1 ), real(-0.35), real(0.3) },
+         { real(0.1),  Vec3( 0, 0, 1 ), real(0.2),  real(0.15) },
+         { real(-0.7), Vec3( 0, 0, 1 ), real(-0.1), real(0.25) },
+         { real(0.3),  Vec3( 0, 1, 0 ), real(0.3),  real(-0.2) },
+         { real(0.5),  Vec3( 1, 2, 3 ).getNormalized(), real(-0.25), real(0.1) },
+      };
+      real worstDist( 0 ), worstNormal( 0 ), worstPoint( 0 );
+      int found( 0 );
+      const int n( sizeof( cfgs ) / sizeof( cfgs[0] ) );
+      for( int k=0; k<n; ++k ) {
+         b->setOrientation( Quat() );
+         b->rotate( cfgs[k].axis, cfgs[k].theta );
+         const Vec3 m( b->vectorFromBFtoWF( Vec3( -1, 0, 0 ) ) );   // outward normal of the -x face
+         const Vec3 t( b->vectorFromBFtoWF( Vec3( 0, 1, 0 ) ) );
+         const Vec3 u( b->vectorFromBFtoWF( Vec3( 0, 0, 1 ) ) );
+         // face centre at distance 0.19 from the origin along -m, offset laterally in the face
+         b->setPosition( -real(0.69) * m + cfgs[k].offT * t + cfgs[k].offZ * u );
+
+         log.clear();
+         MaxContacts::collide( ball, b, log );
+         ContactLog refLog;
+         MaxContacts::collide( ref, b, refLog );
+         if( log.entries.size() != 1 || refLog.entries.size() != 1 ) {
+            std::printf( "  sphere-box comparison %d: %zu ellipsoid-box, %zu sphere-box contacts\n", k, log.entries.size(), refLog.entries.size() );
+            continue;
+         }
+         ++found;
+         const ContactLog::Entry& c( log.entries[0] );
+         const ContactLog::Entry& s( refLog.entries[0] );
+         const Vec3 nc( c.g1 == ball ? c.normal : -c.normal );
+         const Vec3 ns( s.g1 == ref  ? s.normal : -s.normal );
+         const Vec3 boxWitness( c.pos - real(0.5) * c.dist * nc );
+         worstDist   = std::max( worstDist,   std::fabs( c.dist - s.dist ) );
+         worstNormal = std::max( worstNormal, ( nc - ns ).length() );
+         worstPoint  = std::max( worstPoint,  ( boxWitness - s.pos ).length() );
+      }
+      std::printf( "sphere-box comparison: %d/%d configurations, worst dist diff=%.3e, normal diff=%.3e, witness diff=%.3e\n",
+                   found, n, worstDist, worstNormal, worstPoint );
+      expect( found == n,                 "sphere-box comparison: one contact from both paths for every configuration" );
+      expect( worstDist   <= real(1e-10), "sphere-box comparison: same distance as collideSphereBox (1e-10)" );
+      expect( worstNormal <= real(1e-10), "sphere-box comparison: same normal as collideSphereBox (1e-10)" );
+      expect( worstPoint  <= real(1e-10), "sphere-box comparison: same box-surface witness as collideSphereBox (1e-10)" );
+
+      destroy( ball );
+      destroy( ref );
+      destroy( b );
    }
 
    if( failures == 0 ) {
