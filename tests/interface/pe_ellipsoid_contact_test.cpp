@@ -47,8 +47,9 @@
  *       sphere of that radius (1e-10, no shift);
  *   14. strictly convex pairs are untouched by the flat-body placement: ellipsoid-ellipsoid
  *       (head-on, tilted, reviewer's oblique touching pair) and ellipsoid-sphere (head-on,
- *       oblique) contact points are bit-identical to values captured before the change, and
- *       equal 0.5 * (support_1(-normal) + support_2(normal)) exactly.
+ *       oblique) contact points match values captured before the change to 1e-12 (tolerance,
+ *       not bit equality: CI builds with other compilers/flags) and equal
+ *       0.5 * (support_1(-normal) + support_2(normal)) to 1e-13.
  *
  *  Placement convention (pe's, split by geometry): two curved bodies -> overlap midpoint
  *  (collideSphereSphere); a curved body against a flat one -> the point on the flat body's
@@ -709,12 +710,15 @@ int main()
       destroy( b );
    }
 
-   // --- 14. strictly convex pairs: witness midpoint, bit-identical to the pre-convention values -
+   // --- 14. strictly convex pairs: witness midpoint, pinned to the pre-convention values --------
    // The flat-body placement must not touch curved-vs-curved pairs. Reference values were
-   // printed at %.17g by the library as of 619093f (midpoint convention for every GJK/EPA pair);
-   // they are compared exactly, and re-derived as 0.5 * (support_1(-normal) + support_2(normal))
-   // (the minimiser hands out normal = -n exactly, so these are the two witness points).
+   // printed at %.17g by the library as of 619093f (midpoint convention for every GJK/EPA pair)
+   // with gcc 13.2.0 -O2. They are compared with a tight tolerance rather than exactly, because
+   // CI builds with other compilers and flags and the minimiser's last ulp may move; a genuine
+   // convention change would shift the point by half the depth (5e-3 here), 1e10 times the
+   // tolerance. The point is also re-derived as 0.5 * (support_1(-normal) + support_2(normal)).
    {
+      const real pinTol( real(1e-12) );
       struct Pin { const char* tag; real dist; Vec3 normal; Vec3 point; };
       const Pin pins[] = {
          { "ellipsoid-ellipsoid head-on",  real(-0.010000000000000009),  Vec3( real(-1), real(-0), real(-0) ),
@@ -766,15 +770,15 @@ int main()
                       pins[k].tag, c.dist, c.pos[0], c.pos[1], c.pos[2] );
          std::snprintf( what, sizeof what, "strictly convex pin (%s): bodies in dispatch order", pins[k].tag );
          expect( c.g1 == g1 && c.g2 == g2, what );
-         std::snprintf( what, sizeof what, "strictly convex pin (%s): dist bit-identical to the pre-convention value", pins[k].tag );
-         expect( c.dist == pins[k].dist, what );
-         std::snprintf( what, sizeof what, "strictly convex pin (%s): normal bit-identical to the pre-convention value", pins[k].tag );
-         expect( c.normal[0] == pins[k].normal[0] && c.normal[1] == pins[k].normal[1] && c.normal[2] == pins[k].normal[2], what );
-         std::snprintf( what, sizeof what, "strictly convex pin (%s): contact point bit-identical to the pre-convention value", pins[k].tag );
-         expect( c.pos[0] == pins[k].point[0] && c.pos[1] == pins[k].point[1] && c.pos[2] == pins[k].point[2], what );
+         std::snprintf( what, sizeof what, "strictly convex pin (%s): dist matches the pre-convention value (1e-12)", pins[k].tag );
+         expect( std::fabs( c.dist - pins[k].dist ) <= pinTol, what );
+         std::snprintf( what, sizeof what, "strictly convex pin (%s): normal matches the pre-convention value (1e-12)", pins[k].tag );
+         expect( ( c.normal - pins[k].normal ).length() <= pinTol, what );
+         std::snprintf( what, sizeof what, "strictly convex pin (%s): contact point matches the pre-convention value (1e-12)", pins[k].tag );
+         expect( ( c.pos - pins[k].point ).length() <= pinTol, what );
          const Vec3 mid( real(0.5) * ( g1->support( -c.normal ) + g2->support( c.normal ) ) );
-         std::snprintf( what, sizeof what, "strictly convex pin (%s): contact point is the witness midpoint exactly", pins[k].tag );
-         expect( c.pos[0] == mid[0] && c.pos[1] == mid[1] && c.pos[2] == mid[2], what );
+         std::snprintf( what, sizeof what, "strictly convex pin (%s): contact point is the witness midpoint (1e-13)", pins[k].tag );
+         expect( ( c.pos - mid ).length() <= real(1e-13), what );
       }
 
       destroy( qs );
