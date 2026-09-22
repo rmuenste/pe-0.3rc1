@@ -8,9 +8,10 @@
  *    - [0,1,0]           -> (0,1,0), hasAngularDofMask() == true
  *    - [0,1], [0,0.5,1], [2,1,1], non-array -> std::invalid_argument naming the key
  *  Setup guard (pe/interface/sim_setup_serial_features.h, called from setupDNSDragSerial):
- *    - key present and particleMotion_ != "rotationOnly" -> std::invalid_argument
- *      "angularDofMask_ requires particleMotion_ = rotationOnly"
- *    - key present and rotationOnly, or key absent under any motion -> accepted
+ *    - key present and particleMotion_ = "fixed" -> std::invalid_argument
+ *      "angularDofMask_ requires particleMotion_ = rotationOnly or free"
+ *    - key present and rotationOnly (or free), or key absent under any motion -> accepted
+ *    (translationOnly and free are pinned by pe_particle_motion_test.cpp)
  *
  *  SimulationConfig is a process singleton and loadFromFile() only overwrites keys that are
  *  present, so the cases run in an order that never needs a reset: the "absent" case goes
@@ -140,7 +141,7 @@ int main() {
          "parsing itself does not refuse angularDofMask_ under fixed (that is the setup guard's job)");
   {
     const std::string m = guardThrows(config);
-    expect(m == "angularDofMask_ requires particleMotion_ = rotationOnly",
+    expect(m == "angularDofMask_ requires particleMotion_ = rotationOnly or free",
            "guard refuses: key present, motion fixed (exact message)");
   }
   // Same state via the setters (the path setupDNSDragSerial sees after loadFromFile).

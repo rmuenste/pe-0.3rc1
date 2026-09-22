@@ -105,6 +105,25 @@ set_tests_properties(pe-angular-dof-mask-config PROPERTIES
   LABELS "unit;serial;interface"
 )
 
+# Contract + body-level test for the two D6.4 particleMotion_ modes. Config: the four values
+# fixed / rotationOnly / translationOnly / free parse (setter and json), an unknown value throws
+# std::invalid_argument; angularDofMask_ is accepted under free and refused under
+# translationOnly with a message naming both. Body level (sphere AND ellipsoid, via
+# applyParticleMotionLocks + applyFluidForces): translationOnly leaves v free and zeros w
+# exactly; free leaves both free and bit-identical to an unlocked body; rotationOnly and fixed
+# unchanged as controls. Serial world, no MPI; writes decks into ./_particle_motion_test/.
+add_executable(pe_particle_motion_test
+  pe_particle_motion_test.cpp
+)
+target_link_libraries(pe_particle_motion_test PRIVATE pe_static)
+add_test(
+  NAME pe-particle-motion
+  COMMAND pe_particle_motion_test
+)
+set_tests_properties(pe-particle-motion PROPERTIES
+  LABELS "unit;serial;interface;rigidbody"
+)
+
 # Pins the ellipsoid support mapping (was a sphere of the semi-major radius), the exact
 # bounding box of a rotated ellipsoid (was the positive axis tips only) and the radial depth.
 # Serial world, no MPI; pure geometry, no solver.

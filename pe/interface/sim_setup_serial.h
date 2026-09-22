@@ -1336,10 +1336,13 @@ inline void setupDNSDragSerial(int cfd_rank) {
         "the lubrication model is sphere-only; disable lubrication for non-spherical bodies");
   }
 
-  // Optional per-axis angular lock (world frame) for the rotationOnly path; refused loudly
-  // under any other particleMotion_ so it can never be a silent no-op. Default (1,1,1).
+  // Optional per-axis angular lock (world frame) for the rotationOnly / free paths; refused
+  // loudly under fixed and translationOnly so it can never be a silent no-op. Default (1,1,1).
+  // particleMotion_: fixed | rotationOnly | translationOnly | free (D6.1/D6.2/D6.4).
   checkAngularDofMaskRequiresRotationOnly(config);
+  const std::string& particleMotion = config.getParticleMotion();
   const Vec3 angularDofMask = config.getAngularDofMask();
+  const Vec3 effectiveAngularMask = effectiveAngularDofMask(config);
 
   const real radius = config.getBenchRadius();
   if (radius <= 0.0 && !isEllipsoid) {
@@ -1371,16 +1374,10 @@ inline void setupDNSDragSerial(int cfd_rank) {
       // so the orbit continues instead of restarting from particleAxis_ with omega = 0.
       // DOF locks are setup state, not body state: re-apply them after the load.
       resumeFromConfiguredCheckpoint(config);
-      const bool rotationOnly = (config.getParticleMotion() == "rotationOnly");
       int restored = 0;
       for (auto it = world->begin(); it != world->end(); ++it) {
         if (it->getType() != sphereType && it->getType() != ellipsoidType) continue;
-        if (rotationOnly) {
-          it->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
-          it->setAngularDofMask(angularDofMask);
-        } else {
-          it->setFixed(true);
-        }
+        applyParticleMotionLocks(*it, particleMotion, angularDofMask);
         ++restored;
       }
       if (restored == 0) {
@@ -1391,9 +1388,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
         std::cout << "\n--DNS DRAG SETUP (RESUMED from pe checkpoint)----------------\n"
                   << " Checkpoint                              = " << config.getResumeCheckpointFile() << "\n"
                   << " Bodies restored                         = " << restored << "\n"
-                  << " Motion                                  = " << (rotationOnly ? "rotationOnly" : "fixed") << "\n"
-                  << " Angular DOF mask                        = (" << angularDofMask[0] << ", "
-                  << angularDofMask[1] << ", " << angularDofMask[2] << ")\n"
+                  << " Motion                                  = " << particleMotion << "\n"
+                  << " Angular DOF mask                        = (" << effectiveAngularMask[0] << ", "
+                  << effectiveAngularMask[1] << ", " << effectiveAngularMask[2] << ")\n"
                   << "-------------------------------------------------------------\n"
                   << std::endl;
       }
@@ -1433,14 +1430,10 @@ inline void setupDNSDragSerial(int cfd_rank) {
             ell->rotate(Vec3(0.0, 0.0, 1.0), M_PI);  // anti-parallel: any perpendicular axis
           }
         }
-        if (config.getParticleMotion() == "rotationOnly") {
-          // D6.2: translation locked, rotation free - the FBM torque drives
-          // the orientation dynamics (Jeffery orbit).
-          ell->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
-          ell->setAngularDofMask(angularDofMask);
-        } else {
-          ell->setFixed(true);
-        }
+        // fixed (D6.1) | rotationOnly (D6.2: the FBM torque drives the Jeffery orbit) |
+        // translationOnly (D6.4 tier S: Happel-Brenner settling at locked orientation) |
+        // free (D6.4 G0 / tier I: six DOFs, buoyancy via the solver's ellipsoid branch).
+        applyParticleMotionLocks(ell, particleMotion, angularDofMask);
         ell->setLinearVel(0.0, 0.0, 0.0);
         ell->setAngularVel(0.0, 0.0, 0.0);
       }
@@ -1453,9 +1446,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
                   << " a-axis direction (world)                = " << dir << "\n"
                   << " Achieved volume fraction                = "
                   << positions.size() * ellVol / domainVolume << "\n"
-                  << " Motion                                  = " << config.getParticleMotion() << "\n"
-                  << " Angular DOF mask                        = (" << angularDofMask[0] << ", "
-                  << angularDofMask[1] << ", " << angularDofMask[2] << ")\n"
+                  << " Motion                                  = " << particleMotion << "\n"
+                  << " Angular DOF mask                        = (" << effectiveAngularMask[0] << ", "
+                  << effectiveAngularMask[1] << ", " << effectiveAngularMask[2] << ")\n"
                   << "-------------------------------------------------------------\n"
                   << std::endl;
       }
@@ -1464,12 +1457,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
     int aidx = 0;
     for (const auto& pos : positions) {
       SphereID sphere = createSphere(++aidx, pos, radius, arrayMaterial, true);
-      if (config.getParticleMotion() == "rotationOnly") {
-        sphere->setLinearDofMask(Vec3(0.0, 0.0, 0.0));  // D6.2 V0 spin control
-        sphere->setAngularDofMask(angularDofMask);
-      } else {
-        sphere->setFixed(true);
-      }
+      // Same four modes as the ellipsoid path (rotationOnly = D6.2 V0 spin control,
+      // free = D6.4 sphere control).
+      applyParticleMotionLocks(sphere, particleMotion, angularDofMask);
       sphere->setLinearVel(0.0, 0.0, 0.0);
       sphere->setAngularVel(0.0, 0.0, 0.0);
     }
@@ -1480,9 +1470,9 @@ inline void setupDNSDragSerial(int cfd_rank) {
                 << " Radius                                  = " << radius << "\n"
                 << " Achieved volume fraction                = "
                 << positions.size() * sphereVol / domainVolume << "\n"
-                << " Motion                                  = " << config.getParticleMotion() << "\n"
-                << " Angular DOF mask                        = (" << angularDofMask[0] << ", "
-                << angularDofMask[1] << ", " << angularDofMask[2] << ")\n"
+                << " Motion                                  = " << particleMotion << "\n"
+                << " Angular DOF mask                        = (" << effectiveAngularMask[0] << ", "
+                << effectiveAngularMask[1] << ", " << effectiveAngularMask[2] << ")\n"
                 << "-------------------------------------------------------------\n"
                 << std::endl;
     }
