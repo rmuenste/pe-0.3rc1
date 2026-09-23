@@ -786,8 +786,51 @@ class SerialStepFeatureSet {
 // setupDNSDragSerial after SimulationConfig::loadFromFile; a free function so the contract
 // is testable without a world/MPI/CFD context.
 inline void checkAngularDofMaskRequiresRotationOnly(const SimulationConfig& config) {
-  if (config.hasAngularDofMask() && config.getParticleMotion() != "rotationOnly") {
-    throw std::invalid_argument("angularDofMask_ requires particleMotion_ = rotationOnly");
+  if (!config.hasAngularDofMask()) return;
+  const std::string& motion = config.getParticleMotion();
+  if (motion == "translationOnly") {
+    // translationOnly IS the angular mask (0,0,0); a user mask next to it is either
+    // redundant or contradictory, never silently one or the other.
+    throw std::invalid_argument(
+        "angularDofMask_ cannot be combined with particleMotion_ = translationOnly "
+        "(translationOnly locks every angular DOF: its angular mask is (0,0,0) by definition)");
+  }
+  if (motion != "rotationOnly" && motion != "free") {
+    throw std::invalid_argument("angularDofMask_ requires particleMotion_ = rotationOnly or free");
+  }
+}
+
+//! Angular DOF mask a body actually receives on the DNS-drag xyz path: (0,0,0) for
+//! translationOnly (the mode is the lock), the deck's angularDofMask_ (default (1,1,1))
+//! for rotationOnly and free, and irrelevant-but-(1,1,1) for fixed.
+inline Vec3 effectiveAngularDofMask(const SimulationConfig& config) {
+  if (config.getParticleMotion() == "translationOnly") return Vec3(0.0, 0.0, 0.0);
+  return config.getAngularDofMask();
+}
+
+//! Applies the particleMotion_ DOF locks of the DNS-drag xyz path to one body (fresh
+//! creation and checkpoint resume alike):
+//!   fixed           -> setFixed(true)                                   (D6.1)
+//!   rotationOnly    -> linear mask (0,0,0), angular mask = angularDofMask (D6.2)
+//!   translationOnly -> linear mask (1,1,1), angular mask (0,0,0)        (D6.4 tier S)
+//!   free            -> linear mask (1,1,1), angular mask = angularDofMask (D6.4 G0/tier I)
+//! "fixed" and "rotationOnly" issue exactly the calls they issued before the two new modes
+//! existed. angularDofMask is the deck value (validated by the guard above).
+inline void applyParticleMotionLocks(BodyID body, const std::string& motion,
+                                     const Vec3& angularDofMask) {
+  if (motion == "fixed") {
+    body->setFixed(true);
+  } else if (motion == "rotationOnly") {
+    body->setLinearDofMask(Vec3(0.0, 0.0, 0.0));
+    body->setAngularDofMask(angularDofMask);
+  } else if (motion == "translationOnly") {
+    body->setLinearDofMask(Vec3(1.0, 1.0, 1.0));
+    body->setAngularDofMask(Vec3(0.0, 0.0, 0.0));
+  } else if (motion == "free") {
+    body->setLinearDofMask(Vec3(1.0, 1.0, 1.0));
+    body->setAngularDofMask(angularDofMask);
+  } else {
+    throw std::invalid_argument("applyParticleMotionLocks: unknown particleMotion_ '" + motion + "'");
   }
 }
 
