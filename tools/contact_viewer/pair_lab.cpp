@@ -833,7 +833,7 @@ bool smokeTest()
                       static_cast<double>( c.pos[0] ), static_cast<double>( c.pos[1] ), static_cast<double>( c.pos[2] ),
                       static_cast<double>( c.normal[0] ), static_cast<double>( c.normal[1] ), static_cast<double>( c.normal[2] ) );
       // An empty preset is reported, not failed: this checks the viewer, and the contact
-      // routines themselves are covered by tests/interface (collideCylinderPlane() is a stub).
+      // routines themselves are covered by tests/interface.
       if( contactLog.entries.empty() )
          std::printf( "            note: no contact generated\n" );
       if( !collideError.empty() )

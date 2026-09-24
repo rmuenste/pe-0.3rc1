@@ -155,6 +155,23 @@ set_tests_properties(pe-ellipsoid-contact PROPERTIES
   TIMEOUT 300
 )
 
+# Cylinder-plane contact generation (MaxContacts::collideCylinderPlane, formerly an empty
+# stub): flat-on-cap / lying / rim cases against analytic values, the contactThreshold
+# boundary, and a random sweep against CylinderBase::support(). Recording contact container,
+# no solver; serial world, no MPI.
+add_executable(pe_cylinder_plane_contact_test
+  pe_cylinder_plane_contact_test.cpp
+)
+target_link_libraries(pe_cylinder_plane_contact_test PRIVATE pe_static)
+add_test(
+  NAME pe-cylinder-plane-contact
+  COMMAND pe_cylinder_plane_contact_test
+)
+set_tests_properties(pe-cylinder-plane-contact PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.

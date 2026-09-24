@@ -95,8 +95,9 @@ A **Mode** window switches between the two at any time.
 - **Boxes slide down the 20° ramp at mu = 0.4**, although tan 20° ≈ 0.36 < mu. The default
   friction model is the approximate one; switching it is the first thing to try (not
   investigated further).
-- **Cylinders get no ground contact**: `MaxContacts::collideCylinderPlane()` is an empty stub.
-  The drop scenario warns when a cylinder is selected.
+- **Cylinder-plane** contacts were missing (`MaxContacts::collideCylinderPlane()` was an empty
+  stub, cylinders fell through the ground); now implemented with up to four rim points per end
+  cap and covered by `tests/interface/pe_cylinder_plane_contact_test.cpp`.
 
 **Polyscope's own demo app** (from the Polyscope repo) is not built by the fetch. Its source is
 in `build-viewer/_deps/polyscope-src/examples/demo-app/`; add `add_subdirectory(examples/demo-app)`

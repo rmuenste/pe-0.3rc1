@@ -715,8 +715,6 @@ void drawScenarioWindow()
       ImGui::InputDouble( "drop clearance [s]", &s.dropHeight, 0.0, 0.0, "%.3g" );
       ImGui::InputDouble( "tilt x [deg]", &s.dropTilt[0], 0.0, 0.0, "%.3g" );
       ImGui::InputDouble( "tilt y [deg]", &s.dropTilt[1], 0.0, 0.0, "%.3g" );
-      if( s.dropShape == kDropCylinder )
-         ImGui::TextColored( ImVec4( 1.0f, 0.6f, 0.2f, 1.0f ), "note: collideCylinderPlane() is a stub (no contacts)" );
    }
 
    ImGui::InputDouble( "box size s", &s.size, 0.0, 0.0, "%.4g" );
@@ -861,6 +859,24 @@ bool smokeTest()
       if( !simError.empty() )
          ok = false;
    }
+
+   // Cylinders dropped onto the ground: before collideCylinderPlane() was implemented they fell
+   // through it. After 3 s they must rest on it (centre at least r = 0.5 s above the ground).
+   const Scenario saved = staged;
+   staged.kind      = kDrop;
+   staged.dropShape = kDropCylinder;
+   buildScene();
+   step( 1500 );
+   double lowest = 1.0e30;
+   for( const SimBody& sb : simBodies )
+      lowest = std::min( lowest, static_cast<double>( sb.body->getPosition()[2] ) );
+   const bool resting = simError.empty() && lowest > 0.49 * active.size && kineticEnergy() < 1.0e-6;
+   std::printf( "cylinder drop: lowest centre z %.4f (r = %.2f), E_kin %.3e -> %s\n", lowest,
+                0.5 * active.size, kineticEnergy(), resting ? "resting on the ground" : "FAILED" );
+   ok = ok && resting;
+   staged = saved;
+   buildScene();
+
    return ok;
 }
 

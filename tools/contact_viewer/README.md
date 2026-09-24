@@ -27,9 +27,10 @@ Command line:
 - `pe_contact_viewer [--pair | --stack]` — start mode (default Stack Lab).
 - `pe_contact_viewer --smoke` — headless self check of both modes on Polyscope's mock OpenGL
   backend: every Pair Lab preset and all 36 shape pairs, the gizmo pose round trip, and every
-  Stack Lab scenario stepped for 1 s (3 s for the drop). Prints contacts, a contacts-per-pair
-  matrix (a `0` for an overlapping pair means the routine generates nothing, e.g. the
-  `collideCylinderPlane()` stub) and per-scenario stability numbers.
+  Stack Lab scenario stepped for 1 s (3 s for the drop), plus a cylinder drop that must end
+  resting on the ground. Prints contacts, a contacts-per-pair
+  matrix (a `0` for an overlapping pair means the routine generates nothing; plane-plane is
+  0 by design) and per-scenario stability numbers.
 - `pe_contact_viewer [--pair | --stack] --screenshot out.png [--preset k] [--steps n]` — renders
   preset/scenario `k` (after `n` steps in Stack Lab) to an image and exits.
 

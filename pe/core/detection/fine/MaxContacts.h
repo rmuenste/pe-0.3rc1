@@ -4059,12 +4059,58 @@ void MaxContacts::collideCylinderCylinder( CylinderID c1, CylinderID c2, CC& con
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * The cylinder surface closest to a plane is always on one of the two rims (the circular edges
+ * of the end caps). Per rim four candidate points are tested: the rim point deepest along the
+ * plane's inverse normal \f$ -n \f$, the opposite rim point and the two rim points in between.
+ * Every candidate whose signed distance to the plane is below pe::contactThreshold becomes a
+ * contact. This yields
+ *  - one contact for a cylinder standing on its rim (tilted),
+ *  - two contacts, the end points of the contact line, for a cylinder lying on its side,
+ *  - four contacts, a square support like the corners of collideBoxPlane(), for a cylinder
+ *    standing flat on an end cap.
+ * When the axis is parallel to \f$ n \f$ the deepest rim direction is undefined; the body
+ * frame y axis is used instead, which only rotates the square of support points.
+ *
+ * The normal is the plane normal (pointing from the plane towards the cylinder) and the
+ * contact points are placed on the plane's surface, the convention of collideSpherePlane()
+ * and collideEllipsoidPlane() for a body against a flat one.
  */
 template< typename CC >  // Type of the contact container
-void MaxContacts::collideCylinderPlane( CylinderID /*c*/, PlaneID /*p*/, CC& /*contacts*/ )
+void MaxContacts::collideCylinderPlane( CylinderID c, PlaneID p, CC& contacts )
 {
-   // TODO: collide implementation
+   const Vec3& n( p->getNormal() );
+   const Rot3& R( c->getRotation() );
+   const Vec3  axis( R[0], R[3], R[6] );     // body frame x axis in world coordinates
+   const real  r( c->getRadius() );
+   const Vec3  halfAxis( real(0.5) * c->getLength() * axis );
+
+   // Rim direction of steepest descent: -n projected onto the cap plane. For an axis (nearly)
+   // parallel to n every rim point is equally deep; the body y axis then fixes the square.
+   Vec3 u( -( n - ( trans( n ) * axis ) * axis ) );
+   const real ulen( u.length() );
+   if( ulen > real(1e-12) )
+      u /= ulen;
+   else
+      u = Vec3( R[1], R[4], R[7] );
+   const Vec3 v( axis % u );                 // completes the rim frame, |v| = 1
+
+   const Vec3 rimOffsets[4] = { r * u, -r * u, r * v, -r * v };
+
+   for( int cap = 0; cap < 2; ++cap ) {
+      const Vec3 capCenter( c->getPosition() + ( cap == 0 ? -halfAxis : halfAxis ) );
+      for( const Vec3& offset : rimOffsets ) {
+         const Vec3 point( capCenter + offset );
+         const real dist( trans( n ) * point - p->getDisplacement() );
+         if( dist < contactThreshold ) {
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "      Contact created between cylinder " << c->getID()
+                   << " and plane " << p->getID() << " (dist=" << dist << ")";
+            }
+
+            contacts.addVertexFaceContact( c, p, point - dist * n, n, dist );
+         }
+      }
+   }
 }
 //*************************************************************************************************
 
