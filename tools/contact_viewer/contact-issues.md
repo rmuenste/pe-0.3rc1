@@ -6,41 +6,6 @@ solver and `pe::detection::fine::MaxContacts`.
 
 ## Open problems
 
-### Ramp scenario depends on what ran before it
-
-Built fresh, the boxes on the 20° ramp stick at mu = 0.4 as they should (tan 20° ≈ 0.36):
-kinetic energy ~1e-12, drift of the top box ~8e-7 after 1 s. After a Reset from a scenario that
-ended with boxes resting on boxes, the rebuilt ramp boxes get no reaction from the fixed ramp and
-fall through it, although `World::clear()` ran in between.
-
-Reproduction (Stack Lab, 500 steps of dt = 2e-3 each, same process):
-
-| Run before the ramp | Ramp E_kin after 1 s | Top-box drift |
-|---|---|---|
-| nothing / ramp / drop | 9.7e-13 | 8.0e-7 |
-| box tower | 3.1e+1 | 2.4 |
-| box pyramid | 2.2e+2 | 2.9 |
-| brick wall | 3.6 | 0.95 |
-| mixed-shape stack | 0.52 | 0.29 |
-
-A step trace after the tower shows the first ramp box falling at exactly g from the first step
-(v_z = -g dt, -2 g dt, ...) while the solver still reports contacts, i.e. none of them acts on
-that box.
-
-- Only the ramp is affected: it is the one scenario with a fixed body other than the ground
-  plane (a fixed box). Every other scenario gives identical numbers whatever ran before.
-- Not caused by the multi-point cylinder manifolds: the old and the new `MaxContacts.h` give
-  identical ramp numbers in every order.
-- Ruled out: randomness in the solver (none), warm starting (impulses `p_` are reset per step),
-  stale per-body solver arrays (`v_`/`w_`/`dv_`/`dw_` are rewritten every step), static state in
-  `collideBoxBox` (none), rotating the ramp after `setFixed( true )` (fixing it last changes
-  nothing). `World::clear()` clears the coarse detector (`HashGrids::clear()`: grids,
-  `nonGridBodies_`, `bodiesToAdd_`) and deletes the bodies.
-- Still to check: the coarse detector's handling of fixed non-plane bodies after a clear, and
-  state kept by the collision system outside `clear()` (attachables, joints, contact pool).
-
-Workaround: restart the viewer before trusting a ramp run.
-
 ### Remaining gaps in contact generation
 
 From a survey of `MaxContacts::collide()` and every routine it dispatches to:
@@ -79,6 +44,26 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   plot.
 
 ## Resolved
+
+- **Fixed bodies inherited a stale velocity correction** (found as "the ramp scenario depends on
+  what ran before it"). The hard-contact solvers keep per-body velocity corrections in `dv_` /
+  `dw_`, indexed by the body's slot in the body storage and resized, not reset, every step.
+  `initializeVelocityCorrections()` wrote them only for awake, non-fixed bodies, so a fixed
+  body's slot kept the correction of whichever body used that index before. A fixed body never
+  receives an impulse, so the stale value persisted and acted as a phantom velocity of the fixed
+  body in every contact with it: boxes resting on a fixed ramp saw the ramp move away, got no
+  reaction and fell through it (drift 2.4 after 1 s instead of 8e-7).
+  - Triggered whenever a fixed non-plane body lands in a slot another body used before: after
+    `World::clear()` (Stack Lab Reset; the ramp inherited the bottom tower box's correction), and
+    within a single run when another body is destroyed (`BodyStorage::remove()` swaps the last
+    body into the freed slot). Moving bodies in and out of local storage (MPI migration) can
+    re-index bodies the same way; not tested.
+  - Fresh worlds were unaffected (the arrays start zeroed), as was the ground plane (slot 0,
+    which the previous world's plane also left untouched), which is why only the ramp showed it.
+  - Fix: `initializeVelocityCorrections()` zeroes `dv`/`dw` first, in `HardContactEulerLagrange`,
+    `HardContactAndFluid` and `HardContactSemiImplicitTimesteppingSolvers`.
+    `tests/interface/pe_fixed_body_stale_correction_test.cpp` covers the fresh, after-clear and
+    after-destroy cases (fails without the fix: drift 2.15 and 2.49).
 
 - **Cylinder-plane** had no contact generation (`collideCylinderPlane()` was an empty stub;
   cylinders fell through the ground). Now up to four rim points per end cap;

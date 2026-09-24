@@ -4802,6 +4802,14 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::initializeVelocityCorrections( BodyID body, Vec3& dv, Vec3& dw, real dt ) const
 {
+   // Fixed and sleeping bodies get no correction. dv/dw are slots of dv_/dw_, which are resized
+   // (not reset) every step, so a slot left unwritten keeps the correction of whichever body used
+   // that index before (after World::clear(), a destroyed body or a migration). A fixed body never
+   // receives an impulse that would overwrite it, so the stale value would act as a phantom
+   // velocity of the fixed body in every contact with it for the rest of the run.
+   dv = Vec3();
+   dw = Vec3();
+
    if( body->awake_ ) {
       if( !body->isFixed() ) {
          // The Euler-Lagrange semi-implicit hydro update is applied by the

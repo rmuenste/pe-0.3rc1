@@ -189,6 +189,23 @@ set_tests_properties(pe-cylinder-manifold PROPERTIES
   TIMEOUT 120
 )
 
+# Hard-contact solvers: a fixed body must not inherit the stale velocity correction of a previous
+# body in its dv_/dw_ slot (after World::clear() or when BodyStorage::remove() swaps it into a
+# destroyed body's slot). Boxes resting on a fixed ramp must stick in all three cases.
+# Serial world, no MPI.
+add_executable(pe_fixed_body_stale_correction_test
+  pe_fixed_body_stale_correction_test.cpp
+)
+target_link_libraries(pe_fixed_body_stale_correction_test PRIVATE pe_static)
+add_test(
+  NAME pe-fixed-body-stale-correction
+  COMMAND pe_fixed_body_stale_correction_test
+)
+set_tests_properties(pe-fixed-body-stale-correction PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.
