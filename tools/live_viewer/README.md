@@ -55,7 +55,7 @@ contact (stacking). Full reference: `tools/contact_viewer/README.md`.
 cmake -S . -B build-viewer -DPE_BUILD_CONTACT_VIEWER=ON
 cmake --build build-viewer --target pe_contact_viewer -j
 ./build-viewer/tools/contact_viewer/pe_contact_viewer            # Stack Lab (simulation, default)
-./build-viewer/tools/contact_viewer/pe_contact_viewer --pair     # Pair Lab (static two-body view)
+./build-viewer/tools/contact_viewer/pe_contact_viewer --pair     # Pair Lab (two posed bodies)
 ```
 
 A **Mode** window switches between the two at any time.
@@ -74,9 +74,12 @@ A **Mode** window switches between the two at any time.
 - Plots: kinetic energy, solver max penetration, contact count, drift of the top body.
 - Ctrl + left-drag pulls a body with a spring (same mechanism as this viewer).
 
-**Pair Lab** — first things to try:
+**Pair Lab** — two posed bodies over a ground plane, with the same Run/Pause/Step/Reset, `dt`
+and Ctrl + left-drag controls; the pose is the initial state and Reset returns to it. First
+things to try:
 
 - Pick a preset, tick **gizmo** on body B and drag it; contacts and sweep plots update live.
+- Press Run (space) to let the pair evolve from that pose; Reset (`r`) to go back.
 - In the **Contacts** window, click a row (or a red marker in the 3D view) for the support-gap
   check of that contact.
 - In the **Sweep** window, drag the yellow line to scrub body B's `pos z` through the range.

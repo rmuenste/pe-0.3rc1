@@ -8,6 +8,7 @@ add_executable(pe_contact_viewer
   contact_viewer.cpp
   pair_lab.cpp
   stack_lab.cpp
+  sim_controls.cpp
 )
 # Polyscope's headers pull in glm/gtx/*; make the define explicit rather than
 # relying on the polyscope target to propagate it.

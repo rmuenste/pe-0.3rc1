@@ -10,12 +10,15 @@
 
 namespace pairlab {
 
-//! Makes Pair Lab the active mode: no gravity, no ground, (re)builds the posed pair. Requires
-//! an initialized Polyscope; call after the other mode's structures were removed.
+//! Makes Pair Lab the active mode and (re)builds the posed pair at t = 0. Requires an
+//! initialized Polyscope; call after the other mode's structures were removed.
 void activate();
 
 //! Loads the preset pair \a index (clamped to the preset list).
 void loadPreset( int index );
+
+//! Advances the simulation of the posed pair by \a steps time steps (headless use).
+void advance( int steps );
 
 //! Per-frame callback: pose controls, contact generation, overlay, table, sweep plots.
 void frame();

@@ -1,13 +1,18 @@
 //=================================================================================================
 /*!
  *  \file tools/contact_viewer/pair_lab.cpp
- *  \brief Pair Lab mode of the contact viewer: static narrow-phase inspection of two bodies
+ *  \brief Pair Lab mode of the contact viewer: narrow-phase inspection of two bodies
  *
- *  Two bodies, no time stepping. Every pose or shape edit re-runs
+ *  Two bodies over an optional ground plane. Every pose or shape edit re-runs
  *  pe::detection::fine::MaxContacts::collide() on the pair into a recording container
  *  (ContactOverlay.h) and mirrors the result: contact points, normals, a contact table, the
  *  reversed-dispatch-order comparison, the support-point witnesses along each contact normal,
  *  and a one-degree-of-freedom sweep of contact count / minimum distance.
+ *
+ *  The posed pair (plus per-body "fixed" flags and initial velocities) is also the initial state
+ *  of a simulation driven by the shared controls (SimControls.h): run, pause, step, Reset back
+ *  to the posed state, Ctrl + left-drag. While time is past zero the pose editors and the sweep
+ *  are locked (they act on the posed state); the contact analysis follows the current state.
  */
 //=================================================================================================
 
@@ -40,6 +45,7 @@
 #include "ContactOverlay.h"
 #include "PairLab.h"
 #include "ShapeMeshes.h"
+#include "SimControls.h"
 
 using namespace pe;
 using pe::detection::fine::MaxContacts;
@@ -73,6 +79,10 @@ struct BodySpec {
    double semiAxes[3] = { 0.5, 0.25, 0.15 };  // ellipsoid
    double pos[3]      = { 0.0, 0.0, 0.0 };
    double eulerDeg[3] = { 0.0, 0.0, 0.0 };
+   // Initial state of the simulation (planes are always fixed).
+   bool   fixed       = false;
+   double vel[3]      = { 0.0, 0.0, 0.0 };
+   double angVel[3]   = { 0.0, 0.0, 0.0 };   // [rad/s]
 
    BodySpec& at( double x, double y, double z )      { pos[0] = x; pos[1] = y; pos[2] = z; return *this; }
    BodySpec& rotated( double x, double y, double z ) { eulerDeg[0] = x; eulerDeg[1] = y; eulerDeg[2] = z; return *this; }
@@ -159,6 +169,26 @@ struct SwapCheck {
 SwapCheck swapCheck;
 const double kSwapTolerance = 1.0e-8;
 
+// Ground plane: a fixed pe plane (uid 3) drawn as Polyscope's ground; by default kept just under
+// the posed pair while the pair is edited.
+bool    groundOn     = true;
+bool    groundAuto   = true;
+double  groundHeight = 0.0;
+PlaneID ground       = nullptr;
+viewer::ContactLog groundLog;     // collide( A, ground ), collide( B, ground )
+
+// Simulation from the posed state
+simctl::Clock simClock;
+// The presets penetrate by 0.01 (the static analysis shows real depths). The solver turns
+// penetration into a separation velocity erp * depth / dt that stays in the body, so a penetrating
+// initial state launches the bodies (7 m/s for 0.01 at dt = 1e-3). When set, the first step from
+// the posed state first translates the bodies apart; the posed state itself is unchanged.
+bool   startTouching   = true;
+double removedPenetration = 0.0;   // largest initial penetration removed at the start of the run
+std::vector<double> tBuf, keBuf, minDistBuf, countBuf;
+
+bool simulating() { return simClock.steps > 0; }
+
 // One-degree-of-freedom sweep
 int    sweepBody    = 1;
 int    sweepDof     = 2;
@@ -175,10 +205,18 @@ std::vector<double> sweepX, sweepCount, sweepMinDist;
 //
 //=================================================================================================
 
-BodyID createBody( const BodySpec& s, pe::id_t uid )
+//! Pair friction is additive (0.3 + 0.3 = 0.6), restitution 0.
+MaterialID pairMaterial()
 {
    // Materials survive World::clear(); create it exactly once.
    static const MaterialID material = createMaterial( "contact_viewer", 1.0, 0.0, 0.3, 0.3, 0.25, 200, 1000, 10, 11 );
+   return material;
+}
+
+
+BodyID createBody( const BodySpec& s, pe::id_t uid )
+{
+   const MaterialID material = pairMaterial();
 
    const Vec3 origin( 0, 0, 0 );
    switch( s.kind ) {
@@ -244,12 +282,60 @@ void applyPose( int i )
 }
 
 
-//! Shape or size changed: recreate both bodies and their mirror meshes.
+//! Lowest point of the pair (planes excluded, exact via the support function); 0 without a
+//! finite body.
+double lowestPoint()
+{
+   double z = 0.0;
+   bool   any = false;
+   for( int i = 0; i < 2; ++i ) {
+      if( specs[i].kind == kPlane )
+         continue;
+      const double zi = static_cast<double>( bodies[i]->support( Vec3( 0, 0, -1 ) )[2] );
+      z   = any ? std::min( z, zi ) : zi;
+      any = true;
+   }
+   return z;
+}
+
+
+void updateGroundDisplay()
+{
+   polyscope::options::groundPlaneMode       = ( ground != nullptr ) ? polyscope::GroundPlaneMode::TileReflection
+                                                                     : polyscope::GroundPlaneMode::None;
+   polyscope::options::groundPlaneHeightMode = polyscope::GroundPlaneHeightMode::Manual;
+   polyscope::options::groundPlaneHeight     = static_cast<float>( groundHeight );
+}
+
+
+//! Moves the ground to groundHeight (just under the pair when groundAuto).
+void placeGround()
+{
+   if( ground == nullptr )
+      return;
+   if( groundAuto )
+      groundHeight = lowestPoint();
+   ground->setPosition( Vec3( 0.0, 0.0, groundHeight ) );
+   updateGroundDisplay();
+}
+
+
+//! Shape, size, initial state or ground changed, or back to the posed state: recreate the world
+//! (both bodies, the ground and their mirror meshes) at t = 0.
 void rebuildScene()
 {
+   simctl::mouseSpring().end();
+   simctl::controls().running     = false;
+   simctl::controls().queuedSteps = 0;
+   simClock.reset();
+   for( std::vector<double>* buf : { &tBuf, &keBuf, &minDistBuf, &countBuf } )
+      buf->clear();
+
    contactLog.clear();    // the logs hold pointers into the world being cleared
    swappedLog.clear();
+   groundLog.clear();
    theWorld()->clear();
+   ground = nullptr;
 
    for( int i = 0; i < 2; ++i ) {
       bodies[i] = createBody( specs[i], static_cast<pe::id_t>( i + 1 ) );
@@ -261,7 +347,42 @@ void rebuildScene()
       meshes[i]->setEdgeWidth( ( specs[i].kind == kBox || specs[i].kind == kPlane ) ? 1.0 : 0.0 );
       setGizmoEnabled( meshes[i], gizmo[i] );
       applyPose( i );
+
+      if( specs[i].kind != kPlane ) {
+         if( specs[i].fixed ) {
+            bodies[i]->setFixed( true );
+         }
+         else {
+            bodies[i]->setLinearVel( Vec3( specs[i].vel[0], specs[i].vel[1], specs[i].vel[2] ) );
+            bodies[i]->setAngularVel( Vec3( specs[i].angVel[0], specs[i].angVel[1], specs[i].angVel[2] ) );
+         }
+      }
    }
+
+   if( groundOn ) {
+      ground = createPlane( 3, Vec3( 0, 0, 1 ), Vec3( 0, 0, 0 ), pairMaterial() );
+      placeGround();
+   }
+   updateGroundDisplay();
+}
+
+
+//! PE -> Polyscope while simulating.
+void updateMirror()
+{
+   for( int i = 0; i < 2; ++i ) {
+      meshPose[i] = viewer::bodyTransform( bodies[i] );
+      meshes[i]->setTransform( meshPose[i] );
+   }
+}
+
+
+//! The gizmo edits the posed state, so it is hidden while time is past zero.
+void syncGizmos()
+{
+   for( int i = 0; i < 2; ++i )
+      if( meshes[i] != nullptr )
+         setGizmoEnabled( meshes[i], gizmo[i] && !simulating() );
 }
 
 
@@ -466,18 +587,133 @@ void runSweep()
 void refresh()
 {
    collideError.clear();
+   if( !simulating() )
+      placeGround();
    runCollide( bodies[0], bodies[1], contactLog );
    runCollide( bodies[1], bodies[0], swappedLog );
    compareDispatchOrders();
    if( selected >= static_cast<int>( contactLog.entries.size() ) )
       selected = -1;
 
+   groundLog.clear();
+   if( ground != nullptr ) {
+      viewer::ContactLog log;
+      for( int i = 0; i < 2; ++i ) {
+         if( specs[i].kind == kPlane )
+            continue;
+         runCollide( bodies[i], ground, log );
+         groundLog.entries.insert( groundLog.entries.end(), log.entries.begin(), log.entries.end() );
+      }
+   }
+
    viewer::drawContactOverlay( "contacts", contactLog, overlay );
+   viewer::drawContactOverlay( "ground contacts", groundLog, overlay );
    drawSelection();
    drawWitnesses();
-   if( sweepAuto )
+   if( sweepAuto && !simulating() )
       runSweep();
    dirty = false;
+}
+
+
+double kineticEnergy()
+{
+   double e = 0.0;
+   for( int i = 0; i < 2; ++i ) {
+      if( bodies[i]->isFixed() )
+         continue;
+      const Vec3& v = bodies[i]->getLinearVel();
+      const Vec3& w = bodies[i]->getAngularVel();
+      e += 0.5 * static_cast<double>( bodies[i]->getMass() * ( trans( v ) * v ) );
+      e += 0.5 * static_cast<double>( trans( w ) * ( bodies[i]->getInertia() * w ) );
+   }
+   return e;
+}
+
+
+//! Movable body of a contact to translate: B unless B cannot move.
+int movableIndex( int preferred )
+{
+   const int other = 1 - preferred;
+   if( specs[preferred].kind != kPlane && !bodies[preferred]->isFixed() ) return preferred;
+   if( specs[other].kind     != kPlane && !bodies[other]->isFixed() )     return other;
+   return -1;
+}
+
+
+//! Removes the initial penetration of the posed state (see startTouching): lifts bodies out of the
+//! ground and translates the movable body of the pair along the deepest A-B contact normal by the
+//! deepest depth, a few rounds so that one correction cannot undo the other.
+void separateInitialState()
+{
+   removedPenetration = 0.0;
+   for( int round = 0; round < 4; ++round ) {
+      bool moved = false;
+
+      if( ground != nullptr )
+         for( int i = 0; i < 2; ++i ) {
+            if( specs[i].kind == kPlane || bodies[i]->isFixed() )
+               continue;
+            const double depth = groundHeight - static_cast<double>( bodies[i]->support( Vec3( 0, 0, -1 ) )[2] );
+            if( depth > 0.0 ) {
+               bodies[i]->translate( Vec3( 0.0, 0.0, depth ) );
+               removedPenetration = std::max( removedPenetration, depth );
+               moved = true;
+            }
+         }
+
+      viewer::ContactLog log;
+      runCollide( bodies[0], bodies[1], log );
+      const viewer::ContactLog::Entry* deepest = nullptr;
+      for( const viewer::ContactLog::Entry& c : log.entries )
+         if( c.dist < real(0) && ( deepest == nullptr || c.dist < deepest->dist ) )
+            deepest = &c;
+      if( deepest != nullptr ) {
+         // The normal points from g2 towards g1: g1 moves along +n, g2 along -n.
+         const int g1 = ( deepest->g1 == bodies[0] ) ? 0 : 1;
+         const int i  = movableIndex( 1 );
+         if( i >= 0 ) {
+            const real depth = -deepest->dist;
+            bodies[i]->translate( ( i == g1 ? depth : -depth ) * deepest->normal );
+            removedPenetration = std::max( removedPenetration, static_cast<double>( depth ) );
+            moved = true;
+         }
+      }
+
+      if( !moved )
+         break;
+   }
+}
+
+
+//! Advances the pair (and records the history) by \a n steps.
+void step( int n )
+{
+   if( n <= 0 || !simClock.error.empty() )
+      return;
+   if( simClock.steps == 0 && startTouching )
+      separateInitialState();
+   std::vector<BodyID> dynamic;
+   for( int i = 0; i < 2; ++i )
+      if( specs[i].kind != kPlane )
+         dynamic.push_back( bodies[i] );
+   simctl::advance( n, dynamic, simClock );
+   updateMirror();
+
+   // A-B contacts of the new state for the history (refresh() redraws the overlay).
+   viewer::ContactLog log;
+   runCollide( bodies[0], bodies[1], log );
+   double minDist = std::numeric_limits<double>::quiet_NaN();
+   for( const viewer::ContactLog::Entry& c : log.entries )
+      minDist = std::isnan( minDist ) ? static_cast<double>( c.dist ) : std::min( minDist, static_cast<double>( c.dist ) );
+   if( tBuf.size() > 60000 )
+      for( std::vector<double>* buf : { &tBuf, &keBuf, &minDistBuf, &countBuf } )
+         buf->erase( buf->begin(), buf->begin() + static_cast<long>( buf->size() / 2 ) );
+   tBuf.push_back( simClock.time );
+   keBuf.push_back( kineticEnergy() );
+   minDistBuf.push_back( minDist );
+   countBuf.push_back( static_cast<double>( log.entries.size() ) );
+   dirty = true;
 }
 
 
@@ -517,10 +753,18 @@ std::string createCall( const BodySpec& s, int uid )
 //! narrow phase generated right now as comments (observed values, not verified expectations).
 std::string testCaseSnippet()
 {
+   // The current state: the posed one at t = 0, the simulated one afterwards.
+   BodySpec current[2] = { specs[0], specs[1] };
+   for( int i = 0; i < 2; ++i )
+      poseFromTransform( viewer::bodyTransform( bodies[i] ), current[i] );
+
    std::ostringstream o;
    o << std::setprecision( 17 );
-   o << "   // Pair Lab: " << kShapeNames[specs[0].kind] << " (a) vs " << kShapeNames[specs[1].kind] << " (b)\n";
-   o << createCall( specs[0], 1 ) << createCall( specs[1], 2 );
+   o << "   // Pair Lab: " << kShapeNames[specs[0].kind] << " (a) vs " << kShapeNames[specs[1].kind] << " (b)";
+   if( simulating() )
+      o << ", simulated state at t = " << simClock.time << " (" << simClock.steps << " steps)";
+   o << "\n";
+   o << createCall( current[0], 1 ) << createCall( current[1], 2 );
    o << "   ContactLog log;\n   MaxContacts::collide( a, b, log );\n";
    o << "   // observed: " << contactLog.entries.size() << " contact(s), normal points from g2 to g1\n";
    for( std::size_t k = 0; k < contactLog.entries.size(); ++k ) {
@@ -589,6 +833,16 @@ int drawBodyControls( int i )
       change = std::max( change, 1 );
    }
 
+   if( s.kind != kPlane ) {
+      if( ImGui::Checkbox( "fixed", &s.fixed ) ) change = 2;
+      if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+         ImGui::SetTooltip( "Immovable in the simulation (infinite mass), e.g. a base or a ramp." );
+      if( !s.fixed ) {
+         if( dragDoubles( "initial velocity", s.vel, 3, 0.01f, -100.0, 100.0, "%.3f" ) ) change = 2;
+         if( dragDoubles( "initial ang. vel. [rad/s]", s.angVel, 3, 0.02f, -100.0, 100.0, "%.3f" ) ) change = 2;
+      }
+   }
+
    ImGui::PopID();
    return change;
 }
@@ -610,6 +864,9 @@ void drawPairWindow()
       rebuildScene();
    }
 
+   if( simulating() )
+      ImGui::TextColored( ImVec4( 1.0f, 0.8f, 0.2f, 1.0f ), "t = %.4f s: the pose is locked, Reset (r) returns to it", simClock.time );
+   ImGui::BeginDisabled( simulating() );
    for( int i = 0; i < 2; ++i ) {
       if( !ImGui::CollapsingHeader( kBodyNames[i], ImGuiTreeNodeFlags_DefaultOpen ) )
          continue;
@@ -619,6 +876,23 @@ void drawPairWindow()
       else if( change == 1 )
          applyPose( i );
    }
+
+   if( ImGui::CollapsingHeader( "Ground plane", ImGuiTreeNodeFlags_DefaultOpen ) ) {
+      if( ImGui::Checkbox( "ground plane", &groundOn ) )
+         rebuildScene();
+      if( groundOn ) {
+         ImGui::SameLine();
+         if( ImGui::Checkbox( "keep under the pair", &groundAuto ) )
+            dirty = true;
+         if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+            ImGui::SetTooltip( "The ground follows the lowest point of the posed pair (touching, no gap)." );
+         ImGui::BeginDisabled( groundAuto );
+         if( dragDoubles( "height", &groundHeight, 1, 0.002f, -100.0, 100.0, "%.4f" ) )
+            dirty = true;
+         ImGui::EndDisabled();
+      }
+   }
+   ImGui::EndDisabled();
 
    if( ImGui::CollapsingHeader( "Overlay", ImGuiTreeNodeFlags_DefaultOpen ) ) {
       const char* colorModes[] = { "sign of dist", "contact type" };
@@ -651,6 +925,8 @@ void drawContactsWindow()
 
    ImGui::Text( "collide( A, B ): %d contact(s)   |   contactThreshold = %.3g",
                 static_cast<int>( contactLog.entries.size() ), static_cast<double>( contactThreshold ) );
+   if( ground != nullptr )
+      ImGui::TextDisabled( "ground contacts (A, B): %d", static_cast<int>( groundLog.entries.size() ) );
    if( !collideError.empty() )
       ImGui::TextColored( ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ), "collide() threw: %s", collideError.c_str() );
 
@@ -713,6 +989,11 @@ void drawContactsWindow()
 void drawSweepWindow()
 {
    ImGui::Begin( "Sweep" );
+   if( simulating() ) {
+      ImGui::TextDisabled( "The sweep varies the posed state: Reset (r) to use it." );
+      ImGui::End();
+      return;
+   }
 
    bool changed = false;
    changed |= ImGui::Combo( "body", &sweepBody, kBodyNames, 2 );
@@ -763,6 +1044,58 @@ void drawSweepWindow()
 }
 
 
+void drawSimulationWindow()
+{
+   ImGui::Begin( "Simulation" );
+
+   if( simctl::drawStepControls() )
+      rebuildScene();
+   ImGui::Text( "t = %.4f s   steps: %ld", simClock.time, simClock.steps );
+   ImGui::TextDisabled( "starts from the posed pair; Reset returns to it" );
+   ImGui::BeginDisabled( simulating() );
+   ImGui::Checkbox( "start from a touching state", &startTouching );
+   ImGui::EndDisabled();
+   if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+      ImGui::SetTooltip( "The solver turns penetration into a separation velocity (error reduction x depth / dt)\n"
+                         "that stays in the body: a penetrating pose launches the bodies. When set, the first\n"
+                         "step moves the bodies apart first; the posed state is unchanged. Untick to see the\n"
+                         "raw solver response." );
+   if( simulating() && startTouching && removedPenetration > 0.0 )
+      ImGui::TextDisabled( "initial penetration removed: %.4g", removedPenetration );
+   if( !simClock.error.empty() )
+      ImGui::TextColored( ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ), "%s", simClock.error.c_str() );
+   if( simctl::mouseSpring().body() != nullptr )
+      ImGui::TextDisabled( "dragging body %s", simctl::mouseSpring().body() == bodies[0] ? "A" : "B" );
+   else
+      ImGui::TextDisabled( "Ctrl + left-drag a body to pull it" );
+
+   simctl::drawSolverControls();
+
+   if( ImGui::CollapsingHeader( "History", ImGuiTreeNodeFlags_DefaultOpen ) ) {
+      const int n = static_cast<int>( tBuf.size() );
+      const ImPlotAxisFlags fit = ImPlotAxisFlags_AutoFit;
+      if( ImPlot::BeginPlot( "A-B minimum dist", ImVec2( -1, 150 ) ) ) {
+         ImPlot::SetupAxes( "t [s]", "min dist", fit, fit );
+         if( n > 0 ) ImPlot::PlotLine( "min dist", tBuf.data(), minDistBuf.data(), n );
+         ImPlot::EndPlot();
+      }
+      if( ImPlot::BeginPlot( "A-B contacts / kinetic energy", ImVec2( -1, 150 ) ) ) {
+         ImPlot::SetupAxes( "t [s]", "contacts", fit, fit );
+         ImPlot::SetupAxis( ImAxis_Y2, "E_kin [J]", fit | ImPlotAxisFlags_AuxDefault );
+         if( n > 0 ) {
+            ImPlot::PlotStairs( "contacts", tBuf.data(), countBuf.data(), n );
+            ImPlot::SetAxes( ImAxis_X1, ImAxis_Y2 );
+            ImPlot::PlotLine( "E_kin", tBuf.data(), keBuf.data(), n );
+         }
+         ImPlot::EndPlot();
+      }
+      ImGui::TextDisabled( "gaps in min dist = no A-B contact" );
+   }
+
+   ImGui::End();
+}
+
+
 //! A click on a contact marker in the 3D view selects its table row.
 void processPick()
 {
@@ -789,8 +1122,8 @@ namespace pairlab {
 
 void activate()
 {
-   theWorld()->setGravity( 0.0, 0.0, 0.0 );   // the pair is posed by hand and never stepped
-   polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;   // pe planes are meshes here
+   theWorld()->setGravity( 0.0, 0.0, 0.0 );   // gravity is applied as a force (simctl::Controls::gravityZ)
+   simctl::applySolverKnobs();
 
    // The bodies stay within a few units of the origin; fixed extents keep the camera and the
    // absolute marker sizes stable while shapes are edited.
@@ -799,7 +1132,7 @@ void activate()
    polyscope::state::boundingBox =
       std::tuple<glm::vec3, glm::vec3>{ glm::vec3( -1.5f, -1.5f, -1.5f ), glm::vec3( 1.5f, 1.5f, 1.5f ) };
 
-   rebuildScene();   // keeps the pair as it was posed before a mode switch
+   rebuildScene();   // keeps the pair as it was posed before a mode switch (at t = 0)
    // Oblique view: the axis-aligned home view hides one dimension of box-box manifolds.
    polyscope::view::lookAt( glm::vec3( 2.6f, -3.2f, 2.0f ), glm::vec3( 0.0f, 0.0f, 0.4f ) );
 }
@@ -811,16 +1144,37 @@ void loadPreset( int index )
 }
 
 
+void advance( int steps )
+{
+   step( steps );
+   refresh();
+}
+
+
 void frame()
 {
-   readBackGizmos();
+   if( simctl::processKeys() )
+      rebuildScene();
+   if( !simulating() )
+      readBackGizmos();
    processPick();
+
+   std::vector<simctl::MouseSpring::Target> targets;
+   for( int i = 0; i < 2; ++i )
+      if( specs[i].kind != kPlane )
+         targets.push_back( simctl::MouseSpring::Target{ meshes[i], bodies[i] } );
+   simctl::mouseSpring().process( targets, 0.01 );
+
+   // Queued single steps run here, so step/draw ordering stays trivial.
+   step( simctl::takeFrameSteps() );
+   syncGizmos();
 
    drawPairWindow();
    if( dirty )
       refresh();
    drawContactsWindow();
    drawSweepWindow();
+   drawSimulationWindow();
 }
 
 
@@ -897,6 +1251,62 @@ bool smokeTest()
       std::printf( "  FAILED: gizmo read-back does not invert the pe Euler convention\n" );
       ok = false;
    }
+
+   // Simulation from a posed state: the cylinder standing on the box, over the ground. After 2 s
+   // both must rest (box on the ground, cylinder on the box), and Reset must restore the pose.
+   int standing = 0;
+   for( int k = 0; k < static_cast<int>( presets().size() ); ++k )
+      if( std::string( presets()[k].name ) == "cylinder standing on box" )
+         standing = k;
+   groundOn   = true;
+   groundAuto = true;
+   selectPreset( standing );
+   polyscope::frameTick();
+   const double groundZ = groundHeight;
+   simctl::controls().running = true;          // a few GUI frames in the running state
+   for( int i = 0; i < 5; ++i )
+      polyscope::frameTick();
+   simctl::controls().running = false;
+   for( int i = 0; i < 20 && simClock.steps < 1000; ++i ) {
+      step( std::min( 50L, 1000L - simClock.steps ) );
+      polyscope::frameTick();
+   }
+   const double boxBottom = static_cast<double>( bodies[0]->support( Vec3( 0, 0, -1 ) )[2] );
+   const double boxTop    = static_cast<double>( bodies[0]->support( Vec3( 0, 0,  1 ) )[2] );
+   const double cylBottom = static_cast<double>( bodies[1]->support( Vec3( 0, 0, -1 ) )[2] );
+   const bool   rests     = simClock.error.empty() && kineticEnergy() < 1.0e-6
+                         && std::abs( boxBottom - groundZ ) < 1.0e-3 && cylBottom > boxTop - 1.0e-3;
+   std::printf( "\nsimulation (%s, %ld steps): box bottom %.5f (ground %.5f), cylinder bottom %.5f (box top %.5f), E_kin %.3e, %d A-B contacts -> %s\n",
+                presets()[standing].name, simClock.steps, boxBottom, groundZ, cylBottom, boxTop, kineticEnergy(),
+                static_cast<int>( contactLog.entries.size() ), rests ? "resting" : "FAILED" );
+   ok = ok && rests;
+
+   // The corner-face preset penetrates by 0.01: without separation the top box is launched at
+   // erp * depth / dt; with it (default) it must not rise.
+   int cornerFace = 0;
+   for( int k = 0; k < static_cast<int>( presets().size() ); ++k )
+      if( std::string( presets()[k].name ) == "box on box: corner-face" )
+         cornerFace = k;
+   double launch[2];
+   for( int touching = 0; touching < 2; ++touching ) {
+      startTouching = ( touching == 1 );
+      selectPreset( cornerFace );
+      step( 1 );
+      launch[touching] = static_cast<double>( bodies[1]->getLinearVel()[2] );
+   }
+   const double expected = simctl::controls().erp * 0.01 / simctl::controls().dt;
+   const bool launchOk = std::abs( launch[0] - expected ) < 0.05 * expected && launch[1] <= 0.0;
+   std::printf( "corner-face start: v_z of the top box %+.3f raw (erp * depth / dt = %.3f), %+.4f with separation -> %s\n",
+                launch[0], expected, launch[1], launchOk ? "ok" : "FAILED" );
+   ok = ok && launchOk;
+   startTouching = true;
+   selectPreset( standing );
+
+   rebuildScene();   // Reset
+   const Vec3 p1 = bodies[1]->getPosition();
+   const bool restored = simClock.steps == 0 && p1[0] == specs[1].pos[0] && p1[1] == specs[1].pos[1] && p1[2] == specs[1].pos[2];
+   std::printf( "reset: %s\n", restored ? "posed state restored" : "FAILED" );
+   ok = ok && restored;
 
    return ok;
 }

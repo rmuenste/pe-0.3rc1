@@ -21,7 +21,6 @@
 #include <exception>
 #include <random>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include <pe/core.h>
@@ -37,6 +36,7 @@
 
 #include "ContactOverlay.h"
 #include "ShapeMeshes.h"
+#include "SimControls.h"
 #include "StackLab.h"
 
 using namespace pe;
@@ -47,8 +47,6 @@ namespace {
 
 const double kPi       = 3.14159265358979323846;
 const double kDegToRad = kPi / 180.0;
-
-using CollisionSystemType = std::remove_reference<decltype( *theCollisionSystem() )>::type;
 
 
 //=================================================================================================
@@ -87,29 +85,7 @@ struct Scenario {
 Scenario staged;   // values edited in the GUI
 Scenario active;   // values the current world was built with
 
-bool   running        = false;
-int    queuedSteps    = 0;       // single-step requests, consumed at the top of the next frame
-int    stepsPerClick  = 1;
-int    stepsPerFrame  = 4;
-double dt             = 2.0e-3;
-double simTime        = 0.0;
-long   stepCount      = 0;
-// Gravity is applied by this driver as a force m g on every dynamic body before each step: the
-// Euler-Lagrange solver (the repo default) leaves body forces such as gravity to the outer
-// driver and ignores World::setGravity(). The world gravity stays 0 so that solvers that do
-// honour it do not apply it twice.
-double gravityZ       = -9.81;
-std::string simError;
-
-// Solver knobs. HardContactEulerLagrange has setters but no getters: the shadow values start at
-// the engine's constructor defaults and are pushed on every edit.
-double erp             = 0.7;
-int    maxIterations   = 100;
-double relaxationParam = 0.9;
-int    relaxationModel = 1;   // ApproximateInelasticCoulombContactByDecoupling
-const char* const kRelaxationModels[] = {
-   "inelastic frictionless", "approx. Coulomb (decoupling)", "approx. Coulomb (orth. projections)",
-   "Coulomb (decoupling)", "Coulomb (orth. projections)", "generalized max. dissipation" };
+simctl::Clock simClock;   // simulated time of this mode's world; stepping settings are shared (SimControls.h)
 
 //! One rendered body; the ground plane is drawn by Polyscope's ground and has no entry.
 struct SimBody {
@@ -131,30 +107,6 @@ double                 speedScale   = 2.0;   // speed mapped to full red [m/s]
 int  topIndex = -1;   // index into simBodies of the initially highest dynamic body
 Vec3 topStart;
 std::vector<double> tBuf, keBuf, penBuf, solverContactsBuf, overlayContactsBuf, driftBuf;
-
-// Mouse-spring drag state (Ctrl + left-drag on a body)
-int       dragIndex   = -1;
-glm::vec3 dragTarget( 0.0f );
-glm::vec3 dragPlaneN( 0.0f );
-double    springOmega = 20.0;
-double    springZeta  = 1.0;
-
-
-//=================================================================================================
-//
-//  SOLVER KNOBS
-//
-//=================================================================================================
-
-void applySolverKnobs()
-{
-   CollisionSystemID cs = theCollisionSystem();
-   cs->setErrorReductionParameter( static_cast<real>( erp ) );
-   cs->setMaxIterations( static_cast<size_t>( std::max( 1, maxIterations ) ) );
-   cs->setRelaxationParameter( static_cast<real>( relaxationParam ) );
-   cs->setRelaxationModel( static_cast<typename CollisionSystemType::RelaxationModel>( relaxationModel ) );
-}
-
 
 //=================================================================================================
 //
@@ -217,7 +169,7 @@ void updateContacts()
             }
       }
       catch( const std::exception& e ) {
-         simError = std::string( "contact overlay: " ) + e.what();
+         simClock.error = std::string( "contact overlay: " ) + e.what();
       }
    }
    viewer::drawContactOverlay( "contacts", contactLog, overlay );
@@ -245,81 +197,13 @@ void sampleDiagnostics()
       for( std::vector<double>* buf : { &tBuf, &keBuf, &penBuf, &solverContactsBuf, &overlayContactsBuf, &driftBuf } )
          buf->erase( buf->begin(), buf->begin() + static_cast<long>( buf->size() / 2 ) );
    }
-   tBuf.push_back( simTime );
+   tBuf.push_back( simClock.time );
    keBuf.push_back( kineticEnergy() );
    penBuf.push_back( static_cast<double>( theCollisionSystem()->getMaximumPenetration() ) );
    solverContactsBuf.push_back( static_cast<double>( theCollisionSystem()->getNumberOfContacts() ) );
    overlayContactsBuf.push_back( static_cast<double>( contactLog.entries.size() ) );
    driftBuf.push_back( topIndex >= 0
       ? static_cast<double>( ( simBodies[topIndex].body->getPosition() - topStart ).length() ) : 0.0 );
-}
-
-
-//=================================================================================================
-//
-//  MOUSE SPRING (Ctrl + left-drag on a body)
-//
-//=================================================================================================
-
-void endDrag()
-{
-   dragIndex = -1;
-   polyscope::removeStructure( "mouse spring", /*errorIfAbsent=*/false );
-   polyscope::state::doDefaultMouseInteraction = true;
-}
-
-
-//! Mass-scaled damped spring toward the drag anchor, applied to the center of mass:
-//! F = m ( w^2 (target - x) - 2 zeta w v ). PE clears the force accumulator per step.
-void applyMouseSpring()
-{
-   if( dragIndex < 0 || dragIndex >= static_cast<int>( simBodies.size() ) )
-      return;
-   BodyID b = simBodies[dragIndex].body;
-   const Vec3 target( dragTarget.x, dragTarget.y, dragTarget.z );
-   const real w = static_cast<real>( springOmega );
-   const real z = static_cast<real>( springZeta );
-   b->addForce( b->getMass() * ( w * w * ( target - b->getPosition() ) - real(2) * z * w * b->getLinearVel() ) );
-}
-
-
-void processMouseDrag()
-{
-   ImGuiIO& io = ImGui::GetIO();
-
-   if( dragIndex < 0 ) {
-      if( io.KeyCtrl && !io.WantCaptureMouse && ImGui::IsMouseClicked( 0 ) ) {
-         const std::pair<polyscope::Structure*, size_t> hit =
-            polyscope::pick::pickAtScreenCoords( glm::vec2( io.MousePos.x, io.MousePos.y ) );
-         for( std::size_t i = 0; i < simBodies.size(); ++i ) {
-            if( hit.first != simBodies[i].mesh || simBodies[i].body->isFixed() )
-               continue;
-            dragIndex  = static_cast<int>( i );
-            dragTarget = viewer::toGlm( simBodies[i].body->getPosition() );
-            dragPlaneN = glm::normalize( polyscope::view::getCameraWorldPosition() - dragTarget );
-            polyscope::state::doDefaultMouseInteraction = false;   // camera stays put during drag
-         }
-      }
-      return;
-   }
-
-   if( !ImGui::IsMouseDown( 0 ) || dragIndex >= static_cast<int>( simBodies.size() ) ) {
-      endDrag();
-      return;
-   }
-
-   // Slide the anchor on the camera-facing plane through the grab point.
-   const glm::vec3 org = polyscope::view::getCameraWorldPosition();
-   const glm::vec3 dir = polyscope::view::screenCoordsToWorldRay( glm::vec2( io.MousePos.x, io.MousePos.y ) );
-   const float denom = glm::dot( dir, dragPlaneN );
-   if( std::abs( denom ) > 1.0e-6f ) {
-      const float t = glm::dot( dragTarget - org, dragPlaneN ) / denom;
-      if( t > 0.0f )
-         dragTarget = org + t * dir;
-   }
-   const std::vector<glm::vec3> pts{ viewer::toGlm( simBodies[dragIndex].body->getPosition() ), dragTarget };
-   polyscope::registerCurveNetworkLine( "mouse spring", pts )
-      ->setRadius( 0.01 * active.size, /*isRelative=*/false );
 }
 
 
@@ -509,7 +393,7 @@ void frameCamera()
 
 void buildScene()
 {
-   endDrag();
+   simctl::mouseSpring().end();
    contactLog.clear();   // holds pointers into the world being cleared
    simBodies.clear();
    contactBodies.clear();
@@ -517,14 +401,12 @@ void buildScene()
 
    WorldID world = theWorld();
    world->clear();
-   world->setGravity( 0.0, 0.0, 0.0 );   // see gravityZ
+   world->setGravity( 0.0, 0.0, 0.0 );   // gravity is applied as a force (simctl::Controls::gravityZ)
 
-   active   = staged;
-   running  = false;
-   queuedSteps = 0;
-   simTime  = 0.0;
-   stepCount = 0;
-   simError.clear();
+   active = staged;
+   simctl::controls().running     = false;
+   simctl::controls().queuedSteps = 0;
+   simClock.reset();
    for( std::vector<double>* buf : { &tBuf, &keBuf, &penBuf, &solverContactsBuf, &overlayContactsBuf, &driftBuf } )
       buf->clear();
    rng.seed( static_cast<unsigned>( active.seed ) );
@@ -575,32 +457,12 @@ void buildScene()
 
 void step( int n )
 {
-   if( n <= 0 || !simError.empty() )
+   if( n <= 0 || !simClock.error.empty() )
       return;
-   WorldID world = theWorld();
-   try {
-      for( int i = 0; i < n; ++i ) {
-         for( const SimBody& sb : simBodies )
-            if( !sb.body->isFixed() )
-               sb.body->addForce( sb.body->getMass() * Vec3( 0.0, 0.0, gravityZ ) );
-         applyMouseSpring();
-         world->simulationStep( static_cast<real>( dt ) );
-         simTime += dt;
-         ++stepCount;
-      }
-   }
-   catch( const std::exception& e ) {
-      simError = std::string( "simulationStep: " ) + e.what();
-      running  = false;
-   }
-   for( const SimBody& sb : simBodies ) {
-      const Vec3& p = sb.body->getPosition();
-      if( !std::isfinite( p[0] ) || !std::isfinite( p[1] ) || !std::isfinite( p[2] ) ) {
-         simError = "non-finite body position: simulation stopped (Reset to rebuild)";
-         running  = false;
-         break;
-      }
-   }
+   std::vector<BodyID> bodies;
+   for( const SimBody& sb : simBodies )
+      bodies.push_back( sb.body );
+   simctl::advance( n, bodies, simClock );
    updateMirror();
    updateContacts();
    sampleDiagnostics();
@@ -617,68 +479,21 @@ void drawSimulationWindow()
 {
    ImGui::Begin( "Simulation" );
 
-   if( ImGui::Button( running ? "Pause" : "Run", ImVec2( 70, 0 ) ) )
-      running = !running;
-   ImGui::SameLine();
-   if( ImGui::Button( "Step" ) )
-      queuedSteps += std::max( 1, stepsPerClick );
-   ImGui::SameLine();
-   if( ImGui::Button( "Reset" ) )
+   if( simctl::drawStepControls() )
       buildScene();
-   ImGui::SameLine();
-   ImGui::TextDisabled( "(space / n / r)" );
 
-   ImGui::SetNextItemWidth( 120 );
-   ImGui::InputInt( "steps per Step click", &stepsPerClick );
-   stepsPerClick = std::max( 1, stepsPerClick );
-   ImGui::SliderInt( "steps / frame", &stepsPerFrame, 1, 64 );
-   // Time step: live (applies to the next step, also mid-run). Log slider for coarse changes,
-   // halve/double for bisecting a stability limit, presets for the common values; Ctrl+click
-   // the slider to type an exact value.
-   const double dtLo = 1.0e-5, dtHi = 5.0e-2;
-   ImGui::SliderScalar( "dt [s]", ImGuiDataType_Double, &dt, &dtLo, &dtHi, "%.3e", ImGuiSliderFlags_Logarithmic );
-   if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
-      ImGui::SetTooltip( "Takes effect on the next step, also while running. Ctrl+click to type a value." );
-   if( ImGui::Button( "dt / 2" ) ) dt *= 0.5;
-   ImGui::SameLine();
-   if( ImGui::Button( "dt x 2" ) ) dt *= 2.0;
-   const double presetsDt[] = { 1.0e-4, 5.0e-4, 1.0e-3, 2.0e-3, 5.0e-3, 1.0e-2 };
-   for( double p : presetsDt ) {
-      char label[16];
-      std::snprintf( label, sizeof( label ), "%g", p );
-      ImGui::SameLine();
-      if( ImGui::Button( label ) ) dt = p;
-   }
-   dt = std::max( dtLo, std::min( dt, dtHi ) );
-   ImGui::TextDisabled( "simulated time per frame: %.3e s (%d x dt)", stepsPerFrame * dt, stepsPerFrame );
-
-   ImGui::Text( "t = %.4f s   steps: %ld   bodies: %d", simTime, stepCount, static_cast<int>( simBodies.size() ) );
+   ImGui::Text( "t = %.4f s   steps: %ld   bodies: %d", simClock.time, simClock.steps, static_cast<int>( simBodies.size() ) );
    ImGui::Text( "solver: %d contacts, max penetration %.3e",
                 static_cast<int>( theCollisionSystem()->getNumberOfContacts() ),
                 static_cast<double>( theCollisionSystem()->getMaximumPenetration() ) );
-   if( !simError.empty() )
-      ImGui::TextColored( ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ), "%s", simError.c_str() );
-   if( dragIndex >= 0 )
-      ImGui::TextDisabled( "dragging body %d", dragIndex );
+   if( !simClock.error.empty() )
+      ImGui::TextColored( ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ), "%s", simClock.error.c_str() );
+   if( simctl::mouseSpring().body() != nullptr )
+      ImGui::TextDisabled( "dragging body %lu", static_cast<unsigned long>( simctl::mouseSpring().body()->getID() ) );
    else
       ImGui::TextDisabled( "Ctrl + left-drag a body to pull it" );
 
-   if( ImGui::CollapsingHeader( "World / solver (live)", ImGuiTreeNodeFlags_DefaultOpen ) ) {
-      const double gLo = -30.0, gHi = 0.0;
-      ImGui::SliderScalar( "gravity z", ImGuiDataType_Double, &gravityZ, &gLo, &gHi, "%.3f" );
-      if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
-         ImGui::SetTooltip( "Applied by the viewer as a force m g per step (the Euler-Lagrange solver ignores\n"
-                            "World::setGravity(); body forces belong to the outer driver)." );
-
-      bool changed = false;
-      const double zero = 0.0, one = 1.0;
-      changed |= ImGui::SliderScalar( "error reduction", ImGuiDataType_Double, &erp, &zero, &one, "%.3f" );
-      changed |= ImGui::SliderInt( "max iterations", &maxIterations, 1, 2000, "%d", ImGuiSliderFlags_Logarithmic );
-      changed |= ImGui::SliderScalar( "relaxation", ImGuiDataType_Double, &relaxationParam, &zero, &one, "%.3f" );
-      changed |= ImGui::Combo( "friction model", &relaxationModel, kRelaxationModels, 6 );
-      if( changed )
-         applySolverKnobs();
-   }
+   simctl::drawSolverControls();
 
    if( ImGui::CollapsingHeader( "Display", ImGuiTreeNodeFlags_DefaultOpen ) ) {
       bool redraw = false;
@@ -790,19 +605,6 @@ void drawPlots()
 }
 
 
-void processKeys()
-{
-   const ImGuiIO& io = ImGui::GetIO();
-   if( io.WantCaptureKeyboard )
-      return;
-   if( ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
-      running = !running;
-   if( ImGui::IsKeyPressed( ImGuiKey_N, true ) )
-      queuedSteps += std::max( 1, stepsPerClick );
-   if( ImGui::IsKeyPressed( ImGuiKey_R, false ) )
-      buildScene();
-}
-
 } // namespace
 
 
@@ -819,7 +621,7 @@ void activate()
    polyscope::options::groundPlaneMode       = polyscope::GroundPlaneMode::TileReflection;
    polyscope::options::groundPlaneHeightMode = polyscope::GroundPlaneHeightMode::Manual;
    polyscope::options::groundPlaneHeight     = 0.0f;   // coincides with the pe ground plane
-   applySolverKnobs();
+   simctl::applySolverKnobs();
    buildScene();
 }
 
@@ -839,14 +641,16 @@ void advance( int steps )
 
 void frame()
 {
-   processKeys();
-   processMouseDrag();
+   if( simctl::processKeys() )
+      buildScene();
+
+   std::vector<simctl::MouseSpring::Target> targets;
+   for( const SimBody& sb : simBodies )
+      targets.push_back( simctl::MouseSpring::Target{ sb.mesh, sb.body } );
+   simctl::mouseSpring().process( targets, 0.01 * active.size );
 
    // Queued single steps run here, so step/draw ordering stays trivial.
-   int n = running ? stepsPerFrame : 0;
-   n += queuedSteps;
-   queuedSteps = 0;
-   step( n );
+   step( simctl::takeFrameSteps() );
 
    drawSimulationWindow();
    drawScenarioWindow();
@@ -858,7 +662,7 @@ bool smokeTest()
 {
    bool ok = true;
    const int steps = 500;
-   std::printf( "\nStack Lab: %d steps of dt = %.1e per scenario\n", steps, dt );
+   std::printf( "\nStack Lab: %d steps of dt = %.1e per scenario\n", steps, simctl::controls().dt );
    for( int k = 0; k < kNumScenarios; ++k ) {
       loadScenario( k );
       const int n = ( k == kDrop ) ? 3 * steps : steps;   // the drop needs time to land and settle
@@ -866,7 +670,7 @@ bool smokeTest()
          step( 50 );
          polyscope::frameTick();
          if( k == kDrop && topIndex >= 0 && i % 3 == 2 )
-            std::printf( "   t %.2f  top z %+.4f  v_z %+.4f  overlay contacts %d\n", simTime,
+            std::printf( "   t %.2f  top z %+.4f  v_z %+.4f  overlay contacts %d\n", simClock.time,
                          static_cast<double>( simBodies[topIndex].body->getPosition()[2] ),
                          static_cast<double>( simBodies[topIndex].body->getLinearVel()[2] ),
                          static_cast<int>( contactLog.entries.size() ) );
@@ -876,8 +680,8 @@ bool smokeTest()
                    static_cast<double>( theCollisionSystem()->getMaximumPenetration() ),
                    static_cast<int>( theCollisionSystem()->getNumberOfContacts() ),
                    static_cast<int>( contactLog.entries.size() ), driftBuf.empty() ? 0.0 : driftBuf.back(),
-                   simError.empty() ? "" : "  ERROR: ", simError.c_str() );
-      if( !simError.empty() )
+                   simClock.error.empty() ? "" : "  ERROR: ", simClock.error.c_str() );
+      if( !simClock.error.empty() )
          ok = false;
    }
 
@@ -891,7 +695,7 @@ bool smokeTest()
    double lowest = 1.0e30;
    for( const SimBody& sb : simBodies )
       lowest = std::min( lowest, static_cast<double>( sb.body->getPosition()[2] ) );
-   const bool resting = simError.empty() && lowest > 0.49 * active.size && kineticEnergy() < 1.0e-6;
+   const bool resting = simClock.error.empty() && lowest > 0.49 * active.size && kineticEnergy() < 1.0e-6;
    std::printf( "cylinder drop: lowest centre z %.4f (r = %.2f), E_kin %.3e -> %s\n", lowest,
                 0.5 * active.size, kineticEnergy(), resting ? "resting on the ground" : "FAILED" );
    ok = ok && resting;

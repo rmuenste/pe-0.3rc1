@@ -8,7 +8,10 @@ needs no time stepping to show a contact manifold.
 Two modes in one binary, switched in the **Mode** window:
 
 - **Stack Lab** (default) — run / pause / step a small simulation on a visible ground plane.
-- **Pair Lab** — pose two bodies and inspect their contacts statically.
+- **Pair Lab** — pose two bodies, inspect their contacts, and simulate the pair from that pose.
+
+Both modes share the simulation controls (Run/Pause/Step/Reset, `dt`, solver settings,
+Ctrl + left-drag), described under Stack Lab.
 
 Known problems, gaps in the contact generation and solver behaviour that affects what you see:
 `contact-issues.md`.
@@ -31,11 +34,12 @@ Command line:
 - `pe_contact_viewer --smoke` — headless self check of both modes on Polyscope's mock OpenGL
   backend: every Pair Lab preset and all 36 shape pairs, the gizmo pose round trip, and every
   Stack Lab scenario stepped for 1 s (3 s for the drop), plus a cylinder drop that must end
-  resting on the ground. Prints contacts, a contacts-per-pair
+  resting on the ground, and a 2 s Pair Lab simulation (cylinder standing on a box over the
+  ground) that must end at rest and be restored exactly by Reset. Prints contacts, a contacts-per-pair
   matrix (a `0` for an overlapping pair means the routine generates nothing; plane-plane is
   0 by design) and per-scenario stability numbers.
 - `pe_contact_viewer [--pair | --stack] --screenshot out.png [--preset k] [--steps n]` — renders
-  preset/scenario `k` (after `n` steps in Stack Lab) to an image and exits.
+  preset/scenario `k` after `n` steps to an image and exits.
 
 ## Stack Lab
 
@@ -62,7 +66,21 @@ Command line:
 ## Pair Lab
 
 Two bodies (sphere, box, capsule, cylinder, ellipsoid, plane), posed by drag fields or the
-Polyscope transform gizmo. Every edit re-runs `MaxContacts::collide( A, B )`:
+Polyscope transform gizmo, over an optional ground plane. Every edit re-runs
+`MaxContacts::collide( A, B )`:
+
+- **Ground plane** — on by default and kept just under the posed pair ("keep under the pair");
+  untick that to set the height by hand, or switch the ground off. Its contacts with A and B are
+  drawn too and counted in the Contacts window.
+- **Simulation window** — the pose is the initial state: Run/Pause/Step start the simulation from
+  it, Reset (`r`) returns to it. "Start from a touching state" (on by default) moves penetrating
+  bodies apart before the first step; the presets penetrate by 0.01 for the static view, and the
+  solver would otherwise launch them (see `contact-issues.md`). Per body: **fixed** (immovable, e.g. a base or a ramp) and an
+  initial linear / angular velocity. While t > 0 the pose, shape and ground editors and the Sweep
+  window are locked (they act on the posed state); the overlay, the Contacts window and
+  "copy as test case" follow the current state, so a contact seen at some step can be exported
+  directly. History plots: A-B minimum distance, A-B contact count and kinetic energy over time.
+- **Ctrl + left-drag** a body to pull it with a damped spring (while running or stepping).
 
 - **Overlay** — contact points (red = penetrating, yellow = within `contactThreshold`; or colored
   by vertex-face / edge-edge type) and the contact normals at world length. The normal points
@@ -94,6 +112,8 @@ body-frame z axis.
 ## Structure
 
 - `contact_viewer.cpp` — Polyscope/ImPlot setup, command line, mode switch.
+- `sim_controls.cpp` / `SimControls.h` — shared simulation controls: step/run state, `dt`, solver
+  settings, gravity as a force, the mouse spring, keyboard shortcuts.
 - `stack_lab.cpp` / `StackLab.h` — the Stack Lab mode.
 - `pair_lab.cpp` / `PairLab.h` — the Pair Lab mode.
 - `ContactOverlay.h` — `ContactLog`, the minimal recording container `MaxContacts::collide()`

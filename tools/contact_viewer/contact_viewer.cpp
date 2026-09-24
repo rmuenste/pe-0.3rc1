@@ -9,14 +9,14 @@
  *     plane (box towers, pyramids, walls, mixed stacks, ramp, drops) with the contact overlay
  *     and stability plots.
  *   - Pair Lab (pair_lab.cpp): pose two bodies and inspect the contacts the narrow phase
- *     generates for them, without time stepping.
+ *     generates for them; the posed pair can also be simulated from that state.
  *
  *  Usage: pe_contact_viewer [--pair | --stack] [--smoke]
  *                           [--screenshot <file.png> [--preset <k>] [--steps <n>]]
  *    --pair / --stack   start mode (default: Stack Lab)
  *    --smoke            headless self check of both modes on Polyscope's mock OpenGL backend
- *    --screenshot       render preset/scenario k of the start mode (after n steps in Stack Lab)
- *                       to an image and exit
+ *    --screenshot       render preset/scenario k of the start mode (after n steps) to an image
+ *                       and exit
  */
 //=================================================================================================
 
@@ -127,6 +127,7 @@ int main( int argc, char** argv )
    else if( !shot.empty() ) {
       if( mode == kPairLab ) {
          pairlab::loadPreset( preset );
+         pairlab::advance( steps );
       }
       else {
          stacklab::loadScenario( preset );

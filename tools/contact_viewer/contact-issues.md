@@ -38,10 +38,25 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   two materials' coefficients (`src/core/Materials.cpp`), so a single material with `csf = mu`
   gives a contact friction of 2 mu. Stack Lab gives each body mu / 2, so the GUI's mu is the real
   contact friction.
+- **Penetration becomes velocity (Baumgarte stabilisation).** The solver corrects a contact
+  distance `d < 0` by demanding a separation velocity `erp * |d| / dt` (`dist_[j] *= erp_` in
+  the contact caching of `HardContactEulerLagrange`), and that velocity stays in the bodies
+  after the step: there is no split impulse / position projection that would remove the
+  penetration without adding momentum. Consequences:
+  - an initially penetrating state launches the bodies: Pair Lab "box on box: corner-face"
+    (0.01 penetration) throws the top box up at exactly 7.000 m/s at dt = 1e-3 (3.5 m/s at
+    2e-3, 2.0 m/s with error reduction 0.2, 0 with error reduction 0 or a touching start);
+  - a smaller dt makes it worse, not better;
+  - `setAdaptiveBaumgarteCapping()` does not help at these scales: its limit is
+    `characteristic length / ( dt * aggressiveness )`, 20 m/s for a unit body at dt = 1e-3.
+  Pair Lab therefore separates a penetrating posed state before the first step ("start from a
+  touching state", on by default; untick it to see the raw response). Stack Lab builds its
+  scenarios touching. An engine-side remedy would be a split-impulse (pseudo-velocity) position
+  correction; not implemented.
 - **Dropped boxes bounce at restitution 0.** Landing at ~4.9 m/s with dt = 2e-3 penetrates ~1 cm
-  in one step; the boxes bounce back at ~0.9 m/s and settle after ~1.8 s. Likely the position
-  correction (error reduction 0.7 by default): lower it or halve dt and watch the kinetic-energy
-  plot.
+  in one step; the boxes bounce back at ~0.9 m/s and settle after ~1.8 s. Very likely the same
+  mechanism as above (the landing penetration is corrected with a velocity that stays in the
+  body); lowering the error reduction reduces it.
 
 ## Resolved
 
