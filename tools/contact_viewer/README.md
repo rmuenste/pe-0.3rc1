@@ -10,6 +10,9 @@ Two modes in one binary, switched in the **Mode** window:
 - **Stack Lab** (default) — run / pause / step a small simulation on a visible ground plane.
 - **Pair Lab** — pose two bodies and inspect their contacts statically.
 
+Known problems, gaps in the contact generation and solver behaviour that affects what you see:
+`contact-issues.md`.
+
 ## Build
 
 ```bash
@@ -41,15 +44,14 @@ Command line:
   dt / 2 and dt x 2 for bisecting a stability limit, and presets 1e-4 ... 1e-2. dt applies on the
   next step, also while running. Live world/solver knobs: gravity, error reduction parameter,
   max iterations, relaxation parameter, friction (relaxation) model.
-- **Gravity** is applied by the viewer as a force `m g` per step: the repo's default
-  `HardContactEulerLagrange` solver ignores `World::setGravity()` (body forces belong to the outer
-  CFD driver). The world gravity is kept at 0 so other solvers do not apply it twice.
+- **Gravity** — the "gravity z" slider; the viewer applies it as a force `m g` per step.
 - **Ground plane** — a fixed pe plane at z = 0, drawn with Polyscope's tiled ground.
 - **Scenarios** (staged, applied on Reset) — box tower, box pyramid, brick wall (offset rows),
   mixed-shape stack (box / cylinder / capsule / ellipsoid / sphere), boxes on a fixed ramp (shows
-  tan(angle) vs mu), shapes dropped onto the ground. Box size, initial gap, lateral and yaw
-  jitter with a seed, pair friction mu, restitution, density. pe adds the two materials' friction
-  coefficients, so each body gets mu / 2.
+  tan(angle) vs mu), shapes dropped onto the ground, upright cylinder stack (box / cylinder /
+  cylinder / box ..., exercises the box-cylinder and cylinder-cylinder face manifolds). Box
+  size, initial gap, lateral and yaw jitter with a seed, friction mu (the contact friction of a
+  pair), restitution, density.
 - **Overlay** — after each frame's steps `MaxContacts::collide()` is re-run over all
   AABB-overlapping pairs (the collision system clears its contacts at the end of a step), so the
   markers show the contacts of the current configuration. Bodies can be colored by speed.
@@ -72,17 +74,18 @@ Polyscope transform gizmo. Every edit re-runs `MaxContacts::collide( A, B )`:
 - **Support witnesses** — `g1->support( -n )` and `g2->support( n )` with the segment between
   them, and for the selected contact the support gap along the normal next to the reported
   distance: for a convex pair with a consistent normal and depth the two agree. Against a flat
-  face the support point is not unique (pe returns a corner), which is exactly the ambiguity
-  `MaxContacts::compatibleContactPoint()` has to resolve.
+  face the support point is not unique, so the witness may sit on a corner of that face.
 - **Sweep window** — contact count and minimum distance over one pose degree of freedom of one
-  body. Jumps in the count are manifold flicker, jumps in the distance are discontinuities of
-  the routine. Drag the yellow line to scrub the pose through the sweep.
+  body. Jumps in the count show manifold flicker, jumps in the distance discontinuities. Drag the
+  yellow line to scrub the pose through the sweep.
 - **Copy as test case** — the pair as a C++ snippet (clipboard and stdout) with the currently
   generated contacts as comments, to turn a visual finding into a `tests/interface` regression
   test. The snippet assumes the `ContactLog` container of `pe_ellipsoid_contact_test.cpp`.
 - **Presets** — box face-face (stacking), offset + yaw, crossed edges, corner-face, capsule on a
   box face, sphere on a box edge, box/cylinder on a plane, off-centre ellipsoid-box face, tilted
-  ellipsoid pair.
+  ellipsoid pair, and the multi-point cylinder cases: cylinder standing / lying on a box, box on
+  a cylinder cap, coaxial cylinders, parallel lying cylinders, cylinder standing on a lying one,
+  capsule on a cylinder cap.
 
 Orientations use pe's Euler convention, `Quat( xangle, yangle, zangle )` (applied in the order
 x, y, z); capsule and cylinder axes run along the body-frame x axis, the plane normal is the
@@ -96,6 +99,7 @@ body-frame z axis.
 - `ContactOverlay.h` — `ContactLog`, the minimal recording container `MaxContacts::collide()`
   accepts, and its Polyscope overlay (used by both modes).
 - `ShapeMeshes.h` — body-frame meshes of the primitives, `makeBodyMesh()`, `bodyTransform()`.
+- `contact-issues.md` — open problems and observations (not usage).
 
 ## Extending
 

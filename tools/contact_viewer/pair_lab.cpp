@@ -113,6 +113,14 @@ const std::vector<Preset>& presets()
       { "ellipsoid on box face, off-centre",   ellipsoidSpec( 0.5, 0.25, 0.15 ), boxSpec( 1, 1, 1 ).at( 0.99, 0.1, 0.0 ) },
       { "ellipsoid pair, tilted",              ellipsoidSpec( 0.5, 0.25, 0.25 ),
                                                ellipsoidSpec( 0.5, 0.25, 0.25 ).at( 0.85, 0.3, 0.0 ).rotated( 0, 0, 30 ) },
+      { "cylinder standing on box",            boxSpec( 1, 1, 1 ), cylinderSpec( 0.3, 1.0 ).at( 0.1, 0.0, 0.99 ).rotated( 0, 90, 0 ) },
+      { "cylinder lying on box",               boxSpec( 1, 1, 1 ), cylinderSpec( 0.25, 0.8 ).at( 0.0, 0.1, 0.74 ) },
+      { "box on cylinder cap",                 cylinderSpec( 1.0, 1.0 ).rotated( 0, 90, 0 ), boxSpec( 0.4, 0.4, 0.4 ).at( 0.1, 0.2, 0.69 ) },
+      { "cylinders stacked coaxially",         cylinderSpec( 0.5, 1.0 ).rotated( 0, 90, 0 ),
+                                               cylinderSpec( 0.5, 1.0 ).at( 0.05, 0.0, 0.99 ).rotated( 0, 90, 0 ) },
+      { "parallel lying cylinders",            cylinderSpec( 0.5, 1.0 ), cylinderSpec( 0.5, 1.0 ).at( 0.3, 0.0, 0.99 ) },
+      { "cylinder standing on lying cylinder", cylinderSpec( 0.5, 2.0 ), cylinderSpec( 0.4, 1.0 ).at( 0.2, 0.0, 0.99 ).rotated( 0, 90, 0 ) },
+      { "capsule on cylinder cap",             cylinderSpec( 0.5, 1.0 ).rotated( 0, 90, 0 ), capsuleSpec( 0.2, 1.5 ).at( 0.0, 0.1, 0.69 ) },
    };
    return list;
 }

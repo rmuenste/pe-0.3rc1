@@ -172,6 +172,23 @@ set_tests_properties(pe-cylinder-plane-contact PROPERTIES
   TIMEOUT 120
 )
 
+# Multi-point contact manifolds for box-cylinder, cylinder-cylinder and capsule-cylinder
+# (MaxContacts::addFeatureManifold on top of GJK/EPA): standing / lying / overhanging / stacked
+# configurations against analytic contact sets, single-contact cases kept, and a small-tilt sweep
+# checking the deepest manifold point against the exact support depth. Serial world, no MPI.
+add_executable(pe_cylinder_manifold_test
+  pe_cylinder_manifold_test.cpp
+)
+target_link_libraries(pe_cylinder_manifold_test PRIVATE pe_static)
+add_test(
+  NAME pe-cylinder-manifold
+  COMMAND pe_cylinder_manifold_test
+)
+set_tests_properties(pe-cylinder-manifold PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.

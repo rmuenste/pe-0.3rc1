@@ -288,6 +288,34 @@ protected:
    static inline Vec3 compatibleContactPoint( Type1 geom1, Type2 geom2, const Vec3& n, const Vec3& sA, const Vec3& sB,
                                               bool epaValid, const Vec3& epaNormal, const Vec3& epaPoint );
 
+   //! Touching feature of a body in a given direction: a point, a segment or a convex polygon
+   //! (the vertices in cyclic order, with the outward face normal). See contactFeature().
+   struct ContactFeature {
+      enum Kind { point, segment, face };
+      Kind   kind;
+      size_t size;
+      Vec3   v[16];
+      Vec3   normal;
+   };
+
+   //! One point of a multi-point contact manifold, normal from geom2 to geom1.
+   struct ManifoldPoint {
+      Vec3 pos;
+      Vec3 normal;
+      real dist;
+   };
+
+   static inline real manifoldFeatureTolerance();
+   static inline void contactFeature( BoxID b, const Vec3& d, ContactFeature& f );
+   static inline void contactFeature( CylinderID c, const Vec3& d, ContactFeature& f );
+   static inline void contactFeature( CapsuleID c, const Vec3& d, ContactFeature& f );
+   static inline size_t clipManifold( const ContactFeature& fA, const ContactFeature& fB, const Vec3& n,
+                                      ManifoldPoint* out );
+
+   template < typename Type1 , typename Type2, typename CC >
+   static inline void addFeatureManifold( Type1 geom1, Type2 geom2, const Vec3& normal, const Vec3& contactPoint,
+                                          real dist, CC& contacts );
+
    // DistanceMap-based collision detection helpers
    template< typename CC >
    static bool collideWithDistanceMap(TriangleMeshID mA, TriangleMeshID mB, CC& contacts);
@@ -990,6 +1018,347 @@ template < typename Type > // ID-Type of the geometry which is not a triangle me
 inline bool MaxContacts::gjkEPAcollide(Type geom, TriangleMeshID mesh, Vec3& normal, Vec3& contactPoint, real& penetrationDepth)
 {
    return gjkEPAcollide<Type, TriangleMeshID>(geom, mesh, normal, contactPoint, penetrationDepth);
+}
+//*************************************************************************************************
+
+
+
+
+//*************************************************************************************************
+/*!\brief Angular tolerance (sine) within which a feature counts as facing the contact normal.
+ *
+ * Used for the multi-point manifolds of addFeatureManifold(). Unlike supportFlatTolerance(),
+ * which picks one witness point and therefore must be tight, this tolerance only decides which
+ * feature points become contact *candidates*: every candidate is then kept or dropped by its own
+ * signed distance (below pe::contactThreshold). A generous value (about 3 degrees) keeps a
+ * resting body that tilts by a fraction of a degree on all of its touching points instead of
+ * flickering between one and several contacts; points of a tilted feature that are not
+ * touching are removed by the distance test.
+ */
+inline real MaxContacts::manifoldFeatureTolerance()
+{
+   return real(0.05);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Touching feature of a box in direction \a d (unit, pointing towards the other body).
+ *
+ * A face if \a d is within manifoldFeatureTolerance() of a face normal, an edge if it is
+ * perpendicular to one box axis, otherwise the support vertex.
+ */
+inline void MaxContacts::contactFeature( BoxID b, const Vec3& d, ContactFeature& f )
+{
+   const Rot3& R( b->getRotation() );
+   const Vec3  e[3] = { Vec3( R[0], R[3], R[6] ), Vec3( R[1], R[4], R[7] ), Vec3( R[2], R[5], R[8] ) };
+   const Vec3  h( real(0.5) * b->getLengths() );
+   const real  tol( manifoldFeatureTolerance() );
+
+   real c[3];
+   int  nFree( 0 ), freeAxis( -1 ), normalAxis( -1 );
+   for( int i = 0; i < 3; ++i ) {
+      c[i] = trans( e[i] ) * d;
+      if( std::fabs( c[i] ) <= tol ) { ++nFree; freeAxis = i; }
+      else                           normalAxis = i;
+   }
+
+   Vec3 center( b->getPosition() );
+   for( int i = 0; i < 3; ++i )
+      if( std::fabs( c[i] ) > tol )
+         center += ( c[i] > real(0) ? h[i] : -h[i] ) * e[i];
+
+   if( nFree == 2 ) {
+      const int i( ( normalAxis + 1 ) % 3 ), j( ( normalAxis + 2 ) % 3 );
+      const Vec3 ei( h[i] * e[i] ), ej( h[j] * e[j] );
+      f.kind   = ContactFeature::face;
+      f.size   = 4;
+      f.v[0]   = center + ei + ej;
+      f.v[1]   = center - ei + ej;
+      f.v[2]   = center - ei - ej;
+      f.v[3]   = center + ei - ej;
+      f.normal = ( c[normalAxis] > real(0) ? real(1) : real(-1) ) * e[normalAxis];
+   }
+   else if( nFree == 1 ) {
+      f.kind = ContactFeature::segment;
+      f.size = 2;
+      f.v[0] = center - h[freeAxis] * e[freeAxis];
+      f.v[1] = center + h[freeAxis] * e[freeAxis];
+   }
+   else {
+      f.kind = ContactFeature::point;
+      f.size = 1;
+      f.v[0] = b->support( d );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Touching feature of a cylinder in direction \a d (unit, pointing towards the other body).
+ *
+ * An end cap (a regular 16-gon inscribed in the rim) if \a d is within
+ * manifoldFeatureTolerance() of the axis, the lateral wall segment if \a d is perpendicular to
+ * the axis, otherwise the support point on a rim. The first cap vertex is the rim point deepest
+ * along \a d, so for a cap facing the other body the deepest point is exact, not a polygon
+ * approximation; the other vertices only approximate the disc laterally.
+ */
+inline void MaxContacts::contactFeature( CylinderID c, const Vec3& d, ContactFeature& f )
+{
+   const Rot3& R( c->getRotation() );
+   const Vec3  axis( R[0], R[3], R[6] );
+   const real  ca( trans( axis ) * d );
+   const real  half( real(0.5) * c->getLength() );
+   const real  r( c->getRadius() );
+   const real  tol( manifoldFeatureTolerance() );
+
+   Vec3 u( d - ca * axis );
+   const real radial( u.length() );
+   if( radial > real(1e-12) ) u /= radial;
+   else                       u = Vec3( R[1], R[4], R[7] );
+
+   if( radial <= tol ) {
+      const Vec3 capCenter( c->getPosition() + ( ca > real(0) ? half : -half ) * axis );
+      const Vec3 w( axis % u );
+      const real pi( real(3.14159265358979323846) );
+      f.kind   = ContactFeature::face;
+      f.size   = 16;
+      for( size_t k = 0; k < 16; ++k ) {
+         const real phi( real(2) * pi * static_cast<real>( k ) / real(16) );
+         f.v[k] = capCenter + r * ( std::cos( phi ) * u + std::sin( phi ) * w );
+      }
+      f.normal = ( ca > real(0) ? real(1) : real(-1) ) * axis;
+   }
+   else if( std::fabs( ca ) <= tol ) {
+      f.kind = ContactFeature::segment;
+      f.size = 2;
+      f.v[0] = c->getPosition() - half * axis + r * u;
+      f.v[1] = c->getPosition() + half * axis + r * u;
+   }
+   else {
+      f.kind = ContactFeature::point;
+      f.size = 1;
+      f.v[0] = c->support( d );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Touching feature of a capsule in direction \a d (unit, pointing towards the other body).
+ *
+ * The line of the lateral surface facing \a d if \a d is perpendicular to the axis (within
+ * manifoldFeatureTolerance()), otherwise the support point. A capsule has no flat face.
+ */
+inline void MaxContacts::contactFeature( CapsuleID c, const Vec3& d, ContactFeature& f )
+{
+   const Rot3& R( c->getRotation() );
+   const Vec3  axis( R[0], R[3], R[6] );
+   const real  ca( trans( axis ) * d );
+
+   if( std::fabs( ca ) <= manifoldFeatureTolerance() ) {
+      const Vec3 u( ( d - ca * axis ).getNormalized() );
+      const real half( real(0.5) * c->getLength() );
+      f.kind = ContactFeature::segment;
+      f.size = 2;
+      f.v[0] = c->getPosition() - half * axis + c->getRadius() * u;
+      f.v[1] = c->getPosition() + half * axis + c->getRadius() * u;
+   }
+   else {
+      f.kind = ContactFeature::point;
+      f.size = 1;
+      f.v[0] = c->support( d );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact manifold between two touching features by reference-face clipping.
+ *
+ * \param fA Feature of body A (geom1) facing body B, i.e. in direction -n.
+ * \param fB Feature of body B (geom2) facing body A, i.e. in direction +n.
+ * \param n The contact normal from B to A.
+ * \param out Output, room for 4 points.
+ * \return Number of manifold points; 0 if the features do not form a multi-point contact.
+ *
+ * - face / face, face / segment: the face better aligned with \a n is the reference face; the
+ *   other feature is clipped against the reference face's side planes (Sutherland-Hodgman). Each
+ *   clipped point gets its signed distance to the reference plane and is placed on it (the flat
+ *   body's surface), the normal is the reference face normal;
+ * - segment / segment (parallel within manifoldFeatureTolerance()): the end points of the
+ *   overlap of the two segments along their direction, distance along \a n, placed midway;
+ * - anything involving a single point: no manifold (the caller keeps its single contact).
+ *
+ * Only points with a signed distance below pe::contactThreshold are kept; more than four are
+ * reduced to the deepest one plus the three spanning the largest area.
+ */
+inline size_t MaxContacts::clipManifold( const ContactFeature& fA, const ContactFeature& fB, const Vec3& n,
+                                         ManifoldPoint* out )
+{
+   const real tol( manifoldFeatureTolerance() );
+   std::vector<ManifoldPoint> pts;
+
+   if( fA.kind == ContactFeature::segment && fB.kind == ContactFeature::segment ) {
+      Vec3 t( fA.v[1] - fA.v[0] );
+      const real lenA( t.length() );
+      Vec3 tB( fB.v[1] - fB.v[0] );
+      const real lenB( tB.length() );
+      if( lenA <= real(0) || lenB <= real(0) )
+         return 0;
+      t /= lenA;
+      tB /= lenB;
+      if( ( t % tB ).length() > tol )
+         return 0;                                    // crossing lines touch in a point
+
+      // Coordinates along t; B's segment parametrised by its projection onto t.
+      real b0( trans( t ) * ( fB.v[0] - fA.v[0] ) ), b1( trans( t ) * ( fB.v[1] - fA.v[0] ) );
+      const real lo( std::max( real(0), std::min( b0, b1 ) ) );
+      const real hi( std::min( lenA, std::max( b0, b1 ) ) );
+      if( hi - lo <= real(1e-12) * lenA )
+         return 0;
+      for( const real sAlong : { lo, hi } ) {
+         const Vec3 pA( fA.v[0] + sAlong * t );
+         const Vec3 pB( fB.v[0] + ( ( sAlong - b0 ) / ( b1 - b0 ) ) * ( fB.v[1] - fB.v[0] ) );
+         const real dist( trans( n ) * ( pA - pB ) );
+         if( dist < contactThreshold )
+            pts.push_back( ManifoldPoint{ real(0.5) * ( pA + pB ), n, dist } );
+      }
+   }
+   else if( fA.kind == ContactFeature::face || fB.kind == ContactFeature::face ) {
+      if( fA.kind == ContactFeature::point || fB.kind == ContactFeature::point )
+         return 0;
+
+      // Reference face: the face better aligned with n (A's outward normal faces -n).
+      bool refIsA;
+      if( fA.kind == ContactFeature::face && fB.kind == ContactFeature::face )
+         refIsA = ( -( trans( fA.normal ) * n ) >= trans( fB.normal ) * n );
+      else
+         refIsA = ( fA.kind == ContactFeature::face );
+      const ContactFeature& ref( refIsA ? fA : fB );
+      const ContactFeature& inc( refIsA ? fB : fA );
+      const Vec3 nr( ref.normal );                   // outward normal of the reference body
+      const Vec3 normal( refIsA ? -nr : nr );         // contact normal from B to A
+
+      Vec3 centroid( 0, 0, 0 );
+      for( size_t i = 0; i < ref.size; ++i ) centroid += ref.v[i];
+      centroid /= static_cast<real>( ref.size );
+
+      // Sutherland-Hodgman against every side plane of the reference face. A segment is
+      // clipped as a degenerate polygon (both of its edges are the segment).
+      std::vector<Vec3> poly( inc.v, inc.v + inc.size ), next;
+      for( size_t i = 0; i < ref.size && !poly.empty(); ++i ) {
+         const Vec3& p0( ref.v[i] );
+         const Vec3& p1( ref.v[( i + 1 ) % ref.size] );
+         Vec3 m( nr % ( p1 - p0 ) );
+         if( trans( m ) * ( centroid - p0 ) < real(0) ) m = -m;
+         next.clear();
+         const size_t np( poly.size() );
+         for( size_t k = 0; k < np; ++k ) {
+            const Vec3& a( poly[k] );
+            const Vec3& b( poly[( k + 1 ) % np] );
+            const real da( trans( m ) * ( a - p0 ) ), db( trans( m ) * ( b - p0 ) );
+            if( da >= real(0) ) next.push_back( a );
+            if( ( da >= real(0) ) != ( db >= real(0) ) )
+               next.push_back( a + ( da / ( da - db ) ) * ( b - a ) );
+         }
+         poly.swap( next );
+      }
+
+      for( const Vec3& q : poly ) {
+         const real dist( trans( nr ) * ( q - ref.v[0] ) );
+         if( dist >= contactThreshold )
+            continue;
+         const Vec3 pos( q - dist * nr );
+         bool duplicate( false );
+         for( const ManifoldPoint& mp : pts )
+            duplicate = duplicate || ( mp.pos - pos ).sqrLength() <= real(1e-24);
+         if( !duplicate )
+            pts.push_back( ManifoldPoint{ pos, normal, dist } );
+      }
+   }
+   else {
+      return 0;
+   }
+
+   if( pts.size() <= 4 ) {
+      std::copy( pts.begin(), pts.end(), out );
+      return pts.size();
+   }
+
+   // Reduction to four points: the deepest, the one farthest from it, and the two farthest on
+   // either side of the line between them (largest supporting area).
+   const Vec3 nrm( pts[0].normal );
+   size_t i0( 0 );
+   for( size_t k = 1; k < pts.size(); ++k )
+      if( pts[k].dist < pts[i0].dist ) i0 = k;
+   size_t i1( i0 );
+   real best( -1 );
+   for( size_t k = 0; k < pts.size(); ++k ) {
+      const real d2( ( pts[k].pos - pts[i0].pos ).sqrLength() );
+      if( d2 > best ) { best = d2; i1 = k; }
+   }
+   const Vec3 edge( pts[i1].pos - pts[i0].pos );
+   size_t i2( i0 ), i3( i0 );
+   real smax( 0 ), smin( 0 );
+   for( size_t k = 0; k < pts.size(); ++k ) {
+      const real side( trans( edge % ( pts[k].pos - pts[i0].pos ) ) * nrm );
+      if( side > smax ) { smax = side; i2 = k; }
+      if( side < smin ) { smin = side; i3 = k; }
+   }
+   size_t count( 0 );
+   out[count++] = pts[i0];
+   if( i1 != i0 ) out[count++] = pts[i1];
+   if( i2 != i0 ) out[count++] = pts[i2];
+   if( i3 != i0 ) out[count++] = pts[i3];
+   return count;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Adds the multi-point manifold of a GJK/EPA contact, or the single contact.
+ *
+ * \param geom1 The first body (contacts are created as geom1 / geom2).
+ * \param geom2 The second body.
+ * \param normal The GJK/EPA contact normal, pointing from geom2 to geom1.
+ * \param contactPoint The GJK/EPA contact point.
+ * \param dist The GJK/EPA signed distance.
+ * \param contacts Contact container for the generated contacts.
+ *
+ * For bodies that can touch along a line or over an area (flat faces, cylinder caps and walls,
+ * capsule walls) a single GJK/EPA contact cannot support a resting body. The touching features
+ * of both bodies along \a normal are clipped against each other (clipManifold()); two or more
+ * resulting points replace the single contact. Otherwise, in particular whenever one feature is
+ * a single point, the GJK/EPA contact is kept unchanged.
+ */
+template < typename Type1 , typename Type2, typename CC >
+inline void MaxContacts::addFeatureManifold( Type1 geom1, Type2 geom2, const Vec3& normal, const Vec3& contactPoint,
+                                             real dist, CC& contacts )
+{
+   ContactFeature fA, fB;
+   contactFeature( geom1, -normal, fA );
+   contactFeature( geom2,  normal, fB );
+
+   ManifoldPoint manifold[4];
+   const size_t count( clipManifold( fA, fB, normal, manifold ) );
+
+   if( count >= 2 ) {
+      for( size_t k = 0; k < count; ++k ) {
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "      Manifold contact created between body " << geom1->getID()
+                << " and body " << geom2->getID() << " (dist=" << manifold[k].dist << ")";
+         }
+         contacts.addVertexFaceContact( geom1, geom2, manifold[k].pos, manifold[k].normal, manifold[k].dist );
+      }
+      return;
+   }
+
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "      Contact created between body " << geom1->getID()
+          << " and body " << geom2->getID() << " (dist=" << dist << ")";
+   }
+   contacts.addVertexFaceContact( geom1, geom2, contactPoint, normal, dist );
 }
 //*************************************************************************************************
 
@@ -3526,7 +3895,11 @@ void MaxContacts::collideBoxCapsule( BoxID b, CapsuleID c, CC& contacts )
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * GJK/EPA gives the deepest point and the normal; addFeatureManifold() then turns it into a
+ * multi-point manifold where the two bodies touch along a line or over an area: a cylinder
+ * standing on a box face (up to four points), a cylinder lying on a box face (the two ends of
+ * the contact line), a box standing on a cylinder cap (the box face clipped to the cap). A
+ * cylinder on its rim or a box corner on the curved wall keeps the single contact.
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideBoxCylinder( BoxID b, CylinderID c, CC& contacts )
@@ -3536,13 +3909,8 @@ void MaxContacts::collideBoxCylinder( BoxID b, CylinderID c, CC& contacts )
    real penetrationDepth;
 
    if(gjkEPAcollideHybrid< BoxID, CylinderID >(b, c, normal, contactPoint, penetrationDepth)) {
-      //bodys possibly overlap
       //normal points form object2 (c) to object1 (b)
-      contacts.addVertexFaceContact( b, c, contactPoint, normal, penetrationDepth );
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      Contact created between box " << b->getID()
-            << " and cylinder " << c->getID() << " (dist=" << penetrationDepth << ")";
-      }
+      addFeatureManifold( b, c, normal, contactPoint, penetrationDepth, contacts );
    }
 }
 //*************************************************************************************************
@@ -3888,7 +4256,9 @@ void MaxContacts::collideCapsuleCapsule( CapsuleID c1, CapsuleID c2, CC& contact
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * GJK/EPA gives the deepest point and the normal; addFeatureManifold() then turns it into two
+ * contacts where the capsule touches along a line: lying on a cylinder cap (the capsule line
+ * clipped to the cap) or parallel to a lying cylinder (the overlap of the two lines).
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideCapsuleCylinder( CapsuleID ca, CylinderID cy, CC& contacts )
@@ -3898,13 +4268,8 @@ void MaxContacts::collideCapsuleCylinder( CapsuleID ca, CylinderID cy, CC& conta
    real penetrationDepth;
 
    if(gjkEPAcollideHybrid< CapsuleID, CylinderID >(ca, cy, normal, contactPoint, penetrationDepth)) {
-      //bodys possibly overlap
       //normal points form object2 (cy) to object1 (ca)
-      contacts.addVertexFaceContact( ca, cy, contactPoint, normal, penetrationDepth );
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      Contact created between capsule " << ca->getID()
-            << " and cylinder " << cy->getID() << " (dist=" << penetrationDepth << ")";
-      }
+      addFeatureManifold( ca, cy, normal, contactPoint, penetrationDepth, contacts );
    }
 }
 //*************************************************************************************************
@@ -4028,7 +4393,11 @@ inline void MaxContacts::collideCapsuleUnion( CapsuleID c, UnionID u, CC& contac
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * GJK/EPA gives the deepest point and the normal; addFeatureManifold() then turns it into a
+ * multi-point manifold where the cylinders touch along a line or over an area: coaxial caps
+ * (one cap clipped to the other, up to four points), parallel lying cylinders (the overlap of
+ * the two contact lines), a cap resting on a lying cylinder (the wall line clipped to the cap).
+ * Crossed cylinders and rim contacts keep the single contact.
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideCylinderCylinder( CylinderID c1, CylinderID c2, CC& contacts )
@@ -4038,13 +4407,8 @@ void MaxContacts::collideCylinderCylinder( CylinderID c1, CylinderID c2, CC& con
    real penetrationDepth;
 
    if(gjkEPAcollideHybrid< CylinderID, CylinderID >(c1, c2, normal, contactPoint, penetrationDepth)) {
-      //bodys possibly overlap
       //normal points form object2 (c2) to object1 (c1)
-      contacts.addVertexFaceContact( c1, c2, contactPoint, normal, penetrationDepth );
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      Contact created between cylinder " << c1->getID()
-            << " and cylinder " << c2->getID() << " (dist=" << penetrationDepth << ")";
-      }
+      addFeatureManifold( c1, c2, normal, contactPoint, penetrationDepth, contacts );
    }
 }
 //*************************************************************************************************

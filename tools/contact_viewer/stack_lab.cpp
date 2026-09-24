@@ -57,9 +57,10 @@ using CollisionSystemType = std::remove_reference<decltype( *theCollisionSystem(
 //
 //=================================================================================================
 
-enum ScenarioKind { kTower, kPyramid, kWall, kMixed, kRamp, kDrop, kNumScenarios };
+enum ScenarioKind { kTower, kPyramid, kWall, kMixed, kRamp, kDrop, kCylinderStack, kNumScenarios };
 const char* const kScenarioNames[kNumScenarios] = {
-   "box tower", "box pyramid", "brick wall", "mixed-shape stack", "box on a ramp", "drop shapes on the ground" };
+   "box tower", "box pyramid", "brick wall", "mixed-shape stack", "box on a ramp", "drop shapes on the ground",
+   "upright cylinder stack" };
 
 enum DropShape { kDropSphere, kDropBox, kDropCapsule, kDropCylinder, kDropEllipsoid, kNumDropShapes };
 const char* const kDropShapeNames[kNumDropShapes] = { "sphere", "box", "capsule", "cylinder", "ellipsoid" };
@@ -421,6 +422,24 @@ void buildMixed( double s )
 }
 
 
+void buildCylinderStack( double s )
+{
+   // Box, upright cylinder, upright cylinder, box, ...: every cylinder stands flat on a box or on
+   // another cylinder's cap and carries a box or a cylinder. Exercises the face manifolds of
+   // box-cylinder and cylinder-cylinder. All bodies are s tall; the axis (body x) points up.
+   for( int i = 0; i < active.count; ++i ) {
+      const Vec3 p = stackPosition( i, s );
+      if( i % 3 == 0 ) {
+         addBody( createBox( ++nextId, p, Vec3( 1.2 * s, 1.2 * s, s ), material ), yawJitter() );
+      }
+      else {
+         addBody( createCylinder( ++nextId, p, 0.5 * s, s, material ),
+                  Quat( 0.0, 0.5 * kPi, uniform( active.yawJitter ) * kDegToRad ) );
+      }
+   }
+}
+
+
 void buildRamp( double s )
 {
    // A fixed plank tilted about y (its +x end down), normal n = ( sin a, 0, cos a ); the test
@@ -525,6 +544,7 @@ void buildScene()
       case kPyramid: buildPyramid( s ); break;
       case kWall:    buildWall( s );    break;
       case kMixed:   buildMixed( s );   break;
+      case kCylinderStack: buildCylinderStack( s ); break;
       case kRamp:    buildRamp( s );    break;
       case kDrop:    buildDrop( s );    break;
       default:       buildTower( s );   break;
@@ -695,7 +715,8 @@ void drawScenarioWindow()
    switch( s.kind ) {
       case kPyramid: countLabel = "base boxes";   break;
       case kWall:    countLabel = "rows";         break;
-      case kMixed:   countLabel = "stack height"; break;
+      case kMixed:
+      case kCylinderStack: countLabel = "stack height"; break;
       case kRamp:    countLabel = "boxes (x2)";   break;
       case kDrop:    countLabel = "bodies";       break;
       default: break;

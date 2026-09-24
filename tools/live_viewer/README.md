@@ -68,8 +68,8 @@ A **Mode** window switches between the two at any time.
   running; the window shows the simulated time per frame.
 - Live solver settings: gravity, error reduction, max iterations, relaxation, friction model.
 - Scenarios (applied on Reset): box tower, pyramid, brick wall, mixed-shape stack, boxes on a
-  ramp, shapes dropped onto the ground; count, size, gap, random offset/rotation (seeded),
-  friction, restitution, density.
+  ramp, shapes dropped onto the ground, upright cylinder stack; count, size, gap, random
+  offset/rotation (seeded), friction, restitution, density.
 - Contact points/normals redrawn after each frame; optional coloring of bodies by speed.
 - Plots: kinetic energy, solver max penetration, contact count, drift of the top body.
 - Ctrl + left-drag pulls a body with a spring (same mechanism as this viewer).
@@ -81,23 +81,8 @@ A **Mode** window switches between the two at any time.
   check of that contact.
 - In the **Sweep** window, drag the yellow line to scrub body B's `pos z` through the range.
 
-**Things to know** (observed with the repo's default `HardContactEulerLagrange` solver):
-
-- **Gravity is applied by the contact viewer**, not the world: this solver ignores
-  `World::setGravity()` on purpose (body forces belong to the outer CFD driver). The contact
-  viewer adds `m g` to each body before every step and keeps the world gravity at 0, so a solver
-  that does honour it does not apply it twice.
-- **Friction is additive per pair**: pe sums the two materials' coefficients, so the contact
-  viewer gives each body mu / 2 and the mu in the GUI is the real contact friction.
-- **Dropped boxes bounce at restitution 0**: landing at ~4.9 m/s with dt = 2e-3 penetrates ~1 cm
-  in one step; they bounce back at ~0.9 m/s and settle after ~1.8 s. Likely the position
-  correction (error reduction 0.7) — lower it or halve dt and watch the kinetic-energy plot.
-- **Boxes slide down the 20° ramp at mu = 0.4**, although tan 20° ≈ 0.36 < mu. The default
-  friction model is the approximate one; switching it is the first thing to try (not
-  investigated further).
-- **Cylinder-plane** contacts were missing (`MaxContacts::collideCylinderPlane()` was an empty
-  stub, cylinders fell through the ground); now implemented with up to four rim points per end
-  cap and covered by `tests/interface/pe_cylinder_plane_contact_test.cpp`.
+Known problems and solver behaviour that affects what the contact viewer shows:
+`tools/contact_viewer/contact-issues.md`.
 
 **Polyscope's own demo app** (from the Polyscope repo) is not built by the fetch. Its source is
 in `build-viewer/_deps/polyscope-src/examples/demo-app/`; add `add_subdirectory(examples/demo-app)`
