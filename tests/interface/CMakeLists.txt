@@ -206,6 +206,23 @@ set_tests_properties(pe-fixed-body-stale-correction PROPERTIES
   TIMEOUT 120
 )
 
+# Box-box contacts with (nearly) parallel edges (MaxContacts::collideBoxBox): edge-pair axes of
+# parallel edges used to produce O(1) garbage that replaced the contact of overlapping boxes by
+# a positive-distance edge/edge contact. Random near-parallel configurations checked against GJK,
+# plus a clean edge-versus-face approach. Recording contact container, no solver; serial, no MPI.
+add_executable(pe_box_box_parallel_edges_test
+  pe_box_box_parallel_edges_test.cpp
+)
+target_link_libraries(pe_box_box_parallel_edges_test PRIVATE pe_static)
+add_test(
+  NAME pe-box-box-parallel-edges
+  COMMAND pe_box_box_parallel_edges_test
+)
+set_tests_properties(pe-box-box-parallel-edges PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.

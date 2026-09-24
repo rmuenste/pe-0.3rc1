@@ -2597,6 +2597,18 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
 
    //----- Testing the all nine combinations of the axes of the two boxes -----
 
+   // An edge-pair axis a_i x b_j is only meaningful if the two edges are not (nearly) parallel.
+   // Its length is the sine of the angle between the edges; the separation along it is computed
+   // unnormalised and then divided by that length. For edges parallel up to rounding (length
+   // ~1e-16) the unnormalised separation is pure rounding noise and the quotient an O(1) value of
+   // random sign; a positive one used to win the axis selection and replace the real (penetrating)
+   // contact by a single edge/edge contact with a positive distance. Parallel edge pairs add no
+   // separating directions beyond the face normals already tested, so such axes are skipped:
+   // exact for parallel edges, conservative by about this tolerance times the box size for nearly
+   // parallel ones. At the tolerance, rounding noise after the division is ~1e-10, well below
+   // contactThreshold, so the normalised rejection test below is reliable for every used axis.
+   const real parallelEdgeTolerance( 1e-6 );
+
    real term3;
    real sum;
    real length;
@@ -2616,8 +2628,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[6]) + sq(b2_rR[3]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( 0, -b2_rR[6]/length, b2_rR[3]/length );
@@ -2646,8 +2666,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[7]) + sq(b2_rR[4]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( 0, -b2_rR[7]/length, b2_rR[4]/length );
@@ -2676,8 +2704,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[8]) + sq(b2_rR[5]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( 0, -b2_rR[8]/length, b2_rR[5]/length );
@@ -2706,8 +2742,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[6]) + sq(b2_rR[0]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( b2_rR[6]/length, 0, -b2_rR[0]/length );
@@ -2736,8 +2780,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[7]) + sq(b2_rR[1]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( b2_rR[7]/length, 0, -b2_rR[1]/length );
@@ -2766,8 +2818,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[8]) + sq(b2_rR[2]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( b2_rR[8]/length, 0, -b2_rR[2]/length );
@@ -2796,8 +2856,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[3]) + sq(b2_rR[0]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( -b2_rR[3]/length, b2_rR[0]/length, 0 );
@@ -2826,8 +2894,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[4]) + sq(b2_rR[1]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( -b2_rR[4]/length, b2_rR[1]/length, 0 );
@@ -2856,8 +2932,16 @@ void MaxContacts::collideBoxBox( BoxID b1, BoxID b2, CC& contacts )
    }
    else {
       length = std::sqrt( sq(b2_rR[5]) + sq(b2_rR[2]) );
-      if( length > epsilon ) {
+      if( length > parallelEdgeTolerance ) {
          sum /= length;
+         if( sum > contactThreshold ) {
+            // Separated along this axis; the unnormalised test above lets separations of up to
+            // contactThreshold / length through.
+            pe_LOG_DETAIL_SECTION( log ) {
+               log << "         Normalised edge/edge axis test failed!";
+            }
+            return;
+         }
          if( sum > maxDepth && std::fabs( sum - maxDepth ) > accuracy ) {
             maxDepth     = sum;
             normal_c     = Vec3( -b2_rR[5]/length, b2_rR[2]/length, 0 );

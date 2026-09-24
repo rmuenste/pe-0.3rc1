@@ -6,6 +6,14 @@ solver and `pe::detection::fine::MaxContacts`.
 
 ## Open problems
 
+### Box-box: no preference for face axes
+
+`MaxContacts::collideBoxBox` takes an edge-pair axis as soon as its depth beats the best face
+axis by `accuracy`. ODE's `dBoxBox`, which it is ported from, requires a 5 % margin
+(`fudge_factor = 1.05`) because edge axes are numerically fragile; the margin would give more
+stable contact types between nearly aligned boxes. Not needed for correctness since the
+near-parallel edge fix (see Resolved); not implemented.
+
 ### Remaining gaps in contact generation
 
 From a survey of `MaxContacts::collide()` and every routine it dispatches to:
@@ -59,6 +67,35 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   body); lowering the error reduction reduces it.
 
 ## Resolved
+
+- **Box-box: near-parallel edges replaced a real contact by a spurious "gap".** Observed in Pair
+  Lab: a box driven edge first into another box's face passed 0.35 into it, then blew up. Before
+  the pass-through `collide( A, B )` reported one edge-edge contact with a *positive* distance
+  (+0.30 ... +0.22, shrinking at the approach speed), a horizontal normal ~24 degrees off the
+  face normal and a contact point jumping between z = 0.5 and 0.0; the solver saw a gap and
+  applied no reaction.
+  - Cause: in the separating-axis test of `MaxContacts::collideBoxBox` (ported from ODE's
+    `dBoxBox`) an edge-pair axis `edge_a x edge_b` was skipped only below machine epsilon. For
+    edges parallel up to rounding (cross product 1e-16 ... 5e-16) the unnormalised separation is
+    rounding noise and `sum /= length` an O(1) value of random sign; a positive one beat every
+    (negative) face value and the routine emitted one edge-edge contact with `dist = maxDepth > 0`
+    instead of the real contact. The unnormalised rejection test never caught the noise.
+  - Evidence: 8.5 million near-contact configurations with near-parallel edges in general
+    orientations gave 14,410 positive-distance contacts, all with the boxes overlapping (GJK
+    distance 0, corners up to 0.46 deep). Clean edge-first impacts, edge-versus-face sweeps and
+    resting aligned stacks were not affected; it needs near-parallel edges in general
+    orientations (tilted or tumbling boxes).
+  - Fix: edge pairs within 1e-6 of parallel are skipped (they add no separating directions beyond
+    the face normals: exact for parallel edges, conservative by ~1e-6 times the box size for
+    nearly parallel ones), and for the remaining axes the rejection also tests the normalised
+    separation against `contactThreshold`, so no box-box contact has `dist > contactThreshold`.
+  - `tests/interface/pe_box_box_parallel_edges_test.cpp`: 1.7 million random near-parallel
+    configurations against GJK (no positive-distance contact, no contact for separated boxes, no
+    missed overlap, depth at least that of the deepest corner) plus a clean edge-versus-face
+    approach. Without the fix: 2,862 positive-distance contacts (worst +0.57) and 6,586 too
+    shallow.
+  - The blow-up after the pass-through came from the position correction described under "Solver
+    and engine behaviour to know".
 
 - **Fixed bodies inherited a stale velocity correction** (found as "the ramp scenario depends on
   what ran before it"). The hard-contact solvers keep per-body velocity corrections in `dv_` /
