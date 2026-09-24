@@ -48,6 +48,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 
 - [`tools/lubrication_explorer/`](../../tools/lubrication_explorer/README.md): Zero-build web tool that plots each lubrication force/torque component vs gap and recomputes live as you drag the model knobs (a faithful JS port of `LubricationModel.h`, with a self-check against the Level-0 test values). Opens by double-clicking `index.html`; no build/engine/server.
 - [`tools/live_viewer/`](../../tools/live_viewer/README.md): Interactive Polyscope viewer that runs an actual small lubrication simulation with the runtime knobs as live ImGui widgets (`PE_BUILD_LIVE_VIEWER`).
+- [`tools/contact_viewer/`](../../tools/contact_viewer/README.md): Interactive Polyscope harness for contact generation and resting contact: Stack Lab runs/steps small stacking scenarios on a ground plane with a live contact overlay and stability plots; Pair Lab poses two primitives and inspects the contacts `MaxContacts::collide()` emits (dispatch-order check, support witnesses, one-DOF sweeps, export as test case). Has a headless `--smoke` mode (`PE_BUILD_CONTACT_VIEWER`).
 
 ## Integration and Coupling
 
