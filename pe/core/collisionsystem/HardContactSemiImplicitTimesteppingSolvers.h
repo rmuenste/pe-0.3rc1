@@ -4341,6 +4341,15 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 //         std::cout << "Force: " << (body->getForce()) << std::endl;
          dw = dt * ( body->getInvInertia() * body->getTorque() );
       }
+      else {
+         // Fixed body: no velocity correction. dv_/dw_ are resize()d, never cleared, and body
+         // indices are re-derived from the storage order every step, so without this the entry
+         // keeps whatever a previous (mobile) occupant of the index left behind; the contact
+         // relaxation would then size every contact against this body as if it moved at that
+         // ghost velocity. A prescribed velocity of a fixed body (MOBILE_INFINITE) lives in v_.
+         dv = Vec3( 0, 0, 0 );
+         dw = Vec3( 0, 0, 0 );
+      }
    }
    else {
       pe_INTERNAL_ASSERT( body->getLinearVel() == Vec3( 0, 0, 0 ) && body->getAngularVel() == Vec3( 0, 0, 0 ), "Sleeping body has non-zero velocities." );
