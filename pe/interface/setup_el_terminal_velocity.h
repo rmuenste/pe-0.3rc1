@@ -452,6 +452,38 @@ void setupELTerminalVelocity(MPI_Comm ex0,
     }
   }
 
+  // Closed container (wall-bounded settling column, D3.2 twin): six fixed
+  // global planes on the CFD domain box so point particles cannot leave the
+  // fluid domain through a no-slip wall. Global planes exist on every rank
+  // and are never shadow-copied; velocity zero, geometry invariant.
+  if (config.getBoxWallsEnabled()) {
+    if (periodicX || periodicY || periodicZ || config.getZWallsEnabled()) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "EL terminal-velocity setup: boxWallsEnabled_ requires "
+                  << "periodicX_/Y_/Z_ = false and zWallsEnabled_ = false.\n";
+      }
+      MPI_Abort(ex0, 1);
+    }
+    MaterialID boxMaterial = createMaterial("el_tv_boxwall", real(1.0),
+                                            config.getRestitution(),
+                                            config.getStaticFriction(),
+                                            config.getDynamicFriction(),
+                                            0.2, 80, 100, 10, 11);
+    pe_GLOBAL_SECTION {
+      createPlane(12020,  1.0, 0.0, 0.0,  xmin, boxMaterial, true);
+      createPlane(12021, -1.0, 0.0, 0.0, -xmax, boxMaterial, true);
+      createPlane(12022,  0.0, 1.0, 0.0,  ymin, boxMaterial, true);
+      createPlane(12023,  0.0,-1.0, 0.0, -ymax, boxMaterial, true);
+      createPlane(12024,  0.0, 0.0, 1.0,  zmin, boxMaterial, true);
+      createPlane(12025,  0.0, 0.0,-1.0, -zmax, boxMaterial, true);
+    }
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: box walls enabled on x=["
+                << xmin << "," << xmax << "] y=[" << ymin << "," << ymax
+                << "] z=[" << zmin << "," << zmax << "] (six fixed planes).\n";
+    }
+  }
+
   unsigned long localParticles = 0;
   for (std::size_t i = 0; i < spherePositions.size(); ++i) {
     const Vec3 pos = spherePositions[i];
