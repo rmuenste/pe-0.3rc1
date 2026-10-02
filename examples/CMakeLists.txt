@@ -11,6 +11,8 @@ add_subdirectory(simple_granular)
 add_subdirectory(triangle_mesh)
 add_subdirectory(usage_demo)
 add_subdirectory(simple_demo)
+add_subdirectory(conveyor)  # LIGGGHTS conveyor tutorial re-implemented with pe primitives
+add_subdirectory(liggghts_ports)  # further LIGGGHTS tutorial ports (insert_stream, cylinder cases, multisphere, meshes)
 add_subdirectory(basic_lubrication)
 add_subdirectory(lubrication_demo)
 add_subdirectory(capsule_spin)
