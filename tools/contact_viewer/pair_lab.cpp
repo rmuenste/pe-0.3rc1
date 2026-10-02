@@ -115,6 +115,7 @@ struct Preset {
    const char* name;
    BodySpec    a;
    BodySpec    b;
+   double      groundLift = 0.0;   //!< > 0: the ground is placed this far above the pair's lowest point (manual height)
 };
 
 //! Configurations that stress the contact manifold generation. All penetrate by about 0.01.
@@ -151,6 +152,22 @@ const std::vector<Preset>& presets()
       { "cylinder standing on torus tube",     torusSpec( 1.0, 0.3 ), cylinderSpec( 0.2, 0.6 ).at( 1.0, 0.0, 0.59 ).rotated( 0, 90, 0 ) },
       { "ellipsoid on torus tube",             torusSpec( 1.0, 0.3 ), ellipsoidSpec( 0.3, 0.2, 0.15 ).at( 1.0, 0.0, 0.44 ) },
       { "sphere in torus hole (no contact)",   torusSpec( 1.0, 0.3 ), sphereSpec( 0.5 ) },
+      // Demonstrations of the open issues in contact-issues.md ("ISSUE" presets).
+      // Sample pitch: a 5 x 5 box is sampled every 5/24 = 0.21 on its bottom face, the tube of the
+      // small torus is 0.2 thick: whether a sample lands on the tube depends on the position
+      // (sweep B's pos x and watch the contact count).
+      { "ISSUE: large box on small torus (sample pitch)",   torusSpec( 0.35, 0.1 ), boxSpec( 5, 5, 0.4 ).at( 0.0, 0.0, 0.29 ) },
+      // Patch merging: the box rests on the tube at x = -1 and x = +1 (two patches, parallel
+      // normals); with the box's extent as clustering radius they form one cluster, whose
+      // deepest plus four extremal points are all the contacts the two patches get.
+      { "ISSUE: box bridging the torus (patch merging)",    torusSpec( 1.0, 0.3 ), boxSpec( 2.6, 0.4, 0.4 ).at( 0.0, 0.0, 0.49 ) },
+      // Plane-mesh: the torus rests on the ground, which is placed 0.01 into it; every penetrating
+      // plane sample becomes a contact, see "ground contacts" in the Contacts window.
+      { "ISSUE: torus on the ground (plane-mesh contacts)", torusSpec( 1.0, 0.3 ), sphereSpec( 0.2 ).at( 0.0, 0.0, 1.2 ), 0.01 },
+      // Position correction: 0.05 penetration becomes a separation velocity erp * 0.05 / dt
+      // (35 m/s at dt = 1e-3) that stays in the body. Untick "start from a touching state" in the
+      // Simulation window and press Run.
+      { "ISSUE: box on box 0.05 deep (correction launch)",  boxSpec( 1, 1, 1 ), boxSpec( 1, 1, 1 ).at( 0.0, 0.0, 0.95 ) },
    };
    return list;
 }
@@ -513,10 +530,17 @@ void syncGizmos()
 void selectPreset( int index )
 {
    presetIndex = std::max( 0, std::min( index, static_cast<int>( presets().size() ) - 1 ) );
-   specs[0]    = presets()[presetIndex].a;
-   specs[1]    = presets()[presetIndex].b;
+   const Preset& preset = presets()[presetIndex];
+   specs[0]    = preset.a;
+   specs[1]    = preset.b;
    selected    = -1;
+   groundAuto  = ( preset.groundLift <= 0.0 );
    rebuildScene();
+   if( !groundAuto ) {
+      groundHeight = lowestPoint() + preset.groundLift;
+      placeGround();
+      dirty = true;
+   }
 }
 
 
@@ -1351,8 +1375,9 @@ bool smokeTest()
    for( int k = 0; k < static_cast<int>( presets().size() ); ++k ) {
       selectPreset( k );
       polyscope::frameTick();
-      std::printf( "preset %2d  %-40s %d contact(s), swapped %d, %s%s\n", k, presets()[k].name,
+      std::printf( "preset %2d  %-50s %d contact(s), swapped %d, ground %d, %s%s\n", k, presets()[k].name,
                    static_cast<int>( contactLog.entries.size() ), static_cast<int>( swappedLog.entries.size() ),
+                   static_cast<int>( groundLog.entries.size() ),
                    swapCheck.countMatch ? "counts agree" : "COUNTS DIFFER",
                    collideError.empty() ? "" : ( " ERROR: " + collideError ).c_str() );
       for( const viewer::ContactLog::Entry& c : contactLog.entries )

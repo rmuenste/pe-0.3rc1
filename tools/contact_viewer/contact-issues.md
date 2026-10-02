@@ -54,7 +54,8 @@ fraction of a body size per step, or a user-set maximum in m/s) instead of the c
 penetration but still adds momentum and still makes small dt worse; the split impulse removes
 the cause.
 
-Neither is implemented.
+Neither is implemented. Pair Lab preset "ISSUE: box on box 0.05 deep (correction launch)" with
+"start from a touching state" unticked shows the launch (35 m/s at dt = 1e-3).
 
 ### Box-box: no preference for face axes
 
@@ -89,7 +90,10 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   With a flat resting face all samples have nearly equal depth, so the "deepest" representative
   is chosen by sample index and can hop between frames (a centroid tie-break would avoid it).
   Samples deep inside the mesh get the nearest-surface normal, like every signed-distance
-  method. DistanceMap pairs emit hard contacts only (no lubrication contacts).
+  method. DistanceMap pairs emit hard contacts only (no lubrication contacts). Pair Lab
+  presets "ISSUE: large box on small torus (sample pitch)" (sweep the box's pos x: the contact
+  count comes and goes) and "ISSUE: box bridging the torus (patch merging)" (two patches, at
+  most five contacts) show the two effects.
 - **Plane vs plane** generates nothing, by design (both fixed and infinite).
 
 ### Unverified observations
@@ -99,6 +103,7 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   samples the plane under the mesh's AABB on a 25 x 25 grid and its clustering is compiled out
   (`PE_DISTANCEMAP_PLANE_CLUSTERING 0`). Each contact gets its own solver impulse, so a mesh
   resting on a plane has an unusually large contact set; not checked whether that is intended.
+  Pair Lab preset "ISSUE: torus on the ground (plane-mesh contacts)" shows the count.
 
 - Pair Lab preset "box on box: face-face, offset + yaw" gives five contacts, three with their
   points at z = 0.5 and two at z = 0.49. Not checked whether the mixed placement is intended.
