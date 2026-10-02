@@ -397,3 +397,48 @@ add_test(
 set_tests_properties(pe-lubrication-refusal PROPERTIES
   LABELS "integration;serial;lubrication"
 )
+
+# Stale velocity-correction regression: a FIXED body whose per-step storage index is recycled
+# from a departed mobile body (BodyStorage::remove is swap-with-last) must not inherit that
+# body's dv_/dw_ entry. initializeVelocityCorrections() used to assign dv/dw only for awake
+# non-fixed bodies while the vectors are resize()d, never cleared, so every contact against the
+# wall was sized as if it moved at the ghost velocity (impulses no body absorbs). The solver
+# only sees v_ + dv_, so the defect and the fix are solver-generic; one source is registered
+# against each hard-contact pipeline: the campaign solver (HardContactAndFluid), the neutral
+# semi-implicit solver, and the shipped default (HardContactEulerLagrange via pe_static).
+# Body forces are applied explicitly so the same scenario drives all three. Serial world, no MPI.
+add_executable(pe_stale_velocity_correction_fluid_test
+  pe_stale_velocity_correction_test.cpp
+)
+target_link_libraries(pe_stale_velocity_correction_fluid_test PRIVATE pe_static_lubstage_fluid)
+add_test(
+  NAME pe-stale-velocity-correction-fluid
+  COMMAND pe_stale_velocity_correction_fluid_test
+)
+set_tests_properties(pe-stale-velocity-correction-fluid PROPERTIES
+  LABELS "integration;serial;rigidbody"
+)
+
+add_executable(pe_stale_velocity_correction_plain_test
+  pe_stale_velocity_correction_test.cpp
+)
+target_link_libraries(pe_stale_velocity_correction_plain_test PRIVATE pe_static_lubstage_plain)
+add_test(
+  NAME pe-stale-velocity-correction-plain
+  COMMAND pe_stale_velocity_correction_plain_test
+)
+set_tests_properties(pe-stale-velocity-correction-plain PROPERTIES
+  LABELS "integration;serial;rigidbody"
+)
+
+add_executable(pe_stale_velocity_correction_test
+  pe_stale_velocity_correction_test.cpp
+)
+target_link_libraries(pe_stale_velocity_correction_test PRIVATE pe_static)
+add_test(
+  NAME pe-stale-velocity-correction
+  COMMAND pe_stale_velocity_correction_test
+)
+set_tests_properties(pe-stale-velocity-correction PROPERTIES
+  LABELS "integration;serial;rigidbody"
+)
