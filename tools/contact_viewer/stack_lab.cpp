@@ -55,10 +55,11 @@ const double kDegToRad = kPi / 180.0;
 //
 //=================================================================================================
 
-enum ScenarioKind { kTower, kPyramid, kWall, kMixed, kRamp, kDrop, kCylinderStack, kNumScenarios };
+// Appended kinds keep the indices (--preset k) of the existing ones stable.
+enum ScenarioKind { kTower, kPyramid, kWall, kMixed, kRamp, kDrop, kCylinderStack, kSquareWall, kNumScenarios };
 const char* const kScenarioNames[kNumScenarios] = {
-   "box tower", "box pyramid", "brick wall", "mixed-shape stack", "box on a ramp", "drop shapes on the ground",
-   "upright cylinder stack" };
+   "box tower", "triangular wall", "brick wall", "mixed-shape stack", "box on a ramp", "drop shapes on the ground",
+   "upright cylinder stack", "square wall (N x N)" };
 
 enum DropShape { kDropSphere, kDropBox, kDropCapsule, kDropCylinder, kDropEllipsoid, kNumDropShapes };
 const char* const kDropShapeNames[kNumDropShapes] = { "sphere", "box", "capsule", "cylinder", "ellipsoid" };
@@ -70,6 +71,7 @@ struct Scenario {
    int    wallColumns = 4;
    double size        = 1.0;     // box edge length s; every other dimension scales with it
    double gap         = 0.0;     // initial vertical gap between stacked bodies, in s
+   double sideGap     = 0.0;     // gap between neighbours in a row of the triangular / square wall, in s
    double jitter      = 0.0;     // random lateral offset per body, in s
    double yawJitter   = 0.0;     // random yaw per body [deg]
    int    seed        = 1;
@@ -261,17 +263,43 @@ void buildTower( double s )
 }
 
 
-void buildPyramid( double s )
+//! Row \a r (0 = bottom) of \a n unit boxes (edge s), centred on x = 0 and touching up to
+//! sideGap. Each box's x extent after its yaw jitter is used for the layout, so neighbours never
+//! start overlapping (an overlap would be corrected with a velocity and launch the boxes); the
+//! lateral jitter acts across the wall (y) only.
+void buildWallRow( int r, int n, double s )
 {
-   const double pitch = 1.05 * s;
-   for( int r = 0; r < active.count; ++r ) {
-      const int n = active.count - r;
-      for( int k = 0; k < n; ++k ) {
-         Vec3 p = stackPosition( r, s );
-         p[0] += ( k - 0.5 * ( n - 1 ) ) * pitch;
-         addBody( createBox( ++nextId, p, Vec3( s, s, s ), material ), yawJitter() );
-      }
+   std::vector<double> yaw( n ), half( n );
+   double width = active.sideGap * s * ( n - 1 );
+   for( int k = 0; k < n; ++k ) {
+      yaw[k]  = uniform( active.yawJitter ) * kDegToRad;
+      half[k] = 0.5 * s * ( std::abs( std::cos( yaw[k] ) ) + std::abs( std::sin( yaw[k] ) ) );
+      width  += 2.0 * half[k];
    }
+   double x = -0.5 * width;
+   for( int k = 0; k < n; ++k ) {
+      x += half[k];
+      const Vec3 p( x, uniform( active.jitter * s ), 0.5 * s + r * s * ( 1.0 + active.gap ) );
+      addBody( createBox( ++nextId, p, Vec3( s, s, s ), material ), Quat( 0.0, 0.0, yaw[k] ) );
+      x += half[k] + active.sideGap * s;
+   }
+}
+
+
+//! Triangular wall: count boxes in the bottom row, one fewer per row, one on top; every row is
+//! centred, so its boxes sit over the joints of the row below.
+void buildTriangularWall( double s )
+{
+   for( int r = 0; r < active.count; ++r )
+      buildWallRow( r, active.count - r, s );
+}
+
+
+//! Square wall: count x count boxes, columns stacked straight on top of each other.
+void buildSquareWall( double s )
+{
+   for( int r = 0; r < active.count; ++r )
+      buildWallRow( r, active.count, s );
 }
 
 
@@ -423,7 +451,8 @@ void buildScene()
 
    const double s = active.size;
    switch( active.kind ) {
-      case kPyramid: buildPyramid( s ); break;
+      case kPyramid:    buildTriangularWall( s ); break;
+      case kSquareWall: buildSquareWall( s );     break;
       case kWall:    buildWall( s );    break;
       case kMixed:   buildMixed( s );   break;
       case kCylinderStack: buildCylinderStack( s ); break;
@@ -528,7 +557,8 @@ void drawScenarioWindow()
 
    const char* countLabel = "tower height";
    switch( s.kind ) {
-      case kPyramid: countLabel = "base boxes";   break;
+      case kPyramid:    countLabel = "bottom row boxes";         break;
+      case kSquareWall: countLabel = "boxes per row and column"; break;
       case kWall:    countLabel = "rows";         break;
       case kMixed:
       case kCylinderStack: countLabel = "stack height"; break;
@@ -556,7 +586,16 @@ void drawScenarioWindow()
    ImGui::InputDouble( "box size s", &s.size, 0.0, 0.0, "%.4g" );
    s.size = std::max( 1.0e-4, s.size );
    ImGui::InputDouble( "initial gap [s]", &s.gap, 0.0, 0.0, "%.4g" );
+   if( s.kind == kPyramid || s.kind == kSquareWall ) {
+      ImGui::InputDouble( "side gap [s]", &s.sideGap, 0.0, 0.0, "%.4g" );
+      s.sideGap = std::max( 0.0, s.sideGap );
+      if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+         ImGui::SetTooltip( "Gap between neighbours in a row; 0 = touching. The layout uses each box's width\n"
+                            "after its yaw jitter, so neighbours never start overlapping." );
+   }
    ImGui::InputDouble( "lateral jitter [s]", &s.jitter, 0.0, 0.0, "%.4g" );
+   if( ( s.kind == kPyramid || s.kind == kSquareWall ) && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+      ImGui::SetTooltip( "For the walls: across the wall (y) only." );
    ImGui::InputDouble( "yaw jitter [deg]", &s.yawJitter, 0.0, 0.0, "%.4g" );
    ImGui::InputInt( "random seed", &s.seed );
 
@@ -683,6 +722,31 @@ bool smokeTest()
                    simClock.error.empty() ? "" : "  ERROR: ", simClock.error.c_str() );
       if( !simClock.error.empty() )
          ok = false;
+   }
+
+   // The walls must never start overlapping, also with touching neighbours and random yaw: an
+   // initial overlap is corrected with a velocity and launches the boxes.
+   {
+      const Scenario saved = staged;
+      bool touching = true;
+      for( int kind : { static_cast<int>( kPyramid ), static_cast<int>( kSquareWall ) } ) {
+         staged           = Scenario();
+         staged.kind      = kind;
+         staged.count     = 5;
+         staged.sideGap   = 0.0;
+         staged.yawJitter = 10.0;
+         staged.jitter    = 0.05;
+         buildScene();
+         real deepest = 0;
+         for( const viewer::ContactLog::Entry& c : contactLog.entries )
+            deepest = std::min( deepest, c.dist );
+         std::printf( "%s, side gap 0, yaw jitter 10 deg: %d bodies, deepest initial contact %.3e -> %s\n",
+                      kScenarioNames[kind], static_cast<int>( simBodies.size() ), static_cast<double>( deepest ),
+                      deepest >= real(-1e-9) ? "no overlap" : "OVERLAP" );
+         touching = touching && deepest >= real(-1e-9);
+      }
+      ok = ok && touching;
+      staged = saved;
    }
 
    // Cylinders dropped onto the ground: before collideCylinderPlane() was implemented they fell

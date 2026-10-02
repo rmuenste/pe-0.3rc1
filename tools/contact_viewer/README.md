@@ -50,12 +50,16 @@ Command line:
   max iterations, relaxation parameter, friction (relaxation) model.
 - **Gravity** — the "gravity z" slider; the viewer applies it as a force `m g` per step.
 - **Ground plane** — a fixed pe plane at z = 0, drawn with Polyscope's tiled ground.
-- **Scenarios** (staged, applied on Reset) — box tower, box pyramid, brick wall (offset rows),
+- **Scenarios** (staged, applied on Reset) — box tower, triangular wall (broad bottom row, one
+  box fewer per row, one box on top), square wall (N x N boxes, straight columns), brick wall
+  (offset rows),
   mixed-shape stack (box / cylinder / capsule / ellipsoid / sphere), boxes on a fixed ramp (shows
   tan(angle) vs mu), shapes dropped onto the ground, upright cylinder stack (box / cylinder /
   cylinder / box ..., exercises the box-cylinder and cylinder-cylinder face manifolds). Box
   size, initial gap, lateral and yaw jitter with a seed, friction mu (the contact friction of a
-  pair), restitution, density.
+  pair), restitution, density. The triangular and square walls have a side gap between
+  neighbours (default 0, touching); their rows are laid out from each box's width after its yaw
+  jitter, so boxes never start overlapping, and the lateral jitter acts across the wall only.
 - **Overlay** — after each frame's steps `MaxContacts::collide()` is re-run over all
   AABB-overlapping pairs (the collision system clears its contacts at the end of a step), so the
   markers show the contacts of the current configuration. Bodies can be colored by speed.

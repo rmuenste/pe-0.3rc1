@@ -67,9 +67,9 @@ A **Mode** window switches between the two at any time.
   the largest stable step, one-click values 1e-4 … 1e-2. Applies on the next step, also while
   running; the window shows the simulated time per frame.
 - Live solver settings: gravity, error reduction, max iterations, relaxation, friction model.
-- Scenarios (applied on Reset): box tower, pyramid, brick wall, mixed-shape stack, boxes on a
-  ramp, shapes dropped onto the ground, upright cylinder stack; count, size, gap, random
-  offset/rotation (seeded), friction, restitution, density.
+- Scenarios (applied on Reset): box tower, triangular wall, square wall, brick wall,
+  mixed-shape stack, boxes on a ramp, shapes dropped onto the ground, upright cylinder stack;
+  count, size, gap, random offset/rotation (seeded), friction, restitution, density.
 - Contact points/normals redrawn after each frame; optional coloring of bodies by speed.
 - Plots: kinetic energy, solver max penetration, contact count, drift of the top body.
 - Ctrl + left-drag pulls a body with a spring (same mechanism as this viewer).
