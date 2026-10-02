@@ -223,6 +223,25 @@ set_tests_properties(pe-box-box-parallel-edges PROPERTIES
   TIMEOUT 120
 )
 
+# Primitive-mesh contacts on a DistanceMap (MaxContacts::collideTMeshWithDistanceMap): sphere,
+# box, capsule, cylinder and ellipsoid against a non-convex torus, checked against the analytic
+# torus distance; the hole case shows what the DistanceMap adds over GJK/EPA. Needs CGAL; the
+# executable is a no-op without it. Serial world, no MPI.
+if(PE_USE_CGAL)
+  add_executable(pe_primitive_mesh_distancemap_test
+    pe_primitive_mesh_distancemap_test.cpp
+  )
+  target_link_libraries(pe_primitive_mesh_distancemap_test PRIVATE pe_static)
+  add_test(
+    NAME pe-primitive-mesh-distancemap
+    COMMAND pe_primitive_mesh_distancemap_test
+  )
+  set_tests_properties(pe-primitive-mesh-distancemap PROPERTIES
+    LABELS "unit;serial;rigidbody;cgal"
+    TIMEOUT 300
+  )
+endif()
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.

@@ -317,11 +317,37 @@ protected:
                                           real dist, CC& contacts );
 
    // DistanceMap-based collision detection helpers
+   //! A surface sample of the query body that lies within contactThreshold of the reference
+   //! mesh according to its DistanceMap (world coordinates, penetration >= 0).
+   struct DistanceMapCandidate {
+      Vec3 worldPos;        // Query point in world coordinates
+      Vec3 worldNormal;     // Contact normal in world coordinates (outward normal of the mesh)
+      real penetration;     // Penetration depth (positive = penetrating)
+      Vec3 contactPoint;    // Surface contact point on the mesh in world coordinates
+      DistanceMapCandidate(const Vec3& pos, const Vec3& normal, real pen, const Vec3& contact)
+         : worldPos(pos), worldNormal(normal), penetration(pen), contactPoint(contact) {}
+   };
+
    template< typename CC >
    static bool collideWithDistanceMap(TriangleMeshID mA, TriangleMeshID mB, CC& contacts);
 
    template< typename CC >
    static bool collidePlaneTMeshWithDistanceMap(PlaneID plane, TriangleMeshID mesh, CC& contacts);
+
+   template< typename Type, typename CC >
+   static bool collideTMeshWithDistanceMap( Type geom, TriangleMeshID mesh, CC& contacts );
+
+   template< typename CC >
+   static size_t emitDistanceMapContacts( GeomID query, GeomID reference,
+                                          std::vector<DistanceMapCandidate>& candidates, real clusteringRadius,
+                                          CC& contacts );
+
+   static inline void fibonacciSphere( size_t n, std::vector<Vec3>& directions );
+   static inline void distanceMapSamples( SphereID s,    real spacing, std::vector<Vec3>& samples );
+   static inline void distanceMapSamples( BoxID b,       real spacing, std::vector<Vec3>& samples );
+   static inline void distanceMapSamples( CapsuleID c,   real spacing, std::vector<Vec3>& samples );
+   static inline void distanceMapSamples( CylinderID c,  real spacing, std::vector<Vec3>& samples );
+   static inline void distanceMapSamples( EllipsoidID e, real spacing, std::vector<Vec3>& samples );
    //@}
    //**********************************************************************************************
 };
@@ -2265,10 +2291,20 @@ inline void MaxContacts::collideSpherePlane( SphereID s, PlaneID p, CC& contacts
  * \return void
  *
  * TODO
+ *
+ * With a DistanceMap on the mesh the contacts come from collideTMeshWithDistanceMap() (surface
+ * samples of the sphere against the signed distance field; valid for non-convex meshes).
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideSphereTMesh( SphereID s, TriangleMeshID m, CC& contacts )
 {
+   // A mesh with a DistanceMap is handled on the DistanceMap alone: the mesh may be non-convex,
+   // for which the GJK/EPA path below (convex support mapping) would report wrong contacts.
+   if( m->hasDistanceMap() ) {
+      collideTMeshWithDistanceMap( s, m, contacts );
+      return;
+   }
+
 
    //===========================================================================================
    //Vec3 normal;
@@ -4175,11 +4211,20 @@ void MaxContacts::collideBoxPlane( BoxID b, PlaneID p, CC& contacts )
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * With a DistanceMap on the mesh the contacts come from collideTMeshWithDistanceMap() (surface
+ * samples of the box against the signed distance field; valid for non-convex meshes), otherwise
+ * from the hybrid GJK/EPA on the support mappings (one contact, the mesh treated as convex).
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideBoxTMesh( BoxID b, TriangleMeshID m, CC& contacts )
 {
+   // A mesh with a DistanceMap is handled on the DistanceMap alone: the mesh may be non-convex,
+   // for which the GJK/EPA path below (convex support mapping) would report wrong contacts.
+   if( m->hasDistanceMap() ) {
+      collideTMeshWithDistanceMap( b, m, contacts );
+      return;
+   }
+
    Vec3 normal;
    Vec3 contactPoint;
    real penetrationDepth;
@@ -4424,11 +4469,20 @@ void MaxContacts::collideCapsulePlane( CapsuleID c, PlaneID p, CC& contacts )
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * With a DistanceMap on the mesh the contacts come from collideTMeshWithDistanceMap() (surface
+ * samples of the capsule against the signed distance field; valid for non-convex meshes), otherwise
+ * from the hybrid GJK/EPA on the support mappings (one contact, the mesh treated as convex).
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideCapsuleTMesh( CapsuleID c, TriangleMeshID m, CC& contacts )
 {
+   // A mesh with a DistanceMap is handled on the DistanceMap alone: the mesh may be non-convex,
+   // for which the GJK/EPA path below (convex support mapping) would report wrong contacts.
+   if( m->hasDistanceMap() ) {
+      collideTMeshWithDistanceMap( c, m, contacts );
+      return;
+   }
+
    Vec3 normal;
    Vec3 contactPoint;
    real penetrationDepth;
@@ -4572,11 +4626,20 @@ void MaxContacts::collideCylinderPlane( CylinderID c, PlaneID p, CC& contacts )
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * With a DistanceMap on the mesh the contacts come from collideTMeshWithDistanceMap() (surface
+ * samples of the cylinder against the signed distance field; valid for non-convex meshes), otherwise
+ * from the hybrid GJK/EPA on the support mappings (one contact, the mesh treated as convex).
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideCylinderTMesh( CylinderID c, TriangleMeshID m, CC& contacts )
 {
+   // A mesh with a DistanceMap is handled on the DistanceMap alone: the mesh may be non-convex,
+   // for which the GJK/EPA path below (convex support mapping) would report wrong contacts.
+   if( m->hasDistanceMap() ) {
+      collideTMeshWithDistanceMap( c, m, contacts );
+      return;
+   }
+
    Vec3 normal;
    Vec3 contactPoint;
    real penetrationDepth;
@@ -5678,10 +5741,20 @@ inline void MaxContacts::collideEllipsoidPlane( EllipsoidID e, PlaneID p, CC& co
  *
  * Hybrid GJK/EPA on the support mappings (the mesh is treated through its convex support
  * mapping, as for boxes and capsules); the normal points from the mesh to the ellipsoid.
+ *
+ * With a DistanceMap on the mesh the contacts come from collideTMeshWithDistanceMap() (surface
+ * samples of the ellipsoid against the signed distance field; valid for non-convex meshes).
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideEllipsoidTMesh( EllipsoidID e, TriangleMeshID m, CC& contacts )
 {
+   // A mesh with a DistanceMap is handled on the DistanceMap alone: the mesh may be non-convex,
+   // for which the GJK/EPA path below (convex support mapping) would report wrong contacts.
+   if( m->hasDistanceMap() ) {
+      collideTMeshWithDistanceMap( e, m, contacts );
+      return;
+   }
+
    Vec3 normal;
    Vec3 contactPoint;
    real penetrationDepth;
@@ -5765,17 +5838,8 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
       // This replaces the single deepest contact with multiple distributed contacts for better stability
       
       // Contact candidate structure for manifold building
-      struct ContactCandidate {
-         Vec3 worldPos;        // Query point in world coordinates
-         Vec3 worldNormal;     // Contact normal in world coordinates
-         real penetration;     // Penetration depth (positive = penetrating)
-         Vec3 contactPoint;    // Surface contact point in world coordinates
-         
-         ContactCandidate(const Vec3& pos, const Vec3& normal, real pen, const Vec3& contact)
-            : worldPos(pos), worldNormal(normal), penetration(pen), contactPoint(contact) {}
-      };
       
-      std::vector<ContactCandidate> candidates;
+      std::vector<DistanceMapCandidate> candidates;
       candidates.reserve(32); // Reserve space for typical contact manifold
       
       const auto& queryVertices = queryMesh->getWFVertices();
@@ -5883,161 +5947,10 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
          log << "DistanceMap processed face barycenters, total candidates: " << candidates.size() << "\n";
       }
 
-      // Phase 4: Contact manifold generation from candidates
-      if (candidates.empty()) {
-         return false; // No penetrating contacts found
-      }
-      
-      // Contact clustering parameters
-      const real clusteringRadius = 2.0 * distMap->getSpacing(); // Proximity clustering
-      const real normalSimilarityThreshold = 0.9; // Dot product threshold for normal similarity
-      const size_t maxContactsPerPair = 6; // Limit total contacts for performance
-      
-      // Contact clustering structure
-      struct ContactCluster {
-         std::vector<size_t> candidateIndices; // Indices into candidates array
-         Vec3 averageNormal;
-         real maxPenetration;
-         
-         ContactCluster() : averageNormal(0.0, 0.0, 0.0), maxPenetration(0.0) {}
-      };
-      
-      std::vector<ContactCluster> clusters;
-      std::vector<bool> assigned(candidates.size(), false);
-      
-      // Cluster candidates by proximity and normal similarity
-      for (size_t i = 0; i < candidates.size(); ++i) {
-         if (assigned[i]) continue;
-         
-         ContactCluster cluster;
-         cluster.candidateIndices.push_back(i);
-         cluster.averageNormal = candidates[i].worldNormal;
-         cluster.maxPenetration = candidates[i].penetration;
-         assigned[i] = true;
-         
-         // Find nearby candidates with similar normals
-         for (size_t j = i + 1; j < candidates.size(); ++j) {
-            if (assigned[j]) continue;
-            
-            // Check proximity
-            real distance = (candidates[i].worldPos - candidates[j].worldPos).length();
-            if (distance > clusteringRadius) continue;
-            
-            // Check normal similarity
-            real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
-            if (normalDot < normalSimilarityThreshold) continue;
-            
-            // Add to cluster
-            cluster.candidateIndices.push_back(j);
-            cluster.averageNormal += candidates[j].worldNormal;
-            cluster.maxPenetration = std::max(cluster.maxPenetration, candidates[j].penetration);
-            assigned[j] = true;
-         }
-         
-         // Normalize average normal
-         cluster.averageNormal = cluster.averageNormal.getNormalized();
-         clusters.push_back(cluster);
-      }
-
-      // Debug logging for cluster analysis
-      pe_LOG_DEBUG_SECTION(log) {
-         log << "DistanceMap collision clustering results:\n";
-         log << "  Total clusters: " << clusters.size() << "\n";
-         for (size_t i = 0; i < clusters.size(); ++i) {
-            const auto& cluster = clusters[i];
-            log << "  Cluster " << i << ":\n";
-            log << "    Contact points: " << cluster.candidateIndices.size() << "\n";
-            log << "    Average normal: (" << cluster.averageNormal[0] << ", "
-                << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
-            log << "    Deepest penetration: " << cluster.maxPenetration << "\n";
-         }
-      }
-
-      // Generate final contacts from cluster representatives
-      size_t contactsGenerated = 0;
-      for (const auto& cluster : clusters) {
-         if (contactsGenerated >= maxContactsPerPair) break;
-         
-         // Select up to 4 representatives per cluster: deepest + extremals in tangent directions
-         std::vector<size_t> representatives;
-         
-         // Find deepest penetration contact
-         size_t deepestIdx = cluster.candidateIndices[0];
-         real maxPen = candidates[deepestIdx].penetration;
-         for (size_t idx : cluster.candidateIndices) {
-            if (candidates[idx].penetration > maxPen) {
-               maxPen = candidates[idx].penetration;
-               deepestIdx = idx;
-            }
-         }
-         representatives.push_back(deepestIdx);
-
-         // For larger clusters, add extremal contacts in tangent directions
-         if (cluster.candidateIndices.size() > 1 && representatives.size() < 4) {
-            // Create two tangent vectors orthogonal to average normal
-            Vec3 tangent1, tangent2;
-            if (std::abs(cluster.averageNormal[0]) < 0.9) {
-               tangent1 = cluster.averageNormal % Vec3(1.0, 0.0, 0.0);
-            } else {
-               tangent1 = cluster.averageNormal % Vec3(0.0, 1.0, 0.0);
-            }
-            tangent1 = tangent1.getNormalized();
-            tangent2 = cluster.averageNormal % tangent1;
-            
-            // Find extremals in tangent directions
-            real minT1 = std::numeric_limits<real>::max(), maxT1 = -std::numeric_limits<real>::max();
-            real minT2 = std::numeric_limits<real>::max(), maxT2 = -std::numeric_limits<real>::max();
-            size_t minT1Idx = deepestIdx, maxT1Idx = deepestIdx;
-            size_t minT2Idx = deepestIdx, maxT2Idx = deepestIdx;
-            
-            Vec3 clusterCenter = candidates[deepestIdx].worldPos;
-            for (size_t idx : cluster.candidateIndices) {
-               Vec3 rel = candidates[idx].worldPos - clusterCenter;
-               real proj1 = trans(rel) * tangent1;
-               real proj2 = trans(rel) * tangent2;
-               
-               if (proj1 < minT1) { minT1 = proj1; minT1Idx = idx; }
-               if (proj1 > maxT1) { maxT1 = proj1; maxT1Idx = idx; }
-               if (proj2 < minT2) { minT2 = proj2; minT2Idx = idx; }
-               if (proj2 > maxT2) { maxT2 = proj2; maxT2Idx = idx; }
-            }
-            
-            // Add unique extremal contacts (avoid duplicates)
-            auto addIfUnique = [&](size_t idx) {
-               if (std::find(representatives.begin(), representatives.end(), idx) == representatives.end()) {
-                  representatives.push_back(idx);
-               }
-            };
-            
-            if (representatives.size() < 4) addIfUnique(minT1Idx);
-            if (representatives.size() < 4) addIfUnique(maxT1Idx);
-            if (representatives.size() < 4) addIfUnique(minT2Idx);
-            if (representatives.size() < 4) addIfUnique(maxT2Idx);
-         }
-         
-         // Generate contacts for selected representatives
-         for (size_t repIdx : representatives) {
-            if (contactsGenerated >= maxContactsPerPair) break;
-            
-            const ContactCandidate& candidate = candidates[repIdx];
-            
-            // DistanceMap normals now consistently point outward from mesh surface
-            // PE convention: normal points from body2 to body1 (referenceMesh to queryMesh)
-            // Since DistanceMap normals point outward from referenceMesh, they already point toward queryMesh
-            // No additional flipping needed - normals are now consistent
-            
-            contacts.addVertexFaceContact( queryMesh, referenceMesh,
-                                          candidate.contactPoint, candidate.worldNormal , -candidate.penetration );
-
-            ++contactsGenerated;
-         }
-      }
-      
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "      DistanceMap contact manifold created between triangle mesh " << mA->getID()
-             << " and triangle mesh " << mB->getID() << " (" << contactsGenerated
-             << " contacts from " << candidates.size() << " candidates in " << clusters.size() << " clusters)";
-      }
+      // Phase 4: Contact manifold generation from candidates (shared with the primitive-mesh
+      // path, see emitDistanceMapContacts())
+      const size_t contactsGenerated( emitDistanceMapContacts( queryMesh, referenceMesh, candidates,
+                                                               real(2) * distMap->getSpacing(), contacts ) );
 
       return contactsGenerated > 0;
    } catch (const std::exception& e) {
@@ -6048,6 +5961,469 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
    
 #endif
    return false; // DistanceMap collision detection failed or not available
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Contact manifold from DistanceMap candidates: clustering and extremal point selection.
+ *
+ * \param query The body whose surface samples were tested (becomes geom1 of the contacts).
+ * \param reference The triangle mesh that owns the DistanceMap (geom2).
+ * \param candidates The samples within contactThreshold of the mesh (world coordinates).
+ * \param clusteringRadius Candidates closer than this (and with similar normals) form a cluster.
+ * \param contacts Contact container for the generated contacts.
+ * \return The number of contacts generated.
+ *
+ * Candidates closer than \a clusteringRadius with similar normals form a cluster (the mesh-mesh
+ * path uses twice the grid spacing, the primitive-mesh path the primitive's size, so that one
+ * coherent contact patch of a primitive is one cluster whose extremal points span the whole
+ * patch); the clusters are emitted deepest first, each contributing its deepest candidate plus
+ * the extremal ones along two tangent directions (up to five per cluster), at most six contacts
+ * per pair. A primitive-sized radius can merge two separate patches with parallel normals into
+ * one cluster, whose extremal points then span their union (inner edges are lost).
+ * Contact points are the mesh surface
+ * points of the DistanceMap, the normal is the mesh's outward normal (pointing from the mesh
+ * towards the query body), the distance is minus the penetration. Shared by the mesh-mesh and
+ * the primitive-mesh DistanceMap paths.
+ */
+template< typename CC >  // Type of the contact container
+size_t MaxContacts::emitDistanceMapContacts( GeomID query, GeomID reference,
+                                             std::vector<DistanceMapCandidate>& candidates, real clusteringRadius,
+                                             CC& contacts )
+{
+#ifdef PE_USE_CGAL
+   if (candidates.empty()) {
+      return 0; // No penetrating contacts found
+   }
+   
+   // Contact clustering parameters (the caller chooses the clustering radius)
+   const real normalSimilarityThreshold = 0.9; // Dot product threshold for normal similarity
+   const size_t maxContactsPerPair = 6; // Limit total contacts for performance
+   
+   // Contact clustering structure
+   struct ContactCluster {
+      std::vector<size_t> candidateIndices; // Indices into candidates array
+      Vec3 averageNormal;
+      real maxPenetration;
+      
+      ContactCluster() : averageNormal(0.0, 0.0, 0.0), maxPenetration(0.0) {}
+   };
+   
+   std::vector<ContactCluster> clusters;
+   std::vector<bool> assigned(candidates.size(), false);
+   
+   // Cluster candidates by proximity and normal similarity
+   for (size_t i = 0; i < candidates.size(); ++i) {
+      if (assigned[i]) continue;
+      
+      ContactCluster cluster;
+      cluster.candidateIndices.push_back(i);
+      cluster.averageNormal = candidates[i].worldNormal;
+      cluster.maxPenetration = candidates[i].penetration;
+      assigned[i] = true;
+      
+      // Find nearby candidates with similar normals
+      for (size_t j = i + 1; j < candidates.size(); ++j) {
+         if (assigned[j]) continue;
+         
+         // Check proximity
+         real distance = (candidates[i].worldPos - candidates[j].worldPos).length();
+         if (distance > clusteringRadius) continue;
+         
+         // Check normal similarity
+         real normalDot = trans(candidates[i].worldNormal) * candidates[j].worldNormal;
+         if (normalDot < normalSimilarityThreshold) continue;
+         
+         // Add to cluster
+         cluster.candidateIndices.push_back(j);
+         cluster.averageNormal += candidates[j].worldNormal;
+         cluster.maxPenetration = std::max(cluster.maxPenetration, candidates[j].penetration);
+         assigned[j] = true;
+      }
+      
+      // Normalize average normal
+      cluster.averageNormal = cluster.averageNormal.getNormalized();
+      clusters.push_back(cluster);
+   }
+
+   // Debug logging for cluster analysis
+   pe_LOG_DEBUG_SECTION(log) {
+      log << "DistanceMap collision clustering results:\n";
+      log << "  Total clusters: " << clusters.size() << "\n";
+      for (size_t i = 0; i < clusters.size(); ++i) {
+         const auto& cluster = clusters[i];
+         log << "  Cluster " << i << ":\n";
+         log << "    Contact points: " << cluster.candidateIndices.size() << "\n";
+         log << "    Average normal: (" << cluster.averageNormal[0] << ", "
+             << cluster.averageNormal[1] << ", " << cluster.averageNormal[2] << ")\n";
+         log << "    Deepest penetration: " << cluster.maxPenetration << "\n";
+      }
+   }
+
+   // Generate final contacts from cluster representatives
+   // Deepest clusters first: with the per-pair limit the deepest contact is never dropped.
+   std::stable_sort( clusters.begin(), clusters.end(),
+                     []( const ContactCluster& a, const ContactCluster& b ) { return a.maxPenetration > b.maxPenetration; } );
+
+   size_t contactsGenerated = 0;
+   for (const auto& cluster : clusters) {
+      if (contactsGenerated >= maxContactsPerPair) break;
+      
+      // Select up to 4 representatives per cluster: deepest + extremals in tangent directions
+      std::vector<size_t> representatives;
+      
+      // Find deepest penetration contact
+      size_t deepestIdx = cluster.candidateIndices[0];
+      real maxPen = candidates[deepestIdx].penetration;
+      for (size_t idx : cluster.candidateIndices) {
+         if (candidates[idx].penetration > maxPen) {
+            maxPen = candidates[idx].penetration;
+            deepestIdx = idx;
+         }
+      }
+      representatives.push_back(deepestIdx);
+
+      // For larger clusters, add extremal contacts in tangent directions
+      if (cluster.candidateIndices.size() > 1 && representatives.size() < 5) {
+         // Create two tangent vectors orthogonal to average normal
+         Vec3 tangent1, tangent2;
+         if (std::abs(cluster.averageNormal[0]) < 0.9) {
+            tangent1 = cluster.averageNormal % Vec3(1.0, 0.0, 0.0);
+         } else {
+            tangent1 = cluster.averageNormal % Vec3(0.0, 1.0, 0.0);
+         }
+         tangent1 = tangent1.getNormalized();
+         tangent2 = cluster.averageNormal % tangent1;
+         
+         // Find extremals in tangent directions
+         real minT1 = std::numeric_limits<real>::max(), maxT1 = -std::numeric_limits<real>::max();
+         real minT2 = std::numeric_limits<real>::max(), maxT2 = -std::numeric_limits<real>::max();
+         size_t minT1Idx = deepestIdx, maxT1Idx = deepestIdx;
+         size_t minT2Idx = deepestIdx, maxT2Idx = deepestIdx;
+         
+         Vec3 clusterCenter = candidates[deepestIdx].worldPos;
+         for (size_t idx : cluster.candidateIndices) {
+            Vec3 rel = candidates[idx].worldPos - clusterCenter;
+            real proj1 = trans(rel) * tangent1;
+            real proj2 = trans(rel) * tangent2;
+            
+            if (proj1 < minT1) { minT1 = proj1; minT1Idx = idx; }
+            if (proj1 > maxT1) { maxT1 = proj1; maxT1Idx = idx; }
+            if (proj2 < minT2) { minT2 = proj2; minT2Idx = idx; }
+            if (proj2 > maxT2) { maxT2 = proj2; maxT2Idx = idx; }
+         }
+         
+         // Add unique extremal contacts (avoid duplicates)
+         auto addIfUnique = [&](size_t idx) {
+            if (std::find(representatives.begin(), representatives.end(), idx) == representatives.end()) {
+               representatives.push_back(idx);
+            }
+         };
+         
+         if (representatives.size() < 5) addIfUnique(minT1Idx);
+         if (representatives.size() < 5) addIfUnique(maxT1Idx);
+         if (representatives.size() < 5) addIfUnique(minT2Idx);
+         if (representatives.size() < 5) addIfUnique(maxT2Idx);
+      }
+      
+      // Generate contacts for selected representatives
+      for (size_t repIdx : representatives) {
+         if (contactsGenerated >= maxContactsPerPair) break;
+         
+         const DistanceMapCandidate& candidate = candidates[repIdx];
+         
+         // DistanceMap normals now consistently point outward from mesh surface
+         // PE convention: normal points from body2 to body1 (reference to query)
+         // Since DistanceMap normals point outward from reference, they already point toward query
+         // No additional flipping needed - normals are now consistent
+         
+         contacts.addVertexFaceContact( query, reference,
+                                       candidate.contactPoint, candidate.worldNormal , -candidate.penetration );
+
+         ++contactsGenerated;
+      }
+   }
+   
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "      DistanceMap contact manifold created between body " << query->getID()
+          << " and triangle mesh " << reference->getID() << " (" << contactsGenerated
+          << " contacts from " << candidates.size() << " candidates in " << clusters.size() << " clusters)";
+   }
+
+   return contactsGenerated;
+#else
+   (void)query; (void)reference; (void)candidates; (void)clusteringRadius; (void)contacts;
+   return 0;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief \a n directions spread evenly over the unit sphere (Fibonacci lattice).
+ */
+inline void MaxContacts::fibonacciSphere( size_t n, std::vector<Vec3>& directions )
+{
+   const real golden( real(3.14159265358979323846) * ( real(3) - std::sqrt( real(5) ) ) );
+   directions.reserve( directions.size() + n );
+   for( size_t k = 0; k < n; ++k ) {
+      const real z( real(1) - real(2) * ( static_cast<real>( k ) + real(0.5) ) / static_cast<real>( n ) );
+      const real rho( std::sqrt( std::max( real(0), real(1) - z * z ) ) );
+      const real phi( golden * static_cast<real>( k ) );
+      directions.push_back( Vec3( rho * std::cos( phi ), rho * std::sin( phi ), z ) );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Surface samples of a sphere for DistanceMap queries (world coordinates).
+ *
+ * Points spread evenly over the surface at about the given spacing (at least 12, at most 400).
+ */
+inline void MaxContacts::distanceMapSamples( SphereID s, real spacing, std::vector<Vec3>& samples )
+{
+   const real r( s->getRadius() );
+   const real area( real(4) * real(3.14159265358979323846) * r * r );
+   const size_t n( std::min<size_t>( 400, std::max<size_t>( 12, static_cast<size_t>( std::ceil( area / ( spacing * spacing ) ) ) ) ) );
+   std::vector<Vec3> dirs;
+   fibonacciSphere( n, dirs );
+   for( const Vec3& d : dirs )
+      samples.push_back( s->getPosition() + r * d );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Surface samples of a box for DistanceMap queries (world coordinates).
+ *
+ * A grid on each face at about the given spacing (2 to 25 samples per edge), so that corners
+ * and edges are always included.
+ */
+inline void MaxContacts::distanceMapSamples( BoxID b, real spacing, std::vector<Vec3>& samples )
+{
+   const Vec3 h( real(0.5) * b->getLengths() );
+   int n[3];
+   for( int k = 0; k < 3; ++k )
+      n[k] = std::min( 25, std::max( 2, static_cast<int>( std::ceil( real(2) * h[k] / spacing ) ) + 1 ) );
+   samples.reserve( samples.size() + 2 * static_cast<size_t>( n[0] * n[1] + n[1] * n[2] + n[2] * n[0] ) );
+
+   for( int axis = 0; axis < 3; ++axis ) {
+      const int u( ( axis + 1 ) % 3 ), v( ( axis + 2 ) % 3 );
+      for( int side = -1; side <= 1; side += 2 )
+         for( int i = 0; i < n[u]; ++i )
+            for( int j = 0; j < n[v]; ++j ) {
+               Vec3 local;
+               local[axis] = side * h[axis];
+               local[u]    = -h[u] + real(2) * h[u] * static_cast<real>( i ) / static_cast<real>( n[u] - 1 );
+               local[v]    = -h[v] + real(2) * h[v] * static_cast<real>( j ) / static_cast<real>( n[v] - 1 );
+               samples.push_back( b->pointFromBFtoWF( local ) );
+            }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Surface samples of a capsule for DistanceMap queries (world coordinates).
+ *
+ * Rings around the cylindrical part (axis = body x) plus evenly spread points on the two
+ * hemispherical caps, at about the given spacing.
+ */
+inline void MaxContacts::distanceMapSamples( CapsuleID c, real spacing, std::vector<Vec3>& samples )
+{
+   const real r( c->getRadius() ), half( real(0.5) * c->getLength() );
+   const real pi( real(3.14159265358979323846) );
+   const int  nAxial( std::min( 25, std::max( 2, static_cast<int>( std::ceil( real(2) * half / spacing ) ) + 1 ) ) );
+   const int  nCirc ( std::min( 48, std::max( 6, static_cast<int>( std::ceil( real(2) * pi * r / spacing ) ) ) ) );
+   samples.reserve( samples.size() + static_cast<size_t>( nAxial * nCirc ) + 400 );
+   for( int i = 0; i < nAxial; ++i ) {
+      const real x( -half + real(2) * half * static_cast<real>( i ) / static_cast<real>( nAxial - 1 ) );
+      for( int j = 0; j < nCirc; ++j ) {
+         const real phi( real(2) * pi * static_cast<real>( j ) / static_cast<real>( nCirc ) );
+         samples.push_back( c->pointFromBFtoWF( Vec3( x, r * std::cos( phi ), r * std::sin( phi ) ) ) );
+      }
+   }
+   const real area( real(4) * pi * r * r );
+   const size_t n( std::min<size_t>( 400, std::max<size_t>( 12, static_cast<size_t>( std::ceil( area / ( spacing * spacing ) ) ) ) ) );
+   std::vector<Vec3> dirs;
+   fibonacciSphere( n, dirs );
+   for( const Vec3& d : dirs ) {
+      // The lattice has z as its polar axis; the capsule axis is x: the hemisphere d[0] >= 0
+      // belongs to the +x cap, the other to the -x cap.
+      const real x( d[0] >= real(0) ? half : -half );
+      samples.push_back( c->pointFromBFtoWF( Vec3( x, real(0), real(0) ) + r * d ) );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Surface samples of a cylinder for DistanceMap queries (world coordinates).
+ *
+ * Rings around the wall (axis = body x) including both rims, plus concentric rings and the
+ * centre on each end cap, at about the given spacing.
+ */
+inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, std::vector<Vec3>& samples )
+{
+   const real r( c->getRadius() ), half( real(0.5) * c->getLength() );
+   const real pi( real(3.14159265358979323846) );
+   const int  nAxial( std::min( 25, std::max( 2, static_cast<int>( std::ceil( real(2) * half / spacing ) ) + 1 ) ) );
+   const int  nCirc ( std::min( 48, std::max( 6, static_cast<int>( std::ceil( real(2) * pi * r / spacing ) ) ) ) );
+   const int  nRings( std::min( 12, std::max( 1, static_cast<int>( std::ceil( r / spacing ) ) ) ) );
+   samples.reserve( samples.size() + static_cast<size_t>( nAxial * nCirc + 2 * ( 1 + nRings * 48 ) ) );
+   for( int i = 0; i < nAxial; ++i ) {
+      const real x( -half + real(2) * half * static_cast<real>( i ) / static_cast<real>( nAxial - 1 ) );
+      for( int j = 0; j < nCirc; ++j ) {
+         const real phi( real(2) * pi * static_cast<real>( j ) / static_cast<real>( nCirc ) );
+         samples.push_back( c->pointFromBFtoWF( Vec3( x, r * std::cos( phi ), r * std::sin( phi ) ) ) );
+      }
+   }
+   for( int side = -1; side <= 1; side += 2 ) {
+      const real x( side * half );
+      samples.push_back( c->pointFromBFtoWF( Vec3( x, real(0), real(0) ) ) );
+      for( int k = 1; k < nRings; ++k ) {
+         const real rho( r * static_cast<real>( k ) / static_cast<real>( nRings ) );
+         const int  m( std::min( 48, std::max( 6, static_cast<int>( std::ceil( real(2) * pi * rho / spacing ) ) ) ) );
+         for( int j = 0; j < m; ++j ) {
+            const real phi( real(2) * pi * static_cast<real>( j ) / static_cast<real>( m ) );
+            samples.push_back( c->pointFromBFtoWF( Vec3( x, rho * std::cos( phi ), rho * std::sin( phi ) ) ) );
+         }
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Surface samples of an ellipsoid for DistanceMap queries (world coordinates).
+ *
+ * Evenly spread unit-sphere directions scaled by the semi-axes, at about the given spacing
+ * relative to the mean radius (at least 12, at most 400).
+ */
+inline void MaxContacts::distanceMapSamples( EllipsoidID e, real spacing, std::vector<Vec3>& samples )
+{
+   const Vec3 a( e->getRadius() );
+   const real mean( ( a[0] + a[1] + a[2] ) / real(3) );
+   const real area( real(4) * real(3.14159265358979323846) * mean * mean );
+   const size_t n( std::min<size_t>( 400, std::max<size_t>( 12, static_cast<size_t>( std::ceil( area / ( spacing * spacing ) ) ) ) ) );
+   std::vector<Vec3> dirs;
+   fibonacciSphere( n, dirs );
+   for( const Vec3& d : dirs )
+      samples.push_back( e->pointFromBFtoWF( Vec3( a[0] * d[0], a[1] * d[1], a[2] * d[2] ) ) );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief DistanceMap-based contact generation between a primitive and a triangle mesh.
+ *
+ * \param geom The primitive (sphere, box, capsule, cylinder or ellipsoid).
+ * \param mesh The triangle mesh with DistanceMap acceleration.
+ * \param contacts Contact container for the generated contacts.
+ * \return \a true if contacts were generated.
+ *
+ * The primitive's surface is sampled at about twice the grid spacing (distanceMapSamples());
+ * every sample is transformed into the mesh frame and looked up in the DistanceMap, and the
+ * samples within pe::contactThreshold become candidates with the mesh's interpolated normal and
+ * the surface point along it. The primitive's support point against the mesh normal at its
+ * centre is added as a sample (while the centre is outside the mesh), so that the deepest point
+ * of a smooth primitive on a locally flat mesh region is exact rather than limited by the
+ * sampling. The sample pitch is the larger of twice the grid spacing and the primitive's extent
+ * divided by the per-shape caps (about 24 per edge): mesh features narrower than that between
+ * the samples of a very large primitive are not seen. Samples deep inside the mesh get the
+ * nearest-surface normal, like every signed-distance method. The manifold is built by
+ * emitDistanceMapContacts() with the primitive's extent as clustering radius. Contacts are
+ * created as (primitive, mesh) with the normal pointing from the mesh towards the primitive.
+ * DistanceMap pairs emit hard contacts only (no lubrication contacts).
+ */
+template< typename Type, typename CC >
+bool MaxContacts::collideTMeshWithDistanceMap( Type geom, TriangleMeshID mesh, CC& contacts )
+{
+#ifdef PE_USE_CGAL
+   if( !mesh->hasDistanceMap() )
+      return false;
+   const DistanceMap* distMap( mesh->getDistanceMap() );
+   if( distMap == nullptr )
+      return false;
+
+   try {
+      const real spacing( real(2) * distMap->getSpacing() );
+      std::vector<Vec3> samples;
+      distanceMapSamples( geom, spacing, samples );
+
+      // Deepest point of the primitive against the mesh surface facing its centre: the support
+      // point against the mesh's outward normal there. Only meaningful while the centre is
+      // outside the mesh (inside, -n points away from the nearest surface and the sample lands
+      // against the opposite wall). A centre outside the grid (a primitive taller than the grid
+      // padding) is clamped into the interpolation domain, which keeps the normal of the
+      // nearest mesh region.
+      {
+         Vec3 centre( mesh->pointFromWFtoBF( geom->getPosition() ) );
+         const Vec3 lo( distMap->getOrigin() );
+         const real h( distMap->getSpacing() );
+         const int  dims[3] = { distMap->getNx(), distMap->getNy(), distMap->getNz() };
+         for( int k = 0; k < 3; ++k )
+            centre[k] = std::max( lo[k], std::min( centre[k], lo[k] + static_cast<real>( dims[k] - 2 ) * h ) );
+         const real d( distMap->interpolateDistance( centre[0], centre[1], centre[2] ) );
+         if( d > real(0) && d < real(1e5) ) {
+            Vec3 n( mesh->vectorFromBFtoWF( distMap->interpolateNormal( centre[0], centre[1], centre[2] ) ) );
+            if( n.sqrLength() > real(0.25) ) {
+               n.normalize();
+               samples.push_back( geom->support( -n ) );
+            }
+         }
+      }
+
+      // Samples outside the mesh's bounding box (inflated by the threshold) cannot be in contact:
+      // rejected before the transform and the interpolation.
+      const RigidBody::AABB& mbb( mesh->getAABB() );
+      const Vec3 mlo( mbb[0] - contactThreshold, mbb[1] - contactThreshold, mbb[2] - contactThreshold );
+      const Vec3 mhi( mbb[3] + contactThreshold, mbb[4] + contactThreshold, mbb[5] + contactThreshold );
+
+      std::vector<DistanceMapCandidate> candidates;
+      candidates.reserve( samples.size() / 4 + 8 );
+      for( const Vec3& p : samples ) {
+         if( p[0] < mlo[0] || p[0] > mhi[0] || p[1] < mlo[1] || p[1] > mhi[1] || p[2] < mlo[2] || p[2] > mhi[2] )
+            continue;
+         const Vec3 local( mesh->pointFromWFtoBF( p ) );
+         const real distance( distMap->interpolateDistance( local[0], local[1], local[2] ) );
+         if( distance > real(1e5) )   // outside the grid
+            continue;
+         if( distance >= contactThreshold )
+            continue;
+         // Interpolated normals of nodes that disagree (across a medial axis, at a concave edge)
+         // blend to a short vector: rejected rather than normalised into noise.
+         Vec3 worldNormal( mesh->vectorFromBFtoWF( distMap->interpolateNormal( local[0], local[1], local[2] ) ) );
+         if( worldNormal.sqrLength() < real(0.25) )
+            continue;
+         worldNormal.normalize();
+         // Contact point on the mesh surface along the normal (the blended surface point of the
+         // DistanceMap can lie off the surface in the same regions).
+         const Vec3 worldContact( p - distance * worldNormal );
+         candidates.push_back( DistanceMapCandidate( p, worldNormal, std::max( real(0), -distance ), worldContact ) );
+      }
+
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "DistanceMap primitive-mesh: " << samples.size() << " samples, " << candidates.size() << " candidates\n";
+      }
+      // One coherent contact patch of the primitive is one cluster: cluster by normal only,
+      // over the primitive's whole extent.
+      const RigidBody::AABB& bb( geom->getAABB() );
+      const real extent( std::max( { bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2] } ) );
+      return emitDistanceMapContacts( geom, mesh, candidates, extent, contacts ) > 0;
+   }
+   catch( const std::exception& e ) {
+      pe_LOG_DEBUG_SECTION( log ) {
+         log << "      DistanceMap primitive-mesh collision detection failed: " << e.what();
+      }
+   }
+   return false;
+#else
+   (void)geom; (void)mesh; (void)contacts;
+   return false;
+#endif
 }
 //*************************************************************************************************
 
