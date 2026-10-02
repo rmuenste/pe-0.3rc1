@@ -205,6 +205,16 @@ inline ShapeMesh makeBodyMesh( pe::BodyID body, double planeHalfSize = 2.5 )
          const Vec3 r = static_body_cast<Ellipsoid>( body )->getRadius();
          return makeEllipsoidMesh( r[0], r[1], r[2] );
       }
+      case triangleMeshType: {
+         // The body-frame vertices of the mesh itself (bodyTransform() places them).
+         TriangleMeshID m = static_body_cast<TriangleMesh>( body );
+         ShapeMesh out;
+         for( const Vec3& v : m->getBFVertices() )
+            out.vertices.push_back( toGlm( v ) );
+         for( const Vector3<size_t>& f : m->getFaceIndices() )
+            out.faces.push_back( { f[0], f[1], f[2] } );
+         return out;
+      }
       default:
          return makePlaneMesh( planeHalfSize );
    }

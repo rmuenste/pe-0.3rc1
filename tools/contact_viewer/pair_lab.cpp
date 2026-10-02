@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <exception>
@@ -32,6 +33,9 @@
 
 #include <pe/core.h>
 #include <pe/core/detection/fine/MaxContacts.h>
+#ifdef PE_USE_CGAL
+#include <pe/core/detection/fine/DistanceMap.h>
+#endif
 
 #include "glm/glm.hpp"
 #include "polyscope/curve_network.h"
@@ -39,6 +43,7 @@
 #include "polyscope/point_cloud.h"
 #include "polyscope/polyscope.h"
 #include "polyscope/surface_mesh.h"
+#include "polyscope/volume_grid.h"
 
 #include "implot.h"
 
@@ -63,9 +68,9 @@ const double kDegToRad = kPi / 180.0;
 //
 //=================================================================================================
 
-enum ShapeKind { kSphere, kBox, kCapsule, kCylinder, kEllipsoid, kPlane, kNumShapes };
+enum ShapeKind { kSphere, kBox, kCapsule, kCylinder, kEllipsoid, kPlane, kMesh, kNumShapes };
 
-const char* const kShapeNames[kNumShapes] = { "sphere", "box", "capsule", "cylinder", "ellipsoid", "plane" };
+const char* const kShapeNames[kNumShapes] = { "sphere", "box", "capsule", "cylinder", "ellipsoid", "plane", "mesh" };
 const char* const kBodyNames[2]           = { "body A", "body B" };
 const char* const kDofNames[6]            = { "pos x", "pos y", "pos z", "rot x [deg]", "rot y [deg]", "rot z [deg]" };
 
@@ -83,6 +88,13 @@ struct BodySpec {
    bool   fixed       = false;
    double vel[3]      = { 0.0, 0.0, 0.0 };
    double angVel[3]   = { 0.0, 0.0, 0.0 };   // [rad/s]
+   // Triangle mesh: a torus (hole axis = body z) with a DistanceMap (needs CGAL).
+   double torusMajor   = 0.6;
+   double torusMinor   = 0.25;
+   int    torusSegs[2] = { 48, 24 };
+   bool   distanceMap  = true;
+   int    dmResolution = 50;
+   int    dmTolerance  = 5;
 
    BodySpec& at( double x, double y, double z )      { pos[0] = x; pos[1] = y; pos[2] = z; return *this; }
    BodySpec& rotated( double x, double y, double z ) { eulerDeg[0] = x; eulerDeg[1] = y; eulerDeg[2] = z; return *this; }
@@ -97,6 +109,7 @@ BodySpec cylinderSpec( double r, double l )              { BodySpec s; s.kind = 
 BodySpec planeSpec()                                     { BodySpec s; s.kind = kPlane; return s; }
 BodySpec boxSpec( double lx, double ly, double lz )      { BodySpec s; s.kind = kBox; s.lengths[0] = lx; s.lengths[1] = ly; s.lengths[2] = lz; return s; }
 BodySpec ellipsoidSpec( double a, double b, double c )   { BodySpec s; s.kind = kEllipsoid; s.semiAxes[0] = a; s.semiAxes[1] = b; s.semiAxes[2] = c; return s; }
+BodySpec torusSpec( double R, double r )                 { BodySpec s; s.kind = kMesh; s.torusMajor = R; s.torusMinor = r; return s; }
 
 struct Preset {
    const char* name;
@@ -131,6 +144,13 @@ const std::vector<Preset>& presets()
       { "parallel lying cylinders",            cylinderSpec( 0.5, 1.0 ), cylinderSpec( 0.5, 1.0 ).at( 0.3, 0.0, 0.99 ) },
       { "cylinder standing on lying cylinder", cylinderSpec( 0.5, 2.0 ), cylinderSpec( 0.4, 1.0 ).at( 0.2, 0.0, 0.99 ).rotated( 0, 90, 0 ) },
       { "capsule on cylinder cap",             cylinderSpec( 0.5, 1.0 ).rotated( 0, 90, 0 ), capsuleSpec( 0.2, 1.5 ).at( 0.0, 0.1, 0.69 ) },
+      // Mesh (torus R 1, r 0.3) with a DistanceMap: the primitive rests on top of the tube at x = R.
+      { "sphere on torus tube",                torusSpec( 1.0, 0.3 ), sphereSpec( 0.2 ).at( 1.0, 0.0, 0.49 ) },
+      { "box on torus tube",                   torusSpec( 1.0, 0.3 ), boxSpec( 0.4, 0.4, 0.4 ).at( 1.0, 0.0, 0.49 ) },
+      { "capsule across torus tube",           torusSpec( 1.0, 0.3 ), capsuleSpec( 0.15, 0.5 ).at( 1.0, 0.0, 0.44 ).rotated( 0, 0, 90 ) },
+      { "cylinder standing on torus tube",     torusSpec( 1.0, 0.3 ), cylinderSpec( 0.2, 0.6 ).at( 1.0, 0.0, 0.59 ).rotated( 0, 90, 0 ) },
+      { "ellipsoid on torus tube",             torusSpec( 1.0, 0.3 ), ellipsoidSpec( 0.3, 0.2, 0.15 ).at( 1.0, 0.0, 0.44 ) },
+      { "sphere in torus hole (no contact)",   torusSpec( 1.0, 0.3 ), sphereSpec( 0.5 ) },
    };
    return list;
 }
@@ -150,6 +170,11 @@ polyscope::SurfaceMesh* meshes[2]      = { nullptr, nullptr };
 glm::mat4               meshPose[2]    = { glm::mat4( 1.0f ), glm::mat4( 1.0f ) };  // last transform pushed
 bool                    gizmo[2]       = { false, false };
 const glm::vec3         kBodyColors[2] = { glm::vec3( 0.35f, 0.55f, 0.85f ), glm::vec3( 0.90f, 0.60f, 0.30f ) };
+
+polyscope::VolumeGrid*  dmGrids[2]      = { nullptr, nullptr };   // signed distance field display
+bool                    showDistanceMap = false;
+double                  dmBuildSeconds[2] = { 0.0, 0.0 };
+std::string             dmInfo[2];
 
 viewer::ContactLog     contactLog;       // collide( A, B )
 viewer::ContactLog     swappedLog;       // collide( B, A )
@@ -214,9 +239,68 @@ MaterialID pairMaterial()
 }
 
 
+//! Torus with outward-oriented triangles, centred at the origin, hole axis z.
+void makeTorus( double R, double r, int nMajor, int nMinor, Vertices& vertices, IndicesLists& faces )
+{
+   vertices.clear();
+   faces.clear();
+   for( int i = 0; i < nMajor; ++i ) {
+      const double u = 2.0 * kPi * i / nMajor;
+      for( int j = 0; j < nMinor; ++j ) {
+         const double v = 2.0 * kPi * j / nMinor;
+         vertices.push_back( Vec3( ( R + r * std::cos( v ) ) * std::cos( u ),
+                                   ( R + r * std::cos( v ) ) * std::sin( u ),
+                                   r * std::sin( v ) ) );
+      }
+   }
+   const auto at = [nMajor, nMinor]( int i, int j ) {
+      return static_cast<size_t>( ( i % nMajor ) * nMinor + ( j % nMinor ) );
+   };
+   for( int i = 0; i < nMajor; ++i )
+      for( int j = 0; j < nMinor; ++j ) {
+         faces.push_back( Vector3<size_t>( at( i, j ), at( i + 1, j ), at( i + 1, j + 1 ) ) );
+         faces.push_back( Vector3<size_t>( at( i, j ), at( i + 1, j + 1 ), at( i, j + 1 ) ) );
+      }
+}
+
+
+BodyID createMeshBody( const BodySpec& s, pe::id_t uid, int slot )
+{
+   Vertices vertices;
+   IndicesLists faces;
+   makeTorus( s.torusMajor, s.torusMinor, std::max( 3, s.torusSegs[0] ), std::max( 3, s.torusSegs[1] ), vertices, faces );
+   TriangleMeshID m = createTriangleMesh( uid, Vec3( 0, 0, 0 ), vertices, faces, pairMaterial(), /*convex=*/false );
+
+   dmBuildSeconds[slot] = 0.0;
+   dmInfo[slot]         = "no DistanceMap";
+#ifdef PE_USE_CGAL
+   if( s.distanceMap ) {
+      const auto t0 = std::chrono::steady_clock::now();
+      m->enableDistanceMapAcceleration( std::max( 4, s.dmResolution ), std::max( 0, s.dmTolerance ) );
+      dmBuildSeconds[slot] = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
+      if( m->hasDistanceMap() ) {
+         const DistanceMap* dm = m->getDistanceMap();
+         char buf[160];
+         std::snprintf( buf, sizeof( buf ), "DistanceMap %d x %d x %d, spacing %.4g, built in %.2f s",
+                        dm->getNx(), dm->getNy(), dm->getNz(), static_cast<double>( dm->getSpacing() ), dmBuildSeconds[slot] );
+         dmInfo[slot] = buf;
+      }
+      else {
+         dmInfo[slot] = "DistanceMap creation FAILED (mesh not closed?)";
+      }
+   }
+#else
+   dmInfo[slot] = "built without CGAL: no DistanceMap, GJK/EPA treats the mesh as convex";
+#endif
+   return m;
+}
+
+
 BodyID createBody( const BodySpec& s, pe::id_t uid )
 {
    const MaterialID material = pairMaterial();
+   if( s.kind == kMesh )
+      return createMeshBody( s, uid, static_cast<int>( uid ) - 1 );
 
    const Vec3 origin( 0, 0, 0 );
    switch( s.kind ) {
@@ -231,9 +315,10 @@ BodyID createBody( const BodySpec& s, pe::id_t uid )
 }
 
 
-viewer::ShapeMesh createMesh( const BodySpec& s )
+viewer::ShapeMesh createMesh( const BodySpec& s, BodyID body )
 {
    switch( s.kind ) {
+      case kMesh:      return viewer::makeBodyMesh( body );
       case kSphere:    return viewer::makeEllipsoidMesh( s.radius, s.radius, s.radius );
       case kBox:       return viewer::makeBoxMesh( s.lengths[0], s.lengths[1], s.lengths[2] );
       case kCapsule:   return viewer::makeCapsuleMesh( s.radius, s.length );
@@ -265,6 +350,39 @@ void setGizmoEnabled( polyscope::Structure* structure, bool enabled )
 }
 
 
+//! (Re-)registers the signed distance field of body \a i as a Polyscope volume grid in the
+//! mesh's body frame (the grid follows the body through its transform), with the zero
+//! isosurface shown; Polyscope's slice planes cut through the scalar field.
+void registerDistanceMapGrid( int i )
+{
+   const std::string name = std::string( kBodyNames[i] ) + " distance map";
+   polyscope::removeStructure( name, /*errorIfAbsent=*/false );
+   dmGrids[i] = nullptr;
+#ifdef PE_USE_CGAL
+   if( !showDistanceMap || specs[i].kind != kMesh || bodies[i] == nullptr )
+      return;
+   TriangleMeshID m = static_body_cast<TriangleMesh>( bodies[i] );
+   if( !m->hasDistanceMap() )
+      return;
+   const DistanceMap* dm = m->getDistanceMap();
+   const Vec3 o = dm->getOrigin();
+   const real h = dm->getSpacing();
+   const glm::uvec3 dims( dm->getNx(), dm->getNy(), dm->getNz() );
+   const glm::vec3  lo = viewer::toGlm( o );
+   const glm::vec3  hi = viewer::toGlm( o + Vec3( ( dm->getNx() - 1 ) * h, ( dm->getNy() - 1 ) * h, ( dm->getNz() - 1 ) * h ) );
+   // Same node layout as Polyscope (x fastest, then y, then z), so the data is passed as is.
+   const std::vector<float> sdf( dm->getSdfData().begin(), dm->getSdfData().end() );
+   dmGrids[i] = polyscope::registerVolumeGrid( name, dims, lo, hi );
+   polyscope::VolumeGridNodeScalarQuantity* q = dmGrids[i]->addNodeScalarQuantity( "signed distance", sdf );
+   q->setIsosurfaceLevel( 0.0f );
+   q->setIsosurfaceVizEnabled( true );
+   q->setGridcubeVizEnabled( false );
+   q->setEnabled( true );
+   dmGrids[i]->setTransform( viewer::bodyTransform( bodies[i] ) );
+#endif
+}
+
+
 //! Pushes the staged pose of body \a i to the engine only (used inside the sweep loop).
 void setBodyPose( int i )
 {
@@ -278,6 +396,8 @@ void applyPose( int i )
    setBodyPose( i );
    meshPose[i] = viewer::bodyTransform( bodies[i] );
    meshes[i]->setTransform( meshPose[i] );
+   if( dmGrids[i] != nullptr )
+      dmGrids[i]->setTransform( meshPose[i] );
    dirty = true;
 }
 
@@ -340,12 +460,14 @@ void rebuildScene()
    for( int i = 0; i < 2; ++i ) {
       bodies[i] = createBody( specs[i], static_cast<pe::id_t>( i + 1 ) );
 
-      const viewer::ShapeMesh mesh = createMesh( specs[i] );
+      const viewer::ShapeMesh mesh = createMesh( specs[i], bodies[i] );
       meshes[i] = polyscope::registerSurfaceMesh( kBodyNames[i], mesh.vertices, mesh.faces );
       meshes[i]->setSurfaceColor( kBodyColors[i] );
       meshes[i]->setTransparency( 0.45f );   // contacts live inside the overlap region
       meshes[i]->setEdgeWidth( ( specs[i].kind == kBox || specs[i].kind == kPlane ) ? 1.0 : 0.0 );
+      meshes[i]->setSmoothShade( specs[i].kind == kMesh );
       setGizmoEnabled( meshes[i], gizmo[i] );
+      registerDistanceMapGrid( i );
       applyPose( i );
 
       if( specs[i].kind != kPlane ) {
@@ -373,6 +495,8 @@ void updateMirror()
    for( int i = 0; i < 2; ++i ) {
       meshPose[i] = viewer::bodyTransform( bodies[i] );
       meshes[i]->setTransform( meshPose[i] );
+      if( dmGrids[i] != nullptr )
+         dmGrids[i]->setTransform( meshPose[i] );
    }
 }
 
@@ -493,9 +617,11 @@ void compareDispatchOrders()
 }
 
 
+//! Whether support( n ) is a meaningful contact witness: not for the infinite plane (undefined)
+//! and not for a triangle mesh (the farthest vertex of a possibly non-convex mesh).
 bool hasSupport( pe::GeomID g )
 {
-   return g->getType() != planeType;   // RigidBody::support() is undefined for the infinite plane
+   return g->getType() != planeType && g->getType() != triangleMeshType;
 }
 
 
@@ -727,8 +853,20 @@ std::string createCall( const BodySpec& s, int uid )
 {
    std::ostringstream o;
    o << std::setprecision( 17 );
-   const char* type[kNumShapes] = { "Sphere", "Box", "Capsule", "Cylinder", "Ellipsoid", "Plane" };
+   const char* type[kNumShapes] = { "Sphere", "Box", "Capsule", "Cylinder", "Ellipsoid", "Plane", "TriangleMesh" };
    const char  var = ( uid == 1 ) ? 'a' : 'b';
+   if( s.kind == kMesh ) {
+      o << "   // torus R " << s.torusMajor << ", r " << s.torusMinor << ", " << s.torusSegs[0] << " x " << s.torusSegs[1]
+        << " segments: see makeTorus() in tests/interface/pe_primitive_mesh_distancemap_test.cpp\n";
+      o << "   TriangleMeshID " << var << " = createTriangleMesh( " << uid << ", Vec3( " << s.pos[0] << ", " << s.pos[1] << ", "
+        << s.pos[2] << " ), vertices, faces, mat, false );\n";
+      if( s.distanceMap )
+         o << "   " << var << "->enableDistanceMapAcceleration( " << s.dmResolution << ", " << s.dmTolerance << " );\n";
+      if( s.eulerDeg[0] != 0.0 || s.eulerDeg[1] != 0.0 || s.eulerDeg[2] != 0.0 )
+         o << "   " << var << "->setOrientation( Quat( real(" << s.eulerDeg[0] * kDegToRad << "), real("
+           << s.eulerDeg[1] * kDegToRad << "), real(" << s.eulerDeg[2] * kDegToRad << ") ) );   // Euler x, y, z [rad]\n";
+      return o.str();
+   }
    o << "   " << type[s.kind] << "ID " << var << " = create" << type[s.kind] << "( " << uid << ", ";
    if( s.kind == kPlane )
       o << "Vec3( 0, 0, 1 ), ";
@@ -813,6 +951,27 @@ int drawBodyControls( int i )
       case kEllipsoid:
          if( dragDoubles( "semi-axes", s.semiAxes, 3, 0.002f, 1.0e-3, 10.0, "%.4f" ) ) change = 2;
          break;
+      case kMesh: {
+         // Mesh parameters rebuild the body (and its DistanceMap, which takes a moment): applied
+         // on Enter, not while typing.
+         const ImGuiInputTextFlags enter = ImGuiInputTextFlags_EnterReturnsTrue;
+         if( ImGui::InputDouble( "torus major radius R", &s.torusMajor, 0.0, 0.0, "%.4g", enter ) ) change = 2;
+         if( ImGui::InputDouble( "torus minor radius r", &s.torusMinor, 0.0, 0.0, "%.4g", enter ) ) change = 2;
+         if( ImGui::InputInt2( "segments (major, minor)", s.torusSegs, enter ) ) change = 2;
+         s.torusMajor = std::max( 1.0e-3, s.torusMajor );
+         s.torusMinor = std::max( 1.0e-3, std::min( s.torusMinor, s.torusMajor - 1.0e-3 ) );
+         if( ImGui::Checkbox( "distance map", &s.distanceMap ) ) change = 2;
+         if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+            ImGui::SetTooltip( "Contacts with this mesh come from its signed distance field (any convex primitive,\n"
+                               "plane, other meshes); without it the mesh goes through GJK/EPA as if it were convex." );
+         if( s.distanceMap ) {
+            if( ImGui::InputInt( "DM resolution (cells)", &s.dmResolution, 1, 10, enter ) ) change = 2;
+            if( ImGui::InputInt( "DM tolerance (padding cells)", &s.dmTolerance, 1, 1, enter ) ) change = 2;
+         }
+         ImGui::TextDisabled( "%s", dmInfo[i].c_str() );
+         ImGui::TextDisabled( "hole axis = body z; Enter applies a value" );
+         break;
+      }
       default:
          ImGui::TextDisabled( "normal = body z axis" );
          break;
@@ -900,6 +1059,13 @@ void drawPairWindow()
       dirty |= dragDoubles( "normal length", &overlay.normalLength, 1, 0.002f, 0.0, 1.0e6, "%.4g" );
       dirty |= ImGui::Checkbox( "scale normals by |dist|", &overlay.scaleByDist );
       dirty |= dragDoubles( "marker radius", &overlay.pointRadius, 1, 0.0005f, 1.0e-4, 1.0, "%.4f" );
+      if( ImGui::Checkbox( "distance map (SDF grid)", &showDistanceMap ) )
+         for( int i = 0; i < 2; ++i )
+            registerDistanceMapGrid( i );
+      if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+         ImGui::SetTooltip( "The mesh's signed distance field as a Polyscope volume grid in the body frame: the zero\n"
+                            "isosurface (the surface as the DistanceMap sees it); add a slice plane (View menu) to\n"
+                            "look at the field inside." );
       dirty |= ImGui::Checkbox( "support witnesses", &showWitnesses );
       if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
          ImGui::SetTooltip( "g1->support( -n ) and g2->support( n ) per contact (selected contact only when one is\n"
@@ -1251,6 +1417,33 @@ bool smokeTest()
       std::printf( "  FAILED: gizmo read-back does not invert the pe Euler convention\n" );
       ok = false;
    }
+
+#ifdef PE_USE_CGAL
+   // Mesh with a DistanceMap: a sphere in the torus hole must get no contact (the convex hull
+   // would contain it), a sphere on the tube one with the tube's upward normal.
+   {
+      int hole = -1, tube = -1;
+      for( int k = 0; k < static_cast<int>( presets().size() ); ++k ) {
+         if( std::string( presets()[k].name ) == "sphere in torus hole (no contact)" ) hole = k;
+         if( std::string( presets()[k].name ) == "sphere on torus tube" )              tube = k;
+      }
+      selectPreset( hole );
+      polyscope::frameTick();
+      const bool holeOk = static_body_cast<TriangleMesh>( bodies[0] )->hasDistanceMap() && contactLog.entries.empty();
+      std::printf( "torus (%s): sphere in the hole -> %d contact(s) %s\n", dmInfo[0].c_str(),
+                   static_cast<int>( contactLog.entries.size() ), holeOk ? "ok" : "FAILED" );
+      showDistanceMap = true;   // the SDF grid through a frame as well
+      selectPreset( tube );
+      polyscope::frameTick();
+      bool tubeOk = !contactLog.entries.empty() && dmGrids[0] != nullptr;
+      for( const viewer::ContactLog::Entry& c : contactLog.entries )
+         tubeOk = tubeOk && c.dist < real(0) && ( c.g1 == bodies[1] ? c.normal[2] : -c.normal[2] ) > real(0.99);
+      std::printf( "torus: sphere on the tube -> %d contact(s), SDF grid %s -> %s\n", static_cast<int>( contactLog.entries.size() ),
+                   dmGrids[0] != nullptr ? "registered" : "missing", tubeOk ? "ok" : "FAILED" );
+      showDistanceMap = false;
+      ok = ok && holeOk && tubeOk;
+   }
+#endif
 
    // Simulation from a posed state: the cylinder standing on the box, over the ground. After 2 s
    // both must rest (box on the ground, cylinder on the box), and Reset must restore the pose.

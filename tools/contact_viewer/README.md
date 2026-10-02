@@ -28,6 +28,22 @@ Polyscope and ImPlot are downloaded via `FetchContent` at configure time
 (`tools/cmake/ViewerDeps.cmake`, shared with `tools/live_viewer`); nothing is added to the core
 PE build. For the X11 development packages GLFW needs, see `tools/live_viewer/README.md`.
 
+The mesh shape of Pair Lab needs CGAL for its DistanceMap (`doc/technical-notes/build-with-cmake.md`,
+"CGAL and DistanceMap Builds"). A CGAL build of the viewer, reusing a CGAL that an earlier
+`PE_USE_CGAL=ON` build already installed under its `extern/cgal/install`:
+
+```bash
+cmake -S . -B build-viewer-cgal -G Ninja -DCMAKE_BUILD_TYPE=Release -DPE_USE_CGAL=ON \
+      -DCGAL_DIR=$PWD/build_ninja_cgal/extern/cgal/install/lib/cmake/CGAL \
+      -DPE_BUILD_CONTACT_VIEWER=ON -DPE_BUILD_EXAMPLES=OFF
+cmake --build build-viewer-cgal --target pe_contact_viewer -j
+```
+
+Without `CGAL_DIR` CMake clones and builds CGAL into the new tree. Note that the CGAL option is
+`PE_USE_CGAL`; a tree configured with the former option name `CGAL=ON` builds without CGAL. The
+viewer works without CGAL too: meshes then have no DistanceMap and go through GJK/EPA as if they
+were convex (the mesh controls say so).
+
 Command line:
 
 - `pe_contact_viewer [--pair | --stack]` — start mode (default Stack Lab).
@@ -35,7 +51,9 @@ Command line:
   backend: every Pair Lab preset and all 36 shape pairs, the gizmo pose round trip, and every
   Stack Lab scenario stepped for 1 s (3 s for the drop), plus a cylinder drop that must end
   resting on the ground, and a 2 s Pair Lab simulation (cylinder standing on a box over the
-  ground) that must end at rest and be restored exactly by Reset. Prints contacts, a contacts-per-pair
+  ground) that must end at rest and be restored exactly by Reset. With CGAL also the torus
+  presets: no contact for the sphere in the hole, contacts with the upward normal for the sphere
+  on the tube, and the SDF grid through a frame. Prints contacts, a contacts-per-pair
   matrix (a `0` for an overlapping pair means the routine generates nothing; plane-plane is
   0 by design) and per-scenario stability numbers.
 - `pe_contact_viewer [--pair | --stack] --screenshot out.png [--preset k] [--steps n]` — renders
@@ -69,9 +87,20 @@ Command line:
 
 ## Pair Lab
 
-Two bodies (sphere, box, capsule, cylinder, ellipsoid, plane), posed by drag fields or the
+Two bodies (sphere, box, capsule, cylinder, ellipsoid, plane, mesh), posed by drag fields or the
 Polyscope transform gizmo, over an optional ground plane. Every edit re-runs
 `MaxContacts::collide( A, B )`:
+
+- **Mesh** — a torus (major radius R, minor radius r, segment counts; hole axis = body z), the
+  simplest closed non-convex shape, with a DistanceMap (resolution and padding as in
+  `enableDistanceMapAcceleration()`; the controls apply on Enter since a rebuild takes a moment,
+  the build time is shown). With the DistanceMap, contacts of the mesh with any primitive, the
+  ground plane or another mesh come from the signed distance field
+  (`MaxContacts::collideTMeshWithDistanceMap()` for primitives): surface samples of the primitive
+  looked up in the field, clustered into a manifold. The "distance map (SDF grid)" overlay option
+  draws the field as a Polyscope volume grid in the body frame with its zero isosurface; a slice
+  plane (Polyscope's View menu) shows the signed distance inside. "copy as test case" refers to
+  the torus generator of `tests/interface/pe_primitive_mesh_distancemap_test.cpp`.
 
 - **Ground plane** — on by default and kept just under the posed pair ("keep under the pair");
   untick that to set the height by hand, or switch the ground off. Its contacts with A and B are
@@ -107,7 +136,8 @@ Polyscope transform gizmo, over an optional ground plane. Every edit re-runs
   box face, sphere on a box edge, box/cylinder on a plane, off-centre ellipsoid-box face, tilted
   ellipsoid pair, and the multi-point cylinder cases: cylinder standing / lying on a box, box on
   a cylinder cap, coaxial cylinders, parallel lying cylinders, cylinder standing on a lying one,
-  capsule on a cylinder cap.
+  capsule on a cylinder cap; and with the torus mesh: sphere / box / capsule / cylinder /
+  ellipsoid on the tube, and a sphere in the hole (no contact: the convex hull would contain it).
 
 Orientations use pe's Euler convention, `Quat( xangle, yangle, zangle )` (applied in the order
 x, y, z); capsule and cylinder axes run along the body-frame x axis, the plane normal is the

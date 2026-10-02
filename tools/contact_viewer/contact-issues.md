@@ -6,6 +6,56 @@ solver and `pe::detection::fine::MaxContacts`.
 
 ## Open problems
 
+### Penetration correction adds momentum (split impulse)
+
+The hard-contact solvers remove penetration with a velocity that stays in the bodies, so every
+penetration, however it arises, is paid back as kinetic energy. The concrete behaviour and the
+measurements are under "Penetration becomes velocity" in "Solver and engine behaviour to know";
+this entry is the proposed remedy.
+
+How it works today (`HardContactEulerLagrange`; `HardContactAndFluid` and
+`HardContactSemiImplicitTimesteppingSolvers` have the same structure):
+
+1. Contact caching: `dist_[j] = c->getDistance()`, scaled by `erp_` when negative (the Baumgarte
+   term).
+2. Relaxation (e.g. `relaxApproximateInelasticCoulombContactsByDecoupling()`): the normal
+   constraint is on `gdot_n + dist_[i] / dt`, i.e. a penetrating contact requires the bodies to
+   separate at `erp * |d| / dt`. The impulses `p_` go into the velocity corrections `dv_` / `dw_`.
+3. Integration (`integratePositions()`): positions are advanced with `v_ + dv_` and the same
+   velocity is stored back in the body (`body->v_ = v`). The separation velocity that corrected
+   the penetration therefore survives the step.
+
+Consequences: an initially penetrating state launches the bodies (7 m/s for 0.01 at dt = 1e-3),
+a smaller dt makes it worse (the velocity scales with 1 / dt), bodies landing with a
+one-step penetration bounce at restitution 0, and a deep penetration from any cause (a missed
+contact, a hard mouse drag, a large dt) ends in a blow-up (~266 m/s for 0.38 deep).
+
+Proposed remedy: split impulse (pseudo velocities), as used e.g. in Bullet:
+
+- Solve the contacts twice per step: the velocity solve as now but with the Baumgarte term
+  removed for penetrating contacts (`dist_ = min( dist, 0 )` becomes 0, only positive gaps are
+  kept as allowed approach), and a second, position-only solve on separate pseudo-velocity
+  corrections `dvp_` / `dwp_` whose target is `erp * |d| / dt` for the penetrating contacts only
+  (no friction, non-negative normal impulses).
+- Integrate positions with `v_ + dv_ + dvp_` (and the angular counterpart), but store only
+  `v_ + dv_` as the new body velocity. The penetration is removed at the same rate as now, the
+  pseudo velocity is discarded, and no momentum is added.
+- Cost: a second relaxation loop over the penetrating contacts only (usually few); under MPI the
+  pseudo corrections need the same synchronisation as `dv_` / `dw_` (`synchronizeVelocities()`).
+- Keep it switchable (like `setAdaptiveBaumgarteCapping()`), default off at first, so existing
+  CFD-coupled runs stay bit-identical until it is validated.
+- Validation: the corner-face launch (top box must not rise), the drop at restitution 0 (no
+  bounce), resting stacks (no change in drift), and the fixed-ramp and cylinder tests.
+
+A cheaper stopgap: cap the correction velocity per contact to an absolute value (e.g. a
+fraction of a body size per step, or a user-set maximum in m/s) instead of the current
+`setAdaptiveBaumgarteCapping()` limit `characteristic length / ( dt * aggressiveness )`, which is
+20 m/s for a unit body at dt = 1e-3 and does not bite. A cap limits the damage of a deep
+penetration but still adds momentum and still makes small dt worse; the split impulse removes
+the cause.
+
+Neither is implemented.
+
 ### Box-box: no preference for face axes
 
 `MaxContacts::collideBoxBox` takes an edge-pair axis as soon as its depth beats the best face
@@ -22,13 +72,33 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   plane, triangle mesh, union and another inner cylinder the dispatch has no case and throws
   `std::runtime_error( "Unknown body type" )`. Inner cylinder vs cylinder depends on the order:
   inner cylinder first returns nothing (explicit empty case), cylinder first throws.
-- **Primitive vs triangle mesh** (box, capsule, cylinder, ellipsoid) goes through GJK/EPA only:
-  one contact, the mesh treated as convex. The DistanceMap is used only for plane-mesh and
-  mesh-mesh; sphere-mesh uses a brute-force closest-triangle search (one contact, works for
-  non-convex meshes).
+- **Primitive vs triangle mesh without a DistanceMap** (box, capsule, cylinder, ellipsoid) goes
+  through GJK/EPA: one contact, the mesh treated as convex; sphere-mesh uses a brute-force
+  closest-triangle search (one contact, works for non-convex meshes). With a DistanceMap all five
+  pairs use it (see Resolved).
+- **DistanceMap manifolds are limited to six contacts per pair** (`emitDistanceMapContacts()`,
+  deepest clusters first, up to five per cluster), and the mesh-mesh path samples only the query
+  mesh's vertices, edge midpoints and face barycentres: a coarse query mesh on a fine one can
+  miss shallow contacts between its samples.
+- **Primitive-mesh DistanceMap sampling** (`collideTMeshWithDistanceMap()`): the sample pitch is
+  the larger of twice the grid spacing and the primitive's extent over the per-shape caps (~24
+  per edge, 48 around, 400 per sphere), so a very large primitive does not see mesh features
+  narrower than its pitch (follow-up: derive the sample counts from the overlap of the two
+  bounding boxes and sample only that region). The primitive's extent as clustering radius
+  merges two separate contact patches with parallel normals into one cluster (inner edges lost).
+  With a flat resting face all samples have nearly equal depth, so the "deepest" representative
+  is chosen by sample index and can hop between frames (a centroid tie-break would avoid it).
+  Samples deep inside the mesh get the nearest-surface normal, like every signed-distance
+  method. DistanceMap pairs emit hard contacts only (no lubrication contacts).
 - **Plane vs plane** generates nothing, by design (both fixed and infinite).
 
 ### Unverified observations
+
+- **Plane-mesh on a DistanceMap emits every penetrating sample as a contact** (Pair Lab pair
+  matrix: 204 / 226 contacts for the plane-torus pair): `collidePlaneTMeshWithDistanceMap()`
+  samples the plane under the mesh's AABB on a 25 x 25 grid and its clustering is compiled out
+  (`PE_DISTANCEMAP_PLANE_CLUSTERING 0`). Each contact gets its own solver impulse, so a mesh
+  resting on a plane has an unusually large contact set; not checked whether that is intended.
 
 - Pair Lab preset "box on box: face-face, offset + yaw" gives five contacts, three with their
   points at z = 0.5 and two at z = 0.49. Not checked whether the mixed placement is intended.
@@ -59,14 +129,40 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
     `characteristic length / ( dt * aggressiveness )`, 20 m/s for a unit body at dt = 1e-3.
   Pair Lab therefore separates a penetrating posed state before the first step ("start from a
   touching state", on by default; untick it to see the raw response). Stack Lab builds its
-  scenarios touching. An engine-side remedy would be a split-impulse (pseudo-velocity) position
-  correction; not implemented.
+  scenarios touching. The engine-side remedy (split impulse) is written up under "Open problems":
+  "Penetration correction adds momentum".
 - **Dropped boxes bounce at restitution 0.** Landing at ~4.9 m/s with dt = 2e-3 penetrates ~1 cm
   in one step; the boxes bounce back at ~0.9 m/s and settle after ~1.8 s. Very likely the same
   mechanism as above (the landing penetration is corrected with a velocity that stays in the
   body); lowering the error reduction reduces it.
 
 ## Resolved
+
+- **Primitive-mesh contacts ignored the DistanceMap.** Sphere-, box-, capsule-, cylinder- and
+  ellipsoid-mesh contacts came from GJK/EPA (one contact, the mesh treated as convex; a sphere in
+  the hole of a torus was "penetrating") or a brute-force closest triangle (sphere), even when the
+  mesh had a DistanceMap; only plane-mesh and mesh-mesh used it. Now
+  `MaxContacts::collideTMeshWithDistanceMap()` samples the primitive's surface at about twice the
+  grid spacing (plus its support point against the mesh normal at its centre, so the deepest
+  point of a smooth primitive is exact), looks the samples up in the signed distance field and
+  builds the manifold with the clustering shared with the mesh-mesh path
+  (`emitDistanceMapContacts()`, now with a caller-chosen cluster radius: the primitive's size, so
+  one coherent contact patch is one cluster whose extremal points span the patch, and the deepest
+  clusters are emitted first so the deepest contact is never dropped by the six-contact limit).
+  Without a DistanceMap the previous paths are unchanged. The debug-only assert that restricted
+  `createTriangleMesh( ..., vertices, faces, ... )` to convex meshes is gone (the non-convex AABB
+  path and the DistanceMap handle them, as for meshes loaded from files).
+  `tests/interface/pe_primitive_mesh_distancemap_test.cpp` (CGAL builds): each primitive on the
+  tube of a torus against the analytic torus distance and normal, separated, in the hole (no
+  contact), both dispatch orders, a translated and rotated torus, the GJK/EPA path without the
+  DistanceMap, and on a slab mesh a box resting flat (six contacts spread over the whole face),
+  a capsule whose ends lie outside the grid and a cylinder whose centre lies outside the grid.
+- **DistanceMap nodes on the mesh surface had a zero normal** (`DistanceMap.cpp`, the
+  `query == closest` case). For a mesh face lying on a grid plane, e.g. the top of a box-like
+  mesh, that is a whole plane of zero normals, which the trilinear interpolation blends into
+  short, useless normals in the adjacent cell layer (found when the box-on-slab test produced no
+  contacts). Such nodes now take the closest triangle's face normal. Affects every DistanceMap
+  path (mesh-mesh, plane-mesh, primitive-mesh).
 
 - **Box-box: near-parallel edges replaced a real contact by a spurious "gap".** Observed in Pair
   Lab: a box driven edge first into another box's face passed 0.35 into it, then blew up. Before

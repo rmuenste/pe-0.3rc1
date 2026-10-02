@@ -74,9 +74,9 @@ A **Mode** window switches between the two at any time.
 - Plots: kinetic energy, solver max penetration, contact count, drift of the top body.
 - Ctrl + left-drag pulls a body with a spring (same mechanism as this viewer).
 
-**Pair Lab** — two posed bodies over a ground plane, with the same Run/Pause/Step/Reset, `dt`
-and Ctrl + left-drag controls; the pose is the initial state and Reset returns to it. First
-things to try:
+**Pair Lab** — two posed bodies (primitives, plane, or a torus mesh with a DistanceMap in CGAL
+builds) over a ground plane, with the same Run/Pause/Step/Reset, `dt` and Ctrl + left-drag
+controls; the pose is the initial state and Reset returns to it. First things to try:
 
 - Pick a preset, tick **gizmo** on body B and drag it; contacts and sweep plots update live.
 - Press Run (space) to let the pair evolve from that pose; Reset (`r`) to go back.
