@@ -256,36 +256,11 @@ MaterialID pairMaterial()
 }
 
 
-//! Torus with outward-oriented triangles, centred at the origin, hole axis z.
-void makeTorus( double R, double r, int nMajor, int nMinor, Vertices& vertices, IndicesLists& faces )
-{
-   vertices.clear();
-   faces.clear();
-   for( int i = 0; i < nMajor; ++i ) {
-      const double u = 2.0 * kPi * i / nMajor;
-      for( int j = 0; j < nMinor; ++j ) {
-         const double v = 2.0 * kPi * j / nMinor;
-         vertices.push_back( Vec3( ( R + r * std::cos( v ) ) * std::cos( u ),
-                                   ( R + r * std::cos( v ) ) * std::sin( u ),
-                                   r * std::sin( v ) ) );
-      }
-   }
-   const auto at = [nMajor, nMinor]( int i, int j ) {
-      return static_cast<size_t>( ( i % nMajor ) * nMinor + ( j % nMinor ) );
-   };
-   for( int i = 0; i < nMajor; ++i )
-      for( int j = 0; j < nMinor; ++j ) {
-         faces.push_back( Vector3<size_t>( at( i, j ), at( i + 1, j ), at( i + 1, j + 1 ) ) );
-         faces.push_back( Vector3<size_t>( at( i, j ), at( i + 1, j + 1 ), at( i, j + 1 ) ) );
-      }
-}
-
-
 BodyID createMeshBody( const BodySpec& s, pe::id_t uid, int slot )
 {
    Vertices vertices;
    IndicesLists faces;
-   makeTorus( s.torusMajor, s.torusMinor, std::max( 3, s.torusSegs[0] ), std::max( 3, s.torusSegs[1] ), vertices, faces );
+   viewer::makeTorus( s.torusMajor, s.torusMinor, std::max( 3, s.torusSegs[0] ), std::max( 3, s.torusSegs[1] ), vertices, faces );
    TriangleMeshID m = createTriangleMesh( uid, Vec3( 0, 0, 0 ), vertices, faces, pairMaterial(), /*convex=*/false );
 
    dmBuildSeconds[slot] = 0.0;

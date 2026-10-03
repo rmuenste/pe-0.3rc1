@@ -47,9 +47,12 @@ were convex (the mesh controls say so).
 Command line:
 
 - `pe_contact_viewer [--pair | --stack]` — start mode (default Stack Lab).
+- `--split-impulse` — start with the split-impulse position correction switched on (the
+  Simulation window's checkbox; also for `--screenshot` runs).
 - `pe_contact_viewer --smoke` — headless self check of both modes on Polyscope's mock OpenGL
   backend: every Pair Lab preset and all 36 shape pairs, the gizmo pose round trip, and every
-  Stack Lab scenario stepped for 1 s (3 s for the drop), plus a cylinder drop that must end
+  Stack Lab scenario stepped for 1 s (3 s for the drop), a 60-body dynamic stacking run (5 s, with and
+  without the split impulse; every drop made, no body through the ground), plus a cylinder drop that must end
   resting on the ground, and a 2 s Pair Lab simulation (cylinder standing on a box over the
   ground) that must end at rest and be restored exactly by Reset. With CGAL also the torus
   presets: no contact for the sphere in the hole, contacts with the upward normal for the sphere
@@ -75,16 +78,33 @@ Command line:
   (offset rows),
   mixed-shape stack (box / cylinder / capsule / ellipsoid / sphere), boxes on a fixed ramp (shows
   tan(angle) vs mu), shapes dropped onto the ground, upright cylinder stack (box / cylinder /
-  cylinder / box ..., exercises the box-cylinder and cylinder-cylinder face manifolds). Box
-  size, initial gap, lateral and yaw jitter with a seed, friction mu (the contact friction of a
-  pair), restitution, density. The triangular and square walls have a side gap between
+  cylinder / box ..., exercises the box-cylinder and cylinder-cylinder face manifolds), dynamic
+  stacking (see below). Box size, initial gap, lateral and yaw jitter with a seed, friction mu
+  (the contact friction of a pair), restitution, density. The triangular and square walls have a side gap between
   neighbours (default 0, touching); their rows are laid out from each box's width after its yaw
   jitter, so boxes never start overlapping, and the lateral jitter acts across the wall only.
+- **Dynamic stacking (rain onto a disc)** — the world starts with the ground and a target disc
+  (drawn in yellow); while the simulation runs, bodies are dropped one after another from the
+  drop height onto random points of the disc (uniform in area) with random shape (any subset of
+  sphere / box / capsule / cylinder / ellipsoid / torus mesh), random size factor (1 +- spread), random
+  orientation and an optional initial downward speed, all from the seed. Controls: bodies to
+  drop (up to 500), drop interval (a minimum: a drop waits until the previous body has cleared
+  the drop slot), disc radius, drop height, size spread, shapes. The Simulation window counts
+  the drops, the pile height and the bodies that left the area (farther than 3 radii or below
+  the ground). The torus mesh (outer diameter = the body size, tube radius 0.15 of it) builds
+  its own DistanceMap when it is dropped (resolution slider), so mesh-primitive and mesh-mesh
+  contacts of the signed-distance path are part of the pile. The shape exists in CGAL builds
+  only (it is not offered without its DistanceMap). The "drop shapes on the ground" scenario
+  offers the torus mesh too. Stresses randomly oriented
+  contact pairs of every shape combination, many simultaneous impacts and the position
+  correction; with the Baumgarte term bodies landing on the pile bounce, with the split impulse
+  they do not.
 - **Overlay** — after each frame's steps `MaxContacts::collide()` is re-run over all
   AABB-overlapping pairs (the collision system clears its contacts at the end of a step), so the
   markers show the contacts of the current configuration. Bodies can be colored by speed.
 - **Diagnostics** — kinetic energy, the solver's maximum penetration, solver vs overlay contact
-  count, and the drift of the initially highest body.
+  count, the drift of the initially highest body (dynamic stacking: the pile height instead), and
+  the wall time per simulation step.
 - **Ctrl + left-drag** a body to pull it with a damped spring.
 
 ## Pair Lab

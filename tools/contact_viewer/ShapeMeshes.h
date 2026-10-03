@@ -179,6 +179,33 @@ inline ShapeMesh makePlaneMesh( double halfSize )
    return m;
 }
 
+//! pe TriangleMesh geometry of a torus with outward-oriented triangles, centred at the origin,
+//! hole axis z (major radius \a R, tube radius \a r). The simplest closed non-convex shape.
+inline void makeTorus( double R, double r, int nMajor, int nMinor, pe::Vertices& vertices, pe::IndicesLists& faces )
+{
+   const double pi = 3.14159265358979323846;
+   vertices.clear();
+   faces.clear();
+   for( int i = 0; i < nMajor; ++i ) {
+      const double u = 2.0 * pi * i / nMajor;
+      for( int j = 0; j < nMinor; ++j ) {
+         const double v = 2.0 * pi * j / nMinor;
+         vertices.push_back( pe::Vec3( ( R + r * std::cos( v ) ) * std::cos( u ),
+                                       ( R + r * std::cos( v ) ) * std::sin( u ),
+                                       r * std::sin( v ) ) );
+      }
+   }
+   const auto at = [nMajor, nMinor]( int i, int j ) {
+      return static_cast<size_t>( ( i % nMajor ) * nMinor + ( j % nMinor ) );
+   };
+   for( int i = 0; i < nMajor; ++i )
+      for( int j = 0; j < nMinor; ++j ) {
+         faces.push_back( pe::Vector3<size_t>( at( i, j ), at( i + 1, j ), at( i + 1, j + 1 ) ) );
+         faces.push_back( pe::Vector3<size_t>( at( i, j ), at( i + 1, j + 1 ), at( i, j + 1 ) ) );
+      }
+}
+
+
 //! Mesh of an existing pe body (any primitive except the infinite plane, which gets a patch
 //! of half size \a planeHalfSize).
 inline ShapeMesh makeBodyMesh( pe::BodyID body, double planeHalfSize = 2.5 )

@@ -6,12 +6,12 @@
  *  Visual debug harness for pe::detection::fine::MaxContacts and the contact solver, two modes
  *  in one binary:
  *   - Stack Lab (stack_lab.cpp, default): run / pause / step a small simulation on a ground
- *     plane (box towers, pyramids, walls, mixed stacks, ramp, drops) with the contact overlay
+ *     plane (box towers, walls, mixed stacks, ramp, drops, dynamic stacking) with the contact overlay
  *     and stability plots.
  *   - Pair Lab (pair_lab.cpp): pose two bodies and inspect the contacts the narrow phase
  *     generates for them; the posed pair can also be simulated from that state.
  *
- *  Usage: pe_contact_viewer [--pair | --stack] [--smoke]
+ *  Usage: pe_contact_viewer [--pair | --stack] [--split-impulse] [--smoke]
  *                           [--screenshot <file.png> [--preset <k>] [--steps <n>]]
  *    --pair / --stack   start mode (default: Stack Lab)
  *    --smoke            headless self check of both modes on Polyscope's mock OpenGL backend
@@ -35,6 +35,7 @@
 #include "implot.h"
 
 #include "PairLab.h"
+#include "SimControls.h"
 #include "StackLab.h"
 
 using namespace pe;
@@ -98,8 +99,9 @@ int main( int argc, char** argv )
       else if( arg == "--screenshot" && i + 1 < argc ) shot = argv[++i];
       else if( arg == "--preset" && i + 1 < argc )     preset = std::atoi( argv[++i] );
       else if( arg == "--steps" && i + 1 < argc )      steps = std::atoi( argv[++i] );
+      else if( arg == "--split-impulse" )              simctl::controls().splitImpulse = true;
       else {
-         std::fprintf( stderr, "usage: %s [--pair | --stack] [--smoke] [--screenshot <file.png> [--preset <k>] [--steps <n>]]\n", argv[0] );
+         std::fprintf( stderr, "usage: %s [--pair | --stack] [--split-impulse] [--smoke] [--screenshot <file.png> [--preset <k>] [--steps <n>]]\n", argv[0] );
          return EXIT_FAILURE;
       }
    }

@@ -16,6 +16,8 @@
 #include <pe/system/WarningDisable.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <exception>
@@ -56,13 +58,20 @@ const double kDegToRad = kPi / 180.0;
 //=================================================================================================
 
 // Appended kinds keep the indices (--preset k) of the existing ones stable.
-enum ScenarioKind { kTower, kPyramid, kWall, kMixed, kRamp, kDrop, kCylinderStack, kSquareWall, kNumScenarios };
+enum ScenarioKind { kTower, kPyramid, kWall, kMixed, kRamp, kDrop, kCylinderStack, kSquareWall, kRain, kNumScenarios };
 const char* const kScenarioNames[kNumScenarios] = {
    "box tower", "triangular wall", "brick wall", "mixed-shape stack", "box on a ramp", "drop shapes on the ground",
-   "upright cylinder stack", "square wall (N x N)" };
+   "upright cylinder stack", "square wall (N x N)", "dynamic stacking (rain onto a disc)" };
+const int kRainMaxBodies = 500;
 
-enum DropShape { kDropSphere, kDropBox, kDropCapsule, kDropCylinder, kDropEllipsoid, kNumDropShapes };
+// The torus mesh needs its DistanceMap (CGAL); without CGAL it is not offered at all.
+#ifdef PE_USE_CGAL
+enum DropShape { kDropSphere, kDropBox, kDropCapsule, kDropCylinder, kDropEllipsoid, kDropMesh, kNumDropShapes };
+const char* const kDropShapeNames[kNumDropShapes] = { "sphere", "box", "capsule", "cylinder", "ellipsoid", "torus mesh (DistanceMap)" };
+#else
+enum DropShape { kDropSphere, kDropBox, kDropCapsule, kDropCylinder, kDropEllipsoid, kNumDropShapes, kDropMesh = -1 };
 const char* const kDropShapeNames[kNumDropShapes] = { "sphere", "box", "capsule", "cylinder", "ellipsoid" };
+#endif
 
 //! Parameters that define the initial world; edits apply on Reset, not mid-run.
 struct Scenario {
@@ -79,12 +88,30 @@ struct Scenario {
    int    dropShape   = kDropBox;
    double dropHeight  = 1.0;     // clearance above the ground, in s
    double dropTilt[2] = { 20.0, 10.0 };  // Euler x, y [deg]
+   // Dynamic stacking: bodies are dropped one after another onto a disc on the ground while the
+   // simulation runs; shapes, sizes, positions and orientations are random (seeded).
+   int    rainCount      = 100;    // bodies to drop (<= kRainMaxBodies)
+   double rainInterval   = 0.15;   // [s] between drops (0 = one per step while the drop slot is free)
+   double rainRadius     = 1.5;    // target disc radius, in s
+   double rainHeight     = 4.0;    // drop height of the body centre above the ground, in s
+   double rainSizeSpread = 0.25;   // size factor per body in [1 - spread, 1 + spread]
+   double rainSpeed      = 0.0;    // initial downward speed [m/s]
+   bool   rainShapes[kNumDropShapes];   // one per DropShape, all on (set in the constructor)
+   int    meshResolution = 24;     // DistanceMap cells along the torus mesh's longest extent (CGAL builds)
    double friction    = 0.4;     // pair friction coefficient mu of every contact
    double restitution = 0.0;
    double density     = 1.0;
 };
 
-Scenario staged;   // values edited in the GUI
+inline Scenario makeDefaultScenario()
+{
+   Scenario s;
+   for( int k = 0; k < kNumDropShapes; ++k )
+      s.rainShapes[k] = true;
+   return s;
+}
+
+Scenario staged = makeDefaultScenario();   // values edited in the GUI
 Scenario active;   // values the current world was built with
 
 simctl::Clock simClock;   // simulated time of this mode's world; stepping settings are shared (SimControls.h)
@@ -105,10 +132,20 @@ bool                   showContacts = true;
 bool                   colorBySpeed = false;
 double                 speedScale   = 2.0;   // speed mapped to full red [m/s]
 
+// Dynamic stacking run state
+int    rainDropped  = 0;     // bodies dropped so far
+double rainNextDrop = 0.0;   // simulated time of the next drop
+int    rainOutside  = 0;     // bodies that left the target area (horizontal distance > 3 R) or fell below the ground
+
 // Diagnostics, sampled once per rendered frame that advanced the simulation
 int  topIndex = -1;   // index into simBodies of the initially highest dynamic body
 Vec3 topStart;
-std::vector<double> tBuf, keBuf, penBuf, solverContactsBuf, overlayContactsBuf, driftBuf;
+double lastStepMs = 0.0;   // wall time per simulation step of the last advance
+std::vector<double> tBuf, keBuf, penBuf, solverContactsBuf, overlayContactsBuf, driftBuf, pileBuf, stepMsBuf;
+std::vector<std::vector<double>*> allBuffers()
+{
+   return { &tBuf, &keBuf, &penBuf, &solverContactsBuf, &overlayContactsBuf, &driftBuf, &pileBuf, &stepMsBuf };
+}
 
 //=================================================================================================
 //
@@ -178,6 +215,17 @@ void updateContacts()
 }
 
 
+//! Highest point of any dynamic body's bounding box (0 with none).
+double pileHeight()
+{
+   double h = 0.0;
+   for( const SimBody& sb : simBodies )
+      if( !sb.body->isFixed() )
+         h = std::max( h, static_cast<double>( sb.body->getAABB()[5] ) );
+   return h;
+}
+
+
 double kineticEnergy()
 {
    double e = 0.0;
@@ -196,7 +244,7 @@ double kineticEnergy()
 void sampleDiagnostics()
 {
    if( tBuf.size() > 60000 ) {   // keep the plots responsive in long runs: drop the older half
-      for( std::vector<double>* buf : { &tBuf, &keBuf, &penBuf, &solverContactsBuf, &overlayContactsBuf, &driftBuf } )
+      for( std::vector<double>* buf : allBuffers() )
          buf->erase( buf->begin(), buf->begin() + static_cast<long>( buf->size() / 2 ) );
    }
    tBuf.push_back( simClock.time );
@@ -206,6 +254,17 @@ void sampleDiagnostics()
    overlayContactsBuf.push_back( static_cast<double>( contactLog.entries.size() ) );
    driftBuf.push_back( topIndex >= 0
       ? static_cast<double>( ( simBodies[topIndex].body->getPosition() - topStart ).length() ) : 0.0 );
+   pileBuf.push_back( pileHeight() );
+   stepMsBuf.push_back( lastStepMs );
+   rainOutside = 0;
+   const double limit = 3.0 * active.rainRadius * active.size;
+   for( const SimBody& sb : simBodies ) {
+      if( sb.body->isFixed() )
+         continue;
+      const Vec3& c = sb.body->getPosition();
+      if( std::sqrt( c[0] * c[0] + c[1] * c[1] ) > limit || c[2] < -active.size )
+         ++rainOutside;
+   }
 }
 
 
@@ -372,23 +431,113 @@ void buildRamp( double s )
 }
 
 
+int    meshBodies      = 0;     // torus meshes created in the current world
+double meshBuildSeconds = 0.0;   // DistanceMap build time summed over them
+
+//! A body of the drop shape \a shape with overall size \a a (edge / diameter / length) at \a p.
+//! The torus mesh (major radius 0.35 a, tube radius 0.15 a, outer diameter a) builds its
+//! DistanceMap right away (CGAL builds only; the shape does not exist otherwise).
+BodyID createDropBody( int shape, const Vec3& p, double a )
+{
+   switch( shape ) {
+      case kDropSphere:    return createSphere   ( ++nextId, p, 0.5 * a, material );
+      case kDropCapsule:   return createCapsule  ( ++nextId, p, 0.3 * a, a, material );
+      case kDropCylinder:  return createCylinder ( ++nextId, p, 0.5 * a, a, material );
+      case kDropEllipsoid: return createEllipsoid( ++nextId, p, 0.6 * a, 0.4 * a, 0.25 * a, material );
+#ifdef PE_USE_CGAL
+      case kDropMesh: {
+         Vertices vertices;
+         IndicesLists faces;
+         viewer::makeTorus( 0.35 * a, 0.15 * a, 24, 12, vertices, faces );
+         TriangleMeshID m = createTriangleMesh( ++nextId, p, vertices, faces, material, /*convex=*/false );
+         ++meshBodies;
+         const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+         m->enableDistanceMapAcceleration( std::max( 4, active.meshResolution ), 2 );
+         meshBuildSeconds += std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
+         return m;
+      }
+#endif
+      default:             return createBox      ( ++nextId, p, Vec3( a, a, a ), material );
+   }
+}
+
+
 void buildDrop( double s )
 {
    for( int i = 0; i < active.count; ++i ) {
       const Vec3 p( ( i - 0.5 * ( active.count - 1 ) ) * 2.0 * s + uniform( active.jitter * s ),
                     uniform( active.jitter * s ),
                     ( active.dropHeight + 1.0 ) * s );
-      BodyID b;
-      switch( active.dropShape ) {
-         case kDropSphere:    b = createSphere   ( ++nextId, p, 0.5 * s, material ); break;
-         case kDropCapsule:   b = createCapsule  ( ++nextId, p, 0.3 * s, s, material ); break;
-         case kDropCylinder:  b = createCylinder ( ++nextId, p, 0.5 * s, s, material ); break;
-         case kDropEllipsoid: b = createEllipsoid( ++nextId, p, 0.6 * s, 0.4 * s, 0.25 * s, material ); break;
-         default:             b = createBox      ( ++nextId, p, Vec3( s, s, s ), material ); break;
-      }
-      addBody( b, Quat( active.dropTilt[0] * kDegToRad, active.dropTilt[1] * kDegToRad,
-                        uniform( active.yawJitter ) * kDegToRad ) );
+      addBody( createDropBody( active.dropShape, p, s ), Quat( active.dropTilt[0] * kDegToRad, active.dropTilt[1] * kDegToRad,
+                                                               uniform( active.yawJitter ) * kDegToRad ) );
    }
+}
+
+
+//! Uniformly distributed random orientation (Shoemake).
+Quat randomOrientation()
+{
+   std::uniform_real_distribution<double> u01( 0.0, 1.0 );
+   const double u1 = u01( rng ), u2 = u01( rng ), u3 = u01( rng );
+   const double a = std::sqrt( 1.0 - u1 ), b = std::sqrt( u1 );
+   return Quat( static_cast<real>( b * std::cos( 2.0 * kPi * u3 ) ), static_cast<real>( a * std::sin( 2.0 * kPi * u2 ) ),
+                static_cast<real>( a * std::cos( 2.0 * kPi * u2 ) ), static_cast<real>( b * std::sin( 2.0 * kPi * u3 ) ) );
+}
+
+
+//! The dynamic stacking scenario starts with the ground and the target disc; bodies arrive
+//! while the simulation runs (spawnRainBody()).
+void buildRain( double s )
+{
+   rainDropped  = 0;
+   rainNextDrop = 0.0;
+   rainOutside  = 0;
+   const double R = active.rainRadius * s;
+   std::vector<glm::vec3> pts;
+   std::vector<std::array<size_t, 2>> edges;
+   const int n = 96;
+   for( int i = 0; i < n; ++i ) {
+      const double a = 2.0 * kPi * i / n;
+      pts.push_back( glm::vec3( static_cast<float>( R * std::cos( a ) ), static_cast<float>( R * std::sin( a ) ), static_cast<float>( 0.003 * s ) ) );
+      edges.push_back( { static_cast<size_t>( i ), static_cast<size_t>( ( i + 1 ) % n ) } );
+   }
+   polyscope::CurveNetwork* disc = polyscope::registerCurveNetwork( "target disc", pts, edges );
+   disc->setRadius( 0.012 * s, /*isRelative=*/false );
+   disc->setColor( glm::vec3( 0.95f, 0.75f, 0.20f ) );
+}
+
+
+//! Drops the next body: a random enabled shape with a random size factor and orientation at a
+//! random point of the target disc (uniform in area), at the drop height. Returns false when the
+//! drop slot is still occupied by the previous body (it is retried on the next step).
+bool spawnRainBody( double s )
+{
+   std::uniform_real_distribution<double> u01( 0.0, 1.0 );
+   const double R   = active.rainRadius * s;
+   const double r   = R * std::sqrt( u01( rng ) );
+   const double phi = 2.0 * kPi * u01( rng );
+   const Vec3   p( r * std::cos( phi ), r * std::sin( phi ), active.rainHeight * s );
+   const double f = 1.0 + uniform( active.rainSizeSpread );   // size factor
+   // The slot is free when no body's bounding box, grown by the new body's bounding radius
+   // (0.9 a covers the box half diagonal 0.87 a and the capsule half length 0.8 a), contains p.
+   const double h = 0.9 * f * s;
+   for( const SimBody& sb : simBodies ) {
+      if( sb.body->isFixed() )
+         continue;
+      const RigidBody::AABB& bb = sb.body->getAABB();
+      if( p[0] > bb[0] - h && p[0] < bb[3] + h && p[1] > bb[1] - h && p[1] < bb[4] + h && p[2] > bb[2] - h && p[2] < bb[5] + h )
+         return false;
+   }
+
+   std::vector<int> enabled;
+   for( int k = 0; k < kNumDropShapes; ++k )
+      if( active.rainShapes[k] )
+         enabled.push_back( k );
+   const int shape = enabled.empty() ? kDropBox : enabled[std::uniform_int_distribution<int>( 0, static_cast<int>( enabled.size() ) - 1 )( rng )];
+   BodyID b = createDropBody( shape, p, f * s );
+   addBody( b, randomOrientation() );
+   b->setLinearVel( Vec3( 0.0, 0.0, -active.rainSpeed ) );
+   return true;
 }
 
 
@@ -396,6 +545,11 @@ void frameCamera()
 {
    // Bounds of the rendered bodies; the ground plane is infinite and does not count.
    Vec3 lo( 1e30, 1e30, 0.0 ), hi( -1e30, -1e30, active.size );
+   if( active.kind == kRain ) {   // the pile grows into this volume; bodies may roll out to ~3 R
+      const double R = active.rainRadius * active.size;
+      lo = Vec3( -2.5 * R, -2.5 * R, 0.0 );
+      hi = Vec3( 2.5 * R, 2.5 * R, 0.6 * active.rainHeight * active.size );
+   }
    for( const SimBody& sb : simBodies ) {
       const RigidBody::AABB& bb = sb.body->getAABB();
       for( int k = 0; k < 3; ++k ) {
@@ -435,10 +589,12 @@ void buildScene()
    simctl::controls().running     = false;
    simctl::controls().queuedSteps = 0;
    simClock.reset();
-   for( std::vector<double>* buf : { &tBuf, &keBuf, &penBuf, &solverContactsBuf, &overlayContactsBuf, &driftBuf } )
+   for( std::vector<double>* buf : allBuffers() )
       buf->clear();
    rng.seed( static_cast<unsigned>( active.seed ) );
    nextId = 0;
+   meshBodies       = 0;
+   meshBuildSeconds = 0.0;
 
    // pe combines pair friction additively (Materials.cpp): each body gets mu / 2. Materials
    // cannot be edited after creation, so every reset registers a fresh anonymous one.
@@ -458,6 +614,7 @@ void buildScene()
       case kCylinderStack: buildCylinderStack( s ); break;
       case kRamp:    buildRamp( s );    break;
       case kDrop:    buildDrop( s );    break;
+      case kRain:    buildRain( s );    break;
       default:       buildTower( s );   break;
    }
 
@@ -484,14 +641,34 @@ void buildScene()
 //
 //=================================================================================================
 
-void step( int n )
+void advanceBodies( int n )
 {
-   if( n <= 0 || !simClock.error.empty() )
-      return;
    std::vector<BodyID> bodies;
    for( const SimBody& sb : simBodies )
       bodies.push_back( sb.body );
    simctl::advance( n, bodies, simClock );
+}
+
+
+void step( int n )
+{
+   if( n <= 0 || !simClock.error.empty() )
+      return;
+   const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+   if( active.kind == kRain ) {
+      // Single steps, so that a body can be dropped at its time between two steps.
+      for( int i = 0; i < n && simClock.error.empty(); ++i ) {
+         if( rainDropped < active.rainCount && simClock.time >= rainNextDrop && spawnRainBody( active.size ) ) {
+            ++rainDropped;
+            rainNextDrop = simClock.time + active.rainInterval;
+         }
+         advanceBodies( 1 );
+      }
+   }
+   else {
+      advanceBodies( n );
+   }
+   lastStepMs = std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - t0 ).count() / n;
    updateMirror();
    updateContacts();
    sampleDiagnostics();
@@ -515,6 +692,17 @@ void drawSimulationWindow()
    ImGui::Text( "solver: %d contacts, max penetration %.3e",
                 static_cast<int>( theCollisionSystem()->getNumberOfContacts() ),
                 static_cast<double>( theCollisionSystem()->getMaximumPenetration() ) );
+   ImGui::Text( "wall time %.2f ms / step", lastStepMs );
+   if( meshBodies > 0 ) {
+      ImGui::Text( "torus meshes: %d", meshBodies );
+      ImGui::SameLine();
+      ImGui::TextDisabled( "  DistanceMaps built in %.2f s total", meshBuildSeconds );
+   }
+   if( active.kind == kRain ) {
+      ImGui::Text( "dropped %d / %d   pile height %.3f   left the area %d", rainDropped, active.rainCount, pileHeight(), rainOutside );
+      if( rainDropped < active.rainCount )
+         ImGui::TextDisabled( "next drop in %.3f s", std::max( 0.0, rainNextDrop - simClock.time ) );
+   }
    if( !simClock.error.empty() )
       ImGui::TextColored( ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ), "%s", simClock.error.c_str() );
    if( simctl::mouseSpring().body() != nullptr )
@@ -566,7 +754,8 @@ void drawScenarioWindow()
       case kDrop:    countLabel = "bodies";       break;
       default: break;
    }
-   ImGui::SliderInt( countLabel, &s.count, 1, 30 );
+   if( s.kind != kRain )
+      ImGui::SliderInt( countLabel, &s.count, 1, 30 );
    if( s.kind == kWall )
       ImGui::SliderInt( "columns", &s.wallColumns, 1, 10 );
    if( s.kind == kRamp ) {
@@ -582,9 +771,58 @@ void drawScenarioWindow()
       ImGui::InputDouble( "tilt x [deg]", &s.dropTilt[0], 0.0, 0.0, "%.3g" );
       ImGui::InputDouble( "tilt y [deg]", &s.dropTilt[1], 0.0, 0.0, "%.3g" );
    }
+   if( s.kind == kRain ) {
+      ImGui::SliderInt( "bodies to drop", &s.rainCount, 1, kRainMaxBodies );
+      ImGui::InputDouble( "drop interval [s]", &s.rainInterval, 0.0, 0.0, "%.3g" );
+      s.rainInterval = std::max( 0.0, s.rainInterval );
+      if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+         ImGui::SetTooltip( "A drop waits until the previous body has cleared the drop slot, so the interval is a minimum." );
+      ImGui::InputDouble( "target disc radius [s]", &s.rainRadius, 0.0, 0.0, "%.3g" );
+      s.rainRadius = std::max( 0.0, s.rainRadius );
+      ImGui::InputDouble( "drop height [s]", &s.rainHeight, 0.0, 0.0, "%.3g" );
+      s.rainHeight = std::max( 1.0, s.rainHeight );
+      ImGui::InputDouble( "initial downward speed [m/s]", &s.rainSpeed, 0.0, 0.0, "%.3g" );
+      ImGui::InputDouble( "size spread (factor +-)", &s.rainSizeSpread, 0.0, 0.0, "%.3g" );
+      s.rainSizeSpread = std::max( 0.0, std::min( 0.9, s.rainSizeSpread ) );
+      ImGui::TextDisabled( "shapes:" );
+      int enabled = 0;
+      for( int k = 0; k < kNumDropShapes; ++k ) {
+         if( k != kDropMesh )
+            ImGui::SameLine();
+         ImGui::Checkbox( kDropShapeNames[k], &s.rainShapes[k] );
+         enabled += s.rainShapes[k] ? 1 : 0;
+      }
+      if( enabled == 0 )
+         s.rainShapes[kDropBox] = true;
+#ifdef PE_USE_CGAL
+      if( s.rainShapes[kDropMesh] || s.dropShape == kDropMesh ) {
+         ImGui::SliderInt( "mesh DistanceMap resolution", &s.meshResolution, 8, 64 );
+         if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+            ImGui::SetTooltip( "Grid cells along the torus's longest extent; each mesh body builds its own map when it is\n"
+                               "dropped (24: a few hundredths of a second). The torus has outer diameter a = size x factor,\n"
+                               "tube radius 0.15 a." );
+      }
+#else
+      ImGui::TextDisabled( "torus mesh (DistanceMap): CGAL builds only" );
+#endif
+      const double g = std::abs( simctl::controls().gravityZ );
+      const double h = s.rainHeight * s.size, v0 = s.rainSpeed;
+      const double vLand = std::sqrt( v0 * v0 + 2.0 * g * h );
+      const double tFall = g > 0.0 ? ( vLand - v0 ) / g : 0.0;
+      ImGui::TextDisabled( "landing speed on the ground %.2f m/s, fall time %.2f s (%.1f bodies in flight at the interval)",
+                           vLand, tFall, s.rainInterval > 0.0 ? tFall / s.rainInterval : 0.0 );
+      ImGui::TextDisabled( "random: shape, size, position in the disc, orientation (seeded)" );
+      if( !simctl::controls().splitImpulse )
+         ImGui::TextColored( ImVec4( 0.95f, 0.75f, 0.20f, 1.0f ),
+                             "Baumgarte correction active: a body landing at %.1f m/s penetrates ~%.0f mm in one step and\n"
+                             "bounces back at ~%.1f m/s (erp x depth / dt). Enable \"split impulse\" in the Simulation window\n"
+                             "to see the pile without that artefact.", vLand, 1000.0 * vLand * simctl::controls().dt,
+                             simctl::controls().erp * vLand );
+   }
 
    ImGui::InputDouble( "box size s", &s.size, 0.0, 0.0, "%.4g" );
    s.size = std::max( 1.0e-4, s.size );
+   if( s.kind != kRain )
    ImGui::InputDouble( "initial gap [s]", &s.gap, 0.0, 0.0, "%.4g" );
    if( s.kind == kPyramid || s.kind == kSquareWall ) {
       ImGui::InputDouble( "side gap [s]", &s.sideGap, 0.0, 0.0, "%.4g" );
@@ -593,10 +831,12 @@ void drawScenarioWindow()
          ImGui::SetTooltip( "Gap between neighbours in a row; 0 = touching. The layout uses each box's width\n"
                             "after its yaw jitter, so neighbours never start overlapping." );
    }
-   ImGui::InputDouble( "lateral jitter [s]", &s.jitter, 0.0, 0.0, "%.4g" );
-   if( ( s.kind == kPyramid || s.kind == kSquareWall ) && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
-      ImGui::SetTooltip( "For the walls: across the wall (y) only." );
-   ImGui::InputDouble( "yaw jitter [deg]", &s.yawJitter, 0.0, 0.0, "%.4g" );
+   if( s.kind != kRain ) {
+      ImGui::InputDouble( "lateral jitter [s]", &s.jitter, 0.0, 0.0, "%.4g" );
+      if( ( s.kind == kPyramid || s.kind == kSquareWall ) && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+         ImGui::SetTooltip( "For the walls: across the wall (y) only." );
+      ImGui::InputDouble( "yaw jitter [deg]", &s.yawJitter, 0.0, 0.0, "%.4g" );
+   }
    ImGui::InputInt( "random seed", &s.seed );
 
    ImGui::SeparatorText( "material" );
@@ -634,12 +874,25 @@ void drawPlots()
       }
       ImPlot::EndPlot();
    }
-   if( ImPlot::BeginPlot( "top body drift", ImVec2( -1, 170 ) ) ) {
+   if( active.kind == kRain ) {
+      if( ImPlot::BeginPlot( "pile height", ImVec2( -1, 170 ) ) ) {
+         ImPlot::SetupAxes( "t [s]", "max z", fit, fit );
+         if( n > 0 ) ImPlot::PlotLine( "highest body point", tBuf.data(), pileBuf.data(), n );
+         ImPlot::EndPlot();
+      }
+   }
+   else if( ImPlot::BeginPlot( "top body drift", ImVec2( -1, 170 ) ) ) {
       ImPlot::SetupAxes( "t [s]", "|x - x0|", fit, fit );
       if( n > 0 ) ImPlot::PlotLine( "top body", tBuf.data(), driftBuf.data(), n );
       ImPlot::EndPlot();
    }
-   ImGui::TextDisabled( "a resting stack: E_kin -> 0, flat contact count, drift ~ 0" );
+   if( ImPlot::BeginPlot( "wall time per step", ImVec2( -1, 170 ) ) ) {
+      ImPlot::SetupAxes( "t [s]", "ms", fit, fit );
+      if( n > 0 ) ImPlot::PlotLine( "step", tBuf.data(), stepMsBuf.data(), n );
+      ImPlot::EndPlot();
+   }
+   ImGui::TextDisabled( active.kind == kRain ? "a settled pile: E_kin -> 0, flat contact count and pile height"
+                                             : "a resting stack: E_kin -> 0, flat contact count, drift ~ 0" );
    ImGui::End();
 }
 
@@ -730,7 +983,7 @@ bool smokeTest()
       const Scenario saved = staged;
       bool touching = true;
       for( int kind : { static_cast<int>( kPyramid ), static_cast<int>( kSquareWall ) } ) {
-         staged           = Scenario();
+         staged           = makeDefaultScenario();
          staged.kind      = kind;
          staged.count     = 5;
          staged.sideGap   = 0.0;
@@ -747,6 +1000,47 @@ bool smokeTest()
       }
       ok = ok && touching;
       staged = saved;
+   }
+
+   // Dynamic stacking: 60 random bodies rained onto a disc of radius 3 s in 5 s, with the
+   // Baumgarte term and with the split impulse. Every drop must have happened (a drop waits for a
+   // free slot, so the disc must be large enough for the rate), no body may fall through the
+   // ground (centre above it, deepest contact of the final configuration shallower than 0.1 s),
+   // and the run must stay finite. Bodies leaving the area is physics (spheres roll off the pile;
+   // with the Baumgarte term a landing body also bounces), so that count is only printed.
+   {
+      const Scenario savedRain = staged;
+      for( int split = 0; split < 2; ++split ) {
+         simctl::controls().splitImpulse = ( split == 1 );
+         simctl::applySolverKnobs();
+         staged              = makeDefaultScenario();
+         staged.kind         = kRain;
+         staged.rainCount    = 60;
+         staged.rainInterval = 0.04;
+         staged.rainRadius   = 3.0;
+         buildScene();
+         for( int i = 0; i < 50; ++i ) {
+            step( 50 );
+            polyscope::frameTick();
+         }
+         double lowestCentre = 1.0e30;
+         for( const SimBody& sb : simBodies )
+            if( !sb.body->isFixed() )
+               lowestCentre = std::min( lowestCentre, static_cast<double>( sb.body->getPosition()[2] ) );
+         real deepest = 0;
+         for( const viewer::ContactLog::Entry& c : contactLog.entries )
+            deepest = std::min( deepest, c.dist );
+         const bool rainOk = simClock.error.empty() && rainDropped == staged.rainCount && lowestCentre > 0.0
+                             && deepest > real( -0.1 * active.size );
+         std::printf( "dynamic stacking, split impulse %s: %d / %d dropped in %.2f s (%d torus meshes), pile height %.3f, "
+                      "lowest centre z %+.4f, deepest contact %+.4f, left the area %d, E_kin %.3e, %.2f ms / step -> %s\n",
+                      split ? "on " : "off", rainDropped, staged.rainCount, simClock.time, meshBodies, pileHeight(), lowestCentre,
+                      static_cast<double>( deepest ), rainOutside, kineticEnergy(), lastStepMs, rainOk ? "ok" : "FAILED" );
+         ok = ok && rainOk;
+      }
+      simctl::controls().splitImpulse = false;
+      simctl::applySolverKnobs();
+      staged = savedRain;
    }
 
    // Cylinders dropped onto the ground: before collideCylinderPlane() was implemented they fell
