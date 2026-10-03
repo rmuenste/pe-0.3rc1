@@ -65,7 +65,9 @@ Command line:
   Reset (`r`), steps per frame, and the time step `dt`: a logarithmic slider (Ctrl+click to type),
   dt / 2 and dt x 2 for bisecting a stability limit, and presets 1e-4 ... 1e-2. dt applies on the
   next step, also while running. Live world/solver knobs: gravity, error reduction parameter,
-  max iterations, relaxation parameter, friction (relaxation) model.
+  max iterations, relaxation parameter, friction (relaxation) model, and the split-impulse
+  position correction (`setSplitImpulse()`: penetration is removed by pseudo velocities instead
+  of a separation velocity that stays in the body; off by default, as in the engine).
 - **Gravity** — the "gravity z" slider; the viewer applies it as a force `m g` per step.
 - **Ground plane** — a fixed pe plane at z = 0, drawn with Polyscope's tiled ground.
 - **Scenarios** (staged, applied on Reset) — box tower, triangular wall (broad bottom row, one

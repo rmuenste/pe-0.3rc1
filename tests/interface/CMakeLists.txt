@@ -206,6 +206,23 @@ set_tests_properties(pe-fixed-body-stale-correction PROPERTIES
   TIMEOUT 120
 )
 
+# Split-impulse position correction of HardContactEulerLagrange (setSplitImpulse): an
+# overlapping box is not launched, a dropped box does not bounce at restitution 0, the pseudo
+# motion propagates through touching contacts, and a resting tower stays at rest. Each case also
+# runs with the switch off to pin the Baumgarte behaviour it replaces. Serial, no MPI.
+add_executable(pe_split_impulse_test
+  pe_split_impulse_test.cpp
+)
+target_link_libraries(pe_split_impulse_test PRIVATE pe_static)
+add_test(
+  NAME pe-split-impulse
+  COMMAND pe_split_impulse_test
+)
+set_tests_properties(pe-split-impulse PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
 # Box-box contacts with (nearly) parallel edges (MaxContacts::collideBoxBox): edge-pair axes of
 # parallel edges used to produce O(1) garbage that replaced the contact of overlapping boxes by
 # a positive-distance edge/edge contact. Random near-parallel configurations checked against GJK,

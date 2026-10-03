@@ -6,57 +6,6 @@ solver and `pe::detection::fine::MaxContacts`.
 
 ## Open problems
 
-### Penetration correction adds momentum (split impulse)
-
-The hard-contact solvers remove penetration with a velocity that stays in the bodies, so every
-penetration, however it arises, is paid back as kinetic energy. The concrete behaviour and the
-measurements are under "Penetration becomes velocity" in "Solver and engine behaviour to know";
-this entry is the proposed remedy.
-
-How it works today (`HardContactEulerLagrange`; `HardContactAndFluid` and
-`HardContactSemiImplicitTimesteppingSolvers` have the same structure):
-
-1. Contact caching: `dist_[j] = c->getDistance()`, scaled by `erp_` when negative (the Baumgarte
-   term).
-2. Relaxation (e.g. `relaxApproximateInelasticCoulombContactsByDecoupling()`): the normal
-   constraint is on `gdot_n + dist_[i] / dt`, i.e. a penetrating contact requires the bodies to
-   separate at `erp * |d| / dt`. The impulses `p_` go into the velocity corrections `dv_` / `dw_`.
-3. Integration (`integratePositions()`): positions are advanced with `v_ + dv_` and the same
-   velocity is stored back in the body (`body->v_ = v`). The separation velocity that corrected
-   the penetration therefore survives the step.
-
-Consequences: an initially penetrating state launches the bodies (7 m/s for 0.01 at dt = 1e-3),
-a smaller dt makes it worse (the velocity scales with 1 / dt), bodies landing with a
-one-step penetration bounce at restitution 0, and a deep penetration from any cause (a missed
-contact, a hard mouse drag, a large dt) ends in a blow-up (~266 m/s for 0.38 deep).
-
-Proposed remedy: split impulse (pseudo velocities), as used e.g. in Bullet:
-
-- Solve the contacts twice per step: the velocity solve as now but with the Baumgarte term
-  removed for penetrating contacts (`dist_ = min( dist, 0 )` becomes 0, only positive gaps are
-  kept as allowed approach), and a second, position-only solve on separate pseudo-velocity
-  corrections `dvp_` / `dwp_` whose target is `erp * |d| / dt` for the penetrating contacts only
-  (no friction, non-negative normal impulses).
-- Integrate positions with `v_ + dv_ + dvp_` (and the angular counterpart), but store only
-  `v_ + dv_` as the new body velocity. The penetration is removed at the same rate as now, the
-  pseudo velocity is discarded, and no momentum is added.
-- Cost: a second relaxation loop over the penetrating contacts only (usually few); under MPI the
-  pseudo corrections need the same synchronisation as `dv_` / `dw_` (`synchronizeVelocities()`).
-- Keep it switchable (like `setAdaptiveBaumgarteCapping()`), default off at first, so existing
-  CFD-coupled runs stay bit-identical until it is validated.
-- Validation: the corner-face launch (top box must not rise), the drop at restitution 0 (no
-  bounce), resting stacks (no change in drift), and the fixed-ramp and cylinder tests.
-
-A cheaper stopgap: cap the correction velocity per contact to an absolute value (e.g. a
-fraction of a body size per step, or a user-set maximum in m/s) instead of the current
-`setAdaptiveBaumgarteCapping()` limit `characteristic length / ( dt * aggressiveness )`, which is
-20 m/s for a unit body at dt = 1e-3 and does not bite. A cap limits the damage of a deep
-penetration but still adds momentum and still makes small dt worse; the split impulse removes
-the cause.
-
-Neither is implemented. Pair Lab preset "ISSUE: box on box 0.05 deep (correction launch)" with
-"start from a touching state" unticked shows the launch (35 m/s at dt = 1e-3).
-
 ### Box-box: no preference for face axes
 
 `MaxContacts::collideBoxBox` takes an edge-pair axis as soon as its depth beats the best face
@@ -109,11 +58,11 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   two materials' coefficients (`src/core/Materials.cpp`), so a single material with `csf = mu`
   gives a contact friction of 2 mu. Stack Lab gives each body mu / 2, so the GUI's mu is the real
   contact friction.
-- **Penetration becomes velocity (Baumgarte stabilisation).** The solver corrects a contact
-  distance `d < 0` by demanding a separation velocity `erp * |d| / dt` (`dist_[j] *= erp_` in
-  the contact caching of `HardContactEulerLagrange`), and that velocity stays in the bodies
-  after the step: there is no split impulse / position projection that would remove the
-  penetration without adding momentum. Consequences:
+- **Penetration becomes velocity (Baumgarte stabilisation, the default).** The solver corrects a
+  contact distance `d < 0` by demanding a separation velocity `erp * |d| / dt` (`dist_[j] *= erp_`
+  in the contact caching of `HardContactEulerLagrange`), and that velocity stays in the bodies
+  after the step. `setSplitImpulse( true )` removes the penetration without adding momentum (see
+  Resolved); with the default off, the consequences are:
   - an initially penetrating state launches the bodies: Pair Lab "box on box: corner-face"
     (0.01 penetration) throws the top box up at exactly 7.000 m/s at dt = 1e-3 (3.5 m/s at
     2e-3, 2.0 m/s with error reduction 0.2, 0 with error reduction 0 or a touching start);
@@ -121,15 +70,32 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   - `setAdaptiveBaumgarteCapping()` does not help at these scales: its limit is
     `characteristic length / ( dt * aggressiveness )`, 20 m/s for a unit body at dt = 1e-3.
   Pair Lab therefore separates a penetrating posed state before the first step ("start from a
-  touching state", on by default; untick it to see the raw response). Stack Lab builds its
-  scenarios touching. The engine-side remedy (split impulse) is written up under "Open problems":
-  "Penetration correction adds momentum".
-- **Dropped boxes bounce at restitution 0.** Landing at ~4.9 m/s with dt = 2e-3 penetrates ~1 cm
-  in one step; the boxes bounce back at ~0.9 m/s and settle after ~1.8 s. Very likely the same
-  mechanism as above (the landing penetration is corrected with a velocity that stays in the
-  body); lowering the error reduction reduces it.
+  touching state", on by default; untick it to see the raw response), Stack Lab builds its
+  scenarios touching, and the Simulation window has the "split impulse" switch.
+- **Dropped boxes bounce at restitution 0 (Baumgarte).** Landing at ~4.9 m/s with dt = 2e-3
+  penetrates ~1 cm in one step; the boxes bounce back at ~0.9 m/s and settle after ~1.8 s. The
+  same mechanism as above (the landing penetration is corrected with a velocity that stays in
+  the body); with the split impulse the rebound is below 1 mm.
 
 ## Resolved
+
+- **Position correction adds momentum (split impulse).** `HardContactEulerLagrange` removed
+  penetration through the velocity constraint: a penetrating contact demanded a separation
+  velocity erp * depth / dt, the impulse producing it entered the body velocity and
+  `integratePositions()` stored it, so an overlapping start launched the bodies (7 m/s for 0.01
+  at dt = 1e-3), a landing body bounced at restitution 0, a deep penetration exploded and a
+  smaller dt made everything worse. `setSplitImpulse( true )` decouples the two: the velocity
+  solve only stops the approach (target distance 0 for penetrating contacts; separated contacts
+  keep their allowed approach), and a second, normal-only projected Gauss-Seidel solve on pseudo
+  velocities (`relaxPseudoVelocities()`, arrays `vp_/wp_/dvp_/dwp_`, impulses `pp_`) closes
+  erp * depth per step; the pseudo velocities move the positions in `integratePositions()` and
+  are discarded. Touching contacts take part in the pseudo solve, so a stack lifted out of the
+  ground moves as a whole. Under MPI the pseudo arrays go through the same
+  `synchronizeVelocities()` (swapped in for the call). Off by default: existing runs are
+  unchanged. `tests/interface/pe_split_impulse_test.cpp`: the 0.05-deep box (35 m/s launch off,
+  v_z = 0 on, overlap gone within 30 steps), the restitution-0 drop (rebound 0.18 off, 0.0009
+  on), pseudo propagation through a touching contact, a resting tower. The viewer exposes the
+  switch in the Simulation window; the Pair Lab smoke test checks the corner-face start with it.
 
 - **Samples at a mesh's convex edges attributed to the nearer side face.** A primitive resting
   0.01 deep on the top of a box-like mesh has samples on the footprint boundary that are 0.01

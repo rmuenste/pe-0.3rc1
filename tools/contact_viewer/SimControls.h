@@ -40,6 +40,7 @@ struct Controls {
    int    maxIterations   = 100;
    double relaxationParam = 0.9;
    int    relaxationModel = 1;   //!< ApproximateInelasticCoulombContactByDecoupling
+   bool   splitImpulse    = false;   //!< Position correction by pseudo velocities instead of the Baumgarte term
    // Mouse spring: angular frequency [1/s] and damping ratio.
    double springOmega     = 20.0;
    double springZeta      = 1.0;

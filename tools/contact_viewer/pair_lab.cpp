@@ -1533,9 +1533,18 @@ bool smokeTest()
       launch[touching] = static_cast<double>( bodies[1]->getLinearVel()[2] );
    }
    const double expected = simctl::controls().erp * 0.01 / simctl::controls().dt;
-   const bool launchOk = std::abs( launch[0] - expected ) < 0.05 * expected && launch[1] <= 0.0;
-   std::printf( "corner-face start: v_z of the top box %+.3f raw (erp * depth / dt = %.3f), %+.4f with separation -> %s\n",
-                launch[0], expected, launch[1], launchOk ? "ok" : "FAILED" );
+   // With the split impulse the raw (penetrating) start must not launch the box either.
+   simctl::controls().splitImpulse = true;
+   simctl::applySolverKnobs();
+   startTouching = false;
+   selectPreset( cornerFace );
+   step( 1 );
+   const double launchSplit = static_cast<double>( bodies[1]->getLinearVel()[2] );
+   simctl::controls().splitImpulse = false;
+   simctl::applySolverKnobs();
+   const bool launchOk = std::abs( launch[0] - expected ) < 0.05 * expected && launch[1] <= 0.0 && std::abs( launchSplit ) < 0.05;
+   std::printf( "corner-face start: v_z of the top box %+.3f raw (erp * depth / dt = %.3f), %+.4f with separation, %+.4f with split impulse -> %s\n",
+                launch[0], expected, launch[1], launchSplit, launchOk ? "ok" : "FAILED" );
    ok = ok && launchOk;
    startTouching = true;
    selectPreset( standing );

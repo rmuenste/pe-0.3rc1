@@ -60,6 +60,7 @@ void applySolverKnobs()
    cs->setMaxIterations( static_cast<size_t>( std::max( 1, c.maxIterations ) ) );
    cs->setRelaxationParameter( static_cast<real>( c.relaxationParam ) );
    cs->setRelaxationModel( static_cast<typename CollisionSystemType::RelaxationModel>( c.relaxationModel ) );
+   cs->setSplitImpulse( c.splitImpulse );
 }
 
 
@@ -124,6 +125,11 @@ void drawSolverControls()
    changed |= ImGui::SliderInt( "max iterations", &c.maxIterations, 1, 2000, "%d", ImGuiSliderFlags_Logarithmic );
    changed |= ImGui::SliderScalar( "relaxation", ImGuiDataType_Double, &c.relaxationParam, &zero, &one, "%.3f" );
    changed |= ImGui::Combo( "friction model", &c.relaxationModel, kRelaxationModels, 6 );
+   changed |= ImGui::Checkbox( "split impulse (position correction)", &c.splitImpulse );
+   if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+      ImGui::SetTooltip( "Penetration is removed by pseudo velocities that move the positions but are not kept as body\n"
+                         "velocity. Off: the Baumgarte term, erp x depth / dt of separation velocity that stays in the\n"
+                         "body (an overlapping start launches it, a landing body bounces at restitution 0)." );
    if( changed )
       applySolverKnobs();
 
