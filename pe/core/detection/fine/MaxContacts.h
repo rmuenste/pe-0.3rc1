@@ -321,11 +321,22 @@ protected:
    //! mesh according to its DistanceMap (world coordinates, penetration >= 0).
    struct DistanceMapCandidate {
       Vec3 worldPos;        // Query point in world coordinates
-      Vec3 worldNormal;     // Contact normal in world coordinates (outward normal of the mesh)
+      Vec3 worldNormal;     // Contact normal in world coordinates (from the mesh towards the query body)
       real penetration;     // Penetration depth (positive = penetrating)
       Vec3 contactPoint;    // Surface contact point on the mesh in world coordinates
+      Vec3 fieldNormal;     // The mesh's outward normal the field reported at the sample (world)
+      Vec3 bodyNormal;      // The query body's own surface normal at the sample (world); zero if unknown
       DistanceMapCandidate(const Vec3& pos, const Vec3& normal, real pen, const Vec3& contact)
-         : worldPos(pos), worldNormal(normal), penetration(pen), contactPoint(contact) {}
+         : worldPos(pos), worldNormal(normal), penetration(pen), contactPoint(contact), fieldNormal(normal), bodyNormal() {}
+      DistanceMapCandidate(const Vec3& pos, const Vec3& normal, real pen, const Vec3& contact,
+                           const Vec3& field, const Vec3& body)
+         : worldPos(pos), worldNormal(normal), penetration(pen), contactPoint(contact), fieldNormal(field), bodyNormal(body) {}
+   };
+
+   //! A point on a primitive's surface with the primitive's outward normal there (world).
+   struct SurfaceSample {
+      Vec3 pos;
+      Vec3 normal;
    };
 
    template< typename CC >
@@ -345,11 +356,11 @@ protected:
    static inline void fibonacciSphere( size_t n, std::vector<Vec3>& directions );
    template< typename Type >
    static inline void bodyFrameRegion( Type body, const Vec3& lo, const Vec3& hi, Vec3& blo, Vec3& bhi );
-   static inline void distanceMapSamples( SphereID s,    real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples );
-   static inline void distanceMapSamples( BoxID b,       real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples );
-   static inline void distanceMapSamples( CapsuleID c,   real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples );
-   static inline void distanceMapSamples( CylinderID c,  real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples );
-   static inline void distanceMapSamples( EllipsoidID e, real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples );
+   static inline void distanceMapSamples( SphereID s,    real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples );
+   static inline void distanceMapSamples( BoxID b,       real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples );
+   static inline void distanceMapSamples( CapsuleID c,   real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples );
+   static inline void distanceMapSamples( CylinderID c,  real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples );
+   static inline void distanceMapSamples( EllipsoidID e, real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples );
    //@}
    //**********************************************************************************************
 };
@@ -5997,8 +6008,12 @@ bool MaxContacts::collideWithDistanceMap( TriangleMeshID mA, TriangleMeshID mB, 
  * one component, two patches with the same normal are two). The components are emitted deepest
  * first; each contributes its deepest candidate plus the members farthest along eight tangent
  * directions (the patch outline), at most six per component and twelve per pair. Contact points
- * and normals are the candidates' own; the distance is minus the penetration. Shared by the
- * mesh-mesh, plane-mesh and primitive-mesh DistanceMap paths.
+ * and normals are the candidates' own; the distance is minus the penetration. Candidates on the
+ * footprint boundary of a patch that the field attributed to the adjacent side face (body normal
+ * anti-parallel to the patch's mesh normal, field normal different, position below the patch's
+ * face plane) are re-attributed to the patch with their depth below its face plane; see the
+ * comment in the function. Shared by the mesh-mesh (no body normals, hence no re-attribution),
+ * plane-mesh and primitive-mesh DistanceMap paths.
  */
 template< typename CC >  // Type of the contact container
 size_t MaxContacts::emitDistanceMapContacts( GeomID query, GeomID reference,
@@ -6064,6 +6079,100 @@ size_t MaxContacts::emitDistanceMapContacts( GeomID query, GeomID reference,
    std::stable_sort( clusters.begin(), clusters.end(), [&candidates]( const Cluster& a, const Cluster& b ) {
       return candidates[a.deepest].penetration > candidates[b.deepest].penetration;
    } );
+
+   // Convex-edge artefact. A sample of the body's face that presses against a planar mesh face,
+   // but lying within a grid cell of that face's edge, is nearer to the adjacent side face (or
+   // sees a blend of both faces' normals): the field reports a sideways or tilted normal at a
+   // depth that is too small, and the resulting contact resists sliding across the edge. Such
+   // candidates are recognised by their BODY normal: anti-parallel to the patch's mesh normal,
+   // i.e. the sample belongs to the face pressing against the patch. For a planar patch (most
+   // members' field normals agree within 2 degrees; a curved contact band spreads them over
+   // several degrees) every such member, and every such candidate of a neighbouring cluster
+   // with a different normal lying below the patch's face plane, takes the face normal and its
+   // depth below the face plane. A genuine contact with a second face is left alone: there the
+   // body normal is anti-parallel to that second face's normal, not to the patch's.
+   const auto patchFrame = [&candidates]( const Cluster& patch, Vec3& faceNormal, Vec3& facePoint ) {
+      const DistanceMapCandidate& deepest( candidates[patch.deepest] );
+      faceNormal = deepest.fieldNormal;
+      facePoint  = deepest.worldPos + deepest.penetration * faceNormal;   // on the mesh face
+      if( faceNormal.sqrLength() <= real(0) || deepest.penetration <= real(0) || patch.members.size() < 3 )
+         return false;
+      size_t agreeing( 0 );
+      for( size_t m : patch.members )
+         if( trans( candidates[m].fieldNormal ) * faceNormal > real(0.9994) )
+            ++agreeing;
+      return real(2) * static_cast<real>( agreeing ) >= static_cast<real>( patch.members.size() );
+   };
+   const auto reattribute = [&candidates]( DistanceMapCandidate& cand, const Cluster& patch, real depth ) {
+      const DistanceMapCandidate& deepest( candidates[patch.deepest] );
+      const real scale( depth / deepest.penetration );
+      cand.contactPoint = cand.worldPos + scale * ( deepest.contactPoint - deepest.worldPos );
+      cand.penetration  = depth;
+      cand.worldNormal  = deepest.worldNormal;
+      cand.fieldNormal  = deepest.fieldNormal;
+   };
+
+   for( size_t pi = 0; pi < clusters.size(); ++pi ) {
+      Cluster& patch( clusters[pi] );
+      Vec3 faceNormal, facePoint;
+      if( !patchFrame( patch, faceNormal, facePoint ) )
+         continue;
+
+      // Members of the patch itself (blended normals, under-read depth near the edge).
+      for( size_t idx : patch.members ) {
+         DistanceMapCandidate& cand( candidates[idx] );
+         if( idx == patch.deepest || cand.bodyNormal.sqrLength() <= real(0) )
+            continue;
+         if( trans( cand.bodyNormal ) * faceNormal >= real(-0.9) )
+            continue;
+         const real depth( trans( faceNormal ) * ( facePoint - cand.worldPos ) );
+         if( depth > cand.penetration )
+            reattribute( cand, patch, depth );
+      }
+
+      // Candidates of shallower clusters next to the patch with a different normal (the side
+      // face's), lying below the patch's face plane.
+      for( size_t k = pi + 1; k < clusters.size(); ++k ) {
+         Cluster& c( clusters[k] );
+         std::vector<size_t> kept;
+         for( size_t idx : c.members ) {
+            DistanceMapCandidate& cand( candidates[idx] );
+            bool move( cand.bodyNormal.sqrLength() > real(0)
+                       && trans( cand.bodyNormal ) * faceNormal < real(-0.9)
+                       && trans( cand.fieldNormal ) * faceNormal < normalSimilarityThreshold );
+            real depth( 0 );
+            if( move ) {
+               depth = trans( faceNormal ) * ( facePoint - cand.worldPos );
+               move  = depth > real(0) && depth > cand.penetration;
+            }
+            if( move ) {
+               bool adjacent( false );
+               for( size_t m : patch.members )
+                  if( ( candidates[m].worldPos - cand.worldPos ).sqrLength() <= linkSq ) { adjacent = true; break; }
+               move = adjacent;
+            }
+            if( move ) {
+               reattribute( cand, patch, depth );
+               patch.members.push_back( idx );
+               patch.normal += cand.worldNormal;
+            }
+            else {
+               kept.push_back( idx );
+            }
+         }
+         if( kept.size() != c.members.size() ) {
+            c.members.swap( kept );
+            if( !c.members.empty() ) {   // the deepest member may have moved
+               c.deepest = c.members[0];
+               for( size_t idx : c.members )
+                  if( candidates[idx].penetration > candidates[c.deepest].penetration )
+                     c.deepest = idx;
+            }
+         }
+      }
+   }
+   clusters.erase( std::remove_if( clusters.begin(), clusters.end(),
+                                   []( const Cluster& c ) { return c.members.empty(); } ), clusters.end() );
 
    size_t contactsGenerated( 0 );
    for( const Cluster& cluster : clusters ) {
@@ -6147,7 +6256,7 @@ inline void MaxContacts::fibonacciSphere( size_t n, std::vector<Vec3>& direction
  * The region of interest is not used: the deepest point of a sphere is exact through the
  * support-point sample of collideTMeshWithDistanceMap(), the lattice only adds manifold points.
  */
-inline void MaxContacts::distanceMapSamples( SphereID s, real spacing, const Vec3&, const Vec3&, std::vector<Vec3>& samples )
+inline void MaxContacts::distanceMapSamples( SphereID s, real spacing, const Vec3&, const Vec3&, std::vector<SurfaceSample>& samples )
 {
    const real r( s->getRadius() );
    const real area( real(4) * real(3.14159265358979323846) * r * r );
@@ -6155,7 +6264,7 @@ inline void MaxContacts::distanceMapSamples( SphereID s, real spacing, const Vec
    std::vector<Vec3> dirs;
    fibonacciSphere( n, dirs );
    for( const Vec3& d : dirs )
-      samples.push_back( s->getPosition() + r * d );
+      samples.push_back( SurfaceSample{ s->getPosition() + r * d, d } );
 }
 //*************************************************************************************************
 
@@ -6192,7 +6301,7 @@ inline void MaxContacts::bodyFrameRegion( Type body, const Vec3& lo, const Vec3&
  * region are skipped. The overlap is never larger than the mesh, so the sample count is bounded
  * by the mesh's resolution (about (resolution / 2)^2 per face), not by the box.
  */
-inline void MaxContacts::distanceMapSamples( BoxID b, real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples )
+inline void MaxContacts::distanceMapSamples( BoxID b, real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples )
 {
    const Vec3 h( real(0.5) * b->getLengths() );
    Vec3 rlo, rhi;
@@ -6217,13 +6326,16 @@ inline void MaxContacts::distanceMapSamples( BoxID b, real spacing, const Vec3& 
          const real face( side * h[axis] );
          if( face < a[axis] || face > z[axis] )
             continue;   // this face lies outside the region
+         Vec3 nLocal;
+         nLocal[axis] = static_cast<real>( side );
+         const Vec3 nWorld( b->vectorFromBFtoWF( nLocal ) );
          for( int i = 0; i < n[u]; ++i )
             for( int j = 0; j < n[v]; ++j ) {
                Vec3 local;
                local[axis] = face;
                local[u]    = a[u] + ( z[u] - a[u] ) * static_cast<real>( i ) / static_cast<real>( n[u] - 1 );
                local[v]    = a[v] + ( z[v] - a[v] ) * static_cast<real>( j ) / static_cast<real>( n[v] - 1 );
-               samples.push_back( b->pointFromBFtoWF( local ) );
+               samples.push_back( SurfaceSample{ b->pointFromBFtoWF( local ), nWorld } );
             }
       }
    }
@@ -6238,7 +6350,7 @@ inline void MaxContacts::distanceMapSamples( BoxID b, real spacing, const Vec3& 
  * (the mesh's bounding box), ring points outside the region dropped, plus evenly spread points
  * on the two hemispherical caps (at most 4096, dropped outside the region as well).
  */
-inline void MaxContacts::distanceMapSamples( CapsuleID c, real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples )
+inline void MaxContacts::distanceMapSamples( CapsuleID c, real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples )
 {
    const real r( c->getRadius() ), half( real(0.5) * c->getLength() );
    const real pi( real(3.14159265358979323846) );
@@ -6260,7 +6372,7 @@ inline void MaxContacts::distanceMapSamples( CapsuleID c, real spacing, const Ve
             const real phi( real(2) * pi * static_cast<real>( j ) / static_cast<real>( nCirc ) );
             const Vec3 q( x, r * std::cos( phi ), r * std::sin( phi ) );
             if( inRegion( q ) )
-               samples.push_back( c->pointFromBFtoWF( q ) );
+               samples.push_back( SurfaceSample{ c->pointFromBFtoWF( q ), c->vectorFromBFtoWF( Vec3( 0, std::cos( phi ), std::sin( phi ) ) ) } );
          }
       }
    }
@@ -6275,7 +6387,7 @@ inline void MaxContacts::distanceMapSamples( CapsuleID c, real spacing, const Ve
       const real x( d[0] >= real(0) ? half : -half );
       const Vec3 q( Vec3( x, real(0), real(0) ) + r * d );
       if( q[0] >= rlo[0] && q[0] <= rhi[0] && inRegion( q ) )
-         samples.push_back( c->pointFromBFtoWF( q ) );
+         samples.push_back( SurfaceSample{ c->pointFromBFtoWF( q ), c->vectorFromBFtoWF( d ) } );
    }
 }
 //*************************************************************************************************
@@ -6288,7 +6400,7 @@ inline void MaxContacts::distanceMapSamples( CapsuleID c, real spacing, const Ve
  * bounding box) including the rims, plus concentric rings and the centre on each end cap that
  * lies in the region, only at radii the region reaches; points outside the region are dropped.
  */
-inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, const Vec3& lo, const Vec3& hi, std::vector<Vec3>& samples )
+inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, const Vec3& lo, const Vec3& hi, std::vector<SurfaceSample>& samples )
 {
    const real r( c->getRadius() ), half( real(0.5) * c->getLength() );
    const real pi( real(3.14159265358979323846) );
@@ -6309,7 +6421,7 @@ inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, const V
          const real phi( real(2) * pi * static_cast<real>( j ) / static_cast<real>( nCirc ) );
          const Vec3 q( x, r * std::cos( phi ), r * std::sin( phi ) );
          if( inRegion( q ) )
-            samples.push_back( c->pointFromBFtoWF( q ) );
+            samples.push_back( SurfaceSample{ c->pointFromBFtoWF( q ), c->vectorFromBFtoWF( Vec3( 0, std::cos( phi ), std::sin( phi ) ) ) } );
       }
    }
 
@@ -6331,8 +6443,9 @@ inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, const V
       const real x( side * half );
       if( x < rlo[0] || x > rhi[0] )
          continue;   // this cap lies outside the region
+      const Vec3 capNormal( c->vectorFromBFtoWF( Vec3( static_cast<real>( side ), real(0), real(0) ) ) );
       if( rhoMin <= real(0) )
-         samples.push_back( c->pointFromBFtoWF( Vec3( x, real(0), real(0) ) ) );
+         samples.push_back( SurfaceSample{ c->pointFromBFtoWF( Vec3( x, real(0), real(0) ) ), capNormal } );
       for( int k = 1; k < nRings; ++k ) {
          const real rho( r * static_cast<real>( k ) / static_cast<real>( nRings ) );
          if( rho < rhoMin - spacing || rho > rhoMax + spacing )
@@ -6342,7 +6455,7 @@ inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, const V
             const real phi( real(2) * pi * static_cast<real>( j ) / static_cast<real>( m ) );
             const Vec3 q( x, rho * std::cos( phi ), rho * std::sin( phi ) );
             if( inRegion( q ) )
-               samples.push_back( c->pointFromBFtoWF( q ) );
+               samples.push_back( SurfaceSample{ c->pointFromBFtoWF( q ), capNormal } );
          }
       }
    }
@@ -6356,7 +6469,7 @@ inline void MaxContacts::distanceMapSamples( CylinderID c, real spacing, const V
  * Evenly spread unit-sphere directions scaled by the semi-axes, at about the given spacing
  * relative to the mean radius (at least 12, at most 400).
  */
-inline void MaxContacts::distanceMapSamples( EllipsoidID e, real spacing, const Vec3&, const Vec3&, std::vector<Vec3>& samples )
+inline void MaxContacts::distanceMapSamples( EllipsoidID e, real spacing, const Vec3&, const Vec3&, std::vector<SurfaceSample>& samples )
 {
    const Vec3 a( e->getRadius() );
    const real mean( ( a[0] + a[1] + a[2] ) / real(3) );
@@ -6364,8 +6477,11 @@ inline void MaxContacts::distanceMapSamples( EllipsoidID e, real spacing, const 
    const size_t n( std::min<size_t>( 400, std::max<size_t>( 12, static_cast<size_t>( std::ceil( area / ( spacing * spacing ) ) ) ) ) );
    std::vector<Vec3> dirs;
    fibonacciSphere( n, dirs );
-   for( const Vec3& d : dirs )
-      samples.push_back( e->pointFromBFtoWF( Vec3( a[0] * d[0], a[1] * d[1], a[2] * d[2] ) ) );
+   for( const Vec3& d : dirs ) {
+      // Surface normal of the ellipsoid at the point (a d0, b d1, c d2): (d0 / a, d1 / b, d2 / c).
+      const Vec3 n( e->vectorFromBFtoWF( Vec3( d[0] / a[0], d[1] / a[1], d[2] / a[2] ).getNormalized() ) );
+      samples.push_back( SurfaceSample{ e->pointFromBFtoWF( Vec3( a[0] * d[0], a[1] * d[1], a[2] * d[2] ) ), n } );
+   }
 }
 //*************************************************************************************************
 
@@ -6414,7 +6530,7 @@ bool MaxContacts::collideTMeshWithDistanceMap( Type geom, TriangleMeshID mesh, C
       const Vec3 mlo( mbb[0] - contactThreshold, mbb[1] - contactThreshold, mbb[2] - contactThreshold );
       const Vec3 mhi( mbb[3] + contactThreshold, mbb[4] + contactThreshold, mbb[5] + contactThreshold );
 
-      std::vector<Vec3> samples;
+      std::vector<SurfaceSample> samples;
       distanceMapSamples( geom, spacing, mlo, mhi, samples );
 
       // Deepest point of the primitive against the mesh surface facing its centre: the support
@@ -6435,14 +6551,15 @@ bool MaxContacts::collideTMeshWithDistanceMap( Type geom, TriangleMeshID mesh, C
             Vec3 n( mesh->vectorFromBFtoWF( distMap->interpolateNormal( centre[0], centre[1], centre[2] ) ) );
             if( n.sqrLength() > real(0.25) ) {
                n.normalize();
-               samples.push_back( geom->support( -n ) );
+               samples.push_back( SurfaceSample{ geom->support( -n ), -n } );
             }
          }
       }
 
       std::vector<DistanceMapCandidate> candidates;
       candidates.reserve( samples.size() / 4 + 8 );
-      for( const Vec3& p : samples ) {
+      for( const SurfaceSample& sample : samples ) {
+         const Vec3& p( sample.pos );
          if( p[0] < mlo[0] || p[0] > mhi[0] || p[1] < mlo[1] || p[1] > mhi[1] || p[2] < mlo[2] || p[2] > mhi[2] )
             continue;
          const Vec3 local( mesh->pointFromWFtoBF( p ) );
@@ -6460,7 +6577,8 @@ bool MaxContacts::collideTMeshWithDistanceMap( Type geom, TriangleMeshID mesh, C
          // Contact point on the mesh surface along the normal (the blended surface point of the
          // DistanceMap can lie off the surface in the same regions).
          const Vec3 worldContact( p - distance * worldNormal );
-         candidates.push_back( DistanceMapCandidate( p, worldNormal, std::max( real(0), -distance ), worldContact ) );
+         candidates.push_back( DistanceMapCandidate( p, worldNormal, std::max( real(0), -distance ), worldContact,
+                                                     worldNormal, sample.normal ) );
       }
 
       pe_LOG_DEBUG_SECTION( log ) {
@@ -6719,8 +6837,12 @@ bool MaxContacts::collidePlaneTMeshWithDistanceMap( PlaneID plane, TriangleMeshI
       for( const PlaneContactCandidate& candidate : candidates ) {
          const real meshDepth( plane->getDepth( candidate.contactPoint ) );
          const Vec3 projectedMeshPoint( candidate.contactPoint - meshDepth * plane->getNormal() );
+         // Field normal: the mesh's outward normal at the sample; body normal: the plane's, the
+         // face that presses against the mesh. Boundary samples that the field attributes to a
+         // side face are re-attributed by emitDistanceMapContacts().
          patchCandidates.push_back( DistanceMapCandidate( candidate.planePoint, plane->getNormal(), meshDepth,
-                                                          real(0.5) * ( candidate.contactPoint + projectedMeshPoint ) ) );
+                                                          real(0.5) * ( candidate.contactPoint + projectedMeshPoint ),
+                                                          candidate.worldNormal, plane->getNormal() ) );
       }
       contactsGenerated = emitDistanceMapContacts( mesh, plane, patchCandidates, real(2.5) * samplingSpacing, contacts );
 

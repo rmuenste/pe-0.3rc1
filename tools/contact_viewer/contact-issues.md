@@ -88,16 +88,6 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   sphere and ellipsoid lattices are capped at 400 points (their deepest point is exact through
   the support-point sample; the cap only limits manifold points on very large bodies).
   DistanceMap pairs emit hard contacts only (no lubrication contacts).
-- **Samples at a mesh's convex edges attribute to the nearer side face.** A primitive resting
-  0.01 deep on the top of a box-like mesh has samples on the footprint boundary that are 0.01
-  from the top face but 0 from a side face; the field reports the side face: a contact with a
-  sideways normal at depth 0 (the plane-mesh path likewise measures the depth of the nearest
-  surface point, so the outline contacts of a flat-bottomed mesh on a plane carry depth 0).
-  Harmless for resting contact (the deepest contact drives the correction), but such a contact
-  resists sliding across the edge towards the mesh interior, since the solver treats the motion
-  as an approach to the side face. Inherent to signed-distance contact at penetration depth;
-  a remedy would compare each candidate's normal with the one of the deepest candidate of its
-  patch and drop near-perpendicular boundary contacts of a flat patch. Not implemented.
 - **Plane vs plane** generates nothing, by design (both fixed and infinite).
 
 ### Unverified observations
@@ -140,6 +130,26 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   body); lowering the error reduction reduces it.
 
 ## Resolved
+
+- **Samples at a mesh's convex edges attributed to the nearer side face.** A primitive resting
+  0.01 deep on the top of a box-like mesh has samples on the footprint boundary that are 0.01
+  from the top face but 0 from a side face, and samples within a grid cell of the edge see a
+  blend of both normals: the field reported sideways or tilted normals at too small a depth,
+  and such a contact resists sliding across the edge (the solver reads the motion as an
+  approach to the side face). The plane-mesh path had the same for the outline of a
+  flat-bottomed mesh on a plane (depth 0). Remedy in `emitDistanceMapContacts()`: the samplers
+  now carry the primitive's own surface normal with each sample (the plane path: the plane
+  normal), and a candidate whose body normal is anti-parallel to a planar patch's mesh normal,
+  i.e. a sample of the face pressing against that patch, takes the patch's normal and its depth
+  below the patch's face plane, whether it sits inside the patch with a blended normal or in a
+  neighbouring cluster with the side face's normal (then also required: below the face plane
+  and adjacent). "Planar" means at least half of the patch's members have field normals within
+  2 degrees of the deepest one's; a curved contact band (torus tube) spreads them over 8 to 10
+  degrees and is left alone, as is a genuine contact with a second face, whose body normal is
+  anti-parallel to that face, not to the patch. Mesh-mesh candidates carry no body normal and
+  are unaffected. Tests: slab on a plane, capsule across the slab and a radius-3 cylinder cap on
+  the slab now give every contact the face normal at depth 0.01 (outline included); a cylinder
+  lying in a V-groove keeps 5 + 5 contacts with the two slopes' own normals.
 
 - **Sample pitch of large primitives on a DistanceMap.** The box, capsule and cylinder samplers
   spread a capped number of samples over the whole body (25 per edge), so a 5 x 5 box over a

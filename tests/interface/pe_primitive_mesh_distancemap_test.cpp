@@ -49,8 +49,10 @@
  *       contacts on the tube crest, deepest within 1e-2 of -0.01); with a pitch of 5 / 24 it was
  *       missed;
  *   10. a cylinder of radius 3 standing on the 2 x 2 slab: its cap is sampled over the slab,
- *       contacts span the whole slab top, the deepest with normal +z at -0.01 (boundary samples
- *       attribute to the side faces).
+ *       contacts span the whole slab top, all with normal +z at -0.01 (boundary samples that the
+ *       field attributes to the side faces are re-attributed to the top face);
+ *   11. a cylinder lying in a V-groove mesh touching both slopes: each slope keeps its own
+ *       contacts with its own normal (the re-attribution leaves genuine two-face contact alone).
  *
  *  Serial world setup, no MPI.
  */
@@ -324,23 +326,19 @@ int main()
 
       CapsuleID cap = createCapsule( 3, Vec3( 0, 0, top + real(0.15) - real(0.01) ), real(0.15), real(6), mat );
       log = run( slab, cap );
-      // Contacts at the slab's edges (x = +-1) see the side face as nearest surface, so their
-      // normals turn sideways; only the deepest (on the top face) must be +z.
+      // Contacts at the slab's edges (x = +-1) used to carry the side face's normal at depth 0;
+      // they are re-attributed to the top face: every contact has normal +z.
       bool straddleOk = !log.entries.empty();
       for( const ContactLog::Entry& e : log.entries ) {
          const Vec3 n( e.g1 == cap ? e.normal : -e.normal );
-         std::printf( "   capsule contact: dist %+.4f pos (%+.3f %+.3f %+.3f) n (%+.3f %+.3f %+.3f)\n", static_cast<double>( e.dist ),
-                      static_cast<double>( e.pos[0] ), static_cast<double>( e.pos[1] ), static_cast<double>( e.pos[2] ),
-                      static_cast<double>( n[0] ), static_cast<double>( n[1] ), static_cast<double>( n[2] ) );
-         // Samples within contactThreshold above the surface get a penetration of 0 (dist -0.0).
-         straddleOk = straddleOk && e.dist > real(-0.1) && e.dist <= real(0)
+         straddleOk = straddleOk && e.dist > real(-0.1) && e.dist <= real(0) && n[2] > real(0.99)
                       && std::fabs( e.pos[0] ) < real(1.01) && std::fabs( e.pos[1] ) < real(1.01);
       }
       const Deepest dc = deepest( log, cap );
       straddleOk = straddleOk && dc.any && std::fabs( dc.dist + real(0.01) ) < real(1e-2) && dc.normal[2] > real(0.99);
       std::printf( "capsule across the slab (ends outside the grid): %d contact(s), deepest %+.4f\n",
                    static_cast<int>( log.entries.size() ), static_cast<double>( dc.dist ) );
-      expect( straddleOk, "capsule across the slab: contacts only inside the grid, depths in (-0.1, 0), deepest on the top with normal +z" );
+      expect( straddleOk, "capsule across the slab: contacts only inside the grid, depths in (-0.1, 0), all with normal +z" );
       destroy( cap );
 
       CylinderID cyl = createCylinder( 4, Vec3( 0, 0, 0 ), real(0.2), real(3), mat );
@@ -385,15 +383,13 @@ int main()
          minX = std::min( minX, e.pos[0] ); maxX = std::max( maxX, e.pos[0] );
          minY = std::min( minY, e.pos[1] ); maxY = std::max( maxY, e.pos[1] );
          const Vec3 n( e.g1 == slab ? e.normal : -e.normal );
-         // The plane path measures the depth of the nearest mesh surface point: the outline
-         // samples on the slab's footprint boundary see the side faces at depth 0, the interior
-         // the bottom face at depth 0.01.
-         ok = ok && n[2] > real(0.99) && e.dist > real(-0.02) && e.dist <= real(1e-9);
+         // The outline samples on the slab's footprint boundary used to see the side faces at
+         // depth 0; re-attributed to the bottom face, every contact carries the depth 0.01.
+         ok = ok && n[2] > real(0.99) && std::fabs( e.dist + real(0.01) ) < real(1e-2);
       }
-      ok = ok && std::fabs( deepest( log, slab ).dist + real(0.01) ) < real(1e-2);
       std::printf( "slab on a plane: %d contact(s), spread x %.3f, y %.3f\n", static_cast<int>( log.entries.size() ),
                    static_cast<double>( maxX - minX ), static_cast<double>( maxY - minY ) );
-      expect( ok, "slab on a plane: at most 12 contacts with the plane normal, the deepest at depth 0.01" );
+      expect( ok, "slab on a plane: at most 12 contacts with the plane normal, all at depth 0.01" );
       expect( maxX - minX > real(1.5) && maxY - minY > real(1.5), "slab on a plane: the contacts span the whole bottom face" );
    }
 
@@ -429,21 +425,71 @@ int main()
       wide->setPosition( Vec3( 0.3, -0.2, 0.25 + 0.25 - 0.01 ) );
       ContactLog log = run( slab, wide );
       real minX( 1e30 ), maxX( -1e30 ), minY( 1e30 ), maxY( -1e30 );
-      // Samples on the slab's footprint boundary attribute to the side faces (sideways normals at
-      // depth 0); the top patch carries the deepest contact with normal +z.
+      // Samples on the slab's footprint boundary used to attribute to the side faces (sideways
+      // normals at depth 0); re-attributed, every contact has normal +z at depth 0.01.
       bool ok = !log.entries.empty() && log.entries.size() <= 12;
       for( const ContactLog::Entry& e : log.entries ) {
          minX = std::min( minX, e.pos[0] ); maxX = std::max( maxX, e.pos[0] );
          minY = std::min( minY, e.pos[1] ); maxY = std::max( maxY, e.pos[1] );
-         ok = ok && e.dist > real(-0.02) && e.dist <= real(1e-9);
+         const Vec3 n( e.g1 == wide ? e.normal : -e.normal );
+         ok = ok && n[2] > real(0.99) && std::fabs( e.dist + real(0.01) ) < real(1e-2);
       }
       const Deepest d = deepest( log, wide );
-      ok = ok && d.any && d.normal[2] > real(0.99);
       std::printf( "wide cylinder cap on the slab: %d contact(s), spread x %.3f, y %.3f, deepest %+.4f\n",
                    static_cast<int>( log.entries.size() ), static_cast<double>( maxX - minX ), static_cast<double>( maxY - minY ),
                    static_cast<double>( d.dist ) );
-      expect( ok && std::fabs( d.dist + real(0.01) ) < real(1e-2), "wide cylinder cap on the slab: at most 12 contacts, the deepest with normal +z at -0.01" );
+      expect( ok && std::fabs( d.dist + real(0.01) ) < real(1e-2), "wide cylinder cap on the slab: at most 12 contacts, all with normal +z at -0.01" );
       expect( maxX - minX > real(1.5) && maxY - minY > real(1.5), "wide cylinder cap on the slab: the contacts span the whole slab top" );
+   }
+
+   // 11. Genuine two-face contact must survive the edge re-attribution: a cylinder lying in a
+   // V-groove touches both slopes (normals (-+0.57, 0, 0.82)); each slope keeps its own contacts.
+   {
+      world->clear();
+      // Closed block 2 x 2 x 1 with a V-notch in the top: cross-section polygon (x, z) =
+      // (-1, 0), (1, 0), (1, 1), (0, 0.3), (-1, 1), extruded along y in [-1, 1].
+      Vertices vertices;
+      IndicesLists faces;
+      const real px[5] = { -1, 1, 1, 0, -1 }, pz[5] = { 0, 0, 1, 0.3, 1 };
+      for( int side = 0; side < 2; ++side )
+         for( int i = 0; i < 5; ++i )
+            vertices.push_back( Vec3( px[i], side == 0 ? real(-1) : real(1), pz[i] ) );
+      // The polygon runs counter-clockwise in the (x, z) plane, i.e. with normal -y, so the
+      // outward walls are (a, 5 + b, b) and the caps are wound accordingly.
+      for( int i = 0; i < 5; ++i ) {         // walls: y = -1 ring is index i, y = +1 ring is 5 + i
+         const size_t a( i ), b( ( i + 1 ) % 5 );
+         faces.push_back( Vector3<size_t>( a, 5 + b, b ) );
+         faces.push_back( Vector3<size_t>( a, 5 + a, 5 + b ) );
+      }
+      for( int i = 1; i < 4; ++i ) {         // end caps (fans)
+         faces.push_back( Vector3<size_t>( 0, i, i + 1 ) );            // y = -1: normal -y
+         faces.push_back( Vector3<size_t>( 5, 5 + i + 1, 5 + i ) );    // y = +1: normal +y
+      }
+      TriangleMeshID groove = createTriangleMesh( 1, Vec3( 0, 0, 0 ), vertices, faces, mat, /*convex=*/false );
+      groove->enableDistanceMapAcceleration( 60, 5 );
+      expect( groove->hasDistanceMap(), "groove has a DistanceMap" );
+      // Cylinder r 0.3 along y; distance from (0, zc) to the slope through (0, 0.3) and (1, 1) is
+      // (zc - 0.3) / sqrt(1 + 0.7^2) = r - 0.01.
+      // createTriangleMesh() recentres the vertices to the volume centroid: express the height in
+      // the original coordinates and shift by what the first vertex, (-1, -1, 0), moved.
+      const real zc( real(0.3) + ( real(0.3) - real(0.01) ) * std::sqrt( real(1) + real(0.49) ) );
+      const Vec3 shift( Vec3( -1, -1, 0 ) - groove->getBFVertices()[0] );
+      CylinderID cyl = createCylinder( 2, Vec3( 0, 0, zc ) - shift, real(0.3), real(1.2), mat );
+      cyl->setOrientation( Quat( real(0), real(0), kPi / 2 ) );   // axis along y
+      ContactLog log = run( groove, cyl );
+      int left = 0, right = 0;
+      bool depthsOk = !log.entries.empty();
+      for( const ContactLog::Entry& e : log.entries ) {
+         const Vec3 n( e.g1 == cyl ? e.normal : -e.normal );
+         if( n[0] < real(-0.5) ) ++left;
+         if( n[0] > real( 0.5) ) ++right;
+         depthsOk = depthsOk && std::fabs( e.dist + real(0.01) ) < real(1e-2) && n[2] > real(0.7);
+      }
+      std::printf( "cylinder in the V-groove: %d contact(s), %d on the left slope, %d on the right\n",
+                   static_cast<int>( log.entries.size() ), left, right );
+      expect( left >= 2 && right >= 2 && left + right == static_cast<int>( log.entries.size() ),
+              "cylinder in the V-groove: both slopes keep their own contacts (no false re-attribution)" );
+      expect( depthsOk, "cylinder in the V-groove: every contact at depth 0.01 with its slope's normal" );
    }
 
    if( failures == 0 ) {
