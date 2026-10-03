@@ -81,29 +81,27 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   deepest clusters first, up to five per cluster), and the mesh-mesh path samples only the query
   mesh's vertices, edge midpoints and face barycentres: a coarse query mesh on a fine one can
   miss shallow contacts between its samples.
-- **Primitive-mesh DistanceMap sampling** (`collideTMeshWithDistanceMap()`): the sample pitch is
-  the larger of twice the grid spacing and the primitive's extent over the per-shape caps (~24
-  per edge, 48 around, 400 per sphere), so a very large primitive does not see mesh features
-  narrower than its pitch (follow-up: derive the sample counts from the overlap of the two
-  bounding boxes and sample only that region). The primitive's extent as clustering radius
-  merges two separate contact patches with parallel normals into one cluster (inner edges lost).
-  With a flat resting face all samples have nearly equal depth, so the "deepest" representative
-  is chosen by sample index and can hop between frames (a centroid tie-break would avoid it).
-  Samples deep inside the mesh get the nearest-surface normal, like every signed-distance
-  method. DistanceMap pairs emit hard contacts only (no lubrication contacts). Pair Lab
-  presets "ISSUE: large box on small torus (sample pitch)" (sweep the box's pos x: the contact
-  count comes and goes) and "ISSUE: box bridging the torus (patch merging)" (two patches, at
-  most five contacts) show the two effects.
+- **Primitive-mesh DistanceMap sampling** (`collideTMeshWithDistanceMap()`): with a flat
+  resting face all samples have nearly equal depth, so the "deepest" representative is chosen
+  by sample index and can hop between frames (a centroid tie-break would avoid it). Samples
+  deep inside the mesh get the nearest-surface normal, like every signed-distance method. The
+  sphere and ellipsoid lattices are capped at 400 points (their deepest point is exact through
+  the support-point sample; the cap only limits manifold points on very large bodies).
+  DistanceMap pairs emit hard contacts only (no lubrication contacts).
+- **Samples at a mesh's convex edges attribute to the nearer side face.** A primitive resting
+  0.01 deep on the top of a box-like mesh has samples on the footprint boundary that are 0.01
+  from the top face but 0 from a side face; the field reports the side face: a contact with a
+  sideways normal at depth 0 (the plane-mesh path likewise measures the depth of the nearest
+  surface point, so the outline contacts of a flat-bottomed mesh on a plane carry depth 0).
+  Harmless for resting contact (the deepest contact drives the correction), but such a contact
+  resists sliding across the edge towards the mesh interior, since the solver treats the motion
+  as an approach to the side face. Inherent to signed-distance contact at penetration depth;
+  a remedy would compare each candidate's normal with the one of the deepest candidate of its
+  patch and drop near-perpendicular boundary contacts of a flat patch. Not implemented.
 - **Plane vs plane** generates nothing, by design (both fixed and infinite).
 
 ### Unverified observations
 
-- **Plane-mesh on a DistanceMap emits every penetrating sample as a contact** (Pair Lab pair
-  matrix: 204 / 226 contacts for the plane-torus pair): `collidePlaneTMeshWithDistanceMap()`
-  samples the plane under the mesh's AABB on a 25 x 25 grid and its clustering is compiled out
-  (`PE_DISTANCEMAP_PLANE_CLUSTERING 0`). Each contact gets its own solver impulse, so a mesh
-  resting on a plane has an unusually large contact set; not checked whether that is intended.
-  Pair Lab preset "ISSUE: torus on the ground (plane-mesh contacts)" shows the count.
 
 - Pair Lab preset "box on box: face-face, offset + yaw" gives five contacts, three with their
   points at z = 0.5 and two at z = 0.49. Not checked whether the mixed placement is intended.
@@ -142,6 +140,34 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   body); lowering the error reduction reduces it.
 
 ## Resolved
+
+- **Sample pitch of large primitives on a DistanceMap.** The box, capsule and cylinder samplers
+  spread a capped number of samples over the whole body (25 per edge), so a 5 x 5 box over a
+  torus with a 0.2 thick tube was sampled every 0.21 and the 0.087 wide contact band fell
+  between the samples: no contact, the box sank until a sample entered the tube, was thrown
+  back out, and so on. The samplers now cover only the part of the body inside the mesh's
+  bounding box (transformed into the body frame, conservatively), at twice the grid spacing:
+  faces, wall rings and cap rings outside that region are skipped, ring points outside it are
+  dropped, and cap rings only at radii the region reaches. The overlap is never larger than the
+  mesh, so the sample count is bounded by the mesh's resolution instead of the body's size, and
+  the clustering link radius is 2.5 grid-based pitches. Test: the 5 x 5 box on the small torus
+  (contacts on the tube crest at the right depth) and a cylinder of radius 3 standing on the
+  2 x 2 slab (contacts spanning the slab). Pair Lab preset "large box on small torus (overlap
+  sampling)"; --smoke checks it at five positions.
+
+- **DistanceMap clustering with a fixed radius** (`emitDistanceMapContacts()`): a ball of a few
+  grid cells around a seed fragmented a flat resting patch into many clusters (which is why the
+  plane-mesh path had its clustering compiled out and emitted every penetrating sample: 52
+  contacts for a resting torus, 200+ for deeper overlaps), while the primitive's extent as
+  radius merged two separate patches with parallel normals into one (a box bridging the torus
+  got three contacts for both ends). Now connected components: candidates within 2.5 sample
+  pitches of each other with agreeing normals are linked transitively, so a patch of any size is
+  one component and separate patches stay apart; components are emitted deepest first, each with
+  its deepest point plus the members farthest along eight tangent directions (the outline), at
+  most six per component and twelve per pair. The plane-mesh path uses it again (mesh, plane,
+  plane normal, midpoint placement as before). Results: bridging box 4 + 4 contacts, slab on a
+  plane 6 contacts spanning the face, box flat on a slab 5. Pair Lab presets "box bridging the
+  torus (two patches)" and "torus on the ground (plane-mesh manifold)".
 
 - **Primitive-mesh contacts ignored the DistanceMap.** Sphere-, box-, capsule-, cylinder- and
   ellipsoid-mesh contacts came from GJK/EPA (one contact, the mesh treated as convex; a sphere in

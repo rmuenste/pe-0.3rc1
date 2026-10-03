@@ -37,7 +37,20 @@
  *         carry the side face's normal);
  *       - a cylinder of length 3 standing on the slab (its centre 1.5 above the top, outside the
  *         grid padding of 5 cells): the clamped centre query still yields the exact deepest
- *         point, depth within 1e-2 of -0.01.
+ *         point, depth within 1e-2 of -0.01;
+ *    7. a box bridging the torus (resting on the tube at x = -1 and x = +1): the connectivity
+ *       clustering keeps the two patches apart, at least two contacts on each, none elsewhere;
+ *    8. plane-mesh through the same clustering: the slab resting 0.01 deep on a plane gives at
+ *       most twelve contacts (one patch and its outline) spanning the whole bottom face, with
+ *       the plane normal, the deepest at depth 0.01 (outline samples on the footprint boundary
+ *       see the side faces at depth 0);
+ *    9. a 5 x 5 box on a small torus (R 0.35, r 0.1): the sampling is restricted to the overlap
+ *       with the mesh's bounding box, so the 0.087-wide contact band is found (at least four
+ *       contacts on the tube crest, deepest within 1e-2 of -0.01); with a pitch of 5 / 24 it was
+ *       missed;
+ *   10. a cylinder of radius 3 standing on the 2 x 2 slab: its cap is sampled over the slab,
+ *       contacts span the whole slab top, the deepest with normal +z at -0.01 (boundary samples
+ *       attribute to the side faces).
  *
  *  Serial world setup, no MPI.
  */
@@ -135,15 +148,16 @@ static TriangleMeshID makeSlabBody( pe::id_t uid, MaterialID mat )
    return m;
 }
 
-static TriangleMeshID makeTorusBody( pe::id_t uid, const Vec3& pos, MaterialID mat, bool distanceMap )
+static TriangleMeshID makeTorusBody( pe::id_t uid, const Vec3& pos, MaterialID mat, bool distanceMap,
+                                     real R = kR, real r = kr, int resolution = 60 )
 {
    Vertices vertices;
    IndicesLists faces;
-   makeTorus( kR, kr, 64, 32, vertices, faces );
+   makeTorus( R, r, 64, 32, vertices, faces );
    TriangleMeshID m = createTriangleMesh( uid, pos, vertices, faces, mat, /*convex=*/false );
 #ifdef PE_USE_CGAL
    if( distanceMap )
-      m->enableDistanceMapAcceleration( 60, 5 );
+      m->enableDistanceMapAcceleration( resolution, 5 );
 #else
    (void)distanceMap;
 #endif
@@ -338,6 +352,98 @@ int main()
                    static_cast<int>( log.entries.size() ), static_cast<double>( d.dist ) );
       expect( d.any && std::fabs( d.dist + real(0.01) ) < real(1e-2) && d.normal[2] > real(0.99),
               "tall cylinder on the slab: exact deepest point although the centre is outside the grid" );
+   }
+
+   // 7. Two separate patches: a box bridging the torus rests on the tube at x = -1 and x = +1.
+   // Connectivity clustering keeps them apart, so each end gets its own outline points.
+   {
+      world->clear();
+      TriangleMeshID torus = makeTorusBody( 1, Vec3( 0, 0, 0 ), mat, true );
+      BoxID bridge = createBox( 2, Vec3( 0, 0, kr + real(0.2) - delta ), Vec3( 2.6, 0.4, 0.4 ), mat );
+      ContactLog log = run( torus, bridge );
+      int left = 0, right = 0;
+      for( const ContactLog::Entry& e : log.entries ) {
+         if( e.pos[0] < real(-0.8) ) ++left;
+         if( e.pos[0] > real( 0.8) ) ++right;
+      }
+      std::printf( "box bridging the torus: %d contact(s), %d on the left patch, %d on the right\n",
+                   static_cast<int>( log.entries.size() ), left, right );
+      expect( left >= 2 && right >= 2 && left + right == static_cast<int>( log.entries.size() ),
+              "box bridging the torus: at least two contacts on each of the two patches, none elsewhere" );
+   }
+
+   // 8. Plane-mesh through the same clustering: the slab resting 0.01 deep on a plane gives one
+   // patch with its outline, not every plane sample.
+   {
+      world->clear();
+      TriangleMeshID slab = makeSlabBody( 1, mat );
+      PlaneID floor = createPlane( 2, Vec3( 0, 0, 1 ), Vec3( 0, 0, -0.25 + 0.01 ), mat );
+      ContactLog log = run( floor, slab );
+      real minX( 1e30 ), maxX( -1e30 ), minY( 1e30 ), maxY( -1e30 );
+      bool ok = !log.entries.empty() && log.entries.size() <= 12;
+      for( const ContactLog::Entry& e : log.entries ) {
+         minX = std::min( minX, e.pos[0] ); maxX = std::max( maxX, e.pos[0] );
+         minY = std::min( minY, e.pos[1] ); maxY = std::max( maxY, e.pos[1] );
+         const Vec3 n( e.g1 == slab ? e.normal : -e.normal );
+         // The plane path measures the depth of the nearest mesh surface point: the outline
+         // samples on the slab's footprint boundary see the side faces at depth 0, the interior
+         // the bottom face at depth 0.01.
+         ok = ok && n[2] > real(0.99) && e.dist > real(-0.02) && e.dist <= real(1e-9);
+      }
+      ok = ok && std::fabs( deepest( log, slab ).dist + real(0.01) ) < real(1e-2);
+      std::printf( "slab on a plane: %d contact(s), spread x %.3f, y %.3f\n", static_cast<int>( log.entries.size() ),
+                   static_cast<double>( maxX - minX ), static_cast<double>( maxY - minY ) );
+      expect( ok, "slab on a plane: at most 12 contacts with the plane normal, the deepest at depth 0.01" );
+      expect( maxX - minX > real(1.5) && maxY - minY > real(1.5), "slab on a plane: the contacts span the whole bottom face" );
+   }
+
+   // 9. A primitive far larger than the mesh: a 5 x 5 box resting on a small torus (R 0.35,
+   // r 0.1, resolution 50: grid spacing 0.018). The penetrating band of the tube under the box's
+   // bottom face is 0.087 wide; with the former per-edge cap the pitch was 5 / 24 = 0.21 and no
+   // sample hit it. Sampling only the overlap with the mesh's bounding box keeps the pitch at
+   // 0.036.
+   {
+      world->clear();
+      TriangleMeshID small = makeTorusBody( 1, Vec3( 0, 0, 0 ), mat, true, real(0.35), real(0.1), 50 );
+      BoxID big = createBox( 2, Vec3( 0, 0, 0.1 + 0.2 - 0.01 ), Vec3( 5, 5, 0.4 ), mat );
+      ContactLog log = run( small, big );
+      Deepest d = deepest( log, big );
+      bool onTube = log.entries.size() >= 4;
+      for( const ContactLog::Entry& e : log.entries ) {
+         const real rho( std::sqrt( e.pos[0] * e.pos[0] + e.pos[1] * e.pos[1] ) );
+         const Vec3 n( e.g1 == big ? e.normal : -e.normal );
+         onTube = onTube && rho > real(0.25) && rho < real(0.45) && n[2] > real(0.9);
+      }
+      std::printf( "5 x 5 box on the small torus: %d contact(s), deepest %+.4f\n", static_cast<int>( log.entries.size() ),
+                   static_cast<double>( d.dist ) );
+      expect( onTube, "large box on a small torus: at least four contacts on the tube crest with upward normals" );
+      expect( d.any && std::fabs( d.dist + real(0.01) ) < real(1e-2), "large box on a small torus: deepest within 1e-2 of -0.01" );
+   }
+
+   // 10. A cylinder cap far larger than the mesh: radius 3, standing on the 2 x 2 slab 0.01 deep.
+   {
+      world->clear();
+      TriangleMeshID slab = makeSlabBody( 1, mat );
+      CylinderID wide = createCylinder( 2, Vec3( 0, 0, 0 ), real(3), real(0.5), mat );
+      wide->setOrientation( Quat( real(0), kPi / 2, real(0) ) );          // axis along z
+      wide->setPosition( Vec3( 0.3, -0.2, 0.25 + 0.25 - 0.01 ) );
+      ContactLog log = run( slab, wide );
+      real minX( 1e30 ), maxX( -1e30 ), minY( 1e30 ), maxY( -1e30 );
+      // Samples on the slab's footprint boundary attribute to the side faces (sideways normals at
+      // depth 0); the top patch carries the deepest contact with normal +z.
+      bool ok = !log.entries.empty() && log.entries.size() <= 12;
+      for( const ContactLog::Entry& e : log.entries ) {
+         minX = std::min( minX, e.pos[0] ); maxX = std::max( maxX, e.pos[0] );
+         minY = std::min( minY, e.pos[1] ); maxY = std::max( maxY, e.pos[1] );
+         ok = ok && e.dist > real(-0.02) && e.dist <= real(1e-9);
+      }
+      const Deepest d = deepest( log, wide );
+      ok = ok && d.any && d.normal[2] > real(0.99);
+      std::printf( "wide cylinder cap on the slab: %d contact(s), spread x %.3f, y %.3f, deepest %+.4f\n",
+                   static_cast<int>( log.entries.size() ), static_cast<double>( maxX - minX ), static_cast<double>( maxY - minY ),
+                   static_cast<double>( d.dist ) );
+      expect( ok && std::fabs( d.dist + real(0.01) ) < real(1e-2), "wide cylinder cap on the slab: at most 12 contacts, the deepest with normal +z at -0.01" );
+      expect( maxX - minX > real(1.5) && maxY - minY > real(1.5), "wide cylinder cap on the slab: the contacts span the whole slab top" );
    }
 
    if( failures == 0 ) {

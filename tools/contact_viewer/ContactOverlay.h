@@ -73,6 +73,8 @@ struct OverlayOptions {
    double normalLength = 0.3;    //!< World length of the drawn normals, or the scale of |dist|.
    bool   scaleByDist  = false;  //!< Normal length = normalLength * |dist| instead of fixed.
    double pointRadius  = 0.025;  //!< World radius of the contact markers.
+   bool   fixedColor   = false;  //!< Draw every marker in \a color instead of by sign / kind.
+   glm::vec3 color     = glm::vec3( 0.35f, 0.75f, 0.55f );
 };
 
 
@@ -105,7 +107,7 @@ inline void drawContactOverlay( const std::string& name, const ContactLog& log, 
                                          : opt.normalLength;
       points.push_back ( toGlm( c.pos ) );
       normals.push_back( toGlm( c.normal ) * static_cast<float>( len ) );
-      colors.push_back ( contactColor( c, opt.colorBy ) );
+      colors.push_back ( opt.fixedColor ? opt.color : contactColor( c, opt.colorBy ) );
    }
 
    polyscope::PointCloud* cloud = polyscope::registerPointCloud( name, points );

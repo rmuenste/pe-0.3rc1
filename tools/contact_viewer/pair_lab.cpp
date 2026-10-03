@@ -153,17 +153,17 @@ const std::vector<Preset>& presets()
       { "ellipsoid on torus tube",             torusSpec( 1.0, 0.3 ), ellipsoidSpec( 0.3, 0.2, 0.15 ).at( 1.0, 0.0, 0.44 ) },
       { "sphere in torus hole (no contact)",   torusSpec( 1.0, 0.3 ), sphereSpec( 0.5 ) },
       // Demonstrations of the open issues in contact-issues.md ("ISSUE" presets).
-      // Sample pitch: a 5 x 5 box is sampled every 5/24 = 0.21 on its bottom face, the tube of the
-      // small torus is 0.2 thick: whether a sample lands on the tube depends on the position
-      // (sweep B's pos x and watch the contact count).
-      { "ISSUE: large box on small torus (sample pitch)",   torusSpec( 0.35, 0.1 ), boxSpec( 5, 5, 0.4 ).at( 0.0, 0.0, 0.29 ) },
-      // Patch merging: the box rests on the tube at x = -1 and x = +1 (two patches, parallel
-      // normals); with the box's extent as clustering radius they form one cluster, whose
-      // deepest plus four extremal points are all the contacts the two patches get.
-      { "ISSUE: box bridging the torus (patch merging)",    torusSpec( 1.0, 0.3 ), boxSpec( 2.6, 0.4, 0.4 ).at( 0.0, 0.0, 0.49 ) },
-      // Plane-mesh: the torus rests on the ground, which is placed 0.01 into it; every penetrating
-      // plane sample becomes a contact, see "ground contacts" in the Contacts window.
-      { "ISSUE: torus on the ground (plane-mesh contacts)", torusSpec( 1.0, 0.3 ), sphereSpec( 0.2 ).at( 0.0, 0.0, 1.2 ), 0.01 },
+      // Overlap sampling: a 5 x 5 box over a torus with a 0.2 thick tube. Only the part of the box
+      // inside the mesh's bounding box is sampled, at the grid spacing, so the 0.087 wide contact
+      // band is found at every position (with a pitch of 5 / 24 = 0.21 it was missed).
+      { "large box on small torus (overlap sampling)",      torusSpec( 0.35, 0.1 ), boxSpec( 5, 5, 0.4 ).at( 0.0, 0.0, 0.29 ) },
+      // Two patches: the box rests on the tube at x = -1 and x = +1 with parallel normals. The
+      // connectivity clustering keeps them apart (four contacts on each); a fixed clustering
+      // radius of the box's size used to merge them into one cluster with three contacts.
+      { "box bridging the torus (two patches)",             torusSpec( 1.0, 0.3 ), boxSpec( 2.6, 0.4, 0.4 ).at( 0.0, 0.0, 0.49 ) },
+      // Plane-mesh: the torus rests on the ground, which is placed 0.01 into it; the clustering
+      // gives the resting patch and its outline (six ground contacts, 52 before clustering).
+      { "torus on the ground (plane-mesh manifold)",        torusSpec( 1.0, 0.3 ), sphereSpec( 0.2 ).at( 0.0, 0.0, 1.2 ), 0.01 },
       // Position correction: 0.05 penetration becomes a separation velocity erp * 0.05 / dt
       // (35 m/s at dt = 1e-3) that stays in the body. Untick "start from a touching state" in the
       // Simulation window and press Run.
@@ -757,7 +757,11 @@ void refresh()
    }
 
    viewer::drawContactOverlay( "contacts", contactLog, overlay );
-   viewer::drawContactOverlay( "ground contacts", groundLog, overlay );
+   // Ground contacts in their own look (green, smaller), so they are not taken for A-B contacts.
+   viewer::OverlayOptions groundOverlay = overlay;
+   groundOverlay.fixedColor  = true;
+   groundOverlay.pointRadius = 0.6 * overlay.pointRadius;
+   viewer::drawContactOverlay( "ground contacts", groundLog, groundOverlay );
    drawSelection();
    drawWitnesses();
    if( sweepAuto && !simulating() )
@@ -1116,7 +1120,7 @@ void drawContactsWindow()
    ImGui::Text( "collide( A, B ): %d contact(s)   |   contactThreshold = %.3g",
                 static_cast<int>( contactLog.entries.size() ), static_cast<double>( contactThreshold ) );
    if( ground != nullptr )
-      ImGui::TextDisabled( "ground contacts (A, B): %d", static_cast<int>( groundLog.entries.size() ) );
+      ImGui::TextDisabled( "ground contacts (A, B): %d (drawn green, smaller)", static_cast<int>( groundLog.entries.size() ) );
    if( !collideError.empty() )
       ImGui::TextColored( ImVec4( 1.0f, 0.3f, 0.3f, 1.0f ), "collide() threw: %s", collideError.c_str() );
 
@@ -1467,6 +1471,22 @@ bool smokeTest()
                    dmGrids[0] != nullptr ? "registered" : "missing", tubeOk ? "ok" : "FAILED" );
       showDistanceMap = false;
       ok = ok && holeOk && tubeOk;
+
+      // The large box on the small torus must be supported wherever it is: the contact band of
+      // the tube is narrower than the former sample pitch of 5 / 24.
+      int large = -1;
+      for( int k = 0; k < static_cast<int>( presets().size() ); ++k )
+         if( std::string( presets()[k].name ) == "large box on small torus (overlap sampling)" ) large = k;
+      selectPreset( large );
+      bool largeOk = true;
+      for( double x : { 0.0, 0.05, 0.1, 0.15, 0.2 } ) {
+         specs[1].pos[0] = x;
+         applyPose( 1 );
+         polyscope::frameTick();
+         largeOk = largeOk && !contactLog.entries.empty();
+         std::printf( "large box on small torus at x = %.2f: %d contact(s)\n", x, static_cast<int>( contactLog.entries.size() ) );
+      }
+      ok = ok && largeOk;
    }
 #endif
 

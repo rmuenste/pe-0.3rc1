@@ -138,13 +138,14 @@ Polyscope transform gizmo, over an optional ground plane. Every edit re-runs
   a cylinder cap, coaxial cylinders, parallel lying cylinders, cylinder standing on a lying one,
   capsule on a cylinder cap; and with the torus mesh: sphere / box / capsule / cylinder /
   ellipsoid on the tube, and a sphere in the hole (no contact: the convex hull would contain it).
-- **"ISSUE" presets** demonstrate the open problems of `contact-issues.md`: a large box on a
-  small torus (sample pitch: sweep the box's `pos x` and watch the contact count come and go),
-  a box bridging the torus (two patches merged into one cluster: at most five contacts for
-  both), the torus resting 0.01 deep on the ground (52 plane-mesh contacts in "ground contacts";
-  a preset can place the ground at a given lift above the pair's lowest point), and a
-  box 0.05 deep on another (untick "start from a touching state", press Run: the correction
-  launches it).
+- **"ISSUE" preset**: a box 0.05 deep on another demonstrates the open position-correction
+  problem of `contact-issues.md` (untick "start from a touching state", press Run: the correction
+  launches it). Three presets show resolved ones: a large box on a small torus (the box is sampled
+  only where it overlaps the mesh, so the thin contact band is found at every position; sweep
+  `pos x`), a box bridging the torus (two separate patches, four contacts each) and the torus
+  resting 0.01 deep on the ground (six plane-mesh contacts forming the patch outline; a preset
+  can place the ground at a given lift above the pair's lowest point). Ground contacts are drawn
+  green and smaller than A-B contacts.
 
 Orientations use pe's Euler convention, `Quat( xangle, yangle, zangle )` (applied in the order
 x, y, z); capsule and cylinder axes run along the body-frame x axis, the plane normal is the
