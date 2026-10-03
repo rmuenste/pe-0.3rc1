@@ -155,6 +155,110 @@ set_tests_properties(pe-ellipsoid-contact PROPERTIES
   TIMEOUT 300
 )
 
+# Cylinder-plane contact generation (MaxContacts::collideCylinderPlane, formerly an empty
+# stub): flat-on-cap / lying / rim cases against analytic values, the contactThreshold
+# boundary, and a random sweep against CylinderBase::support(). Recording contact container,
+# no solver; serial world, no MPI.
+add_executable(pe_cylinder_plane_contact_test
+  pe_cylinder_plane_contact_test.cpp
+)
+target_link_libraries(pe_cylinder_plane_contact_test PRIVATE pe_static)
+add_test(
+  NAME pe-cylinder-plane-contact
+  COMMAND pe_cylinder_plane_contact_test
+)
+set_tests_properties(pe-cylinder-plane-contact PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
+# Multi-point contact manifolds for box-cylinder, cylinder-cylinder and capsule-cylinder
+# (MaxContacts::addFeatureManifold on top of GJK/EPA): standing / lying / overhanging / stacked
+# configurations against analytic contact sets, single-contact cases kept, and a small-tilt sweep
+# checking the deepest manifold point against the exact support depth. Serial world, no MPI.
+add_executable(pe_cylinder_manifold_test
+  pe_cylinder_manifold_test.cpp
+)
+target_link_libraries(pe_cylinder_manifold_test PRIVATE pe_static)
+add_test(
+  NAME pe-cylinder-manifold
+  COMMAND pe_cylinder_manifold_test
+)
+set_tests_properties(pe-cylinder-manifold PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
+# Hard-contact solvers: a fixed body must not inherit the stale velocity correction of a previous
+# body in its dv_/dw_ slot (after World::clear() or when BodyStorage::remove() swaps it into a
+# destroyed body's slot). Boxes resting on a fixed ramp must stick in all three cases.
+# Serial world, no MPI.
+add_executable(pe_fixed_body_stale_correction_test
+  pe_fixed_body_stale_correction_test.cpp
+)
+target_link_libraries(pe_fixed_body_stale_correction_test PRIVATE pe_static)
+add_test(
+  NAME pe-fixed-body-stale-correction
+  COMMAND pe_fixed_body_stale_correction_test
+)
+set_tests_properties(pe-fixed-body-stale-correction PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
+# Split-impulse position correction of HardContactEulerLagrange (setSplitImpulse): an
+# overlapping box is not launched, a dropped box does not bounce at restitution 0, the pseudo
+# motion propagates through touching contacts, and a resting tower stays at rest. Each case also
+# runs with the switch off to pin the Baumgarte behaviour it replaces. Serial, no MPI.
+add_executable(pe_split_impulse_test
+  pe_split_impulse_test.cpp
+)
+target_link_libraries(pe_split_impulse_test PRIVATE pe_static)
+add_test(
+  NAME pe-split-impulse
+  COMMAND pe_split_impulse_test
+)
+set_tests_properties(pe-split-impulse PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
+# Box-box contacts with (nearly) parallel edges (MaxContacts::collideBoxBox): edge-pair axes of
+# parallel edges used to produce O(1) garbage that replaced the contact of overlapping boxes by
+# a positive-distance edge/edge contact. Random near-parallel configurations checked against GJK,
+# plus a clean edge-versus-face approach. Recording contact container, no solver; serial, no MPI.
+add_executable(pe_box_box_parallel_edges_test
+  pe_box_box_parallel_edges_test.cpp
+)
+target_link_libraries(pe_box_box_parallel_edges_test PRIVATE pe_static)
+add_test(
+  NAME pe-box-box-parallel-edges
+  COMMAND pe_box_box_parallel_edges_test
+)
+set_tests_properties(pe-box-box-parallel-edges PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
+# Primitive-mesh contacts on a DistanceMap (MaxContacts::collideTMeshWithDistanceMap): sphere,
+# box, capsule, cylinder and ellipsoid against a non-convex torus, checked against the analytic
+# torus distance; the hole case shows what the DistanceMap adds over GJK/EPA. Needs CGAL; the
+# executable is a no-op without it. Serial world, no MPI.
+if(PE_USE_CGAL)
+  add_executable(pe_primitive_mesh_distancemap_test
+    pe_primitive_mesh_distancemap_test.cpp
+  )
+  target_link_libraries(pe_primitive_mesh_distancemap_test PRIVATE pe_static)
+  add_test(
+    NAME pe-primitive-mesh-distancemap
+    COMMAND pe_primitive_mesh_distancemap_test
+  )
+  set_tests_properties(pe-primitive-mesh-distancemap PROPERTIES
+    LABELS "unit;serial;rigidbody;cgal"
+    TIMEOUT 300
+  )
+endif()
+
 # Checkpoint write/read round trip for the DNS/DKT resume path: a moving sphere and a
 # rotated, spinning ellipsoid survive with position, orientation and both velocities intact;
 # the sidecar carries the driver identity. Ellipsoids were not checkpointed before this.

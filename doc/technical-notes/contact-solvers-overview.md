@@ -27,7 +27,12 @@ Strengths:
   coupling.
 - Several friction relaxation models are available, including decoupled,
   orthogonal-projection, and generalized maximum-dissipation variants.
-- Penetration correction is explicit through ERP/Baumgarte-style controls.
+- Penetration correction is explicit through ERP/Baumgarte-style controls. The
+  Euler-Lagrange collision system (`pe/core/collisionsystem/HardContactEulerLagrange.h`)
+  additionally offers `setSplitImpulse( true )`: penetration is then removed by a
+  second, normal-only solve on pseudo velocities that move the positions but are
+  not kept as body velocity, so an overlapping start does not launch the bodies
+  and a landing body does not bounce at restitution 0. Off by default.
 
 Limitations:
 
