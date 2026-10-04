@@ -18,7 +18,7 @@ PE can be driven from an external CFD solver in two different ways. They use
 |---|---|---|
 | Build flag | `PE_USE_MPI=ON` (`HAVE_MPI=1`) | `PE_USE_MPI=OFF` (`HAVE_MPI=0`) + `PE_SERIAL_MODE` |
 | Domain decomposition in PE | Yes — bodies are distributed across MPI processes | No — every PE instance holds **all** bodies |
-| Setup functions | `setupXxx(MPI_Comm)` in `pe/interface/sim_setup.h` (e.g. [setup_atc.h](../../pe/interface/setup_atc.h)) | `setupXxxSerial(int cfd_rank)` in [sim_setup_serial.h](../../pe/interface/sim_setup_serial.h) |
+| Setup functions | `setupXxx(MPI_Comm)` in `pe/interface/sim_setup.h` (e.g. [setup_el_terminal_velocity.h](../../pe/interface/setup_el_terminal_velocity.h)) | `setupXxxSerial(int cfd_rank)` in [sim_setup_serial.h](../../pe/interface/sim_setup_serial.h) |
 | Body ownership | A body is owned by one process; remote copies are synchronized via PE's MPI layer | No ownership concept; each instance simulates everything |
 
 ### What `PE_SERIAL_MODE` is, and why it exists
@@ -46,17 +46,17 @@ and the file defines **each case twice**, guarded by build mode:
 
 ```cpp
 #if HAVE_MPI                       // ── normal (parallel) mode ──────────────
-extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
   // converts the Fortran communicator and calls the parallel setup:
   MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0);
-  setupATC(CcommEx0);
+  setupKroupa(CcommEx0);
 }
 #endif
 
 #ifdef PE_SERIAL_MODE              // ── serial mode ─────────────────────────
-extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  pe::setupATCSerial(*remoteRank); // calls the serial setup
+extern "C" void commf2c_kroupa_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  pe::setupKroupaSerial(*remoteRank); // calls the serial setup
 }
 #endif
 ```
@@ -70,9 +70,38 @@ Key points when adding a case:
 - **A case may be serial-only.** Several parallel-half entry points are
   deliberately *stubbed* — they print an error telling the user to rebuild with
   `PE_SERIAL_MODE` (e.g. `commf2c_rotation_`, `commf2c_drill_`,
-  `commf2c_lubrication_lab_`). This is fine; not every case needs a parallel
-  implementation. But the symbol must still exist in both halves so the CFD
-  side links in either build.
+  `commf2c_lubrication_lab_`, `commf2c_dcav_`). This is fine; not every case
+  needs a parallel implementation. But the symbol must still exist in both
+  halves so the CFD side links in either build. A stub must **abort with a
+  clear message**, never return silently with an empty world.
+- **ATC is a placeholder in parallel mode.** `commf2c_atc_` still forwards to
+  `setupATC`, but [setup_atc.h](../../pe/interface/setup_atc.h) currently
+  aborts with a "not functional at the moment" message until the parallel
+  setup is implemented. The serial `setupATCSerial` is functional.
+
+### The minimal bootstrap: `commf2c_init_` / `setupGeneralInit`
+
+The CFD library is built once with PE support, and its shared code calls the PE
+interface wrappers (particle queries, force synchronization). Every CFD
+application links that shared code, including applications that never run a
+particle simulation. With static libraries the linker only extracts the PE
+interface objects if something references them, so those applications would
+fail with undefined references to the wrappers.
+
+The remedy is that such applications call `commf2c_init_`, which forwards to
+`setupGeneralInit` in
+[setup_general_init.h](../../pe/interface/setup_general_init.h). It does two
+things and nothing else:
+
+1. **Link anchor** — the call guarantees the PE interface gets linked.
+2. **Communicator wiring** — it sets the PE communicator to the CFD worker
+   communicator (which excludes the CFD master rank). Without this, PE-side
+   collectives such as the barrier in the force synchronization would include
+   the master, which never takes part in them, and deadlock.
+
+It creates no bodies, materials, or domain decomposition and loads no
+configuration. Keep it minimal; case-specific content belongs in a dedicated
+setup.
 
 ## `remoteRank` vs `cfd_rank` vs `getCfdRank()` — same value, three names
 
@@ -245,6 +274,13 @@ To add a new serial coupled case `xyz`:
    [c2f_interface.cpp](../../src/interface/c2f_interface.cpp): a real parallel
    implementation (or an explicit "serial only" stub) under `#if HAVE_MPI`, and
    the `pe::setupXyzSerial(*remoteRank)` forwarder under `#ifdef PE_SERIAL_MODE`.
+   For a real parallel setup, use
+   [setup_el_terminal_velocity.h](../../pe/interface/setup_el_terminal_velocity.h)
+   as the reference: it reads its parameters from the configuration, validates
+   the process layout, calls the shared `decompose*` functions from
+   [decompose.h](../../pe/interface/decompose.h), and aborts with a message on
+   every error path. Most older `setup_*.h` files predate these conventions
+   (hardcoded geometry, silent `return` on errors) and are not good templates.
 3. **Smoke test** (recommended) — add a case to
    [tests/interface/pe_interface_smoke_serial.cpp](../../tests/interface/pe_interface_smoke_serial.cpp)
    and register it in `tests/interface/CMakeLists.txt`. See

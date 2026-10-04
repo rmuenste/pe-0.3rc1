@@ -1,223 +1,64 @@
-#include <pe/interface/decompose.h>
-#include <pe/config/SimulationConfig.h>
-#include <pe/interface/setup_optional_collision_params.h>
-#include <random>
-#include <algorithm>
-#include <vector>
+#ifndef _PE_SETUP_KROUPA_H_
+#define _PE_SETUP_KROUPA_H_
+
+#include <cmath>
 #include <iostream>
-#include <sstream>
-#include <pe/core/Types.h>
-#include <fstream>
-#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <pe/config/SimulationConfig.h>
+#include <pe/interface/decompose.h>
+#include <pe/interface/geometry_utils.h>
+#include <pe/interface/setup_optional_collision_params.h>
+// Provides the seeded lattice generator elTerminalRandomSeeds() that is reused here.
+// TODO: move the seeding helpers into a shared header so this include is not needed.
+#include <pe/interface/setup_el_terminal_velocity.h>
 
 using namespace pe::povray;
 
-//=================================================================================================
-// Read xyz positions from a file
-//=================================================================================================
-std::vector<Vec3> read_xyz_file(const boost::filesystem::path& fileName) {
-    std::vector<Vec3> vectors;
-    std::ifstream file(fileName.string());
-    
-    // Check if the file was successfully opened
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open file " << fileName << std::endl;
-        return vectors; // Return an empty vector in case of error
-    }
-    
-    std::string line;
-    
-    // Read the file line by line
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);  // Create a string stream from the line
-        float x, y, z;
-        
-        // Parse the line for three float values
-        if (ss >> x >> y >> z) {
-            // Create a Vec3 object and add it to the vector
-            vectors.emplace_back(x, y, z);
-        }
-    }
-    
-    file.close();  // Close the file
-    return vectors;
-}
-//=================================================================================================
-// GenerateRandomPositionsBox
-//=================================================================================================
-std::vector<Vec3> generateRandomPositionsBox(real LX, real LY, real LZ, 
-                                             real diameter, 
-                                             real volumeFraction, 
-                                             real eps)
-{
-    std::vector<Vec3> positions;
-
-    // Define the effective cell size
-    real cellSize = diameter + eps;
-
-    // Particle volume
-    real partVol = (4.0 / 3.0) * M_PI * std::pow(0.5 * diameter, 3);
-
-    // Box volume
-    real domainVol = LX * LY * LZ;
-
-    std::cout << "Trying to generate volume fraction: " 
-              << volumeFraction * 100.0 << " % " << std::endl;
-
-    // Number of cells in each dimension
-    int Nx = static_cast<int>(LX / cellSize);
-    int Ny = static_cast<int>(LY / cellSize);
-    int Nz = static_cast<int>(LZ / cellSize);
-
-    // Total number of cells
-    int totalCells = Nx * Ny * Nz;
-
-    // Maximum possible volume fraction with this regular grid
-    real maxPhi = (totalCells * partVol) / domainVol;
-
-    if (volumeFraction > maxPhi) {
-        std::cout << "User defined volume fraction: " << volumeFraction 
-                  << " is too high for the current configuration (max: " 
-                  << maxPhi << ")" << std::endl;
-        std::exit(EXIT_FAILURE);
-    }
-
-    // Keep track of which cells are used
-    std::vector<bool> cellVisited(totalCells, false);
-
-    // Random number generators
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
-    // Generate random indices for each dimension
-    std::uniform_int_distribution<int> distX(0, Nx - 1);
-    std::uniform_int_distribution<int> distY(0, Ny - 1);
-    std::uniform_int_distribution<int> distZ(0, Nz - 1);
-
-    // Keep generating until we either fill all cells or reach the desired volume fraction
-    while (positions.size() < static_cast<size_t>(totalCells) &&
-           (partVol * positions.size() / domainVol) < volumeFraction)
-    {
-        // Random cell indices
-        int x = distX(gen);
-        int y = distY(gen);
-        int z = distZ(gen);
-
-        // Compute 1D index for visited-check
-        int cellIndex = x + y * Nx + z * Nx * Ny;
-
-        // Check if this cell hasn't been visited yet
-        if (!cellVisited[cellIndex]) {
-            cellVisited[cellIndex] = true;
-
-            // Center of the chosen cell in each dimension
-            real posX = (x + 0.5) * cellSize;
-            real posY = (y + 0.5) * cellSize;
-            real posZ = (z + 0.5) * cellSize;
-
-            positions.push_back(Vec3(posX, posY, posZ));
-        }
-    }
-
-    // Final volume fraction reached
-    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
-    std::cout << "Final volume fraction: " << solidFraction << " % " << std::endl;
-    std::cout << "Number of particle positions: " << positions.size() << std::endl;
-
-    return positions;
-}
-//=================================================================================================
-
-
-//=================================================================================================
-// GenerateRandomPositions
-//=================================================================================================
-// Function to generate random positions within a cubic domain
-std::vector<Vec3> generateRandomPositions(real L, real diameter, real volumeFraction, real eps) {
-
-    WorldID world = theWorld();
-
-    std::vector<Vec3> positions;
-
-    real cellSize = diameter + eps;
-
-    real partVol = 4./3. * M_PI * std::pow(0.5 * diameter, 3);
-    real domainVol = L * L * L;
-
-    std::cout << "Trying to generate volume fraction:  " << volumeFraction * 100.0 << std::endl;
-
-    // Calculate the number of cells along one side of the cubic grid
-    int gridSize = static_cast<int>(L / cellSize);
-
-    // Calculate the total number of cells in the grid
-    int totalCells = gridSize * gridSize * gridSize;
-
-    // Calculate the maximum volume fraction possible for the current configuration
-    real maxPhi = ((totalCells * partVol) / domainVol);
-
-    if (volumeFraction > maxPhi) {
-      std::cout << "User defined volume fraction: " << volumeFraction << " is too high for the current configuration" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-
-    // Initialize a vector to keep track of visited cells
-    std::vector<bool> cellVisited(totalCells, false);
-
-    // Initialize random number generator
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<real> dis(-cellSize / 2.0, cellSize / 2.0);
-
-    // Generate random positions until the grid is full or the volume fraction is reached
-    while (positions.size() < totalCells && (partVol * positions.size() / domainVol) < volumeFraction) {
-        // Generate random cell indices
-        int x = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
-        int y = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
-        int z = std::uniform_int_distribution<int>(0, gridSize - 1)(gen);
-
-        int cellIndex = x + y * gridSize + z * gridSize * gridSize;
-        
-        // Calculate the position of the cell center
-        real posX = (x + 0.5) * cellSize;
-        real posY = (y + 0.5) * cellSize;
-        real posZ = (z + 0.5) * cellSize;
-
-        Vec3 gpos(posX, posY, posZ);
-
-        // Check if the cell has not been visited
-        //if (!cellVisited[cellIndex] && world->ownsPoint( gpos ) ) {
-        if (!cellVisited[cellIndex]) {
-            // Mark the cell as visited
-            cellVisited[cellIndex] = true;
-
-            // Calculate the position of the cell center
-            double posX = (x + 0.5) * cellSize;
-            double posY = (y + 0.5) * cellSize;
-            double posZ = (z + 0.5) * cellSize;
-
-            // Create a Vec3 object for the position and add it to the positions vector
-            positions.push_back(Vec3(posX, posY, posZ));
-        }
-    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
-//    std::cout << MPISettings::rank() << ")local fraction:  " << (static_cast<real>(positions.size()) / totalCells) << " of " << volumeFraction << std::endl;
-//    std::cout << MPISettings::rank() << ")local:  " << positions.size() << " of " << totalCells << std::endl;
-    }
-
-    real solidFraction = (partVol * positions.size() / domainVol) * 100.0;
-    std::cout << MPISettings::rank() << ")Volume fraction:  " << solidFraction << std::endl;
-    std::cout << MPISettings::rank() << ")local:  " << positions.size() << std::endl;
-//    std::cout << MPISettings::rank() << ")vol:  " << partVol << std::endl;
-//    std::cout << MPISettings::rank() << ")dom:  " << domainVol << std::endl;
-    return positions;
-}
-//=================================================================================================
-
-
-//=================================================================================================
-// Setup for the Kroupa Case
-//=================================================================================================
+//*************************************************************************************************
+/*!\brief PE setup for the Kroupa shear-cell case (parallel PE mode).
+ *
+ * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
+ *
+ * Reached from Fortran through commf2c_kroupa_(). A gravity-free suspension of equal spheres
+ * in a cubic box that is periodic in x and y and bounded by two planes in z.
+ *
+ * Particles, depending on packingMethod_:
+ *   - Grid: randomly chosen sites of a regular lattice until volumeFraction_ is reached. The
+ *     choice is seeded with seed_, so a run is reproducible. The sphere radius is
+ *     benchRadius_ reduced by a small safety gap.
+ *   - External: positions from the xyz file, radius benchRadius_.
+ * With resume_ the bodies come from the checkpoint file instead.
+ *
+ * Read from example.json: fluid density and viscosity, particle density and radius, the
+ * process layout (processesX_/Y_/Z_), step size, packing method, volume fraction, seed, the
+ * checkpoint settings, the lubrication settings, and the VTK switch and spacing.
+ *
+ * Lubrication is controlled by the json file only (lubricationEnabled_ and the related
+ * parameters, applied through applyOptionalLubricationParams).
+ *
+ * Fixed in this file: the box size, zero gravity, the lattice safety gap and the solver
+ * tolerances.
+ *
+ * Sphere user IDs are numbered per process and are therefore not unique across processes.
+ * Use the system ID (getSystemID()) wherever a globally unique ID is needed.
+ *
+ * Every error path aborts the run with a message.
+ */
 void setupKroupa(MPI_Comm ex0) {
 
+  //===============================================================================================
+  // Case constants
+  //===============================================================================================
+  const real LX( 0.1 );                      // Box size, origin at (0,0,0)
+  const real LY( 0.1 );
+  const real LZ( 0.1 );
+  const real epsilon( 2e-4 );                // Lattice safety gap between sphere surfaces
+
+  //===============================================================================================
+  // Configuration, world and fluid properties
+  //===============================================================================================
   auto& config = SimulationConfig::getInstance();
   world = theWorld();
 
@@ -226,131 +67,119 @@ void setupKroupa(MPI_Comm ex0) {
   // Push runtime lubrication parameters (model switches, cutoff, hysteresis) into the engine
   applyOptionalLubricationParams(*theCollisionSystem(), config);
 
-  world->setGravity( 0.0, 0.0, 0.0 );
+  const real simViscosity( config.getFluidViscosity() );
+  const real simRho( config.getFluidDensity() );
+  const real pRho( config.getParticleDensity() );
 
-  // Re 1.5 configuration
-  real simViscosity( config.getFluidViscosity() );
-  real simRho( config.getFluidDensity() );
-  real pRho( config.getParticleDensity() );
+  world->setGravity( 0.0, 0.0, 0.0 );
   world->setViscosity( simViscosity );
   world->setLiquidDensity( simRho );
-
-  // Particle Bench Config 
-  //real slipLength( 1.041e-3 );
-  real slipLength( 0.01 );
-  // static inline double lubricationThreshold() { return 1.041e-3; }
   world->setLiquidSolid(true);
   world->setDamping( 1.0 );
 
-  // Lubrication switch
-  bool useLubrication(true);
+  TimeStep::stepsize( config.getStepsize() );
 
-  // Configuration of the MPI system
+  //===============================================================================================
+  // MPI system and validation (nothing is created before all checks have passed)
+  //===============================================================================================
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  const real LX( 0.1 );
-  const real LY( 0.1 );
-  const real LZ( 0.1 );
-  const real dx( LX/config.getProcessesX() );
-  const real dy( LY/config.getProcessesY() );
-  const real dz( LZ/config.getProcessesZ() );
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
 
-  int my_rank;
-  MPI_Comm_rank(ex0, &my_rank);
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupKroupa: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
 
-  // Checking the total number of MPI processes
-  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
-     std::exit(EXIT_FAILURE);
+  const int px = config.getProcessesX();
+  const int py = config.getProcessesY();
+  const int pz = config.getProcessesZ();
+
+  if( px*py*pz != mpisystem->getSize() ) {
+    abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
+               " != " + std::to_string(px*py*pz) + " (processesX_*Y_*Z_).");
+  }
+  if( px < 3 || py < 3 ) {
+    abortSetup("the box is periodic in x and y, which requires processesX_ >= 3 and "
+               "processesY_ >= 3 (distinct wrap neighbors), got " + std::to_string(px) +
+               " and " + std::to_string(py) + ".");
   }
 
-  /////////////////////////////////////////////////////
-  // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
+  const bool resume = config.getResume();
+  const bool gridPacking     = (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid);
+  const bool externalPacking = (config.getPackingMethod() == SimulationConfig::PackingMethod::External);
 
-  // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
+  if( !resume && !gridPacking && !externalPacking ) {
+    abortSetup("unsupported packingMethod_ (supported: Grid, External).");
+  }
+  if( resume && !config.getUseCheckpointer() ) {
+    abortSetup("resume_ is set but the checkpointer is not enabled (useCheckpointer_).");
+  }
+  if( config.getBenchRadius() <= real(0) ) {
+    abortSetup("benchRadius_ must be positive.");
+  }
+
+  // The grid packing keeps a safety gap between neighboring spheres
+  const real sphereRadius = gridPacking ? config.getBenchRadius() - epsilon
+                                        : config.getBenchRadius();
+  if( sphereRadius <= real(0) ) {
+    abortSetup("benchRadius_ is not larger than the lattice safety gap.");
+  }
+
+  //===============================================================================================
+  // xy-periodic 3D rectilinear domain decomposition
+  //===============================================================================================
+  int dims   [] = { px, py, pz };
   int periods[] = { true, true, false };
   int reorder   = false;
+  MPI_Comm cartcomm;
 
-  int rank;           // Rank of the neighboring process
-  int center[3];      // Definition of the coordinates array 'center' (the cartesian topology)
-  MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
-
-  /*
-   * Here the actual cartesian communicator is created from MPI_COMM_WORLD and the parameters
-   * of the cartesian grid setup
-   * \param MPI_COMM_WORLD The default communicator
-   * \param ndims Number of dimensions of the cartesian grid
-   * \param dims Array of size ndims, dims[i] = number of processes in dimension i 
-   * \param wrap_around Array of size ndims with wrap_around[i] = wrapping on/off for dimension i 
-   */
   MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
   if( cartcomm == MPI_COMM_NULL ) {
-     std::cout << "Error creating 3D communicator" << std::endl;
-     MPI_Finalize();
-     return;
+    abortSetup("failed to create the cartesian communicator.");
   }
+  mpisystem->setComm(cartcomm);
+
+  // Cartesian coordinates of this process within the process grid
+  int center[3];
+  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "> 3D communicator created" << std::endl;
     std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-  }
-  mpisystem->setComm(cartcomm);
-
-  // Here the cartesian coordinates of the different processes are created
-  /*  
-   * \param comm2D The cartesian communicator created by MPI_Cart_create
-   * \param my_rank The rank with regard to MPI_COMM_WORLD
-   * \param ndims Dimensions of the cartesian grid
-   * \param coord An array of a size equivalent to the dimension of the cartesian grid
-   *  coord[0] x coord[0] would correspond to the cartesian coordinates of the first process of a 2D cartesian grid
-   */
-  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
-
-  int my_cart_rank;
-  MPI_Cart_rank(cartcomm, center, &my_cart_rank);
-
-  pe_EXCLUSIVE_SECTION(0) {
     std::cout << "3D coordinates were created" << std::endl;
     std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
   }
 
-//===========================================================================================================
-  int px = config.getProcessesX();
-  int py = config.getProcessesY();
-  int pz = config.getProcessesZ();
+  const real dx( LX/px );
+  const real dy( LY/py );
+  const real dz( LZ/pz );
 
-  real bx = 0.0;
-  real by = 0.0;
-  real bz = 0.0;
+  decomposePeriodicXY3D(center, 0.0, 0.0, 0.0,
+                        dx, dy, dz,
+                        LX, LY, LZ,
+                        px, py, pz);
 
-  // Size of the domain
-  const real lx( LX );
-  const real ly( LY );
-  const real lz( LZ );
-  
-  decomposePeriodicXY3D(center, bx, by, bz, 
-                              dx, dy, dz, 
-                              lx, ly, lz, 
-                              px, py, pz);
+  // Checking the process setup
+  theMPISystem()->checkProcesses();
 
-//===========================================================================================================
-
-
-//#ifndef NDEBUG
-   // Checking the process setup
-   theMPISystem()->checkProcesses();
-//#endif
-
+  //===============================================================================================
+  // Materials, checkpointer and solver parameters
+  //===============================================================================================
+  // TODO: "ground" and "Bench" are not assigned to any body. They are kept on purpose: this
+  //       case uses checkpoints, and removing them shifts the material index of
+  //       "particleMaterial". Remove them once index-based use is ruled out.
   MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID myMaterial = createMaterial("Bench", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+  (void)gr;
+  (void)myMaterial;
 
-  // Setup of the VTK visualization
-  if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
-  }
-
-  // Checkpointer setup
   CheckpointerID checkpointer;
   if (config.getUseCheckpointer()) {
     checkpointer = activateCheckpointer(config.getCheckpointPath(),
@@ -358,198 +187,135 @@ void setupKroupa(MPI_Comm ex0) {
                                          0, config.getTimesteps());
   }
 
-  // Create a custom material for the benchmark
-  MaterialID myMaterial = createMaterial("Bench", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-  //======================================================================================== 
-  // The way we atm include lubrication by increasing contact threshold
-  // has problems: the particles get distributed to more domain bc the threshold AABB
-  // is much larger than the particle actually is.
-  // We can even run into the "registering distant domain" error when the AABB of the 
-  // particle is close in size to the size of a domain part!
-  //======================================================================================== 
-  setOptionalLubrication(theCollisionSystem(), useLubrication);
-  setOptionalSlipLength(theCollisionSystem(), slipLength);
   theCollisionSystem()->setMinEps(0.01);
   theCollisionSystem()->setMaxIterations(200);
 
-  //======================================================================================== 
-  // Here is how to create some random positions on a grid up to a certain
-  // volume fraction.
-  //======================================================================================== 
-  bool resume               = config.getResume();
-  real epsilon              = 2e-4;
-  real targetVolumeFraction = config.getVolumeFraction();
-  real radius2              = config.getBenchRadius();
-  
-  if (config.getPackingMethod() == SimulationConfig::PackingMethod::Grid)
-    radius2              = config.getBenchRadius() - epsilon;
+  //===============================================================================================
+  // Bodies: spheres from the packing (or the checkpoint) and the two z-walls
+  //===============================================================================================
+  unsigned long positionsTotal( 0 );
 
-  int idx = 0;
-  real h  = 0.0075;
-  real ds = 0.001041;
-
-  std::vector<Vec3> allPositions;
-  int numPositions;
-
-  if( config.getPackingMethod() == SimulationConfig::PackingMethod::External ) {
-    pe_EXCLUSIVE_SECTION(0) {
-      allPositions = read_xyz_file(config.getXyzFilePath());
-      numPositions = allPositions.size();
-    }
-  }
-  else if( config.getPackingMethod() == SimulationConfig::PackingMethod::Grid ) {
-    //======================================================================================== 
-    // The positions are created randomly on the root process and then bcasts 
-    // to the other processes.
-    //======================================================================================== 
-    pe_EXCLUSIVE_SECTION(0) {
-      allPositions = generateRandomPositions(0.1, 2.0 * radius2, targetVolumeFraction, epsilon); 
-      numPositions = allPositions.size();
-    }
+  if( resume ) {
+    checkpointer->read( config.getResumeCheckpointFile() );
   }
   else {
-    throw std::invalid_argument("Unknown packing method: " + config.getPackingMethod());
-  }
-
-  // Bcast the number of positions to other processes
-  MPI_Bcast(&numPositions, 1, MPI_INT, 0, cartcomm);
-
-  // Now all processes have the same value
-  //std::cout << "Rank " << MPISettings::rank() << ": Received value " << numPositions << std::endl;
-
-  //======================================================================================== 
-  // For easier communication we create a double array that holds the positions 
-  // in xyz, x1y1z1, and so on format 
-  //======================================================================================== 
-  std::vector<real> flatPositions(numPositions * 3);
-  pe_EXCLUSIVE_SECTION(0) {
-   for(std::size_t i(0); i < allPositions.size(); i++) {
-      flatPositions[3 * i]     = allPositions[i][0];
-      flatPositions[3 * i + 1] = allPositions[i][1];
-      flatPositions[3 * i + 2] = allPositions[i][2];
-   }
-  }
-  
-  //======================================================================================== 
-  // Bcast the flat array to the other processes 
-  //======================================================================================== 
-  // Broadcast the vector from the root process to all other processes
-  MPI_Bcast(flatPositions.data(), numPositions * 3, MPI_DOUBLE, 0, cartcomm);
-
-  pe_EXCLUSIVE_SECTION(0){
-  
-  }
-  pe_EXCLUSIVE_ELSE {
-
-   for(std::size_t i(0); i < numPositions * 3; i += 3) {
-      Vec3 p(flatPositions[i], flatPositions[i + 1], flatPositions[i + 2]);
-      allPositions.push_back(p);
-   }
-  
-  }
-  
-  //=========================================================================================
-
-  if(!resume) {
-    for (int i = 0; i < allPositions.size(); ++i) {
-      Vec3 &position = allPositions[i];
-      if( world->ownsPoint(position)) {
-         SphereID sphere = createSphere(idx, position, radius2, particleMaterial, true);
-         ++idx;      
+    // The positions are determined on the root process and broadcast, so all processes
+    // work on the same list.
+    std::vector<Vec3> allPositions;
+    if( myRank == 0 ) {
+      if( externalPacking ) {
+        allPositions = readVectorsFromFile(config.getXyzFilePath().string());
+        if( allPositions.empty() ) {
+          abortSetup("external packing read no positions from " +
+                     config.getXyzFilePath().string() + ".");
+        }
       }
-    } 
-  }
-  else {
+      else {
+        try {
+          allPositions = elTerminalRandomSeeds(0.0, LX, 0.0, LY, 0.0, LZ,
+                                               sphereRadius, epsilon,
+                                               config.getVolumeFraction(),
+                                               config.getSeed(),
+                                               "box", Vec3(0.0, 0.0, 0.0), real(0), "z");
+        } catch (const std::exception& ex) {
+          abortSetup(std::string("grid packing failed: ") + ex.what() + ".");
+        }
+      }
+    }
 
-    if (checkpointer) checkpointer->read( config.getResumeCheckpointFile() );
+    positionsTotal = static_cast<unsigned long>(allPositions.size());
+    MPI_Bcast(&positionsTotal, 1, MPI_UNSIGNED_LONG, 0, cartcomm);
+
+    std::vector<double> flatPositions(3 * static_cast<std::size_t>(positionsTotal));
+    if( myRank == 0 ) {
+      for(std::size_t i(0); i < allPositions.size(); i++) {
+        flatPositions[3 * i]     = allPositions[i][0];
+        flatPositions[3 * i + 1] = allPositions[i][1];
+        flatPositions[3 * i + 2] = allPositions[i][2];
+      }
+    }
+    if( !flatPositions.empty() ) {
+      MPI_Bcast(flatPositions.data(), static_cast<int>(flatPositions.size()), MPI_DOUBLE, 0, cartcomm);
+    }
+
+    // User IDs are numbered per process (see the function documentation)
+    int idx = 0;
+    for(std::size_t i(0); i < static_cast<std::size_t>(positionsTotal); i++) {
+      const Vec3 position(flatPositions[3 * i], flatPositions[3 * i + 1], flatPositions[3 * i + 2]);
+      if( world->ownsPoint(position) ) {
+        createSphere(idx, position, sphereRadius, particleMaterial, true);
+        ++idx;
+      }
+    }
   }
-  
-  BodyID botPlane; 
-  BodyID topPlane;
 
   pe_GLOBAL_SECTION
   {
      createPlane( 99999, 0.0, 0.0, 1.0, 0.0, particleMaterial, false ); // bottom border
-     topPlane = createPlane( 88888, 0.0, 0.0,-1.0, -lz, particleMaterial, false ); // top border
-  }
-
-  pe_EXCLUSIVE_SECTION( 0 ) {
-     std::cout << "topPlaneID: "  << topPlane->getSystemID() << std::endl;
+     createPlane( 88888, 0.0, 0.0,-1.0, -LZ, particleMaterial, false ); // top border
   }
 
   // Synchronization of the MPI processes
   world->synchronize();
 
-  //=========================================================================================  
-// Calculating the total number of particles and primitives
-  unsigned long particlesTotal ( 0 );
-  unsigned long primitivesTotal( 0 );
-  unsigned long bla = idx;
-
-  int numBodies (0);
-  int numTotal (0);
-  unsigned int j(0);
-  for (; j < theCollisionSystem()->getBodyStorage().size(); j++) {
-    World::SizeType widx = static_cast<World::SizeType>(j);
-    BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType) {
-      numBodies++;
-      numTotal++;
-    } else {
-      numTotal++;
-    }
+  // Setup of the VTK visualization
+  if( config.getVtk() ) {
+    vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
   }
 
-  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-  unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
-  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  //===============================================================================================
+  // Setup summary
+  //===============================================================================================
+  unsigned long spheresLocal( 0 );
+  unsigned long bodiesLocal( 0 );
+  for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++) {
+    BodyID body = world->getBody(j);
+    if (body->getType() == sphereType) {
+      ++spheresLocal;
+    }
+    ++bodiesLocal;
+  }
 
-  real domainVol = LX * LY * LZ;
-  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
+  unsigned long particlesTotal ( 0 );
+  unsigned long primitivesTotal( 0 );
+  MPI_Reduce( &spheresLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
-  std::string resOut = (resume) ? "resuming " : "not resuming ";
-  std::string useLub = (useLubrication) ? "enabled" : "disabled";
+  const real domainVol = LX * LY * LZ;
+  const real partVol = 4./3. * M_PI * std::pow(sphereRadius, 3);
+  const std::string packing = resume ? "checkpoint" : (externalPacking ? "External" : "Grid");
 
   pe_EXCLUSIVE_SECTION( 0 ) {
-    std::cout << "\n--" << "SIMULATION SETUP"
+    std::cout << "\n--" << "KROUPA SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
+      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
       << " Total number of particles               = " << particlesTotal << "\n"
-      << " particle volume                         = " << partVol << "\n"
+      << " Particle radius                         = " << sphereRadius << "\n"
+      << " Particle volume                         = " << partVol << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"
       << " Fluid Density                           = " << simRho << "\n"
-      << " Particle Density                        = " << simRho << "\n"
-      << " Gravity constant                        = " << world->getGravity() << "\n" 
-      << " Lubrication                             = " << useLub << "\n"
-      << " Lubrication h_c (slip length)           = " << slipLength << "\n"
+      << " Particle Density                        = " << pRho << "\n"
+      << " Gravity constant                        = " << world->getGravity() << "\n"
+      << " Lubrication (json)                      = " << (config.getLubricationEnabled() ? "enabled" : "disabled") << "\n"
       << " Lubrication threshold                   = " << lubricationThreshold << "\n"
       << " Contact threshold                       = " << contactThreshold << "\n"
       << " Domain volume                           = " << domainVol << "\n"
-      << " Resume                                  = " << resOut  << "\n"
-      << " Packing Method                          = " << ((config.getPackingMethod() == 1) ? "External" : "Grid") << "\n"
+      << " Resume                                  = " << (resume ? "resuming" : "not resuming") << "\n"
+      << " Packing Method                          = " << packing << "\n"
       << " Volume fraction[%]                      = " << (particlesTotal * partVol)/domainVol * 100.0 << "\n"
-      << " Target VF[%]                            = " << config.getVolumeFraction() * 100.0 << "\n"
-      << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
+      << " Target VF[%]                            = " << config.getVolumeFraction() * 100.0 << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+
+    if( !resume && particlesTotal != positionsTotal ) {
+      std::cerr << "WARNING in setupKroupa: " << positionsTotal << " positions were requested but "
+                << particlesTotal << " spheres were created; positions outside the box are dropped.\n";
+    }
   }
 
   MPI_Barrier(cartcomm);
-   
-
 }
+//*************************************************************************************************
 
-//=================================================================================================
-// Cleanup for the Kroupa Case
-//=================================================================================================
-extern "C" void clean_world_() {
-
-  World *w = world.get();
-  MPISystem *m = mpisystem.get();
-  delete w;
-  delete m;
-
-}
+#endif

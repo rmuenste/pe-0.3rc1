@@ -270,17 +270,11 @@ void loadSimulationConfig(const std::string &fileName) {
 
 #include <pe/interface/setup_part_bench.h>
 #include <pe/interface/setup_fluidization.h>
-#include <pe/interface/setup_nxnxn.h>
 #include <pe/interface/setup_cyl.h>
 #include <pe/interface/setup_dkt.h>
-#include <pe/interface/setup_bench.h>
-#include <pe/interface/setup_fsi_bench.h>
 #include <pe/interface/setup_kroupa.h>
 #include <pe/interface/setup_creep.h>
 #include <pe/interface/setup_archimedes.h>
-#include <pe/interface/setup_archimedes_z.h>
-#include <pe/interface/setup_archimedes_xy.h>
-#include <pe/interface/setup_archimedes_empty.h>
 #include <pe/interface/setup_span.h>
 #include <pe/interface/setup_drill.h>
 #include <pe/interface/setup_atc.h>

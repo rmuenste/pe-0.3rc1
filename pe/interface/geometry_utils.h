@@ -37,7 +37,7 @@ inline std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
     // Read the file line by line
     while (std::getline(file, line)) {
         std::stringstream ss(line);  // Create a string stream from the line
-        float x, y, z;
+        double x, y, z;
 
         // Parse the line for three float values
         if (ss >> x >> y >> z) {

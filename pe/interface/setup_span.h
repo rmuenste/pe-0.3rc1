@@ -1,308 +1,210 @@
+#ifndef _PE_SETUP_SPAN_H_
+#define _PE_SETUP_SPAN_H_
 
-#include <pe/interface/decompose.h>
-#include <pe/config/SimulationConfig.h>
-#include <random>
-#include <algorithm>
-#include <vector>
 #include <iostream>
-#include <sstream>
-#include <pe/core/Types.h>
+#include <string>
+
+#include <pe/config/SimulationConfig.h>
 #include <pe/core/detection/fine/DistanceMap.h>
-#include <pe/vtk/UtilityWriters.h>
+#include <pe/interface/decompose.h>
 
 using namespace pe::povray;
-//=================================================================================================
 
-
-//=================================================================================================
-// Setup for the Chip Case
-//=================================================================================================
+//*************************************************************************************************
+/*!\brief PE setup for the span (chip) case (parallel PE mode).
+ *
+ * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
+ *
+ * Reached from Fortran through commf2c_fsi_() (the entry point keeps its historical name).
+ * The case is a single free triangle-mesh chip ("chip1.obj") with DistanceMap acceleration
+ * in a fixed, non-periodic box without boundary planes.
+ *
+ * Read from example.json: gravity, fluid density and viscosity, step size, the process layout
+ * (processesX_/Y_/Z_), and the VTK switch and spacing.
+ *
+ * Fixed in this file: the domain size, the chip mesh file, its position and its density.
+ *
+ * Every error path aborts the run with a message.
+ */
 void setupSpan(MPI_Comm ex0) {
 
+  //===============================================================================================
+  // Case constants
+  //===============================================================================================
+  const real LX(  6.0 );                      // Domain size, origin at (0,0,0)
+  const real LY(  6.0 );
+  const real LZ( 15.0 );
+
+  const std::string chipFile( "chip1.obj" );
+  const real chipDensity( 1000.0 );           // No config parameter available
+  const Vec3 chipPos( 3.0, 3.0, 7.5 );        // No config parameter available
+
+  //===============================================================================================
+  // Configuration, world and fluid properties
+  //===============================================================================================
   auto& config = SimulationConfig::getInstance();
   world = theWorld();
 
   loadSimulationConfig("example.json");
+
+  const real simRho( config.getFluidDensity() );
+  const real simViscosity( config.getFluidViscosity() );
+
   world->setGravity( config.getGravity() );
-
-  real simRho( config.getFluidDensity() );
-  world->setLiquidDensity( simRho );
-
-  // Particle Bench Config 
   world->setLiquidSolid(true);
+  world->setLiquidDensity( simRho );
+  world->setViscosity( simViscosity );
   world->setDamping( 1.0 );
 
-  // Lubrication switch
-  bool useLubrication(false);
+  TimeStep::stepsize( config.getStepsize() );
 
-  // Configuration of the MPI system
+  //===============================================================================================
+  // MPI system and validation
+  //===============================================================================================
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  unsigned int id( 0 );              // User-specific ID counter
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
 
-  int my_rank;
-  MPI_Comm_rank(ex0, &my_rank);
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupSpan: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
 
-  // Checking the total number of MPI processes
-  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
-     std::exit(EXIT_FAILURE);
+  const int px = config.getProcessesX();
+  const int py = config.getProcessesY();
+  const int pz = config.getProcessesZ();
+
+  if( px*py*pz != mpisystem->getSize() ) {
+    abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
+               " != " + std::to_string(px*py*pz) + " (processesX_*Y_*Z_).");
   }
 
-  /////////////////////////////////////////////////////
-  // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
-
-  // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
+  //===============================================================================================
+  // 3D rectilinear, non-periodic domain decomposition
+  //===============================================================================================
+  int dims   [] = { px, py, pz };
   int periods[] = { false, false, false };
   int reorder   = false;
+  MPI_Comm cartcomm;
 
-  int rank;           // Rank of the neighboring process
-  int center[3];      // Definition of the coordinates array 'center' (the cartesian topology)
-  MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
-
-  /*
-   * Here the actual cartesian communicator is created from MPI_COMM_WORLD and the parameters
-   * of the cartesian grid setup
-   * \param MPI_COMM_WORLD The default communicator
-   * \param ndims Number of dimensions of the cartesian grid
-   * \param dims Array of size ndims, dims[i] = number of processes in dimension i 
-   * \param wrap_around Array of size ndims with wrap_around[i] = wrapping on/off for dimension i 
-   */
   MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
   if( cartcomm == MPI_COMM_NULL ) {
-     std::cout << "Error creating 3D communicator" << std::endl;
-     MPI_Finalize();
-     return;
+    abortSetup("failed to create the cartesian communicator.");
   }
-
   mpisystem->setComm(cartcomm);
+
+  // Cartesian coordinates of this process within the process grid
+  int center[3];
+  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "> 3D communicator created" << std::endl;
     std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-  }
-
-  // Here the cartesian coordinates of the different processes are created
-  /*  
-   * \param comm2D The cartesian communicator created by MPI_Cart_create
-   * \param my_rank The rank with regard to MPI_COMM_WORLD
-   * \param ndims Dimensions of the cartesian grid
-   * \param coord An array of a size equivalent to the dimension of the cartesian grid
-   *  coord[0] x coord[0] would correspond to the cartesian coordinates of the first process of a 2D cartesian grid
-   */
-  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
-
-  int my_cart_rank;
-  MPI_Cart_rank(cartcomm, center, &my_cart_rank);
-
-  pe_EXCLUSIVE_SECTION(0) {
     std::cout << "3D coordinates were created" << std::endl;
     std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
   }
 
-//===================================================================================================
+  const real dx( LX / px );
+  const real dy( LY / py );
+  const real dz( LZ / pz );
 
-  int px = config.getProcessesX();
-  int py = config.getProcessesY();
-  int pz = config.getProcessesZ();
+  decomposeDomain(center, 0.0, 0.0, 0.0, dx, dy, dz, px, py, pz);
 
-  real bx = 0.0;
-  real by = 0.0;
-  real bz = 0.0;
+  // Checking the process setup
+  theMPISystem()->checkProcesses();
 
-  const real dx( 6.0 / px );
-  const real dy( 6.0 / py );
-  const real dz( 15. / pz );
-
-  decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
-
-//===================================================================================================
-
-//#ifndef NDEBUG
-   // Checking the process setup
-   theMPISystem()->checkProcesses();
-//#endif
-
-  MaterialID gr = createMaterial("ground", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-
-  // Setup of the VTK visualization
-  if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
-  }
-
-  //======================================================================================== 
-  // Here is how to create some random positions on a grid up to a certain
-  // volume fraction.
-  //======================================================================================== 
-  bool resume               = false;
-  real epsilon              = 2e-4;
-  real targetVolumeFraction = 0.35;
-  real radius2              = 0.01 - epsilon;
-
-  int idx = 0;
-  real h = 0.00125;
-
-  std::string fileName = std::string("chip1.obj");
-  real chipDensity = 1000.00;  // Keep hardcoded - no config function available
-
-  //=========================================================================================
-  // Creation and positioning of the global tool
-  //=========================================================================================
+  //===============================================================================================
+  // Materials
+  //===============================================================================================
+  // TODO: "ground" and "tool" are not assigned to any body. They are kept on purpose: removing
+  //       them shifts the material index of "chip", which matters wherever materials are
+  //       identified by their index (e.g. checkpoints). Remove them once that is confirmed safe.
+  MaterialID gr      = createMaterial("ground", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   MaterialID toolMat = createMaterial("tool", chipDensity, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID chipMat = createMaterial("chip", chipDensity, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+  (void)gr;
+  (void)toolMat;
 
-//  pe_GLOBAL_SECTION
-//  {
-//    Vec3 toolPos = Vec3(0.0, 0.0, 0.0);
-//    TriangleMeshID tool = createTriangleMesh(++id, toolPos, "tool.obj", toolMat, false, true);
-//    tool->setFixed(true);
-//    std::cout << "Global fixed tool created at position: (" << toolPos[0] << ", " << toolPos[1] << ", " << toolPos[2] << ")" << std::endl;
-//
-//    // Enable DistanceMap acceleration for the tool
-//    tool->enableDistanceMapAcceleration(0.05, 64, 3);  // spacing, resolution, tolerance
-//    if (!tool->hasDistanceMap()) {
-//      std::cerr << "WARNING: DistanceMap acceleration failed to initialize for tool" << std::endl;
-//    } else {
-//      std::cout << "DistanceMap acceleration enabled successfully for tool!" << std::endl;
-//      const DistanceMap* dm = tool->getDistanceMap();
-//      if (dm) {
-//        std::cout << "Tool DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
-//        std::cout << "Tool DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
-//        std::cout << "Tool DistanceMap spacing: " << dm->getSpacing() << std::endl;
-//        
-//        // Export tool DistanceMap to VTI file for visualization
-//        std::cout << "\n=== EXPORTING TOOL DISTANCEMAP TO VTI ===" << std::endl;
-//        std::string toolVtiFile = "tool.vti";
-//        std::cout << "Exporting tool DistanceMap to " << toolVtiFile << "..." << std::endl;
-//        
-//        try {
-//          pe::vtk::DistanceMapWriter::writeVTI(toolVtiFile, *dm);
-//          std::cout << "Tool DistanceMap export completed successfully!" << std::endl;
-//          std::cout << "Note: DistanceMap is in LOCAL tool coordinates" << std::endl;
-//        } catch (const std::exception& e) {
-//          std::cerr << "ERROR: Failed to export tool DistanceMap: " << e.what() << std::endl;
-//        }
-//      }
-//    }
-//  }
+  //===============================================================================================
+  // Body creation: the chip, created on the process that owns its position
+  //===============================================================================================
+  if( world->ownsPoint(chipPos) ) {
+    TriangleMeshID chip = createTriangleMesh(1, chipPos, chipFile, chipMat, false, true);
+    std::cout << "Chip is owned by domain: " << mpisystem->getRank() << " initially." << std::endl;
+    std::cout << "Chip x:[" << chip->getAABB()[0] << "," << chip->getAABB()[3] << "]" << std::endl;
 
-  //=========================================================================================
-  // Creation and positioning of the chip
-  //=========================================================================================
-  // Create a custom material for the chip
-  // Creates the material "myMaterial" with the following material properties:
-  //  - material density               : 2.54
-  //  - coefficient of restitution     : 0.8
-  //  - coefficient of static friction : 0.1
-  //  - coefficient of dynamic friction: 0.05
-  //  - Poisson's ratio                : 0.2
-  //  - Young's modulus                : 80
-  //  - Contact stiffness              : 100
-  //  - dampingN                       : 10
-  //  - dampingT                       : 11
-  MaterialID chipMat = createMaterial("chip"    , chipDensity , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
-
-  Vec3 chipPos = Vec3(3.0, 3.0, 7.5);  // Keep hardcoded - no config function available
-  TriangleMeshID chip;
-
-  if(!resume) {
-    if(world->ownsPoint(chipPos)) {
-      chip = createTriangleMesh(++id, chipPos, fileName, chipMat, false, true);
-      std::cout << "Chip is owned by domain: " << mpisystem->getRank() << " initially." << std::endl;
-      std::cout << "Chip x:[" << chip->getAABB()[3] << "," << chip->getAABB()[0] << "]" << std::endl;
-      
-      // Enable DistanceMap acceleration for the chip
-      chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
-      if (!chip->hasDistanceMap()) {
-        std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
-      } else {
-        std::cout << "DistanceMap acceleration enabled successfully for chip!" << std::endl;
-        const DistanceMap* dm = chip->getDistanceMap();
-        if (dm) {
-          std::cout << "DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
-          std::cout << "DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
-          std::cout << "DistanceMap spacing: " << dm->getSpacing() << std::endl;
-        }
-        
-        chip->calcBoundingBox();
+    // NOTE: the DistanceMap is built here, on the process that creates the chip, and nowhere
+    //       else. How the map behaves when the chip migrates to another process (or is seen
+    //       as a shadow copy) is a known open point that is handled separately. Keep this
+    //       block as it is until that is resolved.
+    chip->enableDistanceMapAcceleration(64, 3);  // resolution, tolerance
+    if (!chip->hasDistanceMap()) {
+      std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
+    } else {
+      std::cout << "DistanceMap acceleration enabled successfully for chip!" << std::endl;
+      const DistanceMap* dm = chip->getDistanceMap();
+      if (dm) {
+        std::cout << "DistanceMap grid: " << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << std::endl;
+        std::cout << "DistanceMap origin: (" << dm->getOrigin()[0] << ", " << dm->getOrigin()[1] << ", " << dm->getOrigin()[2] << ")" << std::endl;
+        std::cout << "DistanceMap spacing: " << dm->getSpacing() << std::endl;
       }
-    }
-  }
-  else {
-    if (config.getUseCheckpointer()) {
-      activateCheckpointer(config.getCheckpointPath(),
-                           config.getPointerspacing(),
-                           0, config.getTimesteps())->read( config.getResumeCheckpointFile() );
-    }
-  }
 
-//  //=========================================================================================  
-//  // No bounding planes for now
-//  //=========================================================================================  
-//  pe_GLOBAL_SECTION
-//  {
-//     // Setup of the ground plane
-//     PlaneID plane = createPlane( id++, 0.0, 0.0, 1.0, -0.0, gr );
-//     // +y
-//     createPlane( id++, 0.0, 1.0, 0.0,  0.0, gr );
-//     // -y
-//     createPlane( id++, 0.0,-1.0, 0.0,  -0.02, gr );
-//  }
-//  //=========================================================================================  
+      chip->calcBoundingBox();
+    }
+  }
 
   // Synchronization of the MPI processes
   world->synchronize();
 
-  //=========================================================================================  
-  // Calculating the total number of particles and primitives
-  unsigned long particlesTotal ( 0 );
-  unsigned long primitivesTotal( 0 );
-  unsigned long bla = idx;
-
-  int numBodies (0);
-  int numTotal (0);
-  unsigned int j(0);
-  for (; j < theCollisionSystem()->getBodyStorage().size(); j++) {
-    World::SizeType widx = static_cast<World::SizeType>(j);
-    BodyID body = world->getBody(static_cast<unsigned int>(widx));
-    if(body->getType() == triangleMeshType) {
-      numBodies++;
-      numTotal++;
-    } else {
-      numTotal++;
-    }
+  // Setup of the VTK visualization
+  if( config.getVtk() ) {
+    vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
   }
 
-  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-  unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
-  MPI_Reduce( &bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  //===============================================================================================
+  // Setup summary
+  //===============================================================================================
+  unsigned long meshesLocal( 0 );
+  unsigned long bodiesLocal( 0 );
+  for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++) {
+    BodyID body = world->getBody(j);
+    if (body->getType() == triangleMeshType) {
+      ++meshesLocal;
+    }
+    ++bodiesLocal;
+  }
 
-  real partVol = 4./3. * M_PI * std::pow(radius2, 3);
-
-  std::string resOut = (resume) ? "resuming " : "not resuming ";
-  std::string useLub = (useLubrication) ? "enabled" : "disabled";
+  unsigned long meshesTotal( 0 );
+  unsigned long bodiesTotal( 0 );
+  MPI_Reduce( &meshesLocal, &meshesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &bodiesLocal, &bodiesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
-    std::cout << "\n--" << "SIMULATION SETUP"
+    std::cout << "\n--" << "SPAN (CHIP) SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n" 
-      << " Total number of particles               = " << 1 << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n"
-      << " Fluid Density                           = " << simRho << " [g/cm**3]"  << "\n"
-      << " Chip  Density                           = " << chipDensity << " [g/cm**3]"  << "\n"
-      << " Gravity constant                        = " << world->getGravity() << "\n" 
+      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+      << " Total number of triangle meshes         = " << meshesTotal << "\n"
+      << " Total number of objects                 = " << bodiesTotal << "\n"
+      << " Fluid Viscosity                         = " << simViscosity << "\n"
+      << " Fluid Density                           = " << simRho << "\n"
+      << " Chip Density                            = " << chipDensity << "\n"
+      << " Chip mesh file                          = " << chipFile << "\n"
+      << " Chip position                           = " << chipPos << "\n"
+      << " Gravity constant                        = " << world->getGravity() << "\n"
       << " Contact threshold                       = " << contactThreshold << "\n"
-      << " Domain volume                           = " << 0.1 * 0.1 * 0.1 << " [cm**3]" << "\n"
-      << " Chip volume                             = " << 0.000103797 << " [cm**3]" << "\n"
-      << " Resume                                  = " << resOut  << "\n"
-      << " Total objects                           = " << primitivesTotal << "\n" << std::endl;
+      << " Domain size                             = " << Vec3(LX, LY, LZ) << "\n"
+      << " Domain volume                           = " << LX * LY * LZ << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
   }
 
   MPI_Barrier(cartcomm);
-   
-
 }
+//*************************************************************************************************
+
+#endif

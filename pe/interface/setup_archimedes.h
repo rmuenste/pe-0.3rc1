@@ -1,30 +1,43 @@
+#ifndef _PE_SETUP_ARCHIMEDES_H_
+#define _PE_SETUP_ARCHIMEDES_H_
 
-#include <pe/interface/decompose.h>
-#include <pe/interface/geometry_utils.h>
-#include <pe/config/SimulationConfig.h>
-#include <pe/interface/setup_optional_collision_params.h>
-#include <random>
-#include <algorithm>
-#include <vector>
+#include <cmath>
+#include <fstream>
 #include <iostream>
 #include <sstream>
-#include <pe/core/Types.h>
-#include <pe/math/Quaternion.h>
+#include <string>
+#include <vector>
+
+#include <pe/config/SimulationConfig.h>
+#include <pe/interface/decompose.h>
+#include <pe/interface/geometry_utils.h>
+#include <pe/interface/setup_optional_collision_params.h>
 
 using namespace pe::povray;
 
-// Function to load planes from file and create HalfSpace instances
-void loadPlanesAndCreateHalfSpaces(const std::string &filename, std::vector<HalfSpace> &halfSpaces)
+//*************************************************************************************************
+/*!\brief Loads dividing planes from a text file and converts them to half spaces.
+ *
+ * \param filename The plane file; one plane per line as "px py pz nx ny nz" (a point on the
+ *                 plane and its normal).
+ * \param axis The coordinate axis (0 = x, 1 = y) used to orient the normals consistently.
+ * \param positive If true the normals are flipped to point in the +axis direction, otherwise
+ *                 in the -axis direction.
+ * \param halfSpaces The half spaces are appended to this list in file order.
+ * \return false if the file could not be opened, true otherwise.
+ *
+ * Lines that do not contain six numbers are skipped with a message.
+ */
+inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool positive,
+                                     std::vector<HalfSpace> &halfSpaces)
 {
    std::ifstream file(filename);
-   std::string line;
-
    if (!file.is_open())
    {
-      std::cerr << "Error: Could not open file " << filename << "\n";
-      return;
+      return false;
    }
-   int counter = 0;
+
+   std::string line;
    while (std::getline(file, line))
    {
       std::istringstream iss(line);
@@ -33,291 +46,221 @@ void loadPlanesAndCreateHalfSpaces(const std::string &filename, std::vector<Half
       // Read the plane's point and normal from the line
       if (!(iss >> px >> py >> pz >> nx >> ny >> nz))
       {
-         std::cerr << "Error: Malformed line: " << line << "\n";
+         std::cerr << "Error: Malformed line in " << filename << ": " << line << "\n";
          continue;
       }
 
-      // Create a Vec3 for the normal vector
+      // Orient the normal consistently along the chosen axis
       Vec3 normal(nx, ny, nz);
-      if (normal[0] > 0.0)
+      if ((positive && normal[axis] < 0.0) || (!positive && normal[axis] > 0.0))
       {
          normal = -normal;
       }
-      Vec3 point(px, py, pz);
+      const Vec3 point(px, py, pz);
 
-      // std::cout << "Plane " << counter << " If " << trans(-point) * normal << " < 0 then the origin is outside." << std::endl;
+      // trans(-point) * normal:
+      //  - < 0: The global origin is outside the half space
+      //  - > 0: The global origin is inside the half space
+      //  - = 0: The global origin is on the surface of the half space
+      const bool originOutside = (trans(-point) * normal < 0.0);
 
-      bool originOutside = (trans(-point) * normal < 0.0);
-      //*  - > 0: The global origin is outside the half space\n
-      //*  - < 0: The global origin is inside the half space\n
-      //*  - = 0: The global origin is on the surface of the half space
-
-      // Calculate the distance from the origin using the point-normal formula
+      // Distance of the plane from the origin (point-normal formula), signed by the side
+      // of the origin
       double dO = std::abs(nx * px + ny * py + nz * pz) / normal.length();
       if (!originOutside)
       {
          dO = -dO;
       }
 
-      // Create the HalfSpace instance
       halfSpaces.emplace_back(normal, dO);
-      counter++;
    }
 
-   file.close();
+   return true;
 }
 //*************************************************************************************************
 
 
 //*************************************************************************************************
-// Function to load planes from file and create HalfSpace instances
-void loadPlanesYAndCreateHalfSpaces(const std::string &filename, std::vector<HalfSpace> &halfSpaces)
-{
-   std::ifstream file(filename);
-   std::string line;
-
-   if (!file.is_open())
-   {
-      std::cerr << "Error: Could not open file " << filename << "\n";
-      return;
-   }
-   int counter = 0;
-   while (std::getline(file, line))
-   {
-      std::istringstream iss(line);
-      double px, py, pz, nx, ny, nz;
-
-      // Read the plane's point and normal from the line
-      if (!(iss >> px >> py >> pz >> nx >> ny >> nz))
-      {
-         std::cerr << "Error: Malformed line: " << line << "\n";
-         continue;
-      }
-
-      // Create a Vec3 for the normal vector
-      Vec3 normal(nx, ny, nz);
-      if (normal[1] < 0.0)
-      {
-         normal = -normal;
-      }
-      Vec3 point(px, py, pz);
-
-      bool originOutside = (trans(-point) * normal < 0.0);
-      //*  - > 0: The global origin is outside the half space\n
-      //*  - < 0: The global origin is inside the half space\n
-      //*  - = 0: The global origin is on the surface of the half space
-
-      // Calculate the distance from the origin using the point-normal formula
-      double dO = std::abs(nx * px + ny * py + nz * pz) / normal.length();
-      if (!originOutside)
-      {
-         dO = -dO;
-      }
-
-      // Create the HalfSpace instance
-      halfSpaces.emplace_back(normal, dO);
-      counter++;
-   }
-
-   file.close();
-}
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-// Function to load planes from file and create HalfSpace instances
-void makePlanesAndCreateHalfSpaces(std::vector<HalfSpace> &halfSpaces)
-{
-
-   std::vector<Vec3> planePoints;
-   std::vector<Vec3> planeNormals;
-
-   planePoints.push_back(Vec3(2.1019248962402344, -1.9163930416107178, 0.02711978182196617));
-   planePoints.push_back(Vec3(-1.047705888748169, -2.5512213706970215, 0.24490927159786224));
-   planePoints.push_back(Vec3(-0.035260219126939774, -2.7580153942108154, 0.1991162747144699));
-   planePoints.push_back(Vec3(1.0637520551681519, -2.544778823852539, 0.14949828386306763));
-
-   planeNormals.push_back(Vec3(-0.7013657689094543, -0.7127944231033325, -0.0031759117264300585));
-   planeNormals.push_back(Vec3(-0.9239068627357483, 0.3802013397216797, 0.042931802570819855));
-   planeNormals.push_back(Vec3(-0.9990096688270569, 0.012757861986756325, 0.04262349754571915));
-   planeNormals.push_back(Vec3(-0.9221128225326538, -0.38450124859809875, 0.043206337839365005));
-   planeNormals.push_back(Vec3(-0.7013657689094543, -0.7127944231033325, -0.0031759117264300585));
-
-   int counter = 0;
-   for (auto idx(0); idx < planePoints.size(); ++idx)
-   {
-
-      // Create a Vec3 for the normal vector
-      Vec3 normal = planeNormals[idx];
-      if (normal[0] > 0.0)
-      {
-         normal = -normal;
-      }
-      Vec3 point = planePoints[idx];
-
-      bool originOutside = (trans(-point) * normal < 0.0);
-      //*  - > 0: The global origin is outside the half space\n
-      //*  - < 0: The global origin is inside the half space\n
-      //*  - = 0: The global origin is on the surface of the half space
-
-      // Calculate the distance from the origin using the point-normal formula
-      double dO = std::abs(trans(point) * normal) / normal.length();
-      if (!originOutside)
-      {
-         dO = -dO;
-      }
-
-      // Create the HalfSpace instance
-      halfSpaces.emplace_back(normal, dO);
-      counter++;
-   }
-}
-//*************************************************************************************************
-
-
-
-// Radius of each sphere
-real sphereRad = 0.0182;   // d_p = 364 microns
-//real sphereRad = 0.01;   // Radius of each sphere
-//real sphereRad = 0.015;  // Radius of each sphere
-
-// Setup for the Archimedes case
-//===================================================================================
+/*!\brief PE setup for the Archimedes screw case (parallel PE mode).
+ *
+ * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
+ *
+ * Reached from Fortran through commf2c_archimedes_(). Spheres are seeded in rings along the
+ * centerline of the screw channel; the screw itself is a fixed global triangle mesh.
+ *
+ * Decomposition: the domain is not a box. It is cut into slabs by the planes of
+ * "planes_div30x.txt", following the channel in x-direction. The supported and standard
+ * layout is a decomposition in x only:
+ *
+ *    processesX_ = number of slabs,  processesY_ = 1,  processesZ_ = 1
+ *
+ * processesZ_ = 2 additionally splits every slab once across the channel, using the planes
+ * of "planes_div30y.txt" (note: this second direction is driven by processesZ_, not by
+ * processesY_). Both plane files need at least processesX_ planes, in slab order.
+ *
+ * Input files, read from the working directory:
+ *   - example.json        configuration
+ *   - planes_div30x.txt   slab planes
+ *   - planes_div30y.txt   cross-channel planes
+ *   - vertices.txt        centerline of the channel for seeding
+ *   - archimedes.obj      screw mesh
+ *
+ * Read from example.json: gravity, fluid density and viscosity, particle density and radius
+ * (benchRadius_), the process layout, step size, packing method (None creates no spheres),
+ * the checkpoint and resume settings, the lubrication settings, and the VTK switch and
+ * spacing.
+ *
+ * Sphere user IDs are numbered per process and are therefore not unique across processes.
+ * Use the system ID (getSystemID()) wherever a globally unique ID is needed.
+ *
+ * Every error path aborts the run with a message.
+ */
 void setupArchimedes(MPI_Comm ex0)
 {
+   //===================================================================================
+   // Case constants
+   //===================================================================================
+   const std::string planesXFile( "planes_div30x.txt" );
+   const std::string planesYFile( "planes_div30y.txt" );
+   const std::string centerlineFile( "vertices.txt" );
+   const std::string meshFile( "archimedes.obj" );
+
+   const Vec3 archimedesPos(0.0274099, -2.56113, 0.116155);
+   const int  archimedesId( 1000000 );   // Fixed user ID of the global screw mesh
+
+   // TODO: origin of this value is undocumented; it is only used for the volume fraction
+   //       in the setup summary.
+   const real channelVolume( 0.604 );
+
+   //===================================================================================
+   // Configuration, world and fluid properties
+   //===================================================================================
    auto& config = SimulationConfig::getInstance();
    world = theWorld();
 
    loadSimulationConfig("example.json");
 
-   Vec3 userGravity = config.getGravity();
+   const real simViscosity( config.getFluidViscosity() );
+   const real simRho( config.getFluidDensity() );
+   const real pRho( config.getParticleDensity() );
+   const real sphereRad( config.getBenchRadius() );
 
-//   Vec3 myGravity(0.0, -980.665, 0.0);
-//   myGravity *= 0.5;
-//
-//   RotationMatrix<real> rotation( Vec3( 0.0, 0.0, 1.0 ), -M_PI/real(4.) );
-//   Vec3 newGravity = rotation * myGravity; 
-//
-//   //myGravity *= 0.25;
-//   //myGravity *= 0.15;
-//   world->setGravity(newGravity);
-   world->setGravity(userGravity);
-
-   // Re 1.5 configuration
-   real simViscosity( config.getFluidViscosity() );
-   real simRho( config.getFluidDensity() );
-   real pRho( config.getParticleDensity() );
+   world->setGravity( config.getGravity() );
    world->setViscosity( simViscosity );
    world->setLiquidDensity( simRho );
-
-   // Particle Bench Config
-   real slipLength(0.01);
    world->setLiquidSolid(true);
    world->setDamping(1.0);
 
-   // Lubrication switch
-   bool useLubrication(false);
+   TimeStep::stepsize( config.getStepsize() );
 
-   // Configuration of the MPI system
+   //===================================================================================
+   // MPI system and validation (nothing is created before all checks have passed)
+   //===================================================================================
    mpisystem = theMPISystem();
    mpisystem->setComm(ex0);
 
-   const real L(45.0);
-   const real LY(25.0);
-   const real LZ(0.5);
-   const real dx(L / config.getProcessesX());
-   const real dy(LY / config.getProcessesY());
-   const real dz(LZ / config.getProcessesZ());
+   int myRank = 0;
+   MPI_Comm_rank(ex0, &myRank);
 
+   // Prints the message once and aborts the whole run
+   const auto abortSetup = [&](const std::string& message) {
+      if (myRank == 0) {
+         std::cerr << "\nERROR in setupArchimedes: " << message << "\n" << std::endl;
+      }
+      MPI_Abort(ex0, 1);
+   };
+
+   const int px = config.getProcessesX();
+   const int py = config.getProcessesY();
+   const int pz = config.getProcessesZ();
+
+   if (py != 1)
+   {
+      abortSetup("processesY_ must be 1; the Archimedes decomposition runs in x-direction "
+                 "(processesX_), with an optional cross-channel split through processesZ_.");
+   }
+   if (pz != 1 && pz != 2)
+   {
+      abortSetup("processesZ_ must be 1 (standard, x-only decomposition) or 2 (one "
+                 "cross-channel split per slab), got " + std::to_string(pz) + ".");
+   }
+   if (px * pz != mpisystem->getSize())
+   {
+      abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
+                 " != " + std::to_string(px * pz) + " (processesX_*processesZ_).");
+   }
+   if (sphereRad <= real(0))
+   {
+      abortSetup("benchRadius_ must be positive.");
+   }
+
+   const bool resume      = config.getResume();
+   const bool seedSpheres = !resume &&
+                            (config.getPackingMethod() != SimulationConfig::PackingMethod::None);
+   if (resume && !config.getUseCheckpointer())
+   {
+      abortSetup("resume_ is set but the checkpointer is not enabled (useCheckpointer_).");
+   }
+
+   // Slab planes are oriented in -x, cross-channel planes in +y
    std::vector<HalfSpace> halfSpaces;
    std::vector<HalfSpace> halfSpacesY;
-
-   loadPlanesAndCreateHalfSpaces("planes_div30x.txt", halfSpaces);
-   loadPlanesYAndCreateHalfSpaces("planes_div30y.txt", halfSpacesY);
-
-   int my_rank;
-   MPI_Comm_rank(ex0, &my_rank);
-
-   // Checking the total number of MPI processes
-   if (config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() != mpisystem->getSize())
+   if (!loadArchimedesHalfSpaces(planesXFile, 0, false, halfSpaces))
    {
-      std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX() * config.getProcessesY() * config.getProcessesZ() << "\n\n"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
+      abortSetup("could not open the plane file " + planesXFile + ".");
+   }
+   if (!loadArchimedesHalfSpaces(planesYFile, 1, true, halfSpacesY))
+   {
+      abortSetup("could not open the plane file " + planesYFile + ".");
+   }
+   if (halfSpaces.size() < static_cast<std::size_t>(px) ||
+       halfSpacesY.size() < static_cast<std::size_t>(px))
+   {
+      abortSetup("the plane files need at least processesX_ = " + std::to_string(px) +
+                 " planes each, found " + std::to_string(halfSpaces.size()) + " in " +
+                 planesXFile + " and " + std::to_string(halfSpacesY.size()) + " in " +
+                 planesYFile + ".");
    }
 
-   /////////////////////////////////////////////////////
-   // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
-
-   // Computing the Cartesian coordinates of the neighboring processes
-   int dims[] = {config.getProcessesX(), config.getProcessesZ()};
+   //===================================================================================
+   // Plane-based 2D domain decomposition (slabs in x, optional cross-channel split)
+   //===================================================================================
+   int dims[] = {px, pz};
    int periods[] = {false, false};
    int reorder = false;
+   MPI_Comm cartcomm;
 
-   int rank;      // Rank of the neighboring process
-   int center[3]; // Definition of the coordinates array 'center' (the cartesian topology)
-
-   //===================================================================================
-   MPI_Comm cartcomm; // The new MPI communicator with Cartesian topology
-
-   /*
-    * Here the actual cartesian communicator is created from MPI_COMM_WORLD and the parameters
-    * of the cartesian grid setup
-    * \param MPI_COMM_WORLD The default communicator
-    * \param ndims Number of dimensions of the cartesian grid
-    * \param dims Array of size ndims, dims[i] = number of processes in dimension i
-    * \param wrap_around Array of size ndims with wrap_around[i] = wrapping on/off for dimension i
-    */
-   MPI_Cart_create(ex0, 2, dims, periods, false, &cartcomm);
+   MPI_Cart_create(ex0, 2, dims, periods, reorder, &cartcomm);
    if (cartcomm == MPI_COMM_NULL)
    {
-      std::cout << "Error creating 3D communicator" << std::endl;
-      MPI_Finalize();
-      return;
+      abortSetup("failed to create the cartesian communicator.");
    }
-
    mpisystem->setComm(cartcomm);
 
-   // Here the cartesian coordinates of the different processes are created
-   /*
-    * \param comm2D The cartesian communicator created by MPI_Cart_create
-    * \param my_rank The rank with regard to MPI_COMM_WORLD
-    * \param ndims Dimensions of the cartesian grid
-    * \param coord An array of a size equivalent to the dimension of the cartesian grid
-    *  coord[0] x coord[0] would correspond to the cartesian coordinates of the first process of a 2D cartesian grid
-    */
+   // Cartesian coordinates of this process within the 2D process grid
+   int center[3] = {0, 0, 0};
    MPI_Cart_coords(cartcomm, mpisystem->getRank(), 2, center);
 
-   int my_cart_rank;
-   MPI_Cart_rank(cartcomm, center, &my_cart_rank);
-
-   //===================================================================================
-   int px = config.getProcessesX();
-   int py = config.getProcessesY();
-   int pz = config.getProcessesZ();
-
-   pe_LOG_INFO_SECTION(log) 
+   pe_LOG_INFO_SECTION(log)
    {
      log << "Center: " << center[0] << " " << center[1] << "\n";
    }
 
-   // Perform 2D domain decomposition for Archimedes simulation
    decomposeDomain2DArchimedes(center, cartcomm, halfSpaces, halfSpacesY, px, py, pz);
-   
-   //===================================================================================
 
    // Checking the process setup
    theMPISystem()->checkProcesses();
 
    //===================================================================================
+   // Materials, checkpointer and solver parameters
+   //===================================================================================
+   // TODO: "elastic" is not assigned to any body. It is kept on purpose: this case uses
+   //       checkpoints, and removing it shifts the material index of "particleMaterial".
+   //       Remove it once index-based use is ruled out.
+   MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+   MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   (void)elastic;
 
-   // Setup of the VTK visualization
-   if (g_vtk)
-   {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
-   }
-   
-   // Checkpointer setup
    CheckpointerID checkpointer;
    if (config.getUseCheckpointer()) {
      checkpointer = activateCheckpointer(config.getCheckpointPath(),
@@ -325,79 +268,50 @@ void setupArchimedes(MPI_Comm ex0)
                                           0, config.getTimesteps());
    }
 
-   // Create a custom material for the benchmark
-   MaterialID elastic = createMaterial("elastic", 1.4, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
-   MaterialID particleMaterial = createMaterial( "particleMaterial", pRho, 0.1, 0.05, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
-   //========================================================================================
-   // The way we atm include lubrication by increasing contact threshold
-   // has problems: the particles get distributed to more domain bc the threshold AABB
-   // is much larger than the particle actually is.
-   // We can even run into the "registering distant domain" error when the AABB of the
-   // particle is close in size to the size of a domain part!
-   //=================================================================================
-   setOptionalLubrication(theCollisionSystem(), useLubrication);
-   setOptionalSlipLength(theCollisionSystem(), slipLength);
    theCollisionSystem()->setMinEps(0.01);
    theCollisionSystem()->setMaxIterations(200);
 
-   //=================================================================================
-   // Here is how to create some random positions on a grid up to a certain
-   // volume fraction.
-   //=================================================================================
-   bool resume               = config.getResume();
-   real epsilon              = 2e-4;
-   real targetVolumeFraction = config.getVolumeFraction();
-   sphereRad                 = config.getBenchRadius();
+   //===================================================================================
+   // Bodies: spheres along the channel centerline (or from the checkpoint) and the screw
+   //===================================================================================
+   if (resume)
+   {
+      checkpointer->read( config.getResumeCheckpointFile() );
+   }
+   else if (seedSpheres)
+   {
+      const std::vector<Vec3> edges = readVectorsFromFile(centerlineFile);
+      if (edges.empty())
+      {
+         abortSetup("read no centerline vertices from " + centerlineFile + ".");
+      }
 
-   int idx = 0;
-   real h = 0.0075;
-   //=================================================================================
-
-   //=================================================================================
-   //                   We have a heavy throwing ball
-   //=================================================================================
-   std::string fileName = std::string("archimedes.obj");
-   BodyID particle;
-   //=================================================================================
-  if (config.getPackingMethod() != SimulationConfig::PackingMethod::None) {
-
-     if (!resume)
-     {
-
-       std::vector<Vec3> edges = readVectorsFromFile("vertices.txt");
-       std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad);
-       for (auto spherePos: spherePositions) {
+      // User IDs are numbered per process (see the function documentation)
+      int idx = 0;
+      const std::vector<Vec3> spherePositions = generatePointsAlongCenterline(edges, sphereRad);
+      for (const Vec3& spherePos : spherePositions) {
          if (world->ownsPoint(spherePos))
          {
-           createSphere( idx++, spherePos, sphereRad, particleMaterial );
+            createSphere( idx++, spherePos, sphereRad, particleMaterial );
          }
-       }
-     }
-     else
-     {
-        if (checkpointer) checkpointer->read( config.getResumeCheckpointFile() );
-     }
+      }
    }
 
-   for (int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
+   // All spheres start without spin. NOTE: this also resets the angular velocities that
+   // were restored from a checkpoint on resume; kept as it is for now.
+   for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
    {
-      World::SizeType widx = static_cast<World::SizeType>(j);
-      BodyID body = world->getBody(static_cast<unsigned int>(widx));
+      BodyID body = world->getBody(j);
       if (body->getType() == sphereType)
       {
         body->setAngularVel(Vec3(0,0,0));
       }
    }
 
-   //=================================================================================
-
-   Vec3 archimedesPos(0.0274099, -2.56113, 0.116155);
-
-   TriangleMeshID archimedes;
    pe_GLOBAL_SECTION
    {
       MaterialID archi = createMaterial("archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
-      archimedes = createTriangleMesh(++idx, Vec3(0, 0, 0.0), fileName, archi, true, true, Vec3(1.0, 1.0, 1.0), false, false);
+      TriangleMeshID archimedes = createTriangleMesh(archimedesId, Vec3(0, 0, 0.0), meshFile, archi, true, true, Vec3(1.0, 1.0, 1.0), false, false);
       archimedes->setPosition(archimedesPos);
       archimedes->setFixed(true);
    }
@@ -405,98 +319,57 @@ void setupArchimedes(MPI_Comm ex0)
    // Synchronization of the MPI processes
    world->synchronize();
 
-   //=================================================================================
-   // Calculating the total number of particles and primitives
-   unsigned long particlesTotal(0);
-   unsigned long primitivesTotal(0);
-   unsigned long bla = idx;
-
-   int numBodies(0);
-   int numTotal(0);
-   unsigned int j(0);
-
-   real buoyancy = 0;
-   //=================================================================================
-//   for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
-//   {
-//      World::SizeType widx = static_cast<World::SizeType>(j);
-//      BodyID body = world->getBody(static_cast<unsigned int>(widx));
-//      if (body->getType() == sphereType)
-//      {
-//         SphereID s = static_body_cast<Sphere>(body);
-//         Vec3 pos = body->getPosition();
-//         if(pos[0] < 0.029) {
-//           world->remove(body);
-//           std::cout << "Removing body: " << pos << std::endl;
-//         }
-//      }
-//   }
-//   
-//   // Synchronization of the MPI processes
-//   world->synchronize();
-   //=================================================================================
-
-   const real   deltaT( config.getStepsize() );  // Size of a single time step
-   numBodies = 0;
-   numTotal  = 0;
-   j = 0;
-   for (; j < theCollisionSystem()->getBodyStorage().size(); j++)
+   // Setup of the VTK visualization
+   if (config.getVtk())
    {
-      World::SizeType widx = static_cast<World::SizeType>(j);
-      BodyID body = world->getBody(static_cast<unsigned int>(widx));
-      if (body->getType() == sphereType)
-      {
-         SphereID s = static_body_cast<Sphere>(body);
-         MaterialID mat = s->getMaterial();
-         real rho = Material::getDensity( mat );
-         real rad = s->getRadius();
-         real vol = s->getVolume();
-         buoyancy = vol * (rho - Settings::liquidDensity()) * body->getInvMass();
-         numBodies++;
-         numTotal++;
-      }
-      else
-      {
-         numTotal++;
-      }
+     vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
    }
 
-   Vec3 effGrav = buoyancy * Settings::gravity() * deltaT;
-   unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-   unsigned long bodiesTotal = static_cast<unsigned long>(numTotal);
-   MPI_Reduce(&bodiesUpdate, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
-   MPI_Reduce(&bodiesTotal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
+   //===================================================================================
+   // Setup summary
+   //===================================================================================
+   unsigned long spheresLocal(0);
+   unsigned long bodiesLocal(0);
+   for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
+   {
+      BodyID body = world->getBody(j);
+      if (body->getType() == sphereType)
+      {
+         ++spheresLocal;
+      }
+      ++bodiesLocal;
+   }
 
-   real domainVol = 0.604;
-   real partVol = 4. / 3. * M_PI * std::pow(sphereRad, 3);
+   unsigned long particlesTotal(0);
+   unsigned long primitivesTotal(0);
+   MPI_Reduce(&spheresLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
+   MPI_Reduce(&bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
 
-   std::string resOut = (resume) ? "resuming " : "not resuming ";
-   std::string useLub = (useLubrication) ? "enabled" : "disabled";
+   const real partVol = 4. / 3. * M_PI * std::pow(sphereRad, 3);
+   const std::string packing = resume ? "checkpoint" : (seedSpheres ? "centerline rings" : "none");
 
    pe_EXCLUSIVE_SECTION(0)
    {
-      std::cout << "\n--" << "SIMULATION SETUP"
+      std::cout << "\n--" << "ARCHIMEDES SETUP"
                 << "--------------------------------------------------------------\n"
-                << " Total number of MPI processes           = " << px * py * pz << "\n"
+                << " Total number of MPI processes           = " << px * pz << "\n"
+                << " Slabs in x / cross-channel splits       = " << px << " / " << pz << "\n"
                 << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
                 << " Total number of particles               = " << particlesTotal << "\n"
-                << " particle radius                         = " << sphereRad << "\n"
-                << " particle volume                         = " << partVol << "\n"
+                << " Particle radius                         = " << sphereRad << "\n"
+                << " Particle volume                         = " << partVol << "\n"
                 << " Total number of objects                 = " << primitivesTotal << "\n"
                 << " Fluid Viscosity                         = " << simViscosity << "\n"
                 << " Fluid Density                           = " << simRho << "\n"
+                << " Particle Density                        = " << pRho << "\n"
                 << " Gravity constant                        = " << world->getGravity() << "\n"
-                << " EFF Gravity                             = " << effGrav << "\n"
-                << " Buoyancy                                = " << buoyancy << "\n"
-                << " Lubrication                             = " << useLub << "\n"
-                << " Lubrication h_c (slip length)           = " << slipLength << "\n"
+                << " Lubrication (json)                      = " << (config.getLubricationEnabled() ? "enabled" : "disabled") << "\n"
                 << " Lubrication threshold                   = " << lubricationThreshold << "\n"
                 << " Contact threshold                       = " << contactThreshold << "\n"
-                << " Domain cube side length                 = " << L << "\n"
-                << " Domain volume                           = " << domainVol << "\n"
-                << " Resume                                  = " << resOut << "\n"
-                << " Volume fraction[%]                      = " << (particlesTotal * partVol) / domainVol * 100.0 << "\n"
-                << " Total objects                           = " << primitivesTotal << "\n"
+                << " Channel volume                          = " << channelVolume << "\n"
+                << " Resume                                  = " << (resume ? "resuming" : "not resuming") << "\n"
+                << " Packing                                 = " << packing << "\n"
+                << " Volume fraction[%]                      = " << (particlesTotal * partVol) / channelVolume * 100.0 << "\n"
                 << std::endl;
       std::cout << "--------------------------------------------------------------------------------\n"
                 << std::endl;
@@ -504,3 +377,6 @@ void setupArchimedes(MPI_Comm ex0)
 
    MPI_Barrier(cartcomm);
 }
+//*************************************************************************************************
+
+#endif

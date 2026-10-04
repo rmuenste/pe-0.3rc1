@@ -56,9 +56,34 @@ void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint,
 }
 
 //=================================================================================================
-// Setup for the Drill Application
+// Setup for the Drill Application (parallel PE mode)
+//
+// STATUS: NOT FUNCTIONAL / NOT IMPLEMENTED AT THE MOMENT.
+//
+// This is a work-in-progress draft that is kept for the planned parallel drill case. It is
+// currently not reachable: the parallel entry point commf2c_drill_() in
+// src/interface/c2f_interface.cpp is a stub that aborts and refers to PE_SERIAL_MODE.
+// Known gaps of the draft: hardcoded geometry and densities, an embedded DistanceMap
+// coordinate debug test, and a setup summary with leftover values from other cases.
+// The body is unverified; do not wire it to the entry point without reviewing it first.
 //=================================================================================================
 void setupDrill(MPI_Comm ex0) {
+
+  // Loud runtime notice in case this draft gets called before it is finished.
+  {
+    int noticeRank = 0;
+    if (ex0 != MPI_COMM_NULL) MPI_Comm_rank(ex0, &noticeRank);
+    if (noticeRank == 0) {
+      std::cerr << "\n"
+                << "========================================================================\n"
+                << "WARNING: setupDrill() is not functional/implemented at the moment\n"
+                << "========================================================================\n"
+                << "The parallel drill setup is an unverified work-in-progress draft.\n"
+                << "Use the PE serial mode (PE_SERIAL_MODE) for the drill case for now.\n"
+                << "========================================================================\n"
+                << std::endl;
+    }
+  }
 
   auto& config = SimulationConfig::getInstance();
   world = theWorld();

@@ -74,31 +74,22 @@ extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *
 
 //=================================================================================================
 extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
-{   
-  // force 4.0 multiplier take it out
-  // force only in z considered
-  // matching between fbmId and particleId
-  int remRank = *remoteRank;
-
-  if(remRank != 0) { 
-    int rank, size;
-
-    MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
-    MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
-    MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
-
-    printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
-    if( CcommEx0 == MPI_COMM_NULL ) {
-      printf( "%d> C)Error converting fortran communicator\n", rank);
-       return;
-    }
-    setup2x2x2(CcommEx0);
-    // Central lubrication-config application (D2.2): the serial setups apply this
-    // internally, but most parallel setups never did, so lubricationEnabled_ was a
-    // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
-    // idempotent, and refuses loudly on a solver without the lubrication stage.
-    pe::applyOptionalLubricationParams(*pe::theCollisionSystem(), pe::SimulationConfig::getInstance());
-  } 
+{
+  // The parallel setup2x2x2() was removed: it performed no domain decomposition and
+  // created no particles. Only the serial mode (setupDCAVSerial) is supported.
+  fprintf(stderr, "\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "ERROR: commf2c_dcav_() is not implemented in parallel PE mode\n");
+  fprintf(stderr, "========================================================================\n");
+  fprintf(stderr, "The DCAV simulation is currently only supported in PE serial mode.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "To use this simulation, rebuild with PE_SERIAL_MODE enabled:\n");
+  fprintf(stderr, "  1. cd build\n");
+  fprintf(stderr, "  2. cmake -DUSE_PE=ON ..\n");
+  fprintf(stderr, "  3. cmake -DUSE_PE_SERIAL_MODE=ON ..\n");
+  fprintf(stderr, "  4. make -j8\n");
+  fprintf(stderr, "========================================================================\n");
+  exit(1);
 }
 //=================================================================================================
 
@@ -143,15 +134,15 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
     int rank, size;
 
     MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
+    if( CcommEx0 == MPI_COMM_NULL ) {
+      printf( "%d> C)Error converting fortran communicator\n", remRank);
+      return;
+    }
     MPI_Comm_rank (CcommEx0, &rank);	/* get current process id */
     MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
 
     if (rank == 1) {
       printf( "%d> Initialized library pe for %d processes.\n", remRank, size );
-    }
-    if( CcommEx0 == MPI_COMM_NULL ) {
-      printf( "%d> C)Error converting fortran communicator\n", rank);
-       return;
     }
     // Minimal bootstrap: wires the PE communicator to the CFD worker comm
     // (Ex0) so passive PE use (queries, synchronizeForces) is safe; creates
@@ -180,7 +171,7 @@ extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
     MPI_Comm_size (CcommEx0, &size);	/* get number of processes */
 
     if (rank == 1) {
-      printf( "%d> C) Configuration FSI bench with %d processes.\n", remRank, size );
+      printf( "%d> C) Configuration span (chip) case with %d processes.\n", remRank, size );
     }
     if( CcommEx0 == MPI_COMM_NULL ) {
       printf( "%d> C)Error converting fortran communicator\n", rank);
