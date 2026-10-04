@@ -119,7 +119,7 @@ int main( int argc, char* argv[] )
       }
    }
    std::cout << "--------------------------------------------------------------------------------\n"
-             << " inserted " << inserted << " (LIGGGHTS 1275), ke " << th.ke << " J, z range [" << th.zmin << ", " << th.zmax << "]"
+             << " inserted " << inserted << " (LIGGGHTS 1275), ke " << th.ke << " J, z range [" << th.zmin() << ", " << th.zmax() << "]"
              << ", particles inside bucket AABB " << carried << "\n"
              << " wall-clock " << timer.total() << " s\n";
    return 0;

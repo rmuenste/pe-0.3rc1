@@ -32,6 +32,28 @@ Collision detection and response are usually not configured inside the example b
 
 `examples/mpicube/MPICube.cpp` shows a different decomposition style: it splits the x-y plane into angular "cake slices" and connects only the two nearest neighboring process domains near `examples/mpicube/MPICube.cpp:319`. Use it as a reference when the process partition is geometric but not a regular Cartesian grid.
 
+## One Source, Serial And MPI: The LIGGGHTS Ports
+
+`examples/conveyor/conveyor.cpp` and `examples/liggghts_ports/cylinder_pack.cpp` run the same
+source serially and under `mpiexec -n <p>`, through the helpers in
+`examples/liggghts_ports/liggghts_common.h` (namespace `lp`):
+
+1. `MpiScope` wraps `MPI_Init`/`MPI_Finalize` around `main()` (nothing without MPI).
+2. `decomposeSlabs( axis, lo, hi )` defines a 1-D slab decomposition of the whole space along
+   one axis, connects each slab to its two neighbours, and leaves the end slabs unbounded so a
+   particle can never be outside every domain. With one process it does nothing.
+3. Walls, container and belt are created in a `pe_GLOBAL_SECTION`.
+4. Insertion (`insertPack()`, the conveyor's stream) draws identical candidates on every process
+   (same seed, same random calls) against the spheres of all processes (`gatherSpheres()`,
+   an all-gather), creates each particle on its owner only (`World::ownsPoint()`), keeps the id
+   counter identical everywhere, and calls `synchronizeIfParallel()` afterwards.
+5. `Thermo::measure()` reduces over all processes; `rout()` prints on the root only.
+6. The run ends with a self check reduced over all processes (particle count, container bounds,
+   finite energies) that sets the exit code; CTest registers the serial, 2- and 4-process runs
+   (`pe-example-conveyor-*`, `pe-example-cylinder-pack-*`). The ports need the semi-implicit
+   solver (`-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactSemiImplicitTimesteppingSolvers`)
+   and return 77 (CTest: skipped) under any other.
+
 ## Where to Look Next
 
 - `pe/core/World.h`: world access, stepping, synchronization, and body ownership queries.

@@ -64,6 +64,10 @@ option(PE_BUILD_INTERFACE_TESTS
 # (tools/live_viewer). Downloads Polyscope and ImPlot via FetchContent.
 option(PE_BUILD_LIVE_VIEWER "Build the interactive live viewer tool" OFF)
 
+# Interactive Polyscope viewer for the narrow-phase contact generation
+# (tools/contact_viewer). Same FetchContent dependencies as the live viewer.
+option(PE_BUILD_CONTACT_VIEWER "Build the interactive contact viewer tool" OFF)
+
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
 # NOTE: the option is PE_-namespaced, but the compile define it sets
 # (USE_ACCELERATED_POINT_QUERY) is kept unprefixed because the C++ sources test it.
@@ -721,6 +725,16 @@ endif()
 #==================================================================================================
 if( PE_BUILD_LIVE_VIEWER )
    add_subdirectory( tools/live_viewer )
+endif()
+
+
+#==================================================================================================
+#
+# Interactive contact viewer tool
+#
+#==================================================================================================
+if( PE_BUILD_CONTACT_VIEWER )
+   add_subdirectory( tools/contact_viewer )
 endif()
 
 

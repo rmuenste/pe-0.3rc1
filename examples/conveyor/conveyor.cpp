@@ -31,7 +31,14 @@
  *  Build (see md_docs/PE_CONVEYOR.md in the LIGGGHTS repo):
  *     configure pe with -DPE_BUILD_EXAMPLES=ON and
  *     -DPE_PREPROCESSOR_FLAGS="-Dpe_CONSTRAINT_SOLVER=pe::response::HardContactSemiImplicitTimesteppingSolvers"
- *     then build the target "conveyor".
+ *     then build the target "conveyor". Under any other solver the example refuses to run
+ *     (exit code 77, which CTest reports as skipped).
+ *
+ *  Parallel (MPI builds): mpiexec -n <p> conveyor ... decomposes the container into p slabs
+ *  along the belt direction x (liggghts_common.h: decomposeSlabs()); the walls and the belt are
+ *  global bodies, the insertion draws identical candidates on every process and creates each
+ *  particle on its owner. The thermo output is reduced over all processes. The run ends with a
+ *  self check (particle count, container bounds, finite energies) that sets the exit code.
  */
 //=================================================================================================
 
@@ -50,43 +57,32 @@
 #include <pe/util.h>
 #include <pe/util/timing/WcTimer.h>
 
+#include "liggghts_common.h"   // examples/liggghts_ports: insertion, thermo and parallel helpers
+#include <examples/common/SolverConstraint.h>
+
 using namespace pe;
+using lp::Candidate;
+using lp::rout;
 
-
-//*************************************************************************************************
-/*!\brief A sphere that is about to be inserted (used for the overlap check). */
-struct Candidate {
-   Vec3 pos;
-   real radius;
-};
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-/*!\brief Returns true if a sphere (pos, radius) overlaps any existing or pending sphere. */
-bool overlaps( const Vec3& pos, real radius, const std::vector<Candidate>& pending, WorldID world )
-{
-   for( std::vector<Candidate>::const_iterator c=pending.begin(); c!=pending.end(); ++c ) {
-      const real d( ( c->pos - pos ).length() );
-      if( d < c->radius + radius ) return true;
-   }
-   for( World::Bodies::CastIterator<Sphere> s=world->begin<Sphere>(); s!=world->end<Sphere>(); ++s ) {
-      const real d( ( s->getPosition() - pos ).length() );
-      if( d < s->getRadius() + radius ) return true;
-   }
-   return false;
-}
-//*************************************************************************************************
+typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR,
+                       response::HardContactSemiImplicitTimesteppingSolvers >::Config IntendedConfig;
 
 
 //*************************************************************************************************
 int main( int argc, char* argv[] )
 {
+   lp::MpiScope mpi( argc, argv );
+   if( !pe::examples::requireIntendedSolver<IntendedConfig>( "conveyor",
+          "HardContactSemiImplicitTimesteppingSolvers",
+          "the LIGGGHTS ports are tuned for the semi-implicit hard-contact solver (gravity through "
+          "World::setGravity(), erp 0.5); build with -Dpe_CONSTRAINT_SOLVER=pe::response::HardContactSemiImplicitTimesteppingSolvers" ) )
+      return lp::kSkipExitCode;
+
    //---------------------------------------------------------------------------------------------
    // Parameters (SI units, mirroring in.conveyor)
    //---------------------------------------------------------------------------------------------
    const real dt          ( 5.0e-4 );   // time step size [s]
-   const real tEnd        ( 1.4    );   // simulated time [s]  (LIGGGHTS: 140000 x 1e-5)
+   real       tEnd        ( 1.4    );   // simulated time [s]  (LIGGGHTS: 140000 x 1e-5); --tend
    const real tOutput     ( 0.004  );   // VTK output interval [s] (LIGGGHTS: every 400 steps)
    const real tThermo     ( 0.01   );   // screen output interval [s] (LIGGGHTS: thermo 1000)
 
@@ -111,16 +107,13 @@ int main( int argc, char* argv[] )
    const Vec3 beltVel     ( -4.5, 0.0, 0.0 );        // conveyor surface velocity
    const Vec3 gravity     ( 0.0, 0.0, -9.81 );
 
-   const unsigned int steps      ( static_cast<unsigned int>( std::floor( tEnd    / dt + 0.5 ) ) );
-   const unsigned int outSteps   ( static_cast<unsigned int>( std::floor( tOutput / dt + 0.5 ) ) );
-   const unsigned int thermoSteps( static_cast<unsigned int>( std::floor( tThermo / dt + 0.5 ) ) );
-   const unsigned int insSteps   ( static_cast<unsigned int>( std::floor( tInsert / dt + 0.5 ) ) );
 
    // Friction coefficient assigned to EACH material. pe adds the coefficients of the two
    // materials of a contact pair (Materials.cpp), so 0.5 per material gives an effective
    // pair coefficient of 1.0; 0.25 reproduces the LIGGGHTS pair value of 0.5.
    real friction( 0.5 );
    real erp( 0.5 );       // error reduction parameter; acts like a restitution of ~erp on impacts (RUNBOOK 6.20)
+   bool splitImpulse( false );   // --split-impulse: the erp correction moves positions without adding momentum
    std::string outDir( "./paraview" );
    bool vtk( true );
    for( int i=1; i<argc; ++i ) {
@@ -129,13 +122,22 @@ int main( int argc, char* argv[] )
       else if( arg == "--friction" && i+1 < argc ) friction = std::atof( argv[++i] );
       else if( arg == "--out" && i+1 < argc ) outDir = argv[++i];
       else if( arg == "--erp" && i+1 < argc ) erp = std::atof( argv[++i] );
+      else if( arg == "--tend" && i+1 < argc ) tEnd = std::atof( argv[++i] );
+      else if( arg == "--split-impulse" ) splitImpulse = true;
       else if( arg == "--help" || arg == "-h" ) {
-         std::cout << "usage: conveyor [--friction <mu per material, default 0.5>] [--erp <0.5>] [--out <dir>] [--no-vtk]\n";
+         rout() << "usage: conveyor [--friction <mu per material, default 0.5>] [--erp <0.5>] [--tend <1.4>] [--split-impulse] [--out <dir>] [--no-vtk]\n"
+                << "  runs serially or under MPI (mpiexec -n <p>): slab decomposition along x\n";
          return 0;
       }
    }
 
-   setSeed( 32452867 );   // same seed as the LIGGGHTS insert/stream command
+   setSeed( 32452867 );   // same seed as the LIGGGHTS insert/stream command (and on every process)
+
+   // step counts (after the command line: --tend changes tEnd)
+   const unsigned int steps      ( static_cast<unsigned int>( std::floor( tEnd    / dt + 0.5 ) ) );
+   const unsigned int outSteps   ( static_cast<unsigned int>( std::floor( tOutput / dt + 0.5 ) ) );
+   const unsigned int thermoSteps( static_cast<unsigned int>( std::floor( tThermo / dt + 0.5 ) ) );
+   const unsigned int insSteps   ( static_cast<unsigned int>( std::floor( tInsert / dt + 0.5 ) ) );
 
    //---------------------------------------------------------------------------------------------
    // World, solver settings, output
@@ -147,11 +149,15 @@ int main( int argc, char* argv[] )
    // Hard-contact relaxation solver settings (defaults: 100 iterations, erp 0.7, relax 0.9)
    theCollisionSystem()->setMaxIterations( 100 );
    theCollisionSystem()->setErrorReductionParameter( erp );
+   theCollisionSystem()->setSplitImpulse( splitImpulse );
 
    if( vtk )
       // writeEmptyFiles=true: the collector.pvd is written at activation time and only lists
       // body types that exist at that moment, so force all types to be listed/written.
       vtk::activateWriter( outDir, outSteps, 0, steps, false, true );
+
+   // Parallel: slabs along the belt direction over the container length (end slabs unbounded).
+   lp::decomposeSlabs( 0, -0.5, 0.5 );
 
    //---------------------------------------------------------------------------------------------
    // Materials
@@ -167,11 +173,14 @@ int main( int argc, char* argv[] )
 
    // Container (box.stl): x in [-0.5,0.5], y in [-0.2,0.2], floor at z = -0.2, open top.
    // pe plane convention: n.x = d, the normal points into the free half space.
+   pe_GLOBAL_SECTION
+   {
    createPlane( ++id,  0.0,  0.0,  1.0, -0.2, wall, false );   // floor  z = -0.2
    createPlane( ++id,  1.0,  0.0,  0.0, -0.5, wall, false );   // wall   x = -0.5
    createPlane( ++id, -1.0,  0.0,  0.0, -0.5, wall, false );   // wall   x =  0.5
    createPlane( ++id,  0.0,  1.0,  0.0, -0.2, wall, false );   // wall   y = -0.2
    createPlane( ++id,  0.0, -1.0,  0.0, -0.2, wall, false );   // wall   y =  0.2
+   }
 
    // Conveyor belt (conveyor.stl): rectangle z = 0, x in [-0.1,0.5], y in [-0.2,0.2].
    // Modelled as a thin fixed box whose top face is the belt surface. It is shrunk by 1 mm
@@ -179,9 +188,13 @@ int main( int argc, char* argv[] )
    const real  beltThickness( 0.02 );
    const Vec3  beltCenter( 0.2, 0.0, -0.5*beltThickness );
    const Vec3  beltLengths( 0.6 - 0.001, 0.4 - 0.002, beltThickness );
-   BoxID belt = createBox( ++id, beltCenter, beltLengths, wall );
-   belt->setFixed( true );
-   belt->setLinearVel( beltVel );    // surface velocity (MOBILE_INFINITE allows this on fixed bodies)
+   BoxID belt( 0 );
+   pe_GLOBAL_SECTION
+   {
+      belt = createBox( ++id, beltCenter, beltLengths, wall );
+      belt->setFixed( true );
+      belt->setLinearVel( beltVel );    // surface velocity (MOBILE_INFINITE allows this on fixed bodies)
+   }
 
    // Insertion volume: insertion_face.stl (z = 0.2, x in [0.3,0.45], y in [-0.17,0.17])
    // extruded by extrude_length AGAINST the insertion velocity (LIGGGHTS insert/stream), i.e.
@@ -194,14 +207,16 @@ int main( int argc, char* argv[] )
    //---------------------------------------------------------------------------------------------
    // Banner
    //---------------------------------------------------------------------------------------------
-   std::cout << "\n--CONVEYOR (pe port of the LIGGGHTS tutorial)------------------------------------\n"
+   rout() << "\n--CONVEYOR (pe port of the LIGGGHTS tutorial)------------------------------------\n"
+             << " processes            = " << lp::numProcesses() << "\n"
              << " time step            = " << dt << " s\n"
              << " simulated time       = " << tEnd << " s  (" << steps << " steps)\n"
              << " insertion            = " << massPerIns << " kg every " << tInsert
              << " s until " << massTotal << " kg\n"
              << " number fraction r=" << radii[0] << " = " << numFrac0 << "\n"
              << " belt velocity        = " << beltVel << " m/s\n"
-             << " friction per material= " << friction << "  (pair value " << 2*friction << "), erp " << erp << "\n"
+             << " friction per material= " << friction << "  (pair value " << 2*friction << "), erp " << erp
+             << ( splitImpulse ? " (split impulse)" : "" ) << "\n"
              << " vtk output           = " << ( vtk ? "every " : "disabled" )
              << ( vtk ? std::to_string( outSteps ) + " steps -> ./paraview" : "" ) << "\n"
              << "--------------------------------------------------------------------------------\n";
@@ -216,8 +231,9 @@ int main( int argc, char* argv[] )
    timing::WcTimer timer;
    timer.start();
 
-   std::cout << std::setw(8) << "step" << std::setw(10) << "time" << std::setw(8) << "atoms"
-             << std::setw(14) << "mass_ins" << std::setw(14) << "ke" << std::setw(14) << "vmax" << "\n";
+   rout() << std::setw(8) << "step" << std::setw(10) << "time" << std::setw(8) << "atoms"
+          << std::setw(14) << "mass_ins" << std::setw(14) << "ke" << std::setw(14) << "vmax" << "\n";
+   lp::Thermo th;
 
    for( unsigned int step=0; step<steps; ++step )
    {
@@ -225,6 +241,8 @@ int main( int argc, char* argv[] )
       if( step % insSteps == 0 && massInserted < massTotal )
       {
          real target( std::min( massPerIns + massCarry, massTotal - massInserted ) );
+         std::vector<Candidate> existing;   // spheres of all processes
+         lp::gatherSpheres( world, existing );
          std::vector<Candidate> pending;
          real placed( 0.0 );
          unsigned int failures( 0 );
@@ -243,25 +261,29 @@ int main( int argc, char* argv[] )
                pos = Vec3( rand<real>( insXmin, insXmax ),
                            rand<real>( insYmin, insYmax ),
                            rand<real>( insZmin, insZmax ) );
-               found = !overlaps( pos, r, pending, world );
+               found = !lp::overlaps( pos, r, pending, existing );
             }
             if( !found ) { ++failures; continue; }
 
-            Candidate c; c.pos = pos; c.radius = r;
+            Candidate c; c.pos = pos; c.r = r;
             pending.push_back( c );
             placed += m;
          }
 
+         // Same candidates and ids on every process; each particle is created by its owner.
          for( std::vector<Candidate>::const_iterator c=pending.begin(); c!=pending.end(); ++c ) {
-            SphereID s = createSphere( ++id, c->pos, c->radius, granular );
-            s->setLinearVel( 0.0, 0.0, -insertVel );
+            ++id;
             ++nParticles;
+            if( !world->ownsPoint( c->pos ) ) continue;
+            SphereID s = createSphere( id, c->pos, c->r, granular );
+            s->setLinearVel( 0.0, 0.0, -insertVel );
          }
+         lp::synchronizeIfParallel( world );
          massInserted += placed;
          massCarry     = target - placed;
          ++nInsertions;
-         std::cout << " insertion " << nInsertions << ": " << pending.size() << " particles, "
-                   << placed << " kg (total " << massInserted << " kg)\n";
+         rout() << " insertion " << nInsertions << ": " << pending.size() << " particles, "
+                << placed << " kg (total " << massInserted << " kg)\n";
       }
 
       //--- one hard-contact time step -----------------------------------------------------------
@@ -276,17 +298,12 @@ int main( int argc, char* argv[] )
       //--- screen output (like thermo) ----------------------------------------------------------
       if( (step+1) % thermoSteps == 0 || step+1 == steps )
       {
-         real ke( 0.0 ), vmax( 0.0 );
-         for( World::Bodies::CastIterator<Sphere> s=world->begin<Sphere>(); s!=world->end<Sphere>(); ++s ) {
-            const real v2( s->getLinearVel().sqrLength() );
-            ke   += real(0.5) * s->getMass() * v2;
-            vmax  = std::max( vmax, std::sqrt( v2 ) );
-         }
-         std::cout << std::setw(8) << step+1 << std::setw(10) << std::fixed << std::setprecision(4) << (step+1)*dt
-                   << std::setw(8) << nParticles
-                   << std::setw(14) << std::setprecision(4) << massInserted
-                   << std::setw(14) << std::scientific << std::setprecision(5) << ke
-                   << std::setw(14) << std::fixed << std::setprecision(4) << vmax << "\n" << std::flush;
+         th.measure( world );   // reduced over all processes
+         rout() << std::setw(8) << step+1 << std::setw(10) << std::fixed << std::setprecision(4) << (step+1)*dt
+                << std::setw(8) << th.n
+                << std::setw(14) << std::setprecision(4) << massInserted
+                << std::setw(14) << std::scientific << std::setprecision(5) << th.ke
+                << std::setw(14) << std::fixed << std::setprecision(4) << th.vmax << "\n" << std::flush;
       }
    }
 
@@ -295,20 +312,28 @@ int main( int argc, char* argv[] )
    //---------------------------------------------------------------------------------------------
    // Summary
    //---------------------------------------------------------------------------------------------
-   real zmin( 1e30 ), zmax( -1e30 ), xmin( 1e30 ), xmax( -1e30 );
-   for( World::Bodies::CastIterator<Sphere> s=world->begin<Sphere>(); s!=world->end<Sphere>(); ++s ) {
-      const Vec3& p( s->getPosition() );
-      xmin = std::min( xmin, p[0] ); xmax = std::max( xmax, p[0] );
-      zmin = std::min( zmin, p[2] ); zmax = std::max( zmax, p[2] );
-   }
-   std::cout << "--------------------------------------------------------------------------------\n"
-             << " particles           = " << nParticles << "\n"
-             << " mass inserted       = " << massInserted << " kg in " << nInsertions << " insertions\n"
-             << " particle x range    = [" << xmin << ", " << xmax << "]\n"
-             << " particle z range    = [" << zmin << ", " << zmax << "]\n"
-             << " wall-clock time     = " << timer.total() << " s for " << steps << " steps\n"
-             << "--------------------------------------------------------------------------------\n";
+   th.measure( world );
+   rout() << "--------------------------------------------------------------------------------\n"
+          << " particles           = " << th.n << " (" << nParticles << " inserted)\n"
+          << " mass inserted       = " << massInserted << " kg in " << nInsertions << " insertions\n"
+          << " particle x range    = [" << th.lo[0] << ", " << th.hi[0] << "]\n"
+          << " particle z range    = [" << th.zmin() << ", " << th.zmax() << "]\n"
+          << " wall-clock time     = " << timer.total() << " s for " << steps << " steps\n"
+          << "--------------------------------------------------------------------------------\n";
 
-   return 0;
+   // Self check (identical verdict on every process: everything is reduced): every inserted
+   // particle still exists, all centres are inside the container (within 2 r_max of the walls
+   // and the floor; the top is open), and the energies are finite.
+   const real tol( 2.0 * radii[1] );
+   bool ok( true );
+   if( th.n != nParticles )                   { rout() << " CHECK FAILED: " << th.n << " particles, " << nParticles << " inserted\n"; ok = false; }
+   if( !( th.ke == th.ke ) || th.ke > 1e4 )   { rout() << " CHECK FAILED: kinetic energy not finite\n"; ok = false; }
+   if( th.n > 0 && ( th.lo[0] < -0.5 - tol || th.hi[0] > 0.5 + tol || th.lo[1] < -0.2 - tol || th.hi[1] > 0.2 + tol
+                     || th.zmin() < -0.2 - tol || th.zmax() > 2.0 ) ) {
+      rout() << " CHECK FAILED: particles outside the container, x [" << th.lo[0] << ", " << th.hi[0] << "], y ["
+             << th.lo[1] << ", " << th.hi[1] << "], z [" << th.zmin() << ", " << th.zmax() << "]\n"; ok = false;
+   }
+   rout() << ( ok ? " self check ok\n" : " SELF CHECK FAILED\n" );
+   return ok ? 0 : 1;
 }
 //*************************************************************************************************

@@ -2458,8 +2458,7 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, const s
                                      MaterialID material, bool convex,
                                      bool visible, const Vec3& scale,  bool clockwise, bool lefthanded )
 {
-   // Warning for non-convex meshes - experimental CGAL support available
-   if( !convex, "Only convex triangle meshes are allowed right now" );
+   // Non-convex meshes are supported (brute-force AABB, DistanceMap contact generation).
 
    if(scale[0] <= real(0) || scale[1] <= real(0) || scale[2] <= real(0)){
       throw std::invalid_argument("Invalid scaling factor, only positive scaling allowed.");
@@ -2680,7 +2679,8 @@ PE_PUBLIC TriangleMeshID createTriangleMesh( id_t uid, const Vec3& gpos, Vertice
                                      const IndicesLists& faces, MaterialID material,
                                      bool convex, bool visible )
 {
-   pe_INTERNAL_ASSERT( convex, "Only convex triangle meshes are allowed right now" );
+   // Non-convex meshes are supported (brute-force AABB, DistanceMap contact generation), as
+   // they are for meshes loaded from a file.
 
    const bool global( GlobalSection::isActive() );
 

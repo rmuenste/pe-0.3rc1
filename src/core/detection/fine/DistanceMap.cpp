@@ -133,7 +133,22 @@ public:
                             normals_[index].set( lx / ln, ly / ln, lz / ln);
                         }
                     } else {
-                        normals_[index].set(0, 0, 0);
+                        // The node lies on the surface (e.g. a face of the mesh on a grid plane):
+                        // the direction to the closest point is undefined, so the closest
+                        // triangle's normal is used (faces are oriented outward). A zero normal
+                        // here would blend into short, unusable normals in the whole layer of
+                        // cells next to such a face.
+                        const auto hd = halfedge(pp.second, mesh);
+                        const Point& pa = mesh.point(source(hd, mesh));
+                        const Point& pb = mesh.point(target(hd, mesh));
+                        const Point& pc = mesh.point(target(next(hd, mesh), mesh));
+                        const Kernel::Vector_3 fn = CGAL::cross_product(pb - pa, pc - pa);
+                        const pe::real fl = std::sqrt(CGAL::to_double(fn.squared_length()));
+                        if (fl > 0) {
+                            normals_[index].set(CGAL::to_double(fn.x()) / fl, CGAL::to_double(fn.y()) / fl, CGAL::to_double(fn.z()) / fl);
+                        } else {
+                            normals_[index].set(0, 0, 0);
+                        }
                     }
                 }
             }

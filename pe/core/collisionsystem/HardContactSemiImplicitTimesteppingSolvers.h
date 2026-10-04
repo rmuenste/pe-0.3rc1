@@ -233,6 +233,8 @@ public:
    inline void            setRelaxationModel( RelaxationModel relaxationModel );
    inline void            setErrorReductionParameter( real erp );
    inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
+   inline void            setSplitImpulse( bool enable );
+   inline bool            getSplitImpulse() const { return useSplitImpulse_; }
    inline void            setMinEps( real /*minEps*/ ) {}
    inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
    //@}
@@ -272,6 +274,7 @@ private:
    void simulationStep( real dt );
    void resolveContacts( const Contacts& contacts, real dt );
    real relaxInelasticFrictionlessContacts( real dtinv );
+   real relaxPseudoVelocities( real dtinv );
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
@@ -292,6 +295,7 @@ private:
    //@{
    void initializeVelocityCorrections( BodyID body, Vec3& dv, Vec3& dw, real dt ) const;
    void integratePositions( BodyID body, Vec3 v, Vec3 w, real dt ) const;
+   void integratePositions( BodyID body, Vec3 v, Vec3 w, const Vec3& vPseudo, const Vec3& wPseudo, real dt ) const;
    //@}
    //**********************************************************************************************
 
@@ -302,6 +306,8 @@ private:
    inline void clearContacts();
           bool checkUpdateFlags();
    inline real getCharacteristicLength( ConstBodyID body ) const;
+   inline Vec3 pseudoVelocity( size_t j ) const        { return useSplitImpulse_ ? vp_[j] + dvp_[j] : Vec3(); }
+   inline Vec3 pseudoAngularVelocity( size_t j ) const { return useSplitImpulse_ ? wp_[j] + dwp_[j] : Vec3(); }
    //@}
    //**********************************************************************************************
 
@@ -321,6 +327,7 @@ private:
 
    real erp_;                 //!< The error reduction parameter (0 <= erp_ <= 1).
    bool useAdaptiveBaumgarteCapping_;  //!< Enable adaptive velocity capping to prevent explosions
+   bool useSplitImpulse_;     //!< Split impulse: penetration is removed by pseudo velocities that move the positions but are not kept as body velocity.
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
    size_t iteration_;
@@ -334,6 +341,7 @@ private:
 
    // bodies
    std::vector<Vec3> v_, w_, dv_, dw_;
+   std::vector<Vec3> vp_, wp_, dvp_, dwp_;   //!< Pseudo velocities and their corrections of the split-impulse position solve.
 
    // contacts
    std::vector<bool> contactsMask_;
@@ -351,6 +359,8 @@ private:
    std::vector<Mat2> diag_to_inv_;
    std::vector<real> diag_n_inv_;
    std::vector<Vec3> p_;
+   std::vector<real> pseudoDist_;   //!< Split impulse: the distance the position solve has to close (erp * penetration, or the allowed approach).
+   std::vector<Vec3> pp_;           //!< Split impulse: pseudo impulses of the position solve.
 
    //**********************************************************************************************
    /*! \cond PE_INTERNAL */
@@ -445,6 +455,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , jointstorage_     ()
    , erp_              ( 0.7 )
    , useAdaptiveBaumgarteCapping_  ( false )  // OFF by default - opt-in feature
+   , useSplitImpulse_  ( false )  // OFF by default: trajectories of existing runs stay unchanged
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
@@ -943,6 +954,37 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 
    useAdaptiveBaumgarteCapping_ = enable;
    correctionAggressiveness_ = aggressiveness;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables or disables the split-impulse position correction.
+ *
+ * \param enable \a true to remove penetration with pseudo velocities, \a false for the Baumgarte term.
+ * \return void
+ *
+ * With the Baumgarte term (the default) a penetrating contact demands a separation velocity of
+ * erp * depth / dt, and that velocity stays in the bodies after the step: an overlapping initial
+ * state launches the bodies, a body landing with a one-step penetration bounces at restitution 0,
+ * a deep penetration (missed contact, hard external forcing) explodes, and a smaller time step
+ * makes all of it worse. With split impulse the velocity solve enforces non-penetration only
+ * (no separation demand for penetrating contacts; separated contacts may still approach up to
+ * touching), and a second, normal-only solve on pseudo velocities closes erp * depth per step.
+ * The pseudo velocities move the positions in this step and are discarded: the overlap shrinks
+ * at the same rate as before, without adding momentum. Same scheme as in HardContactEulerLagrange.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setSplitImpulse( bool enable )
+{
+   useSplitImpulse_ = enable;
 }
 //*************************************************************************************************
 
@@ -1830,6 +1872,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    diag_to_inv_.resize( numContactsMaskedHard );
    diag_n_inv_.resize( numContactsMaskedHard );
    p_.resize( numContactsMaskedHard );
+   pseudoDist_.resize( numContactsMaskedHard );
+   pp_.resize( numContactsMaskedHard );
 
    {
       maximumPenetration_ = 0;
@@ -1894,6 +1938,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
             }
          }
 
+         // Split impulse: the (reduced, possibly capped) penetration goes to the position solve
+         // alone; the velocity solve only has to stop the approach (target distance 0). Separated
+         // contacts keep their allowed approach in both solves, so that a pseudo push propagates
+         // through touching contacts (a stack lifted out of the ground moves as a whole).
+         pseudoDist_[j] = dist_[j];
+         if( useSplitImpulse_ && dist_[j] < 0 )
+            dist_[j] = 0;
+
          mu_[j]       = c->getFriction();
 
          Mat3 diag    = -( r1_[j] % b1->getInvInertia() % r1_[j] + r2_[j] % b2->getInvInertia() % r2_[j] );
@@ -1909,6 +1961,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          diag_to_inv_[j] = inv( Mat2( diag[4], diag[5], diag[7], diag[8] ) );
 
          p_[j] = Vec3();
+         pp_[j] = Vec3();
 
          ++j;
       }
@@ -1934,6 +1987,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    w_.resize( numBodies );
    dv_.resize( numBodies );
    dw_.resize( numBodies );
+   if( useSplitImpulse_ ) {
+      vp_.assign( numBodies, Vec3() );    // pseudo velocities do not persist between steps
+      wp_.assign( numBodies, Vec3() );
+      dvp_.assign( numBodies, Vec3() );
+      dwp_.assign( numBodies, Vec3() );
+   }
 
    {
       size_t j = 0;
@@ -2050,6 +2109,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 #endif
    }
 
+   // Split impulse: the position solve. Normal-only, non-negative pseudo impulses on separate
+   // pseudo velocities, with the same iteration count and the same synchronisation as the
+   // velocity solve (synchronizeVelocities() works on v_/w_/dv_/dw_, so the pseudo arrays are
+   // swapped in for the call).
+   if( useSplitImpulse_ ) {
+      for( size_t it = 0; it < maxIterations_; ++it ) {
+         relaxPseudoVelocities( dtinv );
+         v_.swap( vp_ );  w_.swap( wp_ );  dv_.swap( dvp_ );  dw_.swap( dwp_ );
+         synchronizeVelocities();
+         v_.swap( vp_ );  w_.swap( wp_ );  dv_.swap( dvp_ );  dw_.swap( dwp_ );
+      }
+   }
+
    pe_PROFILING_SECTION {
       timeCollisionResponseIntegration_.start();
       memCollisionResponseIntegration_.start();
@@ -2079,14 +2151,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
                log << "Integrating position of non-fixed global body " << *body << " with velocity " << v_[j] << "\n";
             }
 
-            integratePositions( *body, v_[j] + dv_[j], w_[j] + dw_[j], dt );
+            integratePositions( *body, v_[j] + dv_[j], w_[j] + dw_[j], pseudoVelocity( j ), pseudoAngularVelocity( j ), dt );
          }
          else {
             pe_LOG_DEBUG_SECTION( log ) {
                log << "Integrating position of local body " << *body << " with velocity " << v_[j] << "\n";
             }
 
-            integratePositions( *body, v_[j] + dv_[j], w_[j] + dw_[j], dt );
+            integratePositions( *body, v_[j] + dv_[j], w_[j] + dw_[j], pseudoVelocity( j ), pseudoAngularVelocity( j ), dt );
          }
          pe_LOG_DETAIL_SECTION( log ) {
             log << "Result:\n" << *body << "\n";
@@ -2098,7 +2170,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          pe_LOG_DEBUG_SECTION( log ) {
             log << "Integrating position of shadow copy " << *body << " with velocity " << v_[j] << "\n";
          }
-         integratePositions( *body, v_[j] + dv_[j], w_[j] + dw_[j], dt );
+         integratePositions( *body, v_[j] + dv_[j], w_[j] + dw_[j], pseudoVelocity( j ), pseudoAngularVelocity( j ), dt );
          pe_LOG_DETAIL_SECTION( log ) {
             log << "Result:\n" << *body << "\n";
          }
@@ -2203,6 +2275,69 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          //MPI_Barrier( MPISettings::comm() );
       }
 #endif
+   }
+
+   return delta_max;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Relaxes the pseudo velocities of the split-impulse position solve once.
+ *
+ * \param dtinv The inverse of the time step size.
+ * \return The largest variation of pseudo impulses in the L-infinity norm.
+ *
+ * The same projected Gauss-Seidel sweep as relaxInelasticFrictionlessContacts(), on the pseudo
+ * velocities vp_/dvp_ and wp_/dwp_ with the pseudo impulses pp_ (normal direction only,
+ * non-negative), and with the target distance pseudoDist_ (erp * penetration for penetrating
+ * contacts, the allowed approach for separated ones). The body velocities v_/w_ do not enter:
+ * the solve only determines the displacement that removes the overlap in this step.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::relaxPseudoVelocities( real dtinv )
+{
+   real delta_max( 0 );
+   const size_t numContactsMasked( pp_.size() );
+
+   for( size_t i = 0; i < numContactsMasked; ++i ) {
+      const size_t i1( body1_[i]->index_ ), i2( body2_[i]->index_ );
+
+      // Remove the pseudo velocity corrections of this contact's reaction.
+      dvp_[i1] -= body1_[i]->getInvMass() * pp_[i];
+      dwp_[i1] -= body1_[i]->getInvInertia() * ( r1_[i] % pp_[i] );
+      dvp_[i2] += body2_[i]->getInvMass() * pp_[i];
+      dwp_[i2] += body2_[i]->getInvInertia() * ( r2_[i] % pp_[i] );
+
+      // Relative pseudo velocity along the normal (if no pseudo reaction is present at contact i),
+      // plus the distance to close per step.
+      const Vec3 gdot( ( vp_[i1] + dvp_[i1] ) - ( vp_[i2] + dvp_[i2] )
+                       + ( wp_[i1] + dwp_[i1] ) % r1_[i] - ( wp_[i2] + dwp_[i2] ) % r2_[i] );
+      const real gdot_n( trans( n_[i] ) * gdot + pseudoDist_[i] * dtinv );
+
+      if( gdot_n >= 0 ) {
+         // Already closing fast enough (or separated by more than the allowed approach).
+         delta_max = std::max( delta_max, std::max( std::abs( pp_[i][0] ), std::max( std::abs( pp_[i][1] ), std::abs( pp_[i][2] ) ) ) );
+         pp_[i] = Vec3();
+      }
+      else {
+         const Vec3 p_wf( n_[i] * ( -diag_n_inv_[i] * gdot_n ) );
+         const Vec3 dp( pp_[i] - p_wf );
+         delta_max = std::max( delta_max, std::max( std::abs( dp[0] ), std::max( std::abs( dp[1] ), std::abs( dp[2] ) ) ) );
+         pp_[i] = p_wf;
+
+         dvp_[i1] += body1_[i]->getInvMass() * pp_[i];
+         dwp_[i1] += body1_[i]->getInvInertia() * ( r1_[i] % pp_[i] );
+         dvp_[i2] -= body2_[i]->getInvMass() * pp_[i];
+         dwp_[i2] -= body2_[i]->getInvInertia() * ( r2_[i] % pp_[i] );
+      }
    }
 
    return delta_max;
@@ -4386,16 +4521,45 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::integratePositions( BodyID body, Vec3 v, Vec3 w, real dt ) const
 {
+   integratePositions( body, v, w, Vec3(), Vec3(), dt );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Time integration of the position and orientation of a given body with pseudo velocities.
+ *
+ * \param body The body whose position and orientation to time integrate
+ * \param v The linear velocity to use for time integration of the position.
+ * \param w The angular velocity to use for time integration of the orientation.
+ * \param vPseudo Split-impulse pseudo velocity: moves the position in this step, is not stored.
+ * \param wPseudo Split-impulse pseudo angular velocity, likewise.
+ * \param dt The time step size.
+ * \return void
+ *
+ * Like integratePositions( BodyID, Vec3, Vec3, real ), but the position and orientation advance
+ * with \a v + \a vPseudo and \a w + \a wPseudo while only \a v and \a w are stored back in the body.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::integratePositions( BodyID body, Vec3 v, Vec3 w, const Vec3& vPseudo, const Vec3& wPseudo, real dt ) const
+{
    // Resetting the contact node and removing all attached contacts
    body->resetNode();
    body->clearContacts();
 
    if( body->awake_ ) {
       // Calculating the translational displacement
-      body->gpos_ += v * dt;
+      body->gpos_ += ( v + vPseudo ) * dt;
 
       // Calculating the rotation angle
-      const Vec3 phi( w * dt );
+      const Vec3 phi( ( w + wPseudo ) * dt );
 
       // Calculating the new orientation
       const Quat dq( phi, phi.length() );
