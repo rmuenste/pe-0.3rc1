@@ -66,6 +66,11 @@ void BodyBinaryReader::readFile( const char* filename ) {
    }
 
    std::string filenameCopy( filename );
+#if HAVE_MPI
+   // MPI initialised: collective offsets and MPI-IO. Otherwise (a serial program in an MPI
+   // build) the same file layout goes through the stream path of the non-MPI build.
+   const bool parallel( MPISettings::isParallel() );
+#endif
 
    pe_PROFILING_SECTION {
       timeOpen.start();
@@ -74,13 +79,20 @@ void BodyBinaryReader::readFile( const char* filename ) {
 #if HAVE_MPI
    MPI_Status status;
    MPI_File fh;
-   if ( MPI_File_open( MPISettings::comm(), &filenameCopy[0], MPI_MODE_RDONLY, MPI_INFO_NULL, &fh ) != MPI_SUCCESS )
-      throw std::runtime_error( "Cannot open file." );
-#else
-   std::ifstream fh( &filenameCopy[0], std::ifstream::binary );
-   if( !fh )
-      throw std::runtime_error( "Cannot open file." );
 #endif
+   std::ifstream sfh;
+#if HAVE_MPI
+   if( parallel ) {
+      if ( MPI_File_open( MPISettings::comm(), &filenameCopy[0], MPI_MODE_RDONLY, MPI_INFO_NULL, &fh ) != MPI_SUCCESS )
+         throw std::runtime_error( "Cannot open file." );
+   }
+   else
+#endif
+   {
+      sfh.open( &filenameCopy[0], std::ifstream::binary );
+      if( !sfh )
+         throw std::runtime_error( "Cannot open file." );
+   }
 
    pe_PROFILING_SECTION {
       timeOpen.end();
@@ -92,17 +104,19 @@ void BodyBinaryReader::readFile( const char* filename ) {
    // the short reads that follow are silently ignored by both the MPI and the ifstream path.
    uint64_t fileSize;
 #if HAVE_MPI
-   {
+   if( parallel ) {
       MPI_Offset mpiFileSize;
       if( MPI_File_get_size( fh, &mpiFileSize ) != MPI_SUCCESS )
          throw std::runtime_error( "Cannot determine the size of the rigid body parameter file." );
       fileSize = static_cast<uint64_t>( mpiFileSize );
    }
-#else
-   fh.seekg( 0, std::ios::end );
-   fileSize = static_cast<uint64_t>( fh.tellg() );
-   fh.seekg( 0, std::ios::beg );
+   else
 #endif
+   {
+      sfh.seekg( 0, std::ios::end );
+      fileSize = static_cast<uint64_t>( sfh.tellg() );
+      sfh.seekg( 0, std::ios::beg );
+   }
 
    // Fixed prefix: magic number, format version, five type sizes, process count.
    const uint64_t fixedHeaderBytes = 9u * sizeof(byte) + 1u * sizeof(uint32_t);
@@ -121,10 +135,11 @@ void BodyBinaryReader::readFile( const char* filename ) {
    }
 
 #if HAVE_MPI
-   MPI_File_read_all( fh, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &status );
-#else
-   fh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
+   if( parallel )
+      MPI_File_read_all( fh, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &status );
+   else
 #endif
+      sfh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
 
    pe_PROFILING_SECTION {
       timeReadAll.end();
@@ -212,10 +227,11 @@ void BodyBinaryReader::readFile( const char* filename ) {
    }
 
 #if HAVE_MPI
-   MPI_File_read_all( fh, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &status );
-#else
-   fh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
+   if( parallel )
+      MPI_File_read_all( fh, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &status );
+   else
 #endif
+      sfh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
 
    pe_PROFILING_SECTION {
       timeReadAll.end();
@@ -270,11 +286,14 @@ void BodyBinaryReader::readFile( const char* filename ) {
    }
 
 #if HAVE_MPI
-   MPI_File_read_at_all( fh, offsetGlobal, globals_.ptr(), static_cast<int>( globals_.size() ), MPI_BYTE, &status );
-#else
-   fh.seekg( offsetGlobal, std::ios::beg );
-   fh.read( reinterpret_cast<char*>( globals_.ptr() ), globals_.size() );
+   if( parallel )
+      MPI_File_read_at_all( fh, offsetGlobal, globals_.ptr(), static_cast<int>( globals_.size() ), MPI_BYTE, &status );
+   else
 #endif
+   {
+      sfh.seekg( offsetGlobal, std::ios::beg );
+      sfh.read( reinterpret_cast<char*>( globals_.ptr() ), globals_.size() );
+   }
 
    pe_PROFILING_SECTION {
       timeReadAll.end();
@@ -308,12 +327,16 @@ void BodyBinaryReader::readFile( const char* filename ) {
       }
 
 #if HAVE_MPI
-      MPI_File_read_at( fh, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &status );
-      MPI_File_close( &fh );
-#else
-      fh.seekg( offset, std::ios::beg );
-      fh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+      if( parallel ) {
+         MPI_File_read_at( fh, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &status );
+         MPI_File_close( &fh );
+      }
+      else
 #endif
+      {
+         sfh.seekg( offset, std::ios::beg );
+         sfh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+      }
 
       pe_PROFILING_SECTION {
          timeReadLocal.end();
@@ -375,11 +398,14 @@ void BodyBinaryReader::readFile( const char* filename ) {
          }
 
 #if HAVE_MPI
-         MPI_File_read_at( fh, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &status );
-#else
-         fh.seekg( offset, std::ios::beg );
-         fh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+         if( parallel )
+            MPI_File_read_at( fh, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &status );
+         else
 #endif
+         {
+            sfh.seekg( offset, std::ios::beg );
+            sfh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+         }
 
          pe_PROFILING_SECTION {
             timeReadLocal.end();
@@ -395,13 +421,16 @@ void BodyBinaryReader::readFile( const char* filename ) {
       }
 
 #if HAVE_MPI
-      MPI_File_close( &fh );
+      if( parallel )
+         MPI_File_close( &fh );
 #endif
 
       {
-         // skip the system ID counter for global bodies
+         // skip the system ID counter for global bodies (it is the first item of the GLOBAL
+         // chunk; reading it from buffer_, the last local chunk, left the globals buffer
+         // positioned on the counter, which unmarshalAll() then took for a geometry type)
          id_t tmp;
-         unmarshal( buffer_, tmp );
+         unmarshal( globals_, tmp );
 
          // unmarshal all global bodies as local bodies
          unmarshalAll( globals_, true, true );
