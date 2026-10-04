@@ -71,6 +71,12 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
    header_.setFloatingPointSize( fpSize_ );
    globals_.setFloatingPointSize( fpSize_ );
 
+#if HAVE_MPI
+   // MPI initialised: collective offsets and MPI-IO. Otherwise (a serial program in an MPI
+   // build) the same file layout goes through the stream path of the non-MPI build.
+   const bool parallel( MPISettings::isParallel() );
+#endif
+
    ConstWorldID world = theWorld();
 
    marshal( buffer_, UniqueID<RigidBody>::counter_ );
@@ -134,11 +140,11 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
 
    size_t offset;
 #if HAVE_MPI
-   MPI_Exscan( &localSize, &offset, 1, MPITrait<size_t>::getType(), MPI_SUM, MPISettings::comm() );
-#else
-   // to silence warnings
-   offset = headerSize + globals_.size();
+   if( parallel )
+      MPI_Exscan( &localSize, &offset, 1, MPITrait<size_t>::getType(), MPI_SUM, MPISettings::comm() );
+   else
 #endif
+      offset = headerSize + globals_.size();   // the only chunk follows the global bodies
 
    pe_PROFILING_SECTION {
       timeExscan.end();
@@ -158,10 +164,12 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
 
    std::string filenameCopy( filename );
 #if HAVE_MPI
-   MPI_File_open( MPISettings::comm(), &filenameCopy[0], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh_ );
-#else
-   fh_.open( &filenameCopy[0], std::ofstream::binary );
+   fhParallel_ = parallel;
+   if( parallel )
+      MPI_File_open( MPISettings::comm(), &filenameCopy[0], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh_ );
+   else
 #endif
+      sfh_.open( &filenameCopy[0], std::ofstream::binary );
    fhOpen_ = true;
 
    pe_PROFILING_SECTION {
@@ -172,12 +180,16 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
    // flush local bodies chunk to file
 #if HAVE_MPI
    MPI_Request request;
-   MPI_File_iwrite_at( fh_, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &request );
-   requests_.push_back( request );
-#else
-   fh_.seekp( offset );
-   fh_.write( reinterpret_cast<const char*>( buffer_.ptr() ), buffer_.size() );
+   if( parallel ) {
+      MPI_File_iwrite_at( fh_, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &request );
+      requests_.push_back( request );
+   }
+   else
 #endif
+   {
+      sfh_.seekp( offset );
+      sfh_.write( reinterpret_cast<const char*>( buffer_.ptr() ), buffer_.size() );
+   }
    size_t end = offset + buffer_.size();
 
    pe_PROFILING_SECTION {
@@ -189,10 +201,11 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
       // create and write table of processes' local and global body data offsets into header
       std::vector<size_t> offsets( MPISettings::size() );
 #if HAVE_MPI
-      MPI_Gather( &end, 1, MPITrait<size_t>::getType(), &offsets[0], 1, MPITrait<size_t>::getType(), 0, MPISettings::comm() );
-#else
-      offsets[0] = end;
+      if( parallel )
+         MPI_Gather( &end, 1, MPITrait<size_t>::getType(), &offsets[0], 1, MPITrait<size_t>::getType(), 0, MPISettings::comm() );
+      else
 #endif
+         offsets[0] = end;
 
       pe_PROFILING_SECTION {
          timeGather.end();
@@ -215,21 +228,29 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
 
       // flush header to file
 #if HAVE_MPI
-      MPI_File_iwrite_at( fh_, 0, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &request );
-      requests_.push_back( request );
-#else
-      fh_.seekp( 0 );
-      fh_.write( reinterpret_cast<const char*>( header_.ptr() ), header_.size() );
+      if( parallel ) {
+         MPI_File_iwrite_at( fh_, 0, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &request );
+         requests_.push_back( request );
+      }
+      else
 #endif
+      {
+         sfh_.seekp( 0 );
+         sfh_.write( reinterpret_cast<const char*>( header_.ptr() ), header_.size() );
+      }
 
       // flush global bodies chunk to file
 #if HAVE_MPI
-      MPI_File_iwrite_at( fh_, headerSize, globals_.ptr(), static_cast<int>( globals_.size() ), MPI_BYTE, &request );
-      requests_.push_back( request );
-#else
-      fh_.seekp( headerSize );
-      fh_.write( reinterpret_cast<const char*>( globals_.ptr() ), globals_.size() );
+      if( parallel ) {
+         MPI_File_iwrite_at( fh_, headerSize, globals_.ptr(), static_cast<int>( globals_.size() ), MPI_BYTE, &request );
+         requests_.push_back( request );
+      }
+      else
 #endif
+      {
+         sfh_.seekp( headerSize );
+         sfh_.write( reinterpret_cast<const char*>( globals_.ptr() ), globals_.size() );
+      }
 
       pe_PROFILING_SECTION {
          sizeWrite += header_.size() + globals_.size();
@@ -238,7 +259,8 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
    }
    else {
 #if HAVE_MPI
-      MPI_Gather( &end, 1, MPITrait<size_t>::getType(), 0, 0, MPITrait<size_t>::getType(), 0, MPISettings::comm() );
+      if( parallel )   // a rank other than 0 exists only with MPI initialised
+         MPI_Gather( &end, 1, MPITrait<size_t>::getType(), 0, 0, MPITrait<size_t>::getType(), 0, MPISettings::comm() );
 #endif
 
       pe_PROFILING_SECTION {

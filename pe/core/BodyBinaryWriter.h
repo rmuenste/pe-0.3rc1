@@ -125,10 +125,10 @@ private:
    Buffer globals_;
 #if HAVE_MPI
    std::list<MPI_Request> requests_;
-   MPI_File fh_;
-#else
-   std::ofstream fh_;
+   MPI_File fh_;        //!< MPI-IO handle (MPI initialised).
+   bool fhParallel_;    //!< Whether the open file uses fh_ (true) or sfh_ (false).
 #endif
+   std::ofstream sfh_;  //!< Stream handle: non-MPI builds, and MPI builds without an initialised MPI.
    bool fhOpen_;
    int fpSize_;
    size_t bodies_;   //!< Body records written by the last writeFileAsync() call on this rank.
@@ -149,7 +149,11 @@ private:
 //*************************************************************************************************
 /*!\brief Constructs the binary writer.
  */
-inline BodyBinaryWriter::BodyBinaryWriter() : fhOpen_( false ), fpSize_( 0 ), bodies_( 0 ) {
+inline BodyBinaryWriter::BodyBinaryWriter() :
+#if HAVE_MPI
+   fhParallel_( false ),
+#endif
+   fhOpen_( false ), fpSize_( 0 ), bodies_( 0 ) {
 }
 //*************************************************************************************************
 
@@ -218,15 +222,19 @@ inline size_t BodyBinaryWriter::getMarshalledBodyCount() const {
 inline void BodyBinaryWriter::wait() {
    if( fhOpen_ ) {
 #if HAVE_MPI
-      MPI_Status status;
-      while( !requests_.empty() ) {
-         MPI_Wait( &requests_.front(), &status );
-         requests_.pop_front();
+      if( fhParallel_ ) {
+         MPI_Status status;
+         while( !requests_.empty() ) {
+            MPI_Wait( &requests_.front(), &status );
+            requests_.pop_front();
+         }
+         MPI_File_close( &fh_ );
       }
-      MPI_File_close( &fh_ );
-#else
-      fh_.close();
+      else
 #endif
+      {
+         sfh_.close();
+      }
       fhOpen_ = false;
    }
 }

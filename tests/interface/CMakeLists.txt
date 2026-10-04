@@ -382,6 +382,38 @@ if(PE_USE_MPI AND MPI_FOUND)
   )
 endif()
 
+# A checkpoint written by two ranks (MPI-IO) read by a serial program of the same build, which
+# must take the stream path without MPI_Init. The write is the fixture of the read.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_checkpoint_parallel_file_serial_read
+    pe_checkpoint_parallel_file_serial_read.cpp
+  )
+  target_link_libraries(pe_checkpoint_parallel_file_serial_read PRIVATE pe_static MPI::MPI_CXX)
+  set(PE_TWO_RANK_CHECKPOINT_DIR "${CMAKE_CURRENT_BINARY_DIR}/two-rank-checkpoint")
+  add_test(
+    NAME pe-checkpoint-two-rank-write
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_checkpoint_parallel_file_serial_read>
+      ${MPIEXEC_POSTFLAGS}
+      --write "${PE_TWO_RANK_CHECKPOINT_DIR}"
+  )
+  set_tests_properties(pe-checkpoint-two-rank-write PROPERTIES
+    LABELS "integration;mpi;checkpoint"
+    FIXTURES_SETUP pe-two-rank-checkpoint
+  )
+  add_test(
+    NAME pe-checkpoint-two-rank-serial-read
+    COMMAND pe_checkpoint_parallel_file_serial_read --read "${PE_TWO_RANK_CHECKPOINT_DIR}"
+  )
+  set_tests_properties(pe-checkpoint-two-rank-serial-read PROPERTIES
+    LABELS "integration;serial;checkpoint"
+    FIXTURES_REQUIRED pe-two-rank-checkpoint
+    SKIP_RETURN_CODE 77
+  )
+endif()
+
 function(pe_add_interface_serial_test test_name case_name)
   add_test(
     NAME ${test_name}
