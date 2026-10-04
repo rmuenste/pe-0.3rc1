@@ -76,7 +76,7 @@ int main( int argc, char* argv[] )
    }
    std::cout << "--------------------------------------------------------------------------------\n"
              << " inserted " << inserted << ", in trough " << inTrough << ", below trough outlet " << below
-             << ", ke " << th.ke << " J, z range [" << th.zmin << ", " << th.zmax << "]\n"
+             << ", ke " << th.ke << " J, z range [" << th.zmin() << ", " << th.zmax() << "]\n"
              << " wall-clock " << timer.total() << " s\n";
    return 0;
 }

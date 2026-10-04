@@ -79,7 +79,7 @@ int main( int argc, char* argv[] )
    timer.end();
    th.measure( world );
    std::cout << "--------------------------------------------------------------------------------\n"
-             << " particles " << th.n << ", ke " << th.ke << " J, z range [" << th.zmin << ", " << th.zmax << "]\n"
+             << " particles " << th.n << ", ke " << th.ke << " J, z range [" << th.zmin() << ", " << th.zmax() << "]\n"
              << " wall-clock " << timer.total() << " s\n";
    return 0;
 }
