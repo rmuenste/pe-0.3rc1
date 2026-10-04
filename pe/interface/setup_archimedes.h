@@ -280,7 +280,7 @@ void setupArchimedes(MPI_Comm ex0)
    }
    else if (seedSpheres)
    {
-      const std::vector<Vec3> edges = readVectorsFromFile(centerlineFile);
+      std::vector<Vec3> edges = readVectorsFromFile(centerlineFile);  // non-const: the generator takes a mutable reference
       if (edges.empty())
       {
          abortSetup("read no centerline vertices from " + centerlineFile + ".");
