@@ -220,6 +220,7 @@ add_test(
 )
 set_tests_properties(pe-split-impulse PROPERTIES
   LABELS "unit;serial;rigidbody"
+  SKIP_RETURN_CODE 77
   TIMEOUT 120
 )
 
@@ -545,4 +546,35 @@ add_test(
 )
 set_tests_properties(pe-stale-velocity-correction PROPERTIES
   LABELS "integration;serial;rigidbody"
+)
+
+# Split impulse against the other two hard-contact pipelines (the default pipeline's run is
+# pe-split-impulse above): the same source linked against the fluid-coupled and the semi-implicit
+# library variants. 77 = configured system without the switch (skipped).
+add_executable(pe_split_impulse_fluid_test
+  pe_split_impulse_test.cpp
+)
+target_link_libraries(pe_split_impulse_fluid_test PRIVATE pe_static_lubstage_fluid)
+add_test(
+  NAME pe-split-impulse-fluid
+  COMMAND pe_split_impulse_fluid_test
+)
+set_tests_properties(pe-split-impulse-fluid PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  SKIP_RETURN_CODE 77
+  TIMEOUT 120
+)
+
+add_executable(pe_split_impulse_plain_test
+  pe_split_impulse_test.cpp
+)
+target_link_libraries(pe_split_impulse_plain_test PRIVATE pe_static_lubstage_plain)
+add_test(
+  NAME pe-split-impulse-plain
+  COMMAND pe_split_impulse_plain_test
+)
+set_tests_properties(pe-split-impulse-plain PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  SKIP_RETURN_CODE 77
+  TIMEOUT 120
 )

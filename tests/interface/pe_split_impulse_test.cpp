@@ -25,7 +25,10 @@
  *    4. a 6-box tower built touching, 1 s with the switch on: the top box drifts less than 0.01
  *       and the kinetic energy stays below 1e-2 (the correction does not destabilise rest).
  *
- *  Serial world setup, no MPI.
+ *  Serial world setup, no MPI. The switch exists in all three hard-contact collision systems
+ *  (HardContactEulerLagrange, HardContactSemiImplicitTimesteppingSolvers, HardContactAndFluid);
+ *  CTest runs this source against each of them. Under a configured solver without the switch
+ *  the test prints a note and returns 77 (CTest: skipped).
  */
 //=================================================================================================
 
@@ -35,9 +38,23 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace pe;
+
+// Detect setSplitImpulse() on the configured collision system (all hard-contact systems have it).
+template< typename T, typename = void > struct HasSplitImpulse : std::false_type {};
+template< typename T > struct HasSplitImpulse< T, std::void_t< decltype( std::declval<T&>().setSplitImpulse( true ) ) > > : std::true_type {};
+typedef std::remove_reference<decltype( *theCollisionSystem() )>::type CollisionSystemType;
+
+template< typename Handle > void applySplitImpulse( Handle& cs, bool on )
+{
+   typedef typename std::remove_reference<decltype( *cs )>::type CS;
+   if constexpr ( HasSplitImpulse<CS>::value ) cs->setSplitImpulse( on );
+   else { (void)cs; (void)on; }
+}
 
 static int failures = 0;
 
@@ -83,6 +100,10 @@ static real kineticEnergy()
 
 int main()
 {
+   if( !HasSplitImpulse<CollisionSystemType>::value ) {
+      std::printf( "pe_split_impulse_test: the configured collision system has no split impulse, skipped\n" );
+      return 77;
+   }
    WorldID world = theWorld();
    world->setGravity( 0, 0, 0 );   // applied as a force in step()
    CollisionSystemID cs = theCollisionSystem();
@@ -90,7 +111,7 @@ int main()
 
    // 1. Box 0.05 deep in the plane.
    for( int split = 0; split < 2; ++split ) {
-      cs->setSplitImpulse( split == 1 );
+      applySplitImpulse( cs, split == 1 );
       world->clear();
       dynamicBodies.clear();
       const MaterialID m( material() );
@@ -119,7 +140,7 @@ int main()
 
    // 2. Drop at restitution 0.
    for( int split = 0; split < 2; ++split ) {
-      cs->setSplitImpulse( split == 1 );
+      applySplitImpulse( cs, split == 1 );
       world->clear();
       dynamicBodies.clear();
       const MaterialID m( material() );
@@ -152,7 +173,7 @@ int main()
 
    // 3. Pseudo motion propagates through a touching contact.
    {
-      cs->setSplitImpulse( true );
+      applySplitImpulse( cs, true );
       world->clear();
       dynamicBodies.clear();
       const MaterialID m( material() );
@@ -173,7 +194,7 @@ int main()
 
    // 4. Resting tower with the switch on.
    {
-      cs->setSplitImpulse( true );
+      applySplitImpulse( cs, true );
       world->clear();
       dynamicBodies.clear();
       const MaterialID m( material() );
@@ -189,7 +210,7 @@ int main()
       expect( std::isfinite( drift ), what );
    }
 
-   cs->setSplitImpulse( false );
+   applySplitImpulse( cs, false );
    if( failures == 0 ) {
       std::printf( "pe_split_impulse_test: all checks passed\n" );
       return EXIT_SUCCESS;

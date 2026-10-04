@@ -79,7 +79,7 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
 
 ## Resolved
 
-- **Position correction adds momentum (split impulse).** `HardContactEulerLagrange` removed
+- **Position correction adds momentum (split impulse).** The hard-contact solvers removed
   penetration through the velocity constraint: a penetrating contact demanded a separation
   velocity erp * depth / dt, the impulse producing it entered the body velocity and
   `integratePositions()` stored it, so an overlapping start launched the bodies (7 m/s for 0.01
@@ -91,8 +91,9 @@ From a survey of `MaxContacts::collide()` and every routine it dispatches to:
   erp * depth per step; the pseudo velocities move the positions in `integratePositions()` and
   are discarded. Touching contacts take part in the pseudo solve, so a stack lifted out of the
   ground moves as a whole. Under MPI the pseudo arrays go through the same
-  `synchronizeVelocities()` (swapped in for the call). Off by default: existing runs are
-  unchanged. `tests/interface/pe_split_impulse_test.cpp`: the 0.05-deep box (35 m/s launch off,
+  `synchronizeVelocities()` (swapped in for the call). Implemented identically in all three
+  hard-contact collision systems (Euler-Lagrange, semi-implicit, fluid-coupled). Off by default:
+  existing runs are unchanged. `tests/interface/pe_split_impulse_test.cpp`: the 0.05-deep box (35 m/s launch off,
   v_z = 0 on, overlap gone within 30 steps), the restitution-0 drop (rebound 0.18 off, 0.0009
   on), pseudo propagation through a touching contact, a resting tower. The viewer exposes the
   switch in the Simulation window; the Pair Lab smoke test checks the corner-face start with it.
