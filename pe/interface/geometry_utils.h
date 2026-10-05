@@ -19,6 +19,15 @@ namespace pe {
  * Reads a text file containing 3D vectors (one per line with x, y, z components).
  * Each line should contain three floating-point values separated by whitespace.
  *
+ * Precision: the components are parsed as double, the precision of pe::real, so a
+ * coordinate written in the file is taken literally (0.05 stays 0.05). Before
+ * 2026-10 the parser read float and silently rounded every value to single
+ * precision (0.05 became 0.05000000074505806) before the body was created. Runs
+ * made with that parser are therefore reproducible from their xyz file only if
+ * the file carries the single-precision value written out in full. Keep the
+ * parse at double: the body positions, the integrator and the checkpoint files
+ * are all double, and nothing in the file format asks for a narrower type.
+ *
  * @param fileName Path to the input file
  * @return Vector of Vec3 objects read from the file (empty on error)
  */
@@ -37,9 +46,9 @@ inline std::vector<Vec3> readVectorsFromFile(const std::string& fileName) {
     // Read the file line by line
     while (std::getline(file, line)) {
         std::stringstream ss(line);  // Create a string stream from the line
-        double x, y, z;
+        double x, y, z;   // double on purpose - see the precision note above
 
-        // Parse the line for three float values
+        // Parse the line for three values
         if (ss >> x >> y >> z) {
             // Create a Vec3 object and add it to the vector
             vectors.emplace_back(x, y, z);
