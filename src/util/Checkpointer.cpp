@@ -3,6 +3,7 @@
 #include <pe/core/MPISettings.h>
 #include <pe/core/MPITrait.h>
 #include <pe/core/World.h>
+#include <pe/util/CheckpointCollective.h>
 
 #include <sstream>
 #include <stdexcept>
@@ -27,19 +28,6 @@ namespace {
 bool isCheckpointFileOwner()
 {
    return MPISettings::rank() == 0;
-}
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-/*!\brief Blocks until every rank has finished its part of the collective `.peb` write.
- */
-void synchronizeCheckpointWriters()
-{
-#if HAVE_MPI
-   if( MPISettings::size() > 1 )
-      MPI_Barrier( MPISettings::comm() );
-#endif
 }
 //*************************************************************************************************
 
@@ -78,28 +66,36 @@ CheckpointMetadata loadCheckpoint( const boost::filesystem::path& pebPath,
                                    const boost::filesystem::path& sidecarPath,
                                    BodyBinaryReader& reader )
 {
-   const CheckpointMetadata metadata = readCheckpointMetadata( sidecarPath );
+   CheckpointMetadata metadata;
+   const std::string filename = pebPath.string();
+   checkpoint_detail::phase( filename.c_str(), [&] {
+      metadata = readCheckpointMetadata( sidecarPath );
 
-   if( metadata.present ) {
-      requirePebIntact( pebPath, metadata );
-      restoreCheckpointMaterials( metadata, pebPath.string() );
-   }
-   else {
-      // Deliberately std::cerr rather than pe_LOG_WARNING_SECTION: this warning says that the
-      // integrity and pairing guarantees do not hold for this run, and it must reach the operator
-      // even when logging is off or below warning level, which is the default in coupled runs.
-      pe_EXCLUSIVE_SECTION( 0 ) {
-         std::cerr << "WARNING: checkpoint '" << pebPath.string() << "' has no metadata sidecar ("
-                   << sidecarPath.filename().string() << "). It was written by a pe build without "
-                      "checkpoint metadata, so its simulation time, step index and material table "
-                      "are unknown: it cannot be paired with driver state, truncation cannot be "
-                      "detected, and body material indices are only valid if this process "
-                      "registers exactly the same materials, in the same order, before the "
-                      "checkpoint is read." << std::endl;
+      if( metadata.present ) {
+         requirePebIntact( pebPath, metadata );
+         restoreCheckpointMaterials( metadata, pebPath.string() );
       }
-   }
+      else {
+         // Deliberately std::cerr rather than pe_LOG_WARNING_SECTION: this warning says that the
+         // integrity and pairing guarantees do not hold for this run, and it must reach the operator
+         // even when logging is off or below warning level, which is the default in coupled runs.
+         pe_EXCLUSIVE_SECTION( 0 ) {
+            std::cerr << "WARNING: checkpoint '" << pebPath.string() << "' has no metadata sidecar ("
+                      << sidecarPath.filename().string() << "). It was written by a pe build without "
+                         "checkpoint metadata, so its simulation time, step index and material table "
+                         "are unknown: it cannot be paired with driver state, truncation cannot be "
+                         "detected, and body material indices are only valid if this process "
+                         "registers exactly the same materials, in the same order, before the "
+                         "checkpoint is read." << std::endl;
+         }
+      }
 
-   reader.readFile( pebPath.string().c_str() );
+      // Missing legacy files must also fail before the collective reader opens them.
+      if( !boost::filesystem::exists( pebPath ) )
+         throw std::runtime_error( "Checkpoint file does not exist." );
+   });
+
+   reader.readFile( filename.c_str() );
 
    return metadata;
 }
@@ -160,8 +156,8 @@ uint64_t totalMarshalledBodyCount( const BodyBinaryWriter& writer )
  * never published.
  *
  * The preserved copy survives a kill throughout the `.peb` write, which is the long part. It does
- * not survive a kill during the sidecar write itself: that is a truncate-and-rewrite of the
- * sidecar path with no third copy to fall back on. The outcome there is a sidecar-less checkpoint,
+ * not restore the old metadata after publishing the new `.peb`: a kill or failure during the
+ * sidecar write leaves a sidecar-less checkpoint,
  * which is loud, not a wrong pairing.
  *
  * The stale sidecar has to go before the new `.peb` appears rather than after: checkpoint names
@@ -176,37 +172,56 @@ void storeCheckpoint( const boost::filesystem::path& pebPath,
                       const boost::filesystem::path& sidecarPath,
                       BodyBinaryWriter& writer )
 {
-   boost::filesystem::create_directories( pebPath.parent_path() );
+   const std::string filename = pebPath.string();
+   checkpoint_detail::phase( filename.c_str(), [&] {
+      boost::filesystem::create_directories( pebPath.parent_path() );
+   });
 
-   // Collective: MPI_File_open below requires an identical filename on every rank.
    const long token = collectiveCheckpointScratchToken();
    const boost::filesystem::path staleSidecar = preservedSidecarPath( sidecarPath, token );
-
-   if( isCheckpointFileOwner() && boost::filesystem::exists( sidecarPath ) ) {
-      boost::system::error_code ignored;
-      boost::filesystem::rename( sidecarPath, staleSidecar, ignored );
-   }
-   synchronizeCheckpointWriters();
-
-   // writeFile() already waits for the asynchronous chunk writes to complete.
    const boost::filesystem::path pebTemp = checkpointTempPath( pebPath, token );
-   writer.writeFile( pebTemp.string().c_str() );
-   synchronizeCheckpointWriters();
+   bool preserved = false;
+   bool published = false;
+   try {
+      checkpoint_detail::phase( filename.c_str(), [&] {
+         if( isCheckpointFileOwner() && boost::filesystem::exists( sidecarPath ) ) {
+            boost::filesystem::rename( sidecarPath, staleSidecar );
+            preserved = true;
+         }
+      });
 
-   const uint64_t bodyCount = totalMarshalledBodyCount( writer );
+      // The writer agrees on local preparation and I/O failures before its next collective,
+      // and drains outstanding requests and closes the file collectively before throwing.
+      writer.writeFile( pebTemp.string().c_str() );
+      const uint64_t bodyCount = totalMarshalledBodyCount( writer );
 
-   if( !isCheckpointFileOwner() )
-      return;
-
-   CheckpointMetadata metadata = currentCheckpointMetadata();
-   metadata.pebBytes  = static_cast<uint64_t>( boost::filesystem::file_size( pebTemp ) );
-   metadata.bodyCount = bodyCount;
-
-   commitCheckpointTempFile( pebTemp, pebPath );
-   writeCheckpointMetadata( sidecarPath, metadata );
-
-   boost::system::error_code ignored;
-   boost::filesystem::remove( staleSidecar, ignored );
+      checkpoint_detail::phase( filename.c_str(), [&] {
+         if( !isCheckpointFileOwner() ) return;
+         CheckpointMetadata metadata = currentCheckpointMetadata();
+         metadata.pebBytes = static_cast<uint64_t>( boost::filesystem::file_size( pebTemp ) );
+         metadata.bodyCount = bodyCount;
+         commitCheckpointTempFile( pebTemp, pebPath );
+         published = true;
+         writeCheckpointMetadata( sidecarPath, metadata );
+         boost::filesystem::remove( staleSidecar );
+      });
+   }
+   catch( ... ) {
+      // Only the owner touches shared files. Before publication the old pair can be restored;
+      // after publication it is essential never to put the old sidecar beside the new .peb.
+      checkpoint_detail::phase( filename.c_str(), [&] {
+         if( isCheckpointFileOwner() ) {
+            boost::system::error_code ignored;
+            boost::filesystem::remove( pebTemp, ignored );
+            boost::filesystem::remove( checkpointTempPath( sidecarPath, localCheckpointScratchToken() ), ignored );
+            if( preserved && !published )
+               boost::filesystem::rename( staleSidecar, sidecarPath, ignored );
+            else if( published )
+               boost::filesystem::remove( staleSidecar, ignored );
+         }
+      });
+      throw;
+   }
 }
 //*************************************************************************************************
 
