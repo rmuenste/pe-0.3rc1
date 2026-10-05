@@ -11,7 +11,9 @@
 #include <pe/core/lubrication/Params.h>
 #include <pe/core/lubrication/LubricationModel.h>
 
+#include <algorithm>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <cstddef>
 #include <type_traits>
@@ -161,6 +163,48 @@ inline void applyOptionalLubricationParams(CollisionSystemT& cs, const Simulatio
                    "lubrication band undetected between coarse-detection updates.\n";
     }
   }
+}
+
+// Sets the shadow-copy margin for pairwise lubrication in a domain-decomposed (MPI) setup.
+// Shared by the Euler-Lagrange setups; call it AFTER the process layout has been validated.
+//
+// The margin widens the shadow-copy overlap test so cross-boundary pairs within the
+// surface-gap cutoff are visible to the designated treating rank. The full-visibility
+// margin is sphereRadius + cutoff: for a pair (A owned by r1, B owned by r2) with
+// gap < cutoff, r1 sees B iff dist(B_center, r1_box) <= R_B + margin, and that distance
+// can reach R_A + R_B + cutoff when A's center sits on r1's boundary.
+//
+// The margin is CLAMPED so the total shadow reach (radius + margin) stays below the
+// thinnest decomposed subdomain extent: pe cannot register shadow copies beyond direct
+// neighbors ("Registering distant processes is not yet implemented"). Under the
+// designated-treater relay a clamped margin is momentum-safe -- a pair the treater cannot
+// see is skipped for a substep, never applied one-sided; only extremal near-cutoff pairs
+// are affected.
+//
+// \param minSubdomainExtent Smallest extent of any subdomain along a DECOMPOSED axis
+//        (axes with a single process do not count). Pass
+//        std::numeric_limits<real>::max() when no axis is decomposed.
+// \param verbose Print the clamp notice (pass true on one rank only).
+//
+// No-op when lubrication is disabled (the margin keeps its default of zero).
+inline void applyLubricationShadowCopyMargin(const SimulationConfig& config,
+                                             real minSubdomainExtent, bool verbose) {
+  if (!config.getLubricationEnabled()) {
+    return;
+  }
+
+  const real radius = config.getBenchRadius();
+  real margin = config.getLubricationCutoff() + radius;
+  const real reachCap = real(0.99) * minSubdomainExtent - radius;
+  if (margin > reachCap) {
+    if (verbose) {
+      std::cout << "EL lubrication: shadow margin clamped " << margin
+                << " -> " << reachCap << " (subdomain extent " << minSubdomainExtent
+                << "); near-cutoff cross-rank pairs may be skipped.\n";
+    }
+    margin = reachCap;
+  }
+  lubrication::setShadowCopyMargin(std::max(margin, real(0)));
 }
 
 }  // namespace pe

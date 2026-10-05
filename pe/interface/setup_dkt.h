@@ -1,198 +1,196 @@
+#ifndef _PE_SETUP_DKT_H_
+#define _PE_SETUP_DKT_H_
 
+#include <iostream>
+#include <string>
+
+#include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
 
+//*************************************************************************************************
+/*!\brief PE setup for the draft-kiss-tumble benchmark (parallel PE mode).
+ *
+ * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
+ *
+ * Reached from Fortran through commf2c_dkt_(). Two equal spheres are released one above the
+ * other, slightly offset in x, in a 2 x 2 x 8 column. The column has a ground plane at
+ * z = 0 and four side walls at x = 0, x = 2, y = 0 and y = 2; it is open at the top.
+ *
+ * Read from example.json: gravity, fluid density and viscosity, particle density and radius
+ * (benchRadius_), the process layout (processesX_/Y_/Z_), the step size, and the VTK switch
+ * and spacing.
+ *
+ * Fixed in this file: the column size and the two sphere start positions.
+ *
+ * Sphere user IDs are numbered per process and are therefore not unique across processes.
+ * Use the system ID (getSystemID()) wherever a globally unique ID is needed.
+ *
+ * Every error path aborts the run with a message.
+ */
 void setupDraftKissTumbBench(MPI_Comm ex0) {
 
+  //===============================================================================================
+  // Case constants
+  //===============================================================================================
+  const real LX( 2.0 );                       // Column size, origin at (0,0,0)
+  const real LY( 2.0 );
+  const real LZ( 8.0 );
+
+  const Vec3 spherePositions[] = { Vec3( 0.99, 1.0, 6.9 ),    // Leading (lower) sphere
+                                   Vec3( 1.0,  1.0, 7.2 ) };  // Trailing (upper) sphere
+
+  //===============================================================================================
+  // Configuration, world and fluid properties
+  //===============================================================================================
   auto& config = SimulationConfig::getInstance();
   world = theWorld();
-  
+
   loadSimulationConfig("example.json");
-  
+
   world->setGravity( config.getGravity() );
   world->setLiquidSolid(true);
   world->setLiquidDensity( config.getFluidDensity() );
   world->setViscosity( config.getFluidViscosity() );
   world->setDamping( 1.0 );
 
-  // Configuration of the MPI system
+  TimeStep::stepsize( config.getStepsize() );
+
+  //===============================================================================================
+  // MPI system and validation
+  //===============================================================================================
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  const real dx( 2.00 );
-  const real dy( 2.00 );
-  const real dz( 8.0 / config.getProcessesZ() );
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
 
-  int my_rank;
-  MPI_Comm_rank(ex0, &my_rank);
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupDraftKissTumbBench: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
 
-  // Checking the total number of MPI processes
-  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
-     std::exit(EXIT_FAILURE);
+  const int px = config.getProcessesX();
+  const int py = config.getProcessesY();
+  const int pz = config.getProcessesZ();
+
+  if( px*py*pz != mpisystem->getSize() ) {
+    abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
+               " != " + std::to_string(px*py*pz) + " (processesX_*Y_*Z_).");
   }
 
-  /////////////////////////////////////////////////////
-  // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
+  const real radBench = config.getBenchRadius();
+  if( radBench <= real(0) ) {
+    abortSetup("benchRadius_ must be positive.");
+  }
 
-  // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
+  //===============================================================================================
+  // 3D rectilinear, non-periodic domain decomposition of the column
+  //===============================================================================================
+  int dims   [] = { px, py, pz };
   int periods[] = { false, false, false };
   int reorder   = false;
+  MPI_Comm cartcomm;
 
-  int rank;           // Rank of the neighboring process
-  int center[3];      // Definition of the coordinates array 'center' (the cartesian topology)
-  MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
-
-  /*
-   * Here the actual cartesian communicator is created from MPI_COMM_WORLD and the parameters
-   * of the cartesian grid setup
-   * \param MPI_COMM_WORLD The default communicator
-   * \param ndims Number of dimensions of the cartesian grid
-   * \param dims Array of size ndims, dims[i] = number of processes in dimension i 
-   * \param wrap_around Array of size ndims with wrap_around[i] = wrapping on/off for dimension i 
-   */
   MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
   if( cartcomm == MPI_COMM_NULL ) {
-     std::cout << "Error creating 3D communicator" << std::endl;
-     MPI_Finalize();
-     return;
+    abortSetup("failed to create the cartesian communicator.");
   }
+  mpisystem->setComm(cartcomm);
+
+  // Cartesian coordinates of this process within the process grid
+  int center[3];
+  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
   pe_EXCLUSIVE_SECTION(0) {
     std::cout << "> 3D communicator created" << std::endl;
     std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-  }
-  mpisystem->setComm(cartcomm);
-
-  // Here the cartesian coordinates of the different processes are created
-  /*  
-   * \param comm2D The cartesian communicator created by MPI_Cart_create
-   * \param my_rank The rank with regard to MPI_COMM_WORLD
-   * \param ndims Dimensions of the cartesian grid
-   * \param coord An array of a size equivalent to the dimension of the cartesian grid
-   *  coord[0] x coord[0] would correspond to the cartesian coordinates of the first process of a 2D cartesian grid
-   */
-  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
-
-  int my_cart_rank;
-  MPI_Cart_rank(cartcomm, center, &my_cart_rank);
-
-  pe_EXCLUSIVE_SECTION(0) {
     std::cout << "3D coordinates were created" << std::endl;
     std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
   }
 
-//===========================================================================================================
-  int px = config.getProcessesX();
-  int py = config.getProcessesY();
-  int pz = config.getProcessesZ();
+  // The decomposition covers exactly the column between the walls for any process layout.
+  // (The subdomain size in x and y used to be fixed to 2.0, which matched the walls only
+  // for processesX_ = processesY_ = 1; for that layout nothing has changed.)
+  const real dx( LX / px );
+  const real dy( LY / py );
+  const real dz( LZ / pz );
 
-  real bx = 0.0;
-  real by = 0.0;
-  real bz = 0.0;
+  decomposeDomain(center, 0.0, 0.0, 0.0, dx, dy, dz, px, py, pz);
 
-  // Setup domain decomposition using decomposeDomain function for non-periodic 3D
-  decomposeDomain(center, bx, by, bz, dx, dy, dz, px, py, pz);
+  // Checking the process setup
+  theMPISystem()->checkProcesses();
 
-//===========================================================================================================
-
-
-//#ifndef NDEBUG
-   // Checking the process setup
-   theMPISystem()->checkProcesses();
-//#endif
-
+  //===============================================================================================
+  // Ground plane, side walls and the two spheres
+  //===============================================================================================
+  // TODO: materials may be identified by their index elsewhere (e.g. checkpoints). Keep the
+  //       creation order ("ground" first, then "Bench") until index-based use is ruled out.
   MaterialID gr = createMaterial("ground", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  std::cout << "[Creating a plane] " << std::endl;
   pe_GLOBAL_SECTION
   {
-     // Creating the ground plane
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
-     createPlane( 1779,-1.0, 0.0, 0.0,-2.0, granite, false ); // left border
- 
-     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
-     createPlane( 1781, 0.0,-1.0, 0.0,-2, granite, false ); // front border
+     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );   // ground plane
 
+     createPlane( 1778,+1.0, 0.0, 0.0, 0,   granite, false );     // wall at x = 0
+     createPlane( 1779,-1.0, 0.0, 0.0,-LX,  granite, false );     // wall at x = LX
+     createPlane( 1780, 0.0, 1.0, 0.0, 0,   granite, false );     // wall at y = 0
+     createPlane( 1781, 0.0,-1.0, 0.0,-LY,  granite, false );     // wall at y = LY
   }
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "#==================================================================================" << std::endl;
-  }
-
-  // Setup of the VTK visualization
-  if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
-  }
-
-//  if(g_povray) {
-//    povraySetup();
-//  }
-
-  const real lx = px * dx;
-  const real ly = py * dy;
-  const real lz = pz * dz;
-
-  const int nx = 1;//  lx / space;
-  const int ny = 1;//  ly / space;
-  const int nz = 1;// (lz / space);
-
-
-  pe_EXCLUSIVE_SECTION(0) {
-
-    std::cout << "nx, ny, nz: " << (Vec3(nx, ny, nz)) << std::endl;
-
-  }
-
-  int idx = 0;
-
-  // Create a custom material for the benchmark
   MaterialID myMaterial = createMaterial("Bench", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  Vec3 position( 0.99,  1.0, 6.9);
-  
-  real radBench = config.getBenchRadius();
-  if (world->ownsPoint( position )) {
-    SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
-    std::cout << "[Creating particle] at: " << (position) << " in domain: " << my_rank << std::endl;
-    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
-    ++idx;
-  }
 
-  position = Vec3( 1.0,  1.0, 7.2);
-  if (world->ownsPoint( position )) {
-    SphereID spear = createSphere(idx, position, radBench, myMaterial, true);
-    std::cout << "[Creating particle] at: " << (position) << " in domain: " << my_rank << std::endl;
-    std::cout << "[particle mass]: " << spear->getMass()  << std::endl;
-    std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
-    ++idx;
+  // User IDs are numbered per process (see the function documentation)
+  int idx = 0;
+  for( const Vec3& position : spherePositions ) {
+    if (world->ownsPoint( position )) {
+      SphereID sphere = createSphere(idx, position, radBench, myMaterial, true);
+      std::cout << "[Creating particle] at: " << position << " in domain: " << myRank << std::endl;
+      std::cout << "[particle mass]: " << sphere->getMass()  << std::endl;
+      std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
+      ++idx;
+    }
   }
 
   // Synchronization of the MPI processes
   world->synchronize();
 
-  // Calculating the total number of particles and primitives
+  // Setup of the VTK visualization
+  if( config.getVtk() ) {
+    vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
+  }
+
+  //===============================================================================================
+  // Setup summary
+  //===============================================================================================
+  unsigned long particlesLocal = static_cast<unsigned long>(idx);
+  unsigned long bodiesLocal    = static_cast<unsigned long>( theCollisionSystem()->getBodyStorage().size() );
   unsigned long particlesTotal ( 0 );
   unsigned long primitivesTotal( 0 );
-  unsigned long bla = idx;
-  int numBodies =  theCollisionSystem()->getBodyStorage().size();
-  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-  MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  TimeStep::stepsize( config.getStepsize() );
+  MPI_Reduce( &particlesLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
-    std::cout << "\n--" << "SIMULATION SETUP"
+    std::cout << "\n--" << "DRAFT-KISS-TUMBLE SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " particles x              = " << nx << "\n" 
-      << " particles y              = " << ny << "\n" 
-      << " particles z              = " << nz << "\n" 
+      << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+      << " Column size                             = " << Vec3(LX, LY, LZ) << "\n"
+      << " Particle radius                         = " << radBench << "\n"
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+
+    if( particlesTotal != 2 ) {
+      std::cerr << "\nERROR in setupDraftKissTumbBench: expected 2 spheres, created "
+                << particlesTotal << ".\n" << std::endl;
+      MPI_Abort(cartcomm, 1);
+    }
   }
 
   MPI_Barrier(cartcomm);
-   
 }
+//*************************************************************************************************
+
+#endif

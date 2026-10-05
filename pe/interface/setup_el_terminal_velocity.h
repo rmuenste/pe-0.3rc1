@@ -15,7 +15,7 @@
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
 #include <pe/interface/geometry_utils.h>
-#include <pe/core/lubrication/Params.h>
+#include <pe/interface/setup_optional_collision_params.h>
 
 namespace {
 
@@ -190,7 +190,11 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  *     processes >= 3 on that axis and the MPI PE build (PE_SERIAL_MODE has no
  *     periodic connectivity),
  *   - adds NO obstacle cylinder and NO boundary walls (the particle stays in the interior for
- *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow).
+ *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow). The
+ *     optional plane-Couette z-walls (zWallsEnabled_) are the only exception.
+ *
+ * All configuration checks run before any body is created, and every error path aborts the
+ * run with a message.
  */
 void setupELTerminalVelocity(MPI_Comm ex0,
                              pe::real xmin, pe::real xmax,
@@ -198,6 +202,9 @@ void setupELTerminalVelocity(MPI_Comm ex0,
                              pe::real zmin, pe::real zmax) {
   using namespace pe;
 
+  //===============================================================================================
+  // Configuration, world and fluid properties
+  //===============================================================================================
   auto &config = SimulationConfig::getInstance();
   WorldID world = theWorld();
   loadSimulationConfig("example.json");
@@ -212,52 +219,37 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   world->setDamping(1.0);
   world->setAutoForceReset(true);
 
-  // Pairwise lubrication (EL solver): widen the shadow-copy overlap test so
-  // cross-boundary pairs within the surface-gap cutoff are visible to the
-  // designated treating rank. The full-visibility margin is
-  // sphereRadius + cutoff: for a pair (A owned by r1, B owned by r2) with
-  // gap < cutoff, r1 sees B iff dist(B_center, r1_box) <= R_B + margin, and
-  // that distance can reach R_A + R_B + cutoff when A's center sits on r1's
-  // boundary. The margin is CLAMPED so the total shadow reach
-  // (radius + margin) stays below the thinnest decomposed subdomain extent:
-  // pe cannot register shadow copies beyond direct neighbors ("Registering
-  // distant processes is not yet implemented"). Under the designated-treater
-  // relay a clamped margin is momentum-safe — a pair the treater cannot see
-  // is skipped for a substep, never applied one-sided; only extremal
-  // near-cutoff pairs are affected. No-op (margin 0) when disabled.
-  if (config.getLubricationEnabled()) {
-    real lubMargin = config.getLubricationCutoff() + config.getBenchRadius();
-    real minExt = std::numeric_limits<real>::max();
-    if (config.getProcessesX() > 1)
-      minExt = std::min(minExt, (xmax - xmin) / config.getProcessesX());
-    if (config.getProcessesY() > 1)
-      minExt = std::min(minExt, (ymax - ymin) / config.getProcessesY());
-    if (config.getProcessesZ() > 1)
-      minExt = std::min(minExt, (zmax - zmin) / config.getProcessesZ());
-    const real reachCap = real(0.99) * minExt - config.getBenchRadius();
-    if (lubMargin > reachCap) {
-      std::cout << "EL lubrication: shadow margin clamped " << lubMargin
-                << " -> " << reachCap << " (subdomain extent " << minExt
-                << "); near-cutoff cross-rank pairs may be skipped.\n";
-      lubMargin = reachCap;
-    }
-    pe::lubrication::setShadowCopyMargin(std::max(lubMargin, real(0)));
-  }
   TimeStep::stepsize(config.getStepsize());
 
+  //===============================================================================================
+  // MPI system and validation (nothing is created before all checks have passed)
+  //===============================================================================================
   MPISystemID mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
   const int commSize = mpisystem->getSize();
 
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupELTerminalVelocity: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();
   const int pz = config.getProcessesZ();
-  if (px * py * pz != commSize) {
-    pe_EXCLUSIVE_SECTION(0) {
-      std::cerr << "EL terminal-velocity PE setup requires processesX_*Y_*Z_ == PE communicator "
-                << "size: " << px << "*" << py << "*" << pz << " != " << commSize << "\n";
-    }
-    MPI_Abort(ex0, 1);
+
+  if (!(xmin < xmax) || !(ymin < ymax) || !(zmin < zmax)) {
+    abortSetup("the CFD domain bounds are empty or inverted.");
+  }
+  if (px < 1 || py < 1 || pz < 1 || px * py * pz != commSize) {
+    abortSetup("processesX_*Y_*Z_ must equal the PE communicator size: " +
+               std::to_string(px) + "*" + std::to_string(py) + "*" + std::to_string(pz) +
+               " != " + std::to_string(commSize) + ".");
   }
 
   // Per-axis periodic wrap (json periodicX_/periodicY_/periodicZ_). The
@@ -272,12 +264,8 @@ void setupELTerminalVelocity(MPI_Comm ex0,
     const char axname[3] = {'x', 'y', 'z'};
     for (int ax = 0; ax < 3; ++ax) {
       if (pflag[ax] && paxis[ax] < 3) {
-        pe_EXCLUSIVE_SECTION(0) {
-          std::cerr << "EL terminal-velocity setup: periodic" << axname[ax]
-                    << "_ requires processes" << axname[ax]
-                    << "_ >= 3 (distinct wrap neighbors), got " << paxis[ax] << ".\n";
-        }
-        MPI_Abort(ex0, 1);
+        abortSetup(std::string("periodic") + axname[ax] + "_ requires processes" + axname[ax] +
+                   "_ >= 3 (distinct wrap neighbors), got " + std::to_string(paxis[ax]) + ".");
       }
     }
     const bool supported =
@@ -285,81 +273,154 @@ void setupELTerminalVelocity(MPI_Comm ex0,
       (periodicX && periodicY) ||                   // XY or XYZ
       (periodicX && !periodicY && !periodicZ);      // X-only
     if (!supported) {
-      pe_EXCLUSIVE_SECTION(0) {
-        std::cerr << "EL terminal-velocity setup: unsupported periodic axis "
-                  << "combination (available: none, X, Z, XY, XYZ).\n";
-      }
-      MPI_Abort(ex0, 1);
+      abortSetup("unsupported periodic axis combination (available: none, X, Z, XY, XYZ).");
     }
   }
 
+  if (config.getZWallsEnabled() && periodicZ) {
+    abortSetup("zWallsEnabled_ requires periodicZ_ = false.");
+  }
+
+  const real sphereRadius = config.getBenchRadius();
+  const real rhoParticle  = config.getParticleDensity();
+  const Vec3 initialParticleVelocity(config.getInitialParticleVelocity());
+  if (sphereRadius <= real(0)) {
+    abortSetup("benchRadius_ must be positive.");
+  }
+
+  const std::string seedMode = elTerminalLower(config.getSeedMode());
+  if (seedMode != "file" && seedMode != "random") {
+    abortSetup("invalid seedMode_: " + config.getSeedMode() + " (expected file or random).");
+  }
+
+  // The seed-domain parameters (seedDomain_, seedCylinderAxis_, seedCylinderRadius_) are
+  // used in both seed modes for the achieved volume fraction. The helper throws on invalid
+  // values; turn that into a clean abort here instead of an uncaught exception later.
+  real domainVolume(0);
+  try {
+    domainVolume = elTerminalSeedDomainVolume(xmin, xmax, ymin, ymax, zmin, zmax,
+                                              config.getSeedDomain(),
+                                              config.getSeedCylinderCenter(),
+                                              config.getSeedCylinderRadius(),
+                                              config.getSeedCylinderAxis());
+  } catch (const std::exception& ex) {
+    abortSetup(std::string("invalid seed domain configuration: ") + ex.what() + ".");
+  }
+
+  const real diameter = real(2) * sphereRadius;
+  const real seedMinGap = config.getSeedMinGap() >= real(0)
+                            ? config.getSeedMinGap()
+                            : real(0.2) * sphereRadius;
+
+  //===============================================================================================
+  // Domain decomposition
+  //===============================================================================================
   int dims[]    = {px, py, pz};
   int periods[] = {periodicX, periodicY, periodicZ};
   int reorder   = false;
   MPI_Comm cartcomm;
   MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
   if (cartcomm == MPI_COMM_NULL) {
-    pe_EXCLUSIVE_SECTION(0) {
-      std::cerr << "EL terminal-velocity PE setup failed to create cartesian communicator.\n";
-    }
-    MPI_Abort(ex0, 1);
+    abortSetup("failed to create the cartesian communicator.");
   }
   mpisystem->setComm(cartcomm);
 
   int center[3];
   MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
-  const real dx = (xmax - xmin) / static_cast<real>(px);
-  const real dy = (ymax - ymin) / static_cast<real>(py);
-  const real dz = (zmax - zmin) / static_cast<real>(pz);
+  const real lx = xmax - xmin;
+  const real ly = ymax - ymin;
+  const real lz = zmax - zmin;
+  const real dx = lx / static_cast<real>(px);
+  const real dy = ly / static_cast<real>(py);
+  const real dz = lz / static_cast<real>(pz);
+
+  // Pairwise lubrication: widen the shadow-copy overlap test (no-op when disabled). Only
+  // decomposed axes limit the shadow reach.
+  {
+    real minSubdomainExtent = std::numeric_limits<real>::max();
+    if (px > 1) minSubdomainExtent = std::min(minSubdomainExtent, dx);
+    if (py > 1) minSubdomainExtent = std::min(minSubdomainExtent, dy);
+    if (pz > 1) minSubdomainExtent = std::min(minSubdomainExtent, dz);
+    applyLubricationShadowCopyMargin(config, minSubdomainExtent, myRank == 0);
+  }
+
   if (periodicX && periodicY && periodicZ) {
-    decomposePeriodic3D(center, xmin, ymin, zmin, dx, dy, dz,
-                        xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    decomposePeriodic3D(center, xmin, ymin, zmin, dx, dy, dz, lx, ly, lz, px, py, pz);
     pe_EXCLUSIVE_SECTION(0) {
       std::cout << "EL terminal-velocity setup: fully periodic PE decomposition, l=("
-                << (xmax - xmin) << "," << (ymax - ymin) << "," << (zmax - zmin) << ")\n";
+                << lx << "," << ly << "," << lz << ")\n";
     }
   } else if (periodicX && periodicY) {
-    decomposePeriodicXY3D(center, xmin, ymin, zmin, dx, dy, dz,
-                          xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    decomposePeriodicXY3D(center, xmin, ymin, zmin, dx, dy, dz, lx, ly, lz, px, py, pz);
     pe_EXCLUSIVE_SECTION(0) {
       std::cout << "EL terminal-velocity setup: xy-periodic PE decomposition\n";
     }
   } else if (periodicX) {
-    decomposePeriodicX3D(center, xmin, ymin, zmin, dx, dy, dz,
-                         xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    decomposePeriodicX3D(center, xmin, ymin, zmin, dx, dy, dz, lx, ly, lz, px, py, pz);
     pe_EXCLUSIVE_SECTION(0) {
-      std::cout << "EL terminal-velocity setup: x-periodic PE decomposition, lx="
-                << (xmax - xmin) << "\n";
+      std::cout << "EL terminal-velocity setup: x-periodic PE decomposition, lx=" << lx << "\n";
     }
   } else if (periodicZ) {
-    decomposePeriodicZ3D(center, xmin, ymin, zmin, dx, dy, dz,
-                         xmax - xmin, ymax - ymin, zmax - zmin, px, py, pz);
+    decomposePeriodicZ3D(center, xmin, ymin, zmin, dx, dy, dz, lx, ly, lz, px, py, pz);
     pe_EXCLUSIVE_SECTION(0) {
-      std::cout << "EL terminal-velocity setup: z-periodic PE decomposition, lz="
-                << (zmax - zmin) << "\n";
+      std::cout << "EL terminal-velocity setup: z-periodic PE decomposition, lz=" << lz << "\n";
     }
   } else {
     decomposeDomain(center, xmin, ymin, zmin, dx, dy, dz, px, py, pz);
   }
   theMPISystem()->checkProcesses();
 
-  const real sphereRadius = config.getBenchRadius();
-  const real rhoParticle  = config.getParticleDensity();
-  const Vec3 initialParticleVelocity(config.getInitialParticleVelocity());
-  if (sphereRadius <= real(0)) {
-    pe_EXCLUSIVE_SECTION(0) {
-      std::cerr << "EL terminal-velocity setup requires benchRadius_ > 0.\n";
+  //===============================================================================================
+  // Seed positions (identical on every process)
+  //===============================================================================================
+  std::vector<Vec3> spherePositions;
+  if (seedMode == "file") {
+    spherePositions = readVectorsFromFile(config.getXyzFilePath().string());
+    if (spherePositions.empty()) {
+      abortSetup("read no positions from " + config.getXyzFilePath().string() + ".");
     }
-    MPI_Abort(cartcomm, 1);
+  } else {
+    // Random seeding is computed on rank 0 and broadcast, so all processes agree
+    if (myRank == 0) {
+      try {
+        spherePositions = elTerminalRandomSeeds(xmin, xmax, ymin, ymax, zmin, zmax,
+                                                sphereRadius, seedMinGap,
+                                                config.getVolumeFraction(),
+                                                config.getSeed(),
+                                                config.getSeedDomain(),
+                                                config.getSeedCylinderCenter(),
+                                                config.getSeedCylinderRadius(),
+                                                config.getSeedCylinderAxis());
+      } catch (const std::exception& ex) {
+        abortSetup(std::string("random seeding failed: ") + ex.what() + ".");
+      }
+    }
+    unsigned long bcastCount = static_cast<unsigned long>(spherePositions.size());
+    MPI_Bcast(&bcastCount, 1, MPI_UNSIGNED_LONG, 0, cartcomm);
+    spherePositions.resize(static_cast<std::size_t>(bcastCount));
+
+    std::vector<double> packed(3 * static_cast<std::size_t>(bcastCount));
+    if (myRank == 0) {
+      for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+        packed[3*i + 0] = spherePositions[i][0];
+        packed[3*i + 1] = spherePositions[i][1];
+        packed[3*i + 2] = spherePositions[i][2];
+      }
+    }
+    if (!packed.empty()) {
+      MPI_Bcast(&packed[0], static_cast<int>(packed.size()), MPI_DOUBLE, 0, cartcomm);
+    }
+    if (myRank != 0) {
+      for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+        spherePositions[i] = Vec3(packed[3*i + 0], packed[3*i + 1], packed[3*i + 2]);
+      }
+    }
   }
 
-  const real seedMinGap = config.getSeedMinGap() >= real(0)
-                            ? config.getSeedMinGap()
-                            : real(0.2) * sphereRadius;
-  const std::string seedMode = elTerminalLower(config.getSeedMode());
-  const real diameter = real(2) * sphereRadius;
-
+  //===============================================================================================
+  // Materials and bodies
+  //===============================================================================================
   MaterialID sphereMaterial = createMaterial("el_tv_particle", rhoParticle,
                                              config.getRestitution(),
                                              config.getStaticFriction(),
@@ -372,13 +433,6 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   // tangential velocity leaves the plane geometry invariant (d = n*x).
   // setLinearVel on a fixed body requires MOBILE_INFINITE (GCC build).
   if (config.getZWallsEnabled()) {
-    if (periodicZ) {
-      pe_EXCLUSIVE_SECTION(0) {
-        std::cerr << "EL terminal-velocity setup: zWallsEnabled_ requires "
-                  << "periodicZ_ = false.\n";
-      }
-      MPI_Abort(ex0, 1);
-    }
     MaterialID wallMaterial = createMaterial("el_tv_wall", real(1.0),
                                              config.getRestitution(),
                                              config.getStaticFriction(),
@@ -398,130 +452,69 @@ void setupELTerminalVelocity(MPI_Comm ex0,
     }
   }
 
-  std::vector<Vec3> spherePositions;
-  if (seedMode == "file") {
-    spherePositions = readVectorsFromFile(config.getXyzFilePath().string());
-    if (spherePositions.empty()) {
-      pe_EXCLUSIVE_SECTION(0) {
-        std::cerr << "EL terminal-velocity setup read no positions from "
-                  << config.getXyzFilePath().string() << ".\n";
-      }
-      MPI_Abort(cartcomm, 1);
-    }
-  } else if (seedMode == "random") {
-    int cartRank = 0;
-    MPI_Comm_rank(cartcomm, &cartRank);
-    std::size_t count = 0;
-    std::vector<double> packed;
-    if (cartRank == 0) {
-      try {
-        spherePositions = elTerminalRandomSeeds(xmin, xmax, ymin, ymax, zmin, zmax,
-                                                sphereRadius, seedMinGap,
-                                                config.getVolumeFraction(),
-                                                config.getSeed(),
-                                                config.getSeedDomain(),
-                                                config.getSeedCylinderCenter(),
-                                                config.getSeedCylinderRadius(),
-                                                config.getSeedCylinderAxis());
-      } catch (const std::exception& ex) {
-        std::cerr << "EL terminal-velocity random seeding failed: " << ex.what() << "\n";
-        MPI_Abort(cartcomm, 1);
-      }
-      count = spherePositions.size();
-    }
-    unsigned long bcastCount = static_cast<unsigned long>(count);
-    MPI_Bcast(&bcastCount, 1, MPI_UNSIGNED_LONG, 0, cartcomm);
-    spherePositions.resize(static_cast<std::size_t>(bcastCount));
-    packed.resize(3 * static_cast<std::size_t>(bcastCount));
-    if (cartRank == 0) {
-      for (std::size_t i = 0; i < spherePositions.size(); ++i) {
-        packed[3*i + 0] = spherePositions[i][0];
-        packed[3*i + 1] = spherePositions[i][1];
-        packed[3*i + 2] = spherePositions[i][2];
-      }
-    }
-    if (!packed.empty()) {
-      MPI_Bcast(&packed[0], static_cast<int>(packed.size()), MPI_DOUBLE, 0, cartcomm);
-    }
-    if (cartRank != 0) {
-      for (std::size_t i = 0; i < spherePositions.size(); ++i) {
-        spherePositions[i] = Vec3(packed[3*i + 0], packed[3*i + 1], packed[3*i + 2]);
-      }
-    }
-  } else {
-    pe_EXCLUSIVE_SECTION(0) {
-      std::cerr << "EL terminal-velocity setup invalid seedMode_: "
-                << config.getSeedMode() << " (expected file or random).\n";
-    }
-    MPI_Abort(cartcomm, 1);
-  }
-
-  int createdLocal = 0;
+  unsigned long localParticles = 0;
   for (std::size_t i = 0; i < spherePositions.size(); ++i) {
     const Vec3 pos = spherePositions[i];
     if (world->ownsPoint(pos)) {
       SphereID sphere = createSphere(static_cast<int>(i), pos, sphereRadius, sphereMaterial, true);
       sphere->setLinearVel(initialParticleVelocity);
-      ++createdLocal;
+      ++localParticles;
     }
   }
 
   world->synchronize();
 
-  if (g_vtk) {
+  if (config.getVtk()) {
     vtk::activateWriter("./paraview", config.getVisspacing(), 0,
                         config.getTimesteps(), false, true);
   }
 
-  unsigned long localParticles  = static_cast<unsigned long>(createdLocal);
+  //===============================================================================================
+  // Final checks and setup summary
+  //===============================================================================================
   unsigned long globalParticles = 0;
   MPI_Reduce(&localParticles, &globalParticles, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
-  const real minPairGap = elTerminalMinPairGap(spherePositions, diameter);
-  const real domainVolume = elTerminalSeedDomainVolume(xmin, xmax, ymin, ymax, zmin, zmax,
-                                                       config.getSeedDomain(),
-                                                       config.getSeedCylinderCenter(),
-                                                       config.getSeedCylinderRadius(),
-                                                       config.getSeedCylinderAxis());
-  const real particleVolume = real(4) * std::acos(real(-1)) * sphereRadius * sphereRadius *
-                              sphereRadius / real(3);
-  const real achievedPhi = spherePositions.empty()
-                             ? real(0)
-                             : static_cast<real>(spherePositions.size()) * particleVolume / domainVolume;
 
   pe_EXCLUSIVE_SECTION(0) {
+    const real minPairGap = elTerminalMinPairGap(spherePositions, diameter);
+    const real particleVolume = real(4) * std::acos(real(-1)) * sphereRadius * sphereRadius *
+                                sphereRadius / real(3);
+    const real achievedPhi = static_cast<real>(spherePositions.size()) * particleVolume / domainVolume;
+
     if (globalParticles != spherePositions.size()) {
-      std::cerr << "EL terminal-velocity setup: expected " << spherePositions.size()
-                << " spheres, created " << globalParticles
-                << " (check that seed positions lie inside the domain).\n";
-      MPI_Abort(cartcomm, 1);
-    } else if (spherePositions.size() > 1 && !config.getSeedAllowContact() &&
-               minPairGap + real(1e-12) < seedMinGap) {
-      std::cerr << "EL terminal-velocity setup: minimum seed gap " << minPairGap
-                << " is below seedMinGap_ " << seedMinGap << ".\n";
-      MPI_Abort(cartcomm, 1);
-    } else if (seedMode == "random" &&
-               std::abs(achievedPhi - config.getVolumeFraction()) >
-                 real(0.02) * std::max(config.getVolumeFraction(), real(1e-30))) {
-      std::cerr << "EL terminal-velocity setup: achieved phi " << achievedPhi
-                << " differs from requested volumeFraction_ " << config.getVolumeFraction()
-                << " by more than 2%.\n";
-      MPI_Abort(cartcomm, 1);
-    } else {
-      for (std::size_t i = 0; i < spherePositions.size(); ++i) {
-        std::cout << std::setprecision(17)
-                  << "EL_SEED_POS id= " << i
-                  << " x= " << spherePositions[i][0]
-                  << " y= " << spherePositions[i][1]
-                  << " z= " << spherePositions[i][2] << "\n";
-      }
-      std::cout << "EL terminal-velocity setup: " << globalParticles
-                << " free sphere(s) created (r=" << sphereRadius
-                << ", rho=" << rhoParticle << ", seedMode=" << seedMode
-                << ", seedDomain=" << elTerminalLower(config.getSeedDomain())
-                << ", seedMinGap=" << seedMinGap << ", achieved phi=" << achievedPhi
-                << "), PE decomposition " << px << "x" << py << "x" << pz << ".\n";
+      abortSetup("expected " + std::to_string(spherePositions.size()) + " spheres, created " +
+                 std::to_string(globalParticles) +
+                 " (check that seed positions lie inside the domain).");
     }
+    if (spherePositions.size() > 1 && !config.getSeedAllowContact() &&
+        minPairGap + real(1e-12) < seedMinGap) {
+      abortSetup("minimum seed gap " + std::to_string(minPairGap) +
+                 " is below seedMinGap_ " + std::to_string(seedMinGap) + ".");
+    }
+    if (seedMode == "random" &&
+        std::abs(achievedPhi - config.getVolumeFraction()) >
+          real(0.02) * std::max(config.getVolumeFraction(), real(1e-30))) {
+      abortSetup("achieved phi " + std::to_string(achievedPhi) +
+                 " differs from requested volumeFraction_ " +
+                 std::to_string(config.getVolumeFraction()) + " by more than 2%.");
+    }
+
+    for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+      std::cout << std::setprecision(17)
+                << "EL_SEED_POS id= " << i
+                << " x= " << spherePositions[i][0]
+                << " y= " << spherePositions[i][1]
+                << " z= " << spherePositions[i][2] << "\n";
+    }
+    std::cout << "EL terminal-velocity setup: " << globalParticles
+              << " free sphere(s) created (r=" << sphereRadius
+              << ", rho=" << rhoParticle << ", seedMode=" << seedMode
+              << ", seedDomain=" << elTerminalLower(config.getSeedDomain())
+              << ", seedMinGap=" << seedMinGap << ", achieved phi=" << achievedPhi
+              << "), PE decomposition " << px << "x" << py << "x" << pz << ".\n";
   }
+
+  MPI_Barrier(cartcomm);
 }
 //*************************************************************************************************
 
