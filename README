@@ -50,6 +50,25 @@ Common CMake options:
 - `-DPE_USE_IRRLICHT=ON|OFF`
 - `-DPE_USE_OPENCL=ON|OFF`
 - `-DPE_USE_BLAS=ON|OFF`
+- `-DPE_CONSTRAINT_SOLVER=<solver>` (e.g. `pe::response::HardContactAndFluid`)
+- `-DPE_NDEBUG=ON|OFF`
+
+Using pe from another CMake project (add_subdirectory or FetchContent):
+
+```
+FetchContent_Declare(pe URL https://github.com/rmuenste/pe-0.3rc1/archive/<commit>.zip)
+set(PE_USE_MPI OFF CACHE BOOL "" FORCE)
+set(PE_CONSTRAINT_SOLVER pe::response::HardContactAndFluid CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(pe)
+target_link_libraries(my_app PRIVATE pe::pe)
+```
+
+As a sub-project, pe does not touch the build type, CTest or the documentation of the parent
+project. The target `pe::pe` carries all usage requirements, which have to be identical in pe and
+in its users: the include path, the forced `config.h`, the constraint solver
+(`PE_CONSTRAINT_SOLVER`, empty = default of `pe/config/Collisions.h`), `NDEBUG` (`PE_NDEBUG`, default
+ON unless `CMAKE_BUILD_TYPE` is Debug; it changes the class layout of the rigid bodies) and
+`USE_ACCELERATED_POINT_QUERY`.
 
 For example, to build the examples and CGAL/DistanceMap support:
 
