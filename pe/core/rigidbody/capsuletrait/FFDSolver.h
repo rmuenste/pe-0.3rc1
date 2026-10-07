@@ -70,6 +70,9 @@ class CapsuleTrait< C<CD,FD,BG,response::FFDSolver> > : public CapsuleBase
 protected:
    //**Type definitions****************************************************************************
    typedef CapsuleBase  Parent;  //!< The type of the parent class.
+   //! The rigid body trait providing resetConstraints() (a dependent type, so that its lookup is
+   //! deferred to the instantiation for an FFDSolver configuration).
+   typedef RigidBodyTrait< C<CD,FD,BG,response::FFDSolver> >  FFDTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -247,7 +250,7 @@ void CapsuleTrait< C<CD,FD,BG,response::FFDSolver> >::secondPositionHalfStep( re
    contacts_.clear();
 
    // Resetting the contact constraints
-   this->resetConstraints();
+   FFDTrait::resetConstraints();
 
    // Position update of the capsule according to the current velocity
    // (don't update a sleeping, fixed, or remote capsule)

@@ -71,6 +71,9 @@ class SphereTrait< C<CD,FD,BG,response::DEMSolverObsolete> > : public SphereBase
 protected:
    //**Type definitions****************************************************************************
    typedef SphereBase  Parent;  //!< The type of the parent class.
+   //! The rigid body trait holding the accelerations vdot_ and wdot_ (a dependent type, so that
+   //! their lookup is deferred to the instantiation for a DEMSolverObsolete configuration).
+   typedef RigidBodyTrait< C<CD,FD,BG,response::DEMSolverObsolete> >  DEMTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -233,10 +236,10 @@ void SphereTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::move( real dt )
          const Vec3 wdot( Iinv_[0] * torque_ );
 
          // Calculating the first derivative of the linear acceleration
-         const Vec3 adot( ( vdot - this->vdot_ ) / dt );
+         const Vec3 adot( ( vdot - DEMTrait::vdot_ ) / dt );
 
          // Calculating the first derivative of the angular acceleration
-         const Vec3 alphadot( ( wdot - this->wdot_ ) / dt );
+         const Vec3 alphadot( ( wdot - DEMTrait::wdot_ ) / dt );
 
          // Updating the linear velocity
          v_ += vdot * dt + adot * dt2;
@@ -245,8 +248,8 @@ void SphereTrait< C<CD,FD,BG,response::DEMSolverObsolete> >::move( real dt )
          w_ += wdot * dt + alphadot * dt2;
 
          // Updating vdot and wdot
-         this->vdot_ = vdot;
-         this->wdot_ = wdot;
+         DEMTrait::vdot_ = vdot;
+         DEMTrait::wdot_ = wdot;
 
          // Calculating the translational displacement
          gpos_ += v_ * dt + vdot * dt2 + adot * dt3;

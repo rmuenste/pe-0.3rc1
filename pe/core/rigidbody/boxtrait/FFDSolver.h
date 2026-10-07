@@ -70,6 +70,9 @@ class BoxTrait< C<CD,FD,BG,response::FFDSolver> > : public BoxBase
 protected:
    //**Type definitions****************************************************************************
    typedef BoxBase  Parent;  //!< The type of the parent class.
+   //! The rigid body trait providing resetConstraints() (a dependent type, so that its lookup is
+   //! deferred to the instantiation for an FFDSolver configuration).
+   typedef RigidBodyTrait< C<CD,FD,BG,response::FFDSolver> >  FFDTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -246,7 +249,7 @@ void BoxTrait< C<CD,FD,BG,response::FFDSolver> >::secondPositionHalfStep( real d
    contacts_.clear();
 
    // Resetting the contact constraints
-   this->resetConstraints();
+   FFDTrait::resetConstraints();
 
    // Position update of the box according to the current velocity
    // (don't update a sleeping, fixed, or remote box)

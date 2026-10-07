@@ -75,6 +75,9 @@ class ContactTrait< C<CD,FD,BG,response::PolyhedralFrictionSolver> > : public Co
 protected:
    //**Type definitions****************************************************************************
    typedef ContactBase  Parent;  //!< The type of the parent class.
+   //! The response contact trait providing the friction tangents (a dependent type, so that their
+   //! lookup is deferred to the instantiation for a PolyhedralFrictionSolver configuration).
+   typedef response::ContactTrait< C<CD,FD,BG,response::PolyhedralFrictionSolver> >  ResponseTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -249,7 +252,7 @@ void ContactTrait< C<CD,FD,BG,response::PolyhedralFrictionSolver> >::calcMat( Ma
 
    for( size_t i=0; i<response::lcp::facets; ++i )
    {
-      const Vec3 t( this->getTangent( i ) );
+      const Vec3 t( ResponseTrait::getTangent( i ) );
 
       JLin1( i+1, 0 ) = t[0];
       JLin1( i+1, 1 ) = t[1];

@@ -75,6 +75,9 @@ class ContactTrait< C<CD,FD,BG,response::ConeFrictionSolver> > : public ContactB
 protected:
    //**Type definitions****************************************************************************
    typedef ContactBase  Parent;  //!< The type of the parent class.
+   //! The response contact trait providing the friction tangents (a dependent type, so that their
+   //! lookup is deferred to the instantiation for a ConeFrictionSolver configuration).
+   typedef response::ContactTrait< C<CD,FD,BG,response::ConeFrictionSolver> >  ResponseTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -226,8 +229,8 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 void ContactTrait< C<CD,FD,BG,response::ConeFrictionSolver> >::calcMat( MatN& JLin1, MatN& JAng1, MatN& JLin2, MatN& JAng2 ) const
 {
-   const Vec3 tx( this->tangentx_ );
-   const Vec3 ty( this->tangenty_ );
+   const Vec3 tx( ResponseTrait::getTangentX() );
+   const Vec3 ty( ResponseTrait::getTangentY() );
 
    const Vec3 r1( b1_->getPosition() );
    const Vec3 r2( b2_->getPosition() );
