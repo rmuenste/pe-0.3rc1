@@ -196,10 +196,10 @@ SimulationConfig& SimulationConfig::getInstance() {
  * values found in the file. Only the parameters present in the JSON file are updated;
  * parameters not in the file retain their default values.
  *
- * \note Requires HAVE_JSON to be enabled during compilation. If JSON support is not available,
- *       this function does nothing (silent no-op).
+ * \note Requires HAVE_JSON to be enabled during compilation (CMake option PE_USE_JSON). Without
+ *       JSON support the function throws std::runtime_error instead of ignoring the file.
  *
- * \exception std::runtime_error If the file cannot be opened.
+ * \exception std::runtime_error If the file cannot be opened, or if pe was built without JSON support.
  * \exception std::invalid_argument If the packingMethod_ value is invalid.
  */
 void SimulationConfig::loadFromFile(const std::string &fileName) {
@@ -617,7 +617,7 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // JSON support is not available - throw error instead of silently ignoring
     throw std::runtime_error(
         "SimulationConfig::loadFromFile() called but PE library was built without JSON support.\n"
-        "Please rebuild with -DUSE_JSON=ON to enable JSON configuration loading.\n"
+        "Please rebuild pe with -DPE_USE_JSON=ON to enable JSON configuration loading.\n"
         "Attempted to load: " + fileName
     );
 #endif
