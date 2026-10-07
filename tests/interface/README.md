@@ -76,6 +76,25 @@ cmake --build --preset build-mpi
 ctest --preset test-mpi -L mpi
 ```
 
+The `pe-checkpoint-failure-*` cases run two ranks with a 60-second timeout. They cover
+rank-local directory errors, MPI file-open errors, sidecar preservation and publication
+failures, rank-local metadata/material/missing-file errors, and malformed body data.
+PMPI fault injection covers write submission, completion, close, and local read errors.
+Each case checks identical rank/path diagnostics on both ranks, scratch cleanup, and
+subsequent successful checkpoint I/O.
+
+```bash
+ctest --preset test-mpi -R pe-checkpoint --output-on-failure
+```
+
+Checkpoint writes and restores are collective when MPI is initialized. Every rank must
+call them in the same order. A recoverable local exception or MPI file I/O error is
+reported to all ranks before the next collective. A write succeeds on all ranks only
+after rank 0 publishes both files. Before `.peb` publication, failure restores the old
+sidecar; after publication, failure leaves the new `.peb` without the old sidecar.
+Cleanup is best effort if the filesystem itself prevents removal or rollback. Restore
+failure does not roll back materials or bodies already restored on a rank.
+
 ## Combined MPI and CGAL Coverage
 
 The frozen-field tracer genuinely requires both optional features. With MPI and

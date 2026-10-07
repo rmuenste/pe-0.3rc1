@@ -382,6 +382,20 @@ if(PE_USE_MPI AND MPI_FOUND)
   )
 endif()
 
+# Failure propagation is a collective contract: timeout each two-rank scenario so a
+# regression fails CTest instead of blocking the entire checkpoint suite.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_checkpoint_failure_mpi pe_checkpoint_failure_mpi.cpp)
+  target_link_libraries(pe_checkpoint_failure_mpi PRIVATE pe_static MPI::MPI_CXX)
+  foreach(scenario IN ITEMS directory open binary-open rename sidecar preserve metadata missing material body submit complete close read)
+    add_test(NAME pe-checkpoint-failure-${scenario}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_checkpoint_failure_mpi> ${scenario} ${MPIEXEC_POSTFLAGS})
+    set_tests_properties(pe-checkpoint-failure-${scenario} PROPERTIES
+      LABELS "integration;mpi;checkpoint" TIMEOUT 60 PROCESSORS 2)
+  endforeach()
+endif()
+
 # A checkpoint written by two ranks (MPI-IO) read by a serial program of the same build, which
 # must take the stream path without MPI_Init. The write is the fixture of the read.
 if(PE_USE_MPI AND MPI_FOUND)

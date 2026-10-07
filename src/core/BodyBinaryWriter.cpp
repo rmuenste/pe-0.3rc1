@@ -35,6 +35,7 @@
 #include <pe/core/BodyBinaryWriter.h>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPITrait.h>
+#include <pe/util/CheckpointCollective.h>
 #include <pe/core/rigidbody/Ellipsoid.h>
 
 
@@ -50,6 +51,9 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
    size_t sizeWrite( 0 ), bodies( 0 ), sizeWriteAll( 0 );
 
    using boost::numeric_cast;
+#if HAVE_MPI
+   const bool parallel = MPISettings::isParallel();
+#endif
 
    pe_PROFILING_SECTION {
       timeAll.start();
@@ -63,71 +67,85 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
       timeWait.end();
    }
 
-   buffer_.clear();
-   header_.clear();
-   globals_.clear();
-
-   buffer_.setFloatingPointSize( fpSize_ );
-   header_.setFloatingPointSize( fpSize_ );
-   globals_.setFloatingPointSize( fpSize_ );
-
+   size_t localSize = 0, headerSize = 0;
+   std::vector<size_t> offsets;
+   checkpoint_detail::phase( filename, [&] {
+      filename_ = filename;
 #if HAVE_MPI
-   // MPI initialised: collective offsets and MPI-IO. Otherwise (a serial program in an MPI
-   // build) the same file layout goes through the stream path of the non-MPI build.
-   const bool parallel( MPISettings::isParallel() );
+      requests_.clear();
 #endif
+      buffer_.clear();
+      header_.clear();
+      globals_.clear();
 
-   ConstWorldID world = theWorld();
+      buffer_.setFloatingPointSize( fpSize_ );
+      header_.setFloatingPointSize( fpSize_ );
+      globals_.setFloatingPointSize( fpSize_ );
 
-   marshal( buffer_, UniqueID<RigidBody>::counter_ );
-   bodies += marshalAllPrimitives<Sphere>      ( buffer_, world );
-   bodies += marshalAllPrimitives<Ellipsoid>   ( buffer_, world );
-   bodies += marshalAllPrimitives<Box>         ( buffer_, world );
-   bodies += marshalAllPrimitives<Capsule>     ( buffer_, world );
-   bodies += marshalAllPrimitives<Cylinder>    ( buffer_, world );
-   //bodies += marshalAllPrimitives<Plane>       ( buffer_, world );
-   bodies += marshalAllPrimitives<TriangleMesh>( buffer_, world );
-   bodies += marshalAllPrimitives<Union>       ( buffer_, world );
+      ConstWorldID world = theWorld();
 
-   size_t localSize = buffer_.size(), headerSize = 0;
+      marshal( buffer_, UniqueID<RigidBody>::counter_ );
+      bodies += marshalAllPrimitives<Sphere>      ( buffer_, world );
+      bodies += marshalAllPrimitives<Ellipsoid>   ( buffer_, world );
+      bodies += marshalAllPrimitives<Box>         ( buffer_, world );
+      bodies += marshalAllPrimitives<Capsule>     ( buffer_, world );
+      bodies += marshalAllPrimitives<Cylinder>    ( buffer_, world );
+      //bodies += marshalAllPrimitives<Plane>       ( buffer_, world );
+      bodies += marshalAllPrimitives<TriangleMesh>( buffer_, world );
+      bodies += marshalAllPrimitives<Union>       ( buffer_, world );
 
-   pe_EXCLUSIVE_SECTION( 0 ) {
-      // marshal global bodies
-      marshal( globals_, UniqueID<RigidBody>::globalCounter_ );
-      bodies += marshalAllPrimitives<Sphere>      ( globals_, world, true );
-      bodies += marshalAllPrimitives<Ellipsoid>   ( globals_, world, true );
-      bodies += marshalAllPrimitives<Box>         ( globals_, world, true );
-      bodies += marshalAllPrimitives<Capsule>     ( globals_, world, true );
-      bodies += marshalAllPrimitives<Cylinder>    ( globals_, world, true );
-      bodies += marshalAllPrimitives<Plane>       ( globals_, world, true );
-      bodies += marshalAllPrimitives<TriangleMesh>( globals_, world, true );
-      bodies += marshalAllPrimitives<Union>       ( globals_, world, true );
+      localSize = buffer_.size();
 
-      // write header
-      const byte fileFormatVersionMajor( 0 );
-      const byte fileFormatVersionMinor( 2 );
-      header_ << static_cast<byte>('P') << static_cast<byte>('E') << fileFormatVersionMajor << fileFormatVersionMinor;
+      pe_EXCLUSIVE_SECTION( 0 ) {
+         // marshal global bodies
+         marshal( globals_, UniqueID<RigidBody>::globalCounter_ );
+         bodies += marshalAllPrimitives<Sphere>      ( globals_, world, true );
+         bodies += marshalAllPrimitives<Ellipsoid>   ( globals_, world, true );
+         bodies += marshalAllPrimitives<Box>         ( globals_, world, true );
+         bodies += marshalAllPrimitives<Capsule>     ( globals_, world, true );
+         bodies += marshalAllPrimitives<Cylinder>    ( globals_, world, true );
+         bodies += marshalAllPrimitives<Plane>       ( globals_, world, true );
+         bodies += marshalAllPrimitives<TriangleMesh>( globals_, world, true );
+         bodies += marshalAllPrimitives<Union>       ( globals_, world, true );
 
-      // table of data type sizes
-      if( fpSize_ == 0 )
-         header_ << static_cast<byte>( sizeof(real) );
-      else
-         header_ << static_cast<byte>( 1 << fpSize_ );
-      header_ << static_cast<byte>( sizeof(int) )
-              << static_cast<byte>( sizeof(size_t) )
-              << static_cast<byte>( sizeof(id_t) )
-              << static_cast<byte>( sizeof(bool) );
+         // write header
+         const byte fileFormatVersionMajor( 0 );
+         const byte fileFormatVersionMinor( 2 );
+         header_ << static_cast<byte>('P') << static_cast<byte>('E') << fileFormatVersionMajor << fileFormatVersionMinor;
 
-      header_ << numeric_cast<uint32_t>( MPISettings::size() );
+         // table of data type sizes
+         if( fpSize_ == 0 )
+            header_ << static_cast<byte>( sizeof(real) );
+         else
+            header_ << static_cast<byte>( 1 << fpSize_ );
+         header_ << static_cast<byte>( sizeof(int) )
+                 << static_cast<byte>( sizeof(size_t) )
+                 << static_cast<byte>( sizeof(id_t) )
+                 << static_cast<byte>( sizeof(bool) );
 
-      headerSize = header_.size() + ( MPISettings::size() + 2 ) * sizeof( uint32_t );
-      localSize = headerSize + globals_.size() + buffer_.size();
-   }
+         header_ << numeric_cast<uint32_t>( MPISettings::size() );
 
-   // Captured before the profiling reduction below, which would otherwise turn this rank's count
-   // into a global sum only when profiling happens to be enabled. Stays per-rank by design; see
-   // getMarshalledBodyCount().
-   bodies_ = bodies;
+         headerSize = header_.size() + ( MPISettings::size() + 2 ) * sizeof( uint32_t );
+         localSize = headerSize + globals_.size() + buffer_.size();
+      }
+
+      // Captured before the profiling reduction below, which would otherwise turn this rank's count
+      // into a global sum only when profiling happens to be enabled. Stays per-rank by design; see
+      // getMarshalledBodyCount().
+      bodies_ = bodies;
+      // Allocate all MPI request slots before opening the collective file. Failed submissions
+      // leave MPI_REQUEST_NULL slots, which can safely be skipped during collective cleanup.
+#if HAVE_MPI
+      if( parallel ) {
+         requests_.push_back( PendingWrite{ MPI_REQUEST_NULL, numeric_cast<int>(buffer_.size()) } );
+         if( MPISettings::rank() == 0 ) {
+            requests_.push_back( PendingWrite{ MPI_REQUEST_NULL, 0 } );
+            requests_.push_back( PendingWrite{ MPI_REQUEST_NULL, numeric_cast<int>(globals_.size()) } );
+         }
+      }
+#endif
+      if( MPISettings::rank() == 0 ) offsets.resize( MPISettings::size() );
+   });
 
    // determine offset of chunk for local body descriptions
    pe_LOG_DEBUG_SECTION( log ) {
@@ -138,13 +156,15 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
       timeExscan.start();
    }
 
-   size_t offset;
+   size_t offset = 0;
+   checkpoint_detail::phase( filename, [&] {
 #if HAVE_MPI
-   if( parallel )
-      MPI_Exscan( &localSize, &offset, 1, MPITrait<size_t>::getType(), MPI_SUM, MPISettings::comm() );
-   else
+      if( parallel )
+         checkpoint_detail::mpiCheck( MPI_Exscan( &localSize, &offset, 1, MPITrait<size_t>::getType(), MPI_SUM, MPISettings::comm() ), "MPI_Exscan" );
+      else
 #endif
-      offset = headerSize + globals_.size();   // the only chunk follows the global bodies
+         offset = headerSize + globals_.size();   // the only chunk follows the global bodies
+   });
 
    pe_PROFILING_SECTION {
       timeExscan.end();
@@ -158,114 +178,107 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
       log << "On rank " << MPISettings::rank() << " offset of local bodies chunk is " << offset << "\n";
    }
 
-   pe_PROFILING_SECTION {
-      timeOpen.start();
-   }
-
-   std::string filenameCopy( filename );
-#if HAVE_MPI
-   fhParallel_ = parallel;
-   if( parallel )
-      MPI_File_open( MPISettings::comm(), &filenameCopy[0], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh_ );
-   else
-#endif
-      sfh_.open( &filenameCopy[0], std::ofstream::binary );
-   fhOpen_ = true;
-
-   pe_PROFILING_SECTION {
-      timeOpen.end();
-      timeWrite.start();
-   }
-
-   // flush local bodies chunk to file
-#if HAVE_MPI
-   MPI_Request request;
-   if( parallel ) {
-      MPI_File_iwrite_at( fh_, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &request );
-      requests_.push_back( request );
-   }
-   else
-#endif
-   {
-      sfh_.seekp( offset );
-      sfh_.write( reinterpret_cast<const char*>( buffer_.ptr() ), buffer_.size() );
-   }
-   size_t end = offset + buffer_.size();
-
-   pe_PROFILING_SECTION {
-      sizeWrite += buffer_.size();
-      timeGather.start();
-   }
-
-   if( MPISettings::rank() == 0 ) {
-      // create and write table of processes' local and global body data offsets into header
-      std::vector<size_t> offsets( MPISettings::size() );
+   const size_t end = offset + buffer_.size();
+   pe_PROFILING_SECTION { timeGather.start(); }
+   checkpoint_detail::phase( filename, [&] {
 #if HAVE_MPI
       if( parallel )
-         MPI_Gather( &end, 1, MPITrait<size_t>::getType(), &offsets[0], 1, MPITrait<size_t>::getType(), 0, MPISettings::comm() );
+         checkpoint_detail::mpiCheck( MPI_Gather( &end, 1, MPITrait<size_t>::getType(),
+            MPISettings::rank() == 0 ? offsets.data() : 0, 1, MPITrait<size_t>::getType(),
+            0, MPISettings::comm() ), "MPI_Gather" );
       else
 #endif
          offsets[0] = end;
-
-      pe_PROFILING_SECTION {
-         timeGather.end();
-      }
-
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank 0 offset of global bodies chunk is " << headerSize << "\n";
-      }
-      header_ << numeric_cast<uint32_t>( headerSize );
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank 0 offset of local bodies chunk is " << offset << "\n";
-      }
-      header_ << numeric_cast<uint32_t>( offset );
-      for( size_t i = 0; i < offsets.size(); ++i ) {
-         header_ << numeric_cast<uint32_t>( offsets[i] );
-         pe_LOG_DEBUG_SECTION( log ) {
-            log << "On rank " << i << " end of local bodies chunk is " << offsets[i] << "\n";
+   });
+   pe_PROFILING_SECTION { timeGather.end(); }
+   checkpoint_detail::phase( filename, [&] {
+      // The file format uses 32-bit offsets; reject overflow on every rank before opening.
+      numeric_cast<uint32_t>( end );
+      if( MPISettings::rank() == 0 ) {
+         header_ << numeric_cast<uint32_t>( headerSize ) << numeric_cast<uint32_t>( offset );
+         for( size_t i = 0; i < offsets.size(); ++i ) header_ << numeric_cast<uint32_t>( offsets[i] );
+#if HAVE_MPI
+         if( parallel ) {
+            auto it = requests_.begin();
+            ++it;
+            it->bytes = numeric_cast<int>(header_.size());
+         }
+#endif
+         pe_PROFILING_SECTION {
+            sizeWriteAll = offsets.back();
          }
       }
+   });
 
-      // flush header to file
+   try {
+      pe_PROFILING_SECTION { timeOpen.start(); }
+      checkpoint_detail::phase( filename, [&] {
 #if HAVE_MPI
-      if( parallel ) {
-         MPI_File_iwrite_at( fh_, 0, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &request );
-         requests_.push_back( request );
-      }
-      else
+         fhParallel_ = parallel;
+         if( parallel ) {
+            checkpoint_detail::mpiCheck( MPI_File_open( MPISettings::comm(), &filename_[0],
+               MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &fh_ ), "MPI_File_open" );
+            fhOpen_ = true;
+         }
+         else
 #endif
-      {
-         sfh_.seekp( 0 );
-         sfh_.write( reinterpret_cast<const char*>( header_.ptr() ), header_.size() );
-      }
-
-      // flush global bodies chunk to file
+         {
+            sfh_.clear();
+            sfh_.open( filename_.c_str(), std::ofstream::binary );
+            if( !sfh_ ) throw std::runtime_error( "Cannot open file." );
+            fhOpen_ = true;
+         }
+      });
 #if HAVE_MPI
-      if( parallel ) {
-         MPI_File_iwrite_at( fh_, headerSize, globals_.ptr(), static_cast<int>( globals_.size() ), MPI_BYTE, &request );
-         requests_.push_back( request );
-      }
-      else
+      // File error handlers return errors rather than terminating the communicator.
+      checkpoint_detail::phase( filename, [&] {
+         if( parallel ) checkpoint_detail::mpiCheck(
+            MPI_File_set_errhandler( fh_, MPI_ERRORS_RETURN ), "MPI_File_set_errhandler" );
+      });
 #endif
-      {
-         sfh_.seekp( headerSize );
-         sfh_.write( reinterpret_cast<const char*>( globals_.ptr() ), globals_.size() );
-      }
-
-      pe_PROFILING_SECTION {
-         sizeWrite += header_.size() + globals_.size();
-         sizeWriteAll = offsets.back();
-      }
+      pe_PROFILING_SECTION { timeOpen.end(); timeWrite.start(); }
+      checkpoint_detail::phase( filename, [&] {
+#if HAVE_MPI
+         if( parallel ) {
+            auto it = requests_.begin();
+            auto submit = [&]( MPI_Offset at, const void* data, const char* label ) {
+               MPI_Request request = MPI_REQUEST_NULL;
+               checkpoint_detail::mpiCheck( MPI_File_iwrite_at( fh_, at, data,
+                  it->bytes, MPI_BYTE, &request ), label );
+               // An unsuccessful MPI call need not leave a valid output request.
+               it->request = request;
+               ++it;
+            };
+            submit( offset, buffer_.ptr(), "MPI_File_iwrite_at (local bodies)" );
+            if( MPISettings::rank() == 0 ) {
+               submit( 0, header_.ptr(), "MPI_File_iwrite_at (header)" );
+               submit( headerSize, globals_.ptr(), "MPI_File_iwrite_at (global bodies)" );
+            }
+         }
+         else
+#endif
+         {
+            sfh_.seekp( offset );
+            sfh_.write( reinterpret_cast<const char*>(buffer_.ptr()), buffer_.size() );
+            sfh_.seekp( 0 );
+            sfh_.write( reinterpret_cast<const char*>(header_.ptr()), header_.size() );
+            sfh_.seekp( headerSize );
+            sfh_.write( reinterpret_cast<const char*>(globals_.ptr()), globals_.size() );
+            if( !sfh_ ) throw std::runtime_error( "Failed while writing rigid body parameter file." );
+         }
+      });
    }
-   else {
+   catch( ... ) {
+      const std::exception_ptr error = std::current_exception();
+      try { wait(); } catch( ... ) {}
 #if HAVE_MPI
-      if( parallel )   // a rank other than 0 exists only with MPI initialised
-         MPI_Gather( &end, 1, MPITrait<size_t>::getType(), 0, 0, MPITrait<size_t>::getType(), 0, MPISettings::comm() );
+      requests_.clear();
 #endif
-
-      pe_PROFILING_SECTION {
-         timeGather.end();
-      }
+      std::rethrow_exception( error );
+   }
+   pe_PROFILING_SECTION {
+      sizeWrite = buffer_.size();
+      if( MPISettings::rank() == 0 ) sizeWrite += header_.size() + globals_.size();
    }
 
    pe_PROFILING_SECTION {
@@ -364,5 +377,41 @@ void BodyBinaryWriter::writeFileAsync( const char* filename ) {
    }
 }
 //*************************************************************************************************
+
+// Draining requests and closing the MPI file must finish on every rank even if a local write
+// failed. Only then may agreement throw, so destructors cannot strand peers in MPI_File_close.
+void BodyBinaryWriter::wait()
+{
+   if( !fhOpen_ ) return;
+   std::exception_ptr error;
+   auto record = [&]( auto operation ) {
+      try { operation(); }
+      catch( ... ) { if( !error ) error = std::current_exception(); }
+   };
+#if HAVE_MPI
+   if( fhParallel_ ) {
+      while( !requests_.empty() ) {
+         PendingWrite& pending = requests_.front();
+         if( pending.request != MPI_REQUEST_NULL ) record( [&] {
+            MPI_Status status;
+            checkpoint_detail::requireTransfer( MPI_Wait( &pending.request, &status ), status, pending.bytes, "MPI_Wait (file write)" );
+         });
+         requests_.pop_front();
+      }
+      record( [&] { checkpoint_detail::mpiCheck( MPI_File_close( &fh_ ), "MPI_File_close" ); } );
+   }
+   else
+#endif
+   {
+      record( [&] {
+         sfh_.flush();
+         const bool failed = !sfh_;
+         sfh_.close();
+         if( failed || !sfh_ ) throw std::runtime_error( "Failed while closing rigid body parameter file." );
+      });
+   }
+   fhOpen_ = false;
+   checkpoint_detail::phase( filename_.c_str(), [&] { if( error ) std::rethrow_exception(error); } );
+}
 
 } // namespace pe

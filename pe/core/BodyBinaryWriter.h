@@ -95,6 +95,7 @@ public:
    //@{
    void writeFile( const char* filename );
    void writeFileAsync( const char* filename );
+   // Collective with MPI initialized; explicit wait reports deferred write/close failures.
    void wait();
    inline size_t getMarshalledBodyCount() const;
    //@}
@@ -124,12 +125,14 @@ private:
    Buffer header_;
    Buffer globals_;
 #if HAVE_MPI
-   std::list<MPI_Request> requests_;
+   struct PendingWrite { MPI_Request request; int bytes; };
+   std::list<PendingWrite> requests_;
    MPI_File fh_;        //!< MPI-IO handle (MPI initialised).
    bool fhParallel_;    //!< Whether the open file uses fh_ (true) or sfh_ (false).
 #endif
    std::ofstream sfh_;  //!< Stream handle: non-MPI builds, and MPI builds without an initialised MPI.
    bool fhOpen_;
+   std::string filename_;
    int fpSize_;
    size_t bodies_;   //!< Body records written by the last writeFileAsync() call on this rank.
    //@}
@@ -168,7 +171,8 @@ inline BodyBinaryWriter::BodyBinaryWriter() :
 /*!\brief Destructs the binary writer after waiting for all operations to finish and closing all file handles.
  */
 inline BodyBinaryWriter::~BodyBinaryWriter() {
-   wait();
+   // Explicit wait()/writeFile() report errors; destruction must not throw.
+   try { wait(); } catch( ... ) {}
 }
 //*************************************************************************************************
 
@@ -213,32 +217,6 @@ inline size_t BodyBinaryWriter::getMarshalledBodyCount() const {
 //*************************************************************************************************
 
 
-
-
-//*************************************************************************************************
-/*!\brief Wait for output operations to finish and close file handle.
- * \return void
- */
-inline void BodyBinaryWriter::wait() {
-   if( fhOpen_ ) {
-#if HAVE_MPI
-      if( fhParallel_ ) {
-         MPI_Status status;
-         while( !requests_.empty() ) {
-            MPI_Wait( &requests_.front(), &status );
-            requests_.pop_front();
-         }
-         MPI_File_close( &fh_ );
-      }
-      else
-#endif
-      {
-         sfh_.close();
-      }
-      fhOpen_ = false;
-   }
-}
-//*************************************************************************************************
 
 
 //*************************************************************************************************

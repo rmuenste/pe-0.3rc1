@@ -36,6 +36,8 @@
 #include <sstream>
 #include <string>
 #include <pe/core/BodyBinaryReader.h>
+#include <pe/util/CheckpointCollective.h>
+#include <boost/numeric/conversion/cast.hpp>
 #include <pe/core/Marshalling.h>
 #include <pe/core/MPISettings.h>
 #include <pe/core/ProfilingSection.h>
@@ -78,367 +80,422 @@ void BodyBinaryReader::readFile( const char* filename ) {
 
 #if HAVE_MPI
    MPI_Status status;
-   MPI_File fh;
+   MPI_File fh = MPI_FILE_NULL;
+   bool fileOpen = false;
 #endif
    std::ifstream sfh;
+   uint64_t fileSize = 0;
+   const uint64_t fixedHeaderBytes = 9u * sizeof(byte) + sizeof(uint32_t);
+   uint32_t p = 0, p0 = MPISettings::size(), offsetGlobal = 0;
+   std::vector<uint32_t> offsets_;
+   auto closeFile = [&] {
 #if HAVE_MPI
-   if( parallel ) {
-      if ( MPI_File_open( MPISettings::comm(), &filenameCopy[0], MPI_MODE_RDONLY, MPI_INFO_NULL, &fh ) != MPI_SUCCESS )
-         throw std::runtime_error( "Cannot open file." );
-   }
-   else
+      if( fileOpen ) {
+         fileOpen = false;
+         checkpoint_detail::mpiCheck( MPI_File_close( &fh ), "MPI_File_close" );
+      }
 #endif
-   {
-      sfh.open( &filenameCopy[0], std::ifstream::binary );
-      if( !sfh )
-         throw std::runtime_error( "Cannot open file." );
-   }
-
-   pe_PROFILING_SECTION {
-      timeOpen.end();
-   }
-
-   // Everything the header yields -- the process count, the chunk offsets -- is trusted as a read
-   // position or an allocation size, so the file must be known to be long enough BEFORE each part
-   // of it is believed. A job killed mid-write leaves a short file whose header still parses, and
-   // the short reads that follow are silently ignored by both the MPI and the ifstream path.
-   uint64_t fileSize;
+   };
+   try {
+      checkpoint_detail::phase( filename, [&] {
 #if HAVE_MPI
-   if( parallel ) {
-      MPI_Offset mpiFileSize;
-      if( MPI_File_get_size( fh, &mpiFileSize ) != MPI_SUCCESS )
-         throw std::runtime_error( "Cannot determine the size of the rigid body parameter file." );
-      fileSize = static_cast<uint64_t>( mpiFileSize );
-   }
-   else
-#endif
-   {
-      sfh.seekg( 0, std::ios::end );
-      fileSize = static_cast<uint64_t>( sfh.tellg() );
-      sfh.seekg( 0, std::ios::beg );
-   }
-
-   // Fixed prefix: magic number, format version, five type sizes, process count.
-   const uint64_t fixedHeaderBytes = 9u * sizeof(byte) + 1u * sizeof(uint32_t);
-   if( fileSize < fixedHeaderBytes ) {
-      std::ostringstream message;
-      message << "Rigid body parameter file '" << filename << "' is truncated: it is " << fileSize
-              << " bytes long, shorter than the " << fixedHeaderBytes << "-byte fixed header.";
-      throw std::runtime_error( message.str() );
-   }
-
-   // read until the position in the file where the number of processors used to write the file is stored
-   header_.resize( 9*sizeof(byte) + 1*sizeof(uint32_t) );
-
-   pe_PROFILING_SECTION {
-      timeReadAll.start();
-   }
-
-#if HAVE_MPI
-   if( parallel )
-      MPI_File_read_all( fh, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &status );
-   else
-#endif
-      sfh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
-
-   pe_PROFILING_SECTION {
-      timeReadAll.end();
-      sizeReadAll += header_.size();
-   }
-
-   // read magic number and file format version
-   byte magicNumber1, magicNumber2, fileFormatVersionMajor, fileFormatVersionMinor;
-   header_ >> magicNumber1 >> magicNumber2 >> fileFormatVersionMajor >> fileFormatVersionMinor;
-
-   if( magicNumber1 != 'P' || magicNumber2 != 'E' )
-      throw std::runtime_error( "Invalid file format." );
-
-   if( fileFormatVersionMajor != 0 || fileFormatVersionMinor != 2 )
-      throw std::runtime_error( "Unsupported file format version." );
-
-   // read table of data type sizes
-   byte sizes[5];
-   for( int i = 0; i < 5; ++i ) {
-      header_ >> sizes[i];
-   }
-
-   int fpSize = -1;
-   {
-      byte tmp = sizes[0];
-      while( tmp != 0 ) {
-         tmp >>= 1;
-         ++fpSize;
-      }
-   }
-
-   if( fpSize < 1 || ( 1 << fpSize ) != sizes[0] )
-      throw std::runtime_error( "Invalid size of floating point data." );
-
-   if( sizes[0] == sizeof( real ) ) {
-      header_.setFloatingPointSize( 0 );
-      buffer_.setFloatingPointSize( 0 );
-      globals_.setFloatingPointSize( 0 );
-   }
-   else {
-      header_.setFloatingPointSize( fpSize );
-      buffer_.setFloatingPointSize( fpSize );
-      globals_.setFloatingPointSize( fpSize );
-   }
-
-   pe_LOG_DEBUG_SECTION( log ) {
-      log << "FP size: 2^" << fpSize << " = " << (int)sizes[0] << "\n";
-   }
-
-   if( sizes[1] != sizeof( int ) )
-      throw std::runtime_error( "Size of the int data type does not match the int data type used to produce the file." );
-
-   if( sizes[2] != sizeof( size_t ) )
-      throw std::runtime_error( "Size of the size_t data type does not match the size_t data type used to produce the file." );
-
-   if( sizes[3] != sizeof( id_t ) )
-      throw std::runtime_error( "Size of the id_t data type does not match the id_t data type used to produce the file." );
-
-   if( sizes[4] != sizeof( bool ) )
-      throw std::runtime_error( "Size of the bool data type does not match the bool data type used to produce the file." );
-
-   uint32_t p;
-   header_ >> p;
-   uint32_t p0( MPISettings::size() );
-   if( p0 != p && MPISettings::size() != 1 )
-      throw std::runtime_error( "Number of processes differ from the number of processes used to produce the file." );
-
-   // p came out of the file, so it may be garbage from a truncated header. Validate the offset
-   // table's extent in 64-bit arithmetic before resizing to it: a garbage p would otherwise both
-   // request an absurd allocation and produce an offset table read out of uninitialised memory.
-   const uint64_t offsetTableBytes = ( static_cast<uint64_t>( p ) + 2u ) * sizeof(uint32_t);
-   if( fileSize < fixedHeaderBytes + offsetTableBytes ) {
-      std::ostringstream message;
-      message << "Rigid body parameter file '" << filename << "' is truncated: its header claims "
-              << p << " processes, which needs " << ( fixedHeaderBytes + offsetTableBytes )
-              << " header bytes, but the file is only " << fileSize << " bytes long.";
-      throw std::runtime_error( message.str() );
-   }
-
-   // read rest of header since we now know the exact size
-   header_.resize( ( 2 + p )*sizeof(uint32_t) );
-
-   pe_PROFILING_SECTION {
-      timeReadAll.start();
-   }
-
-#if HAVE_MPI
-   if( parallel )
-      MPI_File_read_all( fh, header_.ptr(), static_cast<int>( header_.size() ), MPI_BYTE, &status );
-   else
-#endif
-      sfh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
-
-   pe_PROFILING_SECTION {
-      timeReadAll.end();
-      sizeReadAll += header_.size();
-   }
-
-   // read global body data offset
-   uint32_t offsetGlobal;
-   header_ >> offsetGlobal;
-
-   // read processes' local body data offsets
-   std::vector<uint32_t> offsets_( p + 1 );
-   for( uint32_t i = 0; i < p + 1; ++i ) {
-      header_ >> offsets_[i];
-   }
-
-   // The offset table must describe a partition of the file: chunks start where the globals end
-   // and never run backwards. Checked before any subtraction below, which is unsigned and would
-   // otherwise wrap a backwards pair into an enormous allocation.
-   if( offsets_[0] < offsetGlobal ) {
-      std::ostringstream message;
-      message << "Rigid body parameter file '" << filename << "' has an invalid header: the first "
-                 "body chunk starts at " << offsets_[0] << ", before the global body data at "
-              << offsetGlobal << ".";
-      throw std::runtime_error( message.str() );
-   }
-   for( uint32_t i = 0; i < p; ++i ) {
-      if( offsets_[i + 1] < offsets_[i] ) {
-         std::ostringstream message;
-         message << "Rigid body parameter file '" << filename << "' has an invalid header: body "
-                    "chunk offsets decrease at index " << i << " (" << offsets_[i] << " -> "
-                 << offsets_[i + 1] << ").";
-         throw std::runtime_error( message.str() );
-      }
-   }
-
-   // offsets_[p] is the end of the last body chunk, i.e. the length the complete file must have.
-   if( fileSize < offsets_[p] ) {
-      std::ostringstream message;
-      message << "Rigid body parameter file '" << filename << "' is truncated: its header "
-                 "describes " << offsets_[p] << " bytes of body data but the file is only "
-              << fileSize << " bytes long. It was most likely written by a job that was killed "
-                 "mid-checkpoint.";
-      throw std::runtime_error( message.str() );
-   }
-
-   // read global body data
-   globals_.resize( offsets_[0] - offsetGlobal );
-
-   pe_PROFILING_SECTION {
-      timeReadAll.start();
-   }
-
-#if HAVE_MPI
-   if( parallel )
-      MPI_File_read_at_all( fh, offsetGlobal, globals_.ptr(), static_cast<int>( globals_.size() ), MPI_BYTE, &status );
-   else
-#endif
-   {
-      sfh.seekg( offsetGlobal, std::ios::beg );
-      sfh.read( reinterpret_cast<char*>( globals_.ptr() ), globals_.size() );
-   }
-
-   pe_PROFILING_SECTION {
-      timeReadAll.end();
-      sizeReadAll += globals_.size();
-   }
-
-   // clear all rigid bodies since we will reset the unique ID counter
-   {
-      WorldID world = theWorld();
-      World::Iterator it = world->begin();
-      while( it != world->end() )
-         it = world->destroy( it );
-   }
-
-   // read local body data
-   uint32_t offset, end;
-   if( p0 == p ) {
-      offset = offsets_[MPISettings::rank()];
-      end = offsets_[MPISettings::rank() + 1];
-
-      if( offset < offsetGlobal || offsets_[0] < offsetGlobal )
-         throw std::runtime_error( "Invalid body data offset." );
-
-      if( end < offset )
-         throw std::runtime_error( "Invalid body data chunk size." );
-
-      buffer_.resize( end - offset );
-
-      pe_PROFILING_SECTION {
-         timeReadLocal.start();
-      }
-
-#if HAVE_MPI
-      if( parallel ) {
-         MPI_File_read_at( fh, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &status );
-         MPI_File_close( &fh );
-      }
-      else
-#endif
-      {
-         sfh.seekg( offset, std::ios::beg );
-         sfh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
-      }
-
-      pe_PROFILING_SECTION {
-         timeReadLocal.end();
-         sizeReadLocal += buffer_.size();
-      }
-
-      // WARNING: the unmarshalling below does not validate its input. Truncation is ruled out by
-      // the file length check above, but a file that is intact yet malformed -- or whose body
-      // material indices outrun this process' material table -- triggers assertions in debug and
-      // is undefined behaviour in release. Checkpointer::read()/readCheckpoint() guard the
-      // material case by reinstating the recorded table first; see pe/util/CheckpointMetadata.h.
-
-      // restore the system ID counter
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank " << MPISettings::rank() << " the old UniqueID<RigidBody>::counter_ is " << UniqueID<RigidBody>::counter_  << "\n";
-      }
-      unmarshal( buffer_, UniqueID<RigidBody>::counter_ );
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank " << MPISettings::rank() << " the new UniqueID<RigidBody>::counter_ is " << UniqueID<RigidBody>::counter_  << "\n";
-      }
-
-      // unmarshal all process local bodies
-      unmarshalAll( buffer_, false );
-
-      // restore the system ID counter for global bodies
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank " << MPISettings::rank() << " the old UniqueID<RigidBody>::globalCounter_ is " << UniqueID<RigidBody>::globalCounter_  << "\n";
-      }
-      unmarshal( globals_, UniqueID<RigidBody>::globalCounter_ );
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank " << MPISettings::rank() << " the new UniqueID<RigidBody>::globalCounter_ is " << UniqueID<RigidBody>::globalCounter_  << "\n";
-      }
-
-      // unmarshal all global bodies
-      unmarshalAll( globals_, true );
-
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank " << MPISettings::rank() << " there are " << theWorld()->size() << " bodies in the world.\n";
-      }
-   }
-   else {
-      // reset system IDs
-      UniqueID<RigidBody>::counter_ = UniqueID<RigidBody>::globalCounter_ = 0;
-
-      for( uint32_t i = 0; i < p; ++i ) {
-         offset = offsets_[i];
-         end = offsets_[i + 1];
-
-         if( offset < offsetGlobal || offsets_[0] < offsetGlobal )
-            throw std::runtime_error( "Invalid body data offset." );
-
-         if( end < offset )
-            throw std::runtime_error( "Invalid body data chunk size." );
-
-         buffer_.resize( end - offset );
-
-         pe_PROFILING_SECTION {
-            timeReadLocal.start();
+         if( parallel ) {
+            checkpoint_detail::mpiCheck( MPI_File_open( MPISettings::comm(), &filenameCopy[0],
+               MPI_MODE_RDONLY, MPI_INFO_NULL, &fh ), "MPI_File_open" );
+            fileOpen = true;
          }
-
-#if HAVE_MPI
-         if( parallel )
-            MPI_File_read_at( fh, offset, buffer_.ptr(), static_cast<int>( buffer_.size() ), MPI_BYTE, &status );
          else
 #endif
          {
-            sfh.seekg( offset, std::ios::beg );
-            sfh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+            sfh.open( &filenameCopy[0], std::ifstream::binary );
+            if( !sfh )
+               throw std::runtime_error( "Cannot open file." );
          }
 
-         pe_PROFILING_SECTION {
-            timeReadLocal.end();
-            sizeReadLocal += buffer_.size();
-         }
-
-         // skip the system ID counter
-         id_t tmp;
-         unmarshal( buffer_, tmp );
-
-         // unmarshal all process local bodies
-         unmarshalAll( buffer_, false, true );
+      });
+#if HAVE_MPI
+      checkpoint_detail::phase( filename, [&] {
+         if( parallel ) checkpoint_detail::mpiCheck(
+            MPI_File_set_errhandler( fh, MPI_ERRORS_RETURN ), "MPI_File_set_errhandler" );
+      });
+#endif
+      pe_PROFILING_SECTION {
+         timeOpen.end();
       }
+      checkpoint_detail::phase( filename, [&] {
+
+         // Everything the header yields -- the process count, the chunk offsets -- is trusted as a read
+         // position or an allocation size, so the file must be known to be long enough BEFORE each part
+         // of it is believed. A job killed mid-write leaves a short file whose header still parses, and
+         // the short reads that follow are silently ignored by both the MPI and the ifstream path.
 
 #if HAVE_MPI
-      if( parallel )
-         MPI_File_close( &fh );
+         if( parallel ) {
+            MPI_Offset mpiFileSize;
+            checkpoint_detail::mpiCheck( MPI_File_get_size( fh, &mpiFileSize ), "MPI_File_get_size" );
+            fileSize = static_cast<uint64_t>( mpiFileSize );
+         }
+         else
 #endif
+         {
+            sfh.seekg( 0, std::ios::end );
+            fileSize = static_cast<uint64_t>( sfh.tellg() );
+            sfh.seekg( 0, std::ios::beg );
+         }
 
-      {
-         // skip the system ID counter for global bodies (it is the first item of the GLOBAL
-         // chunk; reading it from buffer_, the last local chunk, left the globals buffer
-         // positioned on the counter, which unmarshalAll() then took for a geometry type)
-         id_t tmp;
-         unmarshal( globals_, tmp );
+         // Fixed prefix: magic number, format version, five type sizes, process count.
 
-         // unmarshal all global bodies as local bodies
-         unmarshalAll( globals_, true, true );
+         if( fileSize < fixedHeaderBytes ) {
+            std::ostringstream message;
+            message << "Rigid body parameter file '" << filename << "' is truncated: it is " << fileSize
+                    << " bytes long, shorter than the " << fixedHeaderBytes << "-byte fixed header.";
+            throw std::runtime_error( message.str() );
+         }
+
+         // read until the position in the file where the number of processors used to write the file is stored
+         header_.resize( 9*sizeof(byte) + 1*sizeof(uint32_t) );
+      });
+
+      pe_PROFILING_SECTION {
+         timeReadAll.start();
       }
 
-      pe_LOG_DEBUG_SECTION( log ) {
-         log << "On rank 0 there are " << theWorld()->size() << " bodies in the world.\n";
+      checkpoint_detail::phase( filename, [&] {
+#if HAVE_MPI
+         if( parallel )
+            checkpoint_detail::requireTransfer( MPI_File_read_all( fh, header_.ptr(),
+               static_cast<int>(header_.size()), MPI_BYTE, &status ), status, header_.size() );
+         else
+#endif
+         {
+            sfh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
+            if( !sfh ) throw std::runtime_error( "Short read of rigid body parameter file header." );
+         }
+      });
+
+      pe_PROFILING_SECTION {
+         timeReadAll.end();
+         sizeReadAll += header_.size();
       }
+
+      checkpoint_detail::phase( filename, [&] {
+         // read magic number and file format version
+         byte magicNumber1, magicNumber2, fileFormatVersionMajor, fileFormatVersionMinor;
+         header_ >> magicNumber1 >> magicNumber2 >> fileFormatVersionMajor >> fileFormatVersionMinor;
+
+         if( magicNumber1 != 'P' || magicNumber2 != 'E' )
+            throw std::runtime_error( "Invalid file format." );
+
+         if( fileFormatVersionMajor != 0 || fileFormatVersionMinor != 2 )
+            throw std::runtime_error( "Unsupported file format version." );
+
+         // read table of data type sizes
+         byte sizes[5];
+         for( int i = 0; i < 5; ++i ) {
+            header_ >> sizes[i];
+         }
+
+         int fpSize = -1;
+         {
+            byte tmp = sizes[0];
+            while( tmp != 0 ) {
+               tmp >>= 1;
+               ++fpSize;
+            }
+         }
+
+         if( fpSize < 1 || ( 1 << fpSize ) != sizes[0] )
+            throw std::runtime_error( "Invalid size of floating point data." );
+
+         if( sizes[0] == sizeof( real ) ) {
+            header_.setFloatingPointSize( 0 );
+            buffer_.setFloatingPointSize( 0 );
+            globals_.setFloatingPointSize( 0 );
+         }
+         else {
+            header_.setFloatingPointSize( fpSize );
+            buffer_.setFloatingPointSize( fpSize );
+            globals_.setFloatingPointSize( fpSize );
+         }
+
+         pe_LOG_DEBUG_SECTION( log ) {
+            log << "FP size: 2^" << fpSize << " = " << (int)sizes[0] << "\n";
+         }
+
+         if( sizes[1] != sizeof( int ) )
+            throw std::runtime_error( "Size of the int data type does not match the int data type used to produce the file." );
+
+         if( sizes[2] != sizeof( size_t ) )
+            throw std::runtime_error( "Size of the size_t data type does not match the size_t data type used to produce the file." );
+
+         if( sizes[3] != sizeof( id_t ) )
+            throw std::runtime_error( "Size of the id_t data type does not match the id_t data type used to produce the file." );
+
+         if( sizes[4] != sizeof( bool ) )
+            throw std::runtime_error( "Size of the bool data type does not match the bool data type used to produce the file." );
+
+         header_ >> p;
+         if( p0 != p && MPISettings::size() != 1 )
+            throw std::runtime_error( "Number of processes differ from the number of processes used to produce the file." );
+
+         // p came out of the file, so it may be garbage from a truncated header. Validate the offset
+         // table's extent in 64-bit arithmetic before resizing to it: a garbage p would otherwise both
+         // request an absurd allocation and produce an offset table read out of uninitialised memory.
+         const uint64_t offsetTableBytes = ( static_cast<uint64_t>( p ) + 2u ) * sizeof(uint32_t);
+         if( fileSize < fixedHeaderBytes + offsetTableBytes ) {
+            std::ostringstream message;
+            message << "Rigid body parameter file '" << filename << "' is truncated: its header claims "
+                    << p << " processes, which needs " << ( fixedHeaderBytes + offsetTableBytes )
+                    << " header bytes, but the file is only " << fileSize << " bytes long.";
+            throw std::runtime_error( message.str() );
+         }
+
+         // read rest of header since we now know the exact size
+         boost::numeric_cast<int>( offsetTableBytes );
+         header_.resize( static_cast<size_t>(offsetTableBytes) );
+      });
+
+      pe_PROFILING_SECTION {
+         timeReadAll.start();
+      }
+
+      checkpoint_detail::phase( filename, [&] {
+#if HAVE_MPI
+         if( parallel )
+            checkpoint_detail::requireTransfer( MPI_File_read_all( fh, header_.ptr(),
+               static_cast<int>(header_.size()), MPI_BYTE, &status ), status, header_.size() );
+         else
+#endif
+         {
+            sfh.read( reinterpret_cast<char*>( header_.ptr() ), header_.size() );
+            if( !sfh ) throw std::runtime_error( "Short read of rigid body parameter file header." );
+         }
+      });
+
+      pe_PROFILING_SECTION {
+         timeReadAll.end();
+         sizeReadAll += header_.size();
+      }
+
+      checkpoint_detail::phase( filename, [&] {
+         // read global body data offset
+         header_ >> offsetGlobal;
+
+         // read processes' local body data offsets
+         offsets_.resize( static_cast<size_t>(p) + 1 );
+         for( uint32_t i = 0; i < p + 1; ++i ) {
+            header_ >> offsets_[i];
+         }
+
+         // The offset table must describe a partition of the file: chunks start where the globals end
+         // and never run backwards. Checked before any subtraction below, which is unsigned and would
+         // otherwise wrap a backwards pair into an enormous allocation.
+         if( offsets_[0] < offsetGlobal ) {
+            std::ostringstream message;
+            message << "Rigid body parameter file '" << filename << "' has an invalid header: the first "
+                       "body chunk starts at " << offsets_[0] << ", before the global body data at "
+                    << offsetGlobal << ".";
+            throw std::runtime_error( message.str() );
+         }
+         for( uint32_t i = 0; i < p; ++i ) {
+            if( offsets_[i + 1] < offsets_[i] ) {
+               std::ostringstream message;
+               message << "Rigid body parameter file '" << filename << "' has an invalid header: body "
+                          "chunk offsets decrease at index " << i << " (" << offsets_[i] << " -> "
+                       << offsets_[i + 1] << ").";
+               throw std::runtime_error( message.str() );
+            }
+         }
+
+         // offsets_[p] is the end of the last body chunk, i.e. the length the complete file must have.
+         if( fileSize < offsets_[p] ) {
+            std::ostringstream message;
+            message << "Rigid body parameter file '" << filename << "' is truncated: its header "
+                       "describes " << offsets_[p] << " bytes of body data but the file is only "
+                    << fileSize << " bytes long. It was most likely written by a job that was killed "
+                       "mid-checkpoint.";
+            throw std::runtime_error( message.str() );
+         }
+
+         // read global body data
+         boost::numeric_cast<int>( offsets_[0] - offsetGlobal );
+         globals_.resize( offsets_[0] - offsetGlobal );
+      });
+
+      pe_PROFILING_SECTION {
+         timeReadAll.start();
+      }
+
+      checkpoint_detail::phase( filename, [&] {
+#if HAVE_MPI
+         if( parallel )
+            checkpoint_detail::requireTransfer( MPI_File_read_at_all( fh, offsetGlobal, globals_.ptr(),
+               static_cast<int>(globals_.size()), MPI_BYTE, &status ), status, globals_.size() );
+         else
+#endif
+         {
+            sfh.seekg( offsetGlobal, std::ios::beg );
+            sfh.read( reinterpret_cast<char*>( globals_.ptr() ), globals_.size() );
+            if( !sfh ) throw std::runtime_error( "Short read of global body data." );
+         }
+      });
+
+      pe_PROFILING_SECTION {
+         timeReadAll.end();
+         sizeReadAll += globals_.size();
+      }
+
+      checkpoint_detail::phase( filename, [&] {
+         // The remaining reads are rank-local; agree before collective close or profiling.
+         // clear all rigid bodies since we will reset the unique ID counter
+         {
+            WorldID world = theWorld();
+            World::Iterator it = world->begin();
+            while( it != world->end() )
+               it = world->destroy( it );
+         }
+
+         // read local body data
+         uint32_t offset, end;
+         if( p0 == p ) {
+            offset = offsets_[MPISettings::rank()];
+            end = offsets_[MPISettings::rank() + 1];
+
+            if( offset < offsetGlobal || offsets_[0] < offsetGlobal )
+               throw std::runtime_error( "Invalid body data offset." );
+
+            if( end < offset )
+               throw std::runtime_error( "Invalid body data chunk size." );
+
+            boost::numeric_cast<int>( end - offset );
+            buffer_.resize( end - offset );
+
+            pe_PROFILING_SECTION {
+               timeReadLocal.start();
+            }
+
+#if HAVE_MPI
+            if( parallel ) {
+               checkpoint_detail::requireTransfer( MPI_File_read_at( fh, offset, buffer_.ptr(),
+                  static_cast<int>(buffer_.size()), MPI_BYTE, &status ), status, buffer_.size() );
+            }
+            else
+#endif
+            {
+               sfh.seekg( offset, std::ios::beg );
+               sfh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+               if( !sfh ) throw std::runtime_error( "Short read of local body data." );
+            }
+
+            pe_PROFILING_SECTION {
+               timeReadLocal.end();
+               sizeReadLocal += buffer_.size();
+            }
+
+            // WARNING: the unmarshalling below does not validate its input. Truncation is ruled out by
+            // the file length check above, but a file that is intact yet malformed -- or whose body
+            // material indices outrun this process' material table -- triggers assertions in debug and
+            // is undefined behaviour in release. Checkpointer::read()/readCheckpoint() guard the
+            // material case by reinstating the recorded table first; see pe/util/CheckpointMetadata.h.
+
+            // restore the system ID counter
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "On rank " << MPISettings::rank() << " the old UniqueID<RigidBody>::counter_ is " << UniqueID<RigidBody>::counter_  << "\n";
+            }
+            unmarshal( buffer_, UniqueID<RigidBody>::counter_ );
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "On rank " << MPISettings::rank() << " the new UniqueID<RigidBody>::counter_ is " << UniqueID<RigidBody>::counter_  << "\n";
+            }
+
+            // unmarshal all process local bodies
+            unmarshalAll( buffer_, false );
+
+            // restore the system ID counter for global bodies
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "On rank " << MPISettings::rank() << " the old UniqueID<RigidBody>::globalCounter_ is " << UniqueID<RigidBody>::globalCounter_  << "\n";
+            }
+            unmarshal( globals_, UniqueID<RigidBody>::globalCounter_ );
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "On rank " << MPISettings::rank() << " the new UniqueID<RigidBody>::globalCounter_ is " << UniqueID<RigidBody>::globalCounter_  << "\n";
+            }
+
+            // unmarshal all global bodies
+            unmarshalAll( globals_, true );
+
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "On rank " << MPISettings::rank() << " there are " << theWorld()->size() << " bodies in the world.\n";
+            }
+         }
+         else {
+            // reset system IDs
+            UniqueID<RigidBody>::counter_ = UniqueID<RigidBody>::globalCounter_ = 0;
+
+            for( uint32_t i = 0; i < p; ++i ) {
+               offset = offsets_[i];
+               end = offsets_[i + 1];
+
+               if( offset < offsetGlobal || offsets_[0] < offsetGlobal )
+                  throw std::runtime_error( "Invalid body data offset." );
+
+               if( end < offset )
+                  throw std::runtime_error( "Invalid body data chunk size." );
+
+               boost::numeric_cast<int>( end - offset );
+               buffer_.resize( end - offset );
+
+               pe_PROFILING_SECTION {
+                  timeReadLocal.start();
+               }
+
+#if HAVE_MPI
+               if( parallel )
+                  checkpoint_detail::requireTransfer( MPI_File_read_at( fh, offset, buffer_.ptr(),
+                     static_cast<int>(buffer_.size()), MPI_BYTE, &status ), status, buffer_.size() );
+               else
+#endif
+               {
+                  sfh.seekg( offset, std::ios::beg );
+                  sfh.read( reinterpret_cast<char*>( buffer_.ptr() ), buffer_.size() );
+                  if( !sfh ) throw std::runtime_error( "Short read of local body data." );
+               }
+
+               pe_PROFILING_SECTION {
+                  timeReadLocal.end();
+                  sizeReadLocal += buffer_.size();
+               }
+
+               // skip the system ID counter
+               id_t tmp;
+               unmarshal( buffer_, tmp );
+
+               // unmarshal all process local bodies
+               unmarshalAll( buffer_, false, true );
+            }
+
+
+            {
+               // skip the system ID counter for global bodies (it is the first item of the GLOBAL
+               // chunk; reading it from buffer_, the last local chunk, left the globals buffer
+               // positioned on the counter, which unmarshalAll() then took for a geometry type)
+               id_t tmp;
+               unmarshal( globals_, tmp );
+
+               // unmarshal all global bodies as local bodies
+               unmarshalAll( globals_, true, true );
+            }
+
+            pe_LOG_DEBUG_SECTION( log ) {
+               log << "On rank 0 there are " << theWorld()->size() << " bodies in the world.\n";
+            }
+         }
+
+      });
+      checkpoint_detail::phase( filename, closeFile );
+   }
+   catch( ... ) {
+      // Phase agreement means all ranks reach cleanup, including those whose local work passed.
+      try { closeFile(); } catch( ... ) {}
+      throw;
    }
 
    pe_PROFILING_SECTION {

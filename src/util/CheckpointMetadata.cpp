@@ -390,6 +390,7 @@ void writeCheckpointMetadata( const boost::filesystem::path& filename,
       }
 
       out.flush();
+      out.close();
       if( !out )
          throw std::runtime_error( "Failed while writing checkpoint metadata '" +
                                    tempPath.string() + "'." );
