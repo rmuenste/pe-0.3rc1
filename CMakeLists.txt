@@ -287,24 +287,23 @@ set(PE_THIRD_PARTY_INCLUDE_DIRS)
 set( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-find_package(Boost REQUIRED COMPONENTS thread system filesystem program_options random)
+# Boost.System is header-only since Boost 1.69, and Boost >= 1.89 no longer ships its stub library
+# (nor the boost_system CMake package), so it is only an optional component: linked if present.
+find_package(Boost REQUIRED COMPONENTS thread filesystem program_options random OPTIONAL_COMPONENTS system)
 
 if( NOT Boost_FOUND )
    message( ERROR ": Boost library not found! " )
 endif()
 
-list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
-list(APPEND PE_THIRD_PARTY_LIBS
-  Boost::thread
-  Boost::system
-  Boost::filesystem
-  Boost::program_options
-  Boost::random
-)
+set(PE_BOOST_LIBS Boost::thread Boost::filesystem Boost::program_options Boost::random)
+if( TARGET Boost::system )
+   list(APPEND PE_BOOST_LIBS Boost::system)
+endif()
 
-LINK_LIBRARIES(
-  Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
-)
+list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
+list(APPEND PE_THIRD_PARTY_LIBS ${PE_BOOST_LIBS})
+
+LINK_LIBRARIES( ${PE_BOOST_LIBS} )
 
 # Disable Boost auto-linking since it conflicts with cmake:
 ADD_DEFINITIONS    ( -DBOOST_ALL_NO_LIB    )
