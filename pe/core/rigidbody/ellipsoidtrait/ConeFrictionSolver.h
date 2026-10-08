@@ -29,7 +29,7 @@
 //*************************************************************************************************
 
 #include <cmath>
-#include <pe/core/rigidbody/spheretrait/Default.h>
+#include <pe/core/rigidbody/ellipsoidtrait/Default.h>
 #include <pe/core/response/Types.h>
 #include <pe/core/rigidbody/EllipsoidBase.h>
 #include <pe/core/Settings.h>

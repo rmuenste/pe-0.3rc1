@@ -12,6 +12,12 @@ target_include_directories(pe_interface_smoke_serial PRIVATE
 )
 target_link_libraries(pe_interface_smoke_serial PRIVATE pe_static)
 
+# Exercise CFD shadow queries with unequal owned/shadow counts and filtered indices.
+add_executable(pe_remote_query_test pe_remote_query_test.cpp)
+target_link_libraries(pe_remote_query_test PRIVATE pe_static_lubstage_fluid)
+add_test(NAME pe-remote-query COMMAND pe_remote_query_test)
+set_tests_properties(pe-remote-query PROPERTIES LABELS "unit;serial;interface")
+
 # Pure-arithmetic unit test for the Euler-Lagrange semi-implicit drag update.
 # Needs only the header-only helper + Vec3; no world/MPI setup, so it is a plain
 # add_test rather than a --case of the smoke harness.
