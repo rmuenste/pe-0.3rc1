@@ -70,6 +70,9 @@ class InnerCylinderTrait< C<CD,FD,BG,response::FFDSolver> > : public InnerCylind
 protected:
    //**Type definitions****************************************************************************
    typedef InnerCylinderBase  Parent;  //!< The type of the parent class.
+   //! The rigid body trait providing resetConstraints() (a dependent type, so that its lookup is
+   //! deferred to the instantiation for an FFDSolver configuration).
+   typedef RigidBodyTrait< C<CD,FD,BG,response::FFDSolver> >  FFDTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -247,7 +250,7 @@ void InnerCylinderTrait< C<CD,FD,BG,response::FFDSolver> >::secondPositionHalfSt
    contacts_.clear();
 
    // Resetting the contact constraints
-   this->resetConstraints();
+   FFDTrait::resetConstraints();
 
    // Position update of the cylinder according to the current velocity
    // (don't update a sleeping, fixed, or remote cylinder)

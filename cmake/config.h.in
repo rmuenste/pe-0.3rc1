@@ -1,3 +1,6 @@
+#ifndef PE_CONFIG_H
+#define PE_CONFIG_H
+
 #cmakedefine PE_SHARED_LIB_BUILD
 
 #define PE_MEDIA_PATH ${MEDIA_PATH}
@@ -50,3 +53,5 @@
 #cmakedefine01 HAVE_JSON
 #cmakedefine01 HAVE_MPI
 #cmakedefine01 HAVE_OPENCL
+
+#endif // PE_CONFIG_H

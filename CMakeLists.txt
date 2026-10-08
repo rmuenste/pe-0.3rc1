@@ -24,7 +24,25 @@
 cmake_minimum_required(VERSION 3.15)  # or higher, if possible.  3.15 introduced INTERFACE_LIBRARY
 project(pe)
 
-include(CTest)
+# pe can be built stand-alone or as a sub-project of an application (add_subdirectory() or
+# FetchContent, e.g. FEAT3). As a sub-project, pe leaves the global setup of the parent alone
+# (build type, CTest, documentation) and just provides the library target pe::pe, which carries
+# all usage requirements: include path, the forced config.h and the layout-relevant definitions.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+   set(PE_IS_TOP_LEVEL ON)
+else()
+   set(PE_IS_TOP_LEVEL OFF)
+endif()
+
+if(PE_IS_TOP_LEVEL)
+   include(CTest)
+endif()
+
+# Usage requirements of the pe library targets (PUBLIC): everything that changes the meaning of
+# pe's headers -- the class layout of the rigid bodies, the selected constraint solver -- has to
+# be identical in pe and in every translation unit that includes pe headers.
+set(PE_PUBLIC_DEFINITIONS)
+set(PE_PUBLIC_OPTIONS)
 
 # Enable ExternalProject module
 include(ExternalProject)
@@ -35,7 +53,9 @@ include(FetchContent)
 #
 #==================================================================================================
 
-set( CMAKE_BUILD_TYPE  RELEASE CACHE STRING  "The default build type for the whole project is RELEASE." )
+if(PE_IS_TOP_LEVEL)
+   set( CMAKE_BUILD_TYPE  RELEASE CACHE STRING  "The default build type for the whole project is RELEASE." )
+endif()
 set( PE_LIBRARY_TYPE   STATIC  CACHE STRING  "Build type of library (STATIC/SHARED/BOTH)."              )
 set( PE_USE_BLAS       OFF     CACHE BOOL    "Build support for BLAS."                                  )
 set( PE_USE_MPI        OFF     CACHE BOOL    "Build support for MPI."                                   )
@@ -98,7 +118,38 @@ else()
   message(STATUS "HashGrid verification is DISABLED")
 endif()
 
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+if(PE_IS_TOP_LEVEL)
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
+
+# The point query mode changes the interface code, so users must see the same value
+if(PE_USE_ACCELERATED_POINT_QUERY)
+  list(APPEND PE_PUBLIC_DEFINITIONS USE_ACCELERATED_POINT_QUERY=1)
+else()
+  list(APPEND PE_PUBLIC_DEFINITIONS USE_ACCELERATED_POINT_QUERY=0)
+endif()
+
+# Constraint solver (pe_CONSTRAINT_SOLVER): it determines the Config type of the whole world, so
+# a user compiled with another solver than the library gets undefined references at link time.
+# Empty = the default of pe/config/Collisions.h. (PE_PREPROCESSOR_FLAGS still works, too.)
+set( PE_CONSTRAINT_SOLVER "" CACHE STRING
+   "Constraint solver, e.g. pe::response::HardContactAndFluid (empty: default of pe/config/Collisions.h)" )
+if(PE_CONSTRAINT_SOLVER)
+  list(APPEND PE_PUBLIC_DEFINITIONS "pe_CONSTRAINT_SOLVER=${PE_CONSTRAINT_SOLVER}")
+endif()
+
+# NDEBUG changes the class layout of pe's rigid bodies (e.g. MPIRigidBodyTrait::debugFlag_), so
+# it must not depend on the build flags of the user: with PE_NDEBUG=ON, NDEBUG is a public
+# definition of the pe targets. Default: ON unless this is a Debug build.
+if(CMAKE_BUILD_TYPE MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
+  set(PE_NDEBUG_DEFAULT OFF)
+else()
+  set(PE_NDEBUG_DEFAULT ON)
+endif()
+option(PE_NDEBUG "Define NDEBUG for pe and all its users (disables pe's internal assertions)" ${PE_NDEBUG_DEFAULT})
+if(PE_NDEBUG)
+  list(APPEND PE_PUBLIC_DEFINITIONS NDEBUG)
+endif()
 
 # Guide selection of boost libraries by FindBoost.cmake
 set( Boost_USE_STATIC_LIBS OFF CACHE BOOL "Force static linking of Boost libraries." )
@@ -106,15 +157,16 @@ set( Boost_USE_STATIC_LIBS OFF CACHE BOOL "Force static linking of Boost librari
 # Boost threads is only available as a multithreaded version so force FindBoost.cmake to use the multithreaded versions.
 set( Boost_USE_MULTITHREADED ON )
 
-# Setting the build type (default=Release)
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
-endif()
+# Setting and validating the build type (default=Release); as a sub-project the parent decides
+if(PE_IS_TOP_LEVEL)
+  if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
+  endif()
 
-# Validate build type
-set(VALID_BUILD_TYPES Debug Release RelWithDebInfo MinSizeRel)
-if(NOT CMAKE_BUILD_TYPE IN_LIST VALID_BUILD_TYPES)
-  message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
+  set(VALID_BUILD_TYPES Debug Release RelWithDebInfo MinSizeRel)
+  if(NOT CMAKE_BUILD_TYPE IN_LIST VALID_BUILD_TYPES)
+    message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
+  endif()
 endif()
 
 
@@ -131,8 +183,8 @@ set(PE_CXX_FLAGS)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
  
   message(STATUS "We found a GNU compiler")
+  list(APPEND PE_PUBLIC_DEFINITIONS MOBILE_INFINITE=1)
   list(APPEND PE_CXX_FLAGS
-    -DMOBILE_INFINITE=1
     -Wall
     -Wextra
     -Wshadow
@@ -166,7 +218,7 @@ endif()
 # Setting user compiler and linker flags
 if(PE_PREPROCESSOR_FLAGS)
   separate_arguments(PE_PREPROCESSOR_FLAGS)
-  list(APPEND PE_CXX_FLAGS ${PE_PREPROCESSOR_FLAGS})
+  list(APPEND PE_PUBLIC_OPTIONS ${PE_PREPROCESSOR_FLAGS})
 endif()
 
 if(PE_COMPILER_FLAGS)
@@ -235,24 +287,23 @@ set(PE_THIRD_PARTY_INCLUDE_DIRS)
 set( CMAKE_MODULE_PATH ${pe_SOURCE_DIR}/cmake )
 
 # Configuration of the Boost library
-find_package(Boost REQUIRED COMPONENTS thread system filesystem program_options random)
+# Boost.System is header-only since Boost 1.69, and Boost >= 1.89 no longer ships its stub library
+# (nor the boost_system CMake package), so it is only an optional component: linked if present.
+find_package(Boost REQUIRED COMPONENTS thread filesystem program_options random OPTIONAL_COMPONENTS system)
 
 if( NOT Boost_FOUND )
    message( ERROR ": Boost library not found! " )
 endif()
 
-list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
-list(APPEND PE_THIRD_PARTY_LIBS
-  Boost::thread
-  Boost::system
-  Boost::filesystem
-  Boost::program_options
-  Boost::random
-)
+set(PE_BOOST_LIBS Boost::thread Boost::filesystem Boost::program_options Boost::random)
+if( TARGET Boost::system )
+   list(APPEND PE_BOOST_LIBS Boost::system)
+endif()
 
-LINK_LIBRARIES(
-  Boost::thread Boost::system Boost::filesystem Boost::program_options Boost::random
-)
+list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${Boost_INCLUDE_DIRS})
+list(APPEND PE_THIRD_PARTY_LIBS ${PE_BOOST_LIBS})
+
+LINK_LIBRARIES( ${PE_BOOST_LIBS} )
 
 # Disable Boost auto-linking since it conflicts with cmake:
 ADD_DEFINITIONS    ( -DBOOST_ALL_NO_LIB    )
@@ -288,6 +339,7 @@ if( PE_USE_EIGEN )
   
   list(APPEND PE_THIRD_PARTY_LIBS Eigen3::Eigen)
   add_definitions(-DPE_USE_EIGEN)
+  list(APPEND PE_PUBLIC_DEFINITIONS PE_USE_EIGEN)
   set(DEFINES "${DEFINES} PE_USE_EIGEN=1")
   message(STATUS "Eigen support enabled")
 else()
@@ -410,6 +462,7 @@ if(PE_USE_JSON)
 
     # Add compile definition to indicate JSON is available
     add_compile_definitions(HAVE_JSON)
+    list(APPEND PE_PUBLIC_DEFINITIONS HAVE_JSON)
 
     # Add the JSON include directory explicitly
     list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${json_SOURCE_DIR}/include)
@@ -453,6 +506,21 @@ endif()
 
 # Create config.h from template and force inclusion
 configure_file( ${pe_SOURCE_DIR}/cmake/config.h.in ${PROJECT_BINARY_DIR}/config.h )
+
+# pe's headers expect config.h to be force-included, in pe itself and in every user
+if ( MSVC )
+   list(APPEND PE_PUBLIC_OPTIONS "SHELL:/FI ${PROJECT_BINARY_DIR}/config.h")
+else()
+   list(APPEND PE_PUBLIC_OPTIONS "SHELL:-include ${PROJECT_BINARY_DIR}/config.h")
+endif()
+
+# Attaches the compiler flags (PRIVATE) and the usage requirements (PUBLIC) to a pe library target
+function( pe_add_usage_requirements target )
+   target_compile_options( ${target} PRIVATE ${PE_CXX_FLAGS} )
+   target_compile_options( ${target} PUBLIC ${PE_PUBLIC_OPTIONS} )
+   target_compile_definitions( ${target} PUBLIC ${PE_PUBLIC_DEFINITIONS} )
+   target_compile_features( ${target} PUBLIC cxx_std_17 )
+endfunction()
 if( PE_USE_MPI AND PE_MPI_PREINCLUDE )
 	file( APPEND ${PROJECT_BINARY_DIR}/config.h "#include <mpi.h>" )
 endif()
@@ -539,7 +607,7 @@ set( PE_ALL ${PE_SOURCES} ${PE_HEADERS} )
 if( PE_LIBRARY_TYPE STREQUAL STATIC OR PE_LIBRARY_TYPE STREQUAL BOTH )
    add_library( pe_static STATIC ${PE_ALL} )
    message(STATUS "cmake: ${CMAKE_CXX_FLAGS}")
-   target_compile_options(pe_static PUBLIC ${PE_CXX_FLAGS})
+   pe_add_usage_requirements(pe_static)
    get_target_property(COMP_OPTIONS pe_static COMPILE_OPTIONS)
    set_target_properties( pe_static PROPERTIES OUTPUT_NAME pe )
    # The library target "pe_static" will be named "pe.lib" with Microsoft tools.
@@ -555,7 +623,7 @@ endif()
 
 if( PE_LIBRARY_TYPE STREQUAL SHARED OR PE_LIBRARY_TYPE STREQUAL BOTH )
    add_library( pe_shared SHARED ${PE_ALL} )
-   target_compile_options(pe_shared PUBLIC ${PE_CXX_FLAGS})
+   pe_add_usage_requirements(pe_shared)
    if( CMAKE_COMPILER_IS_GNUCXX OR ${CMAKE_CXX_COMPILER} MATCHES "icpc" )
       # CXXFLAGS automatically also used for linking
       target_compile_options(pe_shared PUBLIC 
@@ -575,12 +643,20 @@ if( PE_LIBRARY_TYPE STREQUAL SHARED OR PE_LIBRARY_TYPE STREQUAL BOTH )
 endif()
 
 
+# Namespaced target for users (add_subdirectory/FetchContent): link against pe::pe
+if( TARGET pe_static )
+   add_library( pe::pe ALIAS pe_static )
+elseif( TARGET pe_shared )
+   add_library( pe::pe ALIAS pe_shared )
+endif()
+
+
 #==================================================================================================
 #
 # Interface smoke tests
 #
 #=================================================================================================
-if(BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
+if(PE_IS_TOP_LEVEL AND BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
    # The lubrication stage tests drive a real collision pipeline, so they need a
    # stage-capable pe_CONSTRAINT_SOLVER. That cannot be selected per test target:
    # pe_CONSTRAINT_SOLVER feeds the global Config typedef, and non-template library
@@ -612,8 +688,9 @@ if(BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_static)
       # -DCMAKE_CXX_FLAGS="-Dpe_CONSTRAINT_SOLVER=..." would otherwise override the
       # variant and silently give it the wrong pipeline. -U first keeps gcc quiet about
       # the redefinition.
-      target_compile_options( ${name} PUBLIC ${PE_CXX_FLAGS}
+      target_compile_options( ${name} PUBLIC ${PE_CXX_FLAGS} ${PE_PUBLIC_OPTIONS}
          -Upe_CONSTRAINT_SOLVER "-Dpe_CONSTRAINT_SOLVER=${solver}" )
+      target_compile_definitions( ${name} PUBLIC ${PE_PUBLIC_DEFINITIONS} )
       set_target_properties( ${name} PROPERTIES OUTPUT_NAME ${name} PREFIX "lib" )
       target_link_libraries( ${name} PRIVATE ${PE_THIRD_PARTY_LIBS} )
       target_include_directories( ${name}
@@ -744,6 +821,7 @@ endif()
 #
 #==================================================================================================
 
+if( PE_IS_TOP_LEVEL )
 find_package( Doxygen )
 if( DOXYGEN_EXECUTABLE )
    file( WRITE ${PROJECT_BINARY_DIR}/doc/Doxyfile.inject "
@@ -755,4 +833,5 @@ IMAGE_PATH       = ${CMAKE_SOURCE_DIR}/doc/pics/jpg ${CMAKE_SOURCE_DIR}/doc/pics
 EXTRA_PACKAGES   = ${CMAKE_SOURCE_DIR}/doc/pe
 PREDEFINED       = ${DEFINES} PE_PUBLIC= PE_PRIVATE= PE_PROTECTED= PE_NOTHROW=" )
    ADD_CUSTOM_TARGET( pe-doc ${DOXYGEN_EXECUTABLE} ${CMAKE_SOURCE_DIR}/doc/Doxyfile WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/doc COMMENT "Generating PE documentation" )
+endif()
 endif()

@@ -91,6 +91,7 @@ public:
     //**Configuration loading***************************************************************
     /*!\name Configuration loading */
     //@{
+    //! Reads a JSON configuration file; throws std::runtime_error if pe was built without JSON support (PE_USE_JSON=OFF)
     static void loadFromFile(const std::string& fileName);
     //@}
     //**************************************************************************************

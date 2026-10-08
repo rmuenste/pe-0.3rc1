@@ -1,3 +1,4 @@
+#include "coupling_body_access.h"
 #include <pe/interface/object_queries.h>
 #include <pe/interface/el_hydro_compat.h>
 #include <pe/interface/el_optional_api.h>
@@ -19,6 +20,7 @@
 
 //#define ONLY_ROTATION 
 using namespace pe;
+using pe::interface::detail::ghostBodies;
 std::map<int, boost::uint64_t> particleMap;
 std::map<int, boost::uint64_t> remoteParticleMap;
 std::map<int, boost::uint64_t> fbmMap;
@@ -285,10 +287,9 @@ void synchronizeForces() {
 
 #ifndef PE_SERIAL_MODE
     // Parallel PE mode: apply forces to shadow copies
-    for (std::size_t i = 0; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
-        BodyID body = world->getShadowBody(i);
+    ghostBodies().forEach([&](BodyID body) {
         body->applyFluidForces(stepsize);
-    }
+    });
 
     world->synchronize();
 #endif
@@ -364,44 +365,10 @@ void getParticlesIndexMap(int *idxMap) {
 // Bound to Fortran function rem_particles_index_map(idxMap) in
 // source/src_particles/dem_query.f90 line 234
 void getRemoteParticlesIndexMap(int *idxMap) {
-
-  WorldID world = theWorld();
-  MPISystemID mpisys = theMPISystem();
-  int rank = mpisys->getRank();
-  int count = 0;
-  unsigned int i(0);
-//  std::cout << rank << ")";
-  for (; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
-    World::SizeType widx = static_cast<World::SizeType>(i);
-    ConstBodyID body;
-    body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
-    if(body->getType() == sphereType) {
-      idxMap[count] = i;
-//      std::cout << " " << i << " " << body->getSystemID();
-      count++;
-    }
-    else if(body->getType() == capsuleType) {
-      idxMap[count] = i;
-//      std::cout << " " << i << " " << body->getSystemID();
-      count++;
-    }
-    else if(body->getType() == ellipsoidType) {
-      idxMap[count] = i;
-//      std::cout << " " << i << " " << body->getSystemID();
-      count++;
-    }
-    else if(body->getType() == cylinderType && !(body->isFixed())) {
-      idxMap[count] = i;
-//      std::cout << " " << i << " " << body->getSystemID();
-      count++;
-    }
-    else if(body->getType() == triangleMeshType) {
-      idxMap[count] = i;
-//      std::cout << " " << i << " " << body->getSystemID();
-      count++;
-    }
+  const auto indices = ghostBodies().particleIndices();
+  for (std::size_t i = 0; i < indices.size(); ++i) {
+    idxMap[i] = static_cast<int>(indices[i]);
   }
-//  std::cout  << std::endl;
 }
 //=================================================================================================
 
@@ -443,13 +410,13 @@ void remoteParticleMapping() {
 
   remoteParticleMap.clear();
   unsigned int i(0);
-  for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++) {
+  for (int j(0); j < ghostBodies().size(); j++) {
 
     World::SizeType widx = static_cast<World::SizeType>(j);
-    World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
+    World::SizeType size = ghostBodies().size();
 
     ConstBodyID body;
-    body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
+    body = ghostBodies().at(widx);
     if (body->getType() != sphereType) {
       continue;
     }
@@ -496,13 +463,13 @@ void debug_output_force_() {
 //      std::cout << rank << ")VelUp(" << s->getSystemID() << ", " << (s->getLinearVel())<< std::endl;
     }
   }
-  for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++, i++) {
+  for (int j(0); j < ghostBodies().size(); j++, i++) {
 
     World::SizeType widx = static_cast<World::SizeType>(j);
-    World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
+    World::SizeType size = ghostBodies().size();
 
     BodyID body;
-    body = theWorld()->getShadowBody(static_cast<unsigned int>(widx));
+    body = ghostBodies().at(widx);
 
     if (body->getType() == sphereType) {
       Sphere* s = static_cast<Sphere*>(body); 
@@ -537,13 +504,13 @@ void debug_output_particles_() {
       std::cout << rank << ")pos: " << s->getPosition() << "vel: " << s->getLinearVel() << std::endl;
     }
   }
-  for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++, i++) {
+  for (int j(0); j < ghostBodies().size(); j++, i++) {
 
     World::SizeType widx = static_cast<World::SizeType>(j);
-    World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
+    World::SizeType size = ghostBodies().size();
 
     BodyID body;
-    body = theWorld()->getShadowBody(static_cast<unsigned int>(widx));
+    body = ghostBodies().at(widx);
 
     if (body->getType() == sphereType) {
       Sphere* s = static_cast<Sphere*>(body); 
@@ -621,13 +588,13 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
       }
     }
   }
-  for (int j(0); j < theCollisionSystem()->getBodyShadowCopyStorage().size(); j++) {
+  for (int j(0); j < ghostBodies().size(); j++) {
 
     World::SizeType widx = static_cast<World::SizeType>(j);
-    World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
+    World::SizeType size = ghostBodies().size();
 
     ConstBodyID body;
-    body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
+    body = ghostBodies().at(widx);
 
     if (body->getType() == sphereType) {
       if(static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])) {
@@ -902,11 +869,11 @@ bool isInsideRemObject(int idx, double pos[3]) {
   WorldID world = theWorld();
 
   World::SizeType widx = static_cast<World::SizeType>(idx);
-  World::SizeType size = theCollisionSystem()->getBodyShadowCopyStorage().size();
+  World::SizeType size = ghostBodies().size();
 
   ConstBodyID body;
   if ( widx < size ) {
-    body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
+    body = ghostBodies().at(widx);
     if (body->getType() != sphereType) {
       return false;
     }
@@ -1004,7 +971,7 @@ int getNumParts() {
 // source/src_particles/dem_query.f90 line 56
 int getNumRemParts() {
 
-  int numBodies =  theCollisionSystem()->getBodyShadowCopyStorage().size();
+  int numBodies =  ghostBodies().size();
   return numBodies;
 }
 
@@ -1135,32 +1102,20 @@ void getRemoteObjByIdx(int idx,
                        double pos[3],
                        double vel[3]) {
 
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-
-  BodyID body;
-  if ( widx < world->size() ) {
-    body = theWorld()->getShadowBody(static_cast<unsigned int>(widx));
-    Vec3 v = body->getLinearVel();
-    vel[0] = v[0];
-    vel[1] = v[1];
-    vel[2] = v[2];
-    Vec3 p = body->getPosition();
-    pos[0] = p[0];
-    pos[1] = p[1];
-    pos[2] = p[2];
-    // TODO: this is a dubious conversion to a smaller type -> fix
-    *lidx = body->getSystemID();
-    *uidx = idx;
+  BodyID body = ghostBodies().at(static_cast<std::size_t>(idx));
+  Vec3 v = body->getLinearVel();
+  vel[0] = v[0];
+  vel[1] = v[1];
+  vel[2] = v[2];
+  Vec3 p = body->getPosition();
+  pos[0] = p[0];
+  pos[1] = p[1];
+  pos[2] = p[2];
+  // TODO: this is a dubious conversion to a smaller type -> fix
+  *lidx = body->getSystemID();
+  *uidx = idx;
 //    std::cout << idx << "pos: " << vec3ToString(p)<< "vel: " << vec3ToString(v) << std::endl;
-  }
-  else {
-    std::stringstream msg;
-    msg << "Line- " << __LINE__ <<  ": Body index: " << idx << " out of range." << "\n";
-    throw std::out_of_range(msg.str());
-  }
-
-} 
+}
 //=================================================================================================
 
 
@@ -1181,25 +1136,13 @@ void setRemoteObjByIdx(int idx,
                        double pos[3],
                        double vel[3]) {
 
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(idx);
-
-  BodyID body;
-  if ( widx < world->size() ) {
-    body = theWorld()->getShadowBody(static_cast<unsigned int>(widx));
-    Vec3 v(vel[0], vel[1], vel[2]);
-    body->setLinearVel(v);
-    Vec3 p(pos[0], pos[1], pos[2]);
-    body->setPosition(p);
+  BodyID body = ghostBodies().at(static_cast<std::size_t>(idx));
+  Vec3 v(vel[0], vel[1], vel[2]);
+  body->setLinearVel(v);
+  Vec3 p(pos[0], pos[1], pos[2]);
+  body->setPosition(p);
 //    std::cout << idx << "pos: " << vec3ToString(p)<< "vel: " << vec3ToString(v) << std::endl;
-  }
-  else {
-    std::stringstream msg;
-    msg << "Body index: " << idx << " out of range." << "\n";
-    throw std::out_of_range(msg.str());
-  }
-
-} 
+}
 //=================================================================================================
 
 
@@ -1493,22 +1436,11 @@ void setRemPartStruct(particleData_t *particle) {
 
   boost::uint64_t id = ByteArrayToUint64(particle->bytes);
 
-  BodyID body;
-
-  MPISystemID mpisys = theMPISystem();
-
-  //pe::World::Iterator fid = theCollisionSystem()->getBodyStorage().find(id);
-
-  pe::World::Iterator fid = theCollisionSystem()->getBodyShadowCopyStorage().find(id);
-  if( fid != theCollisionSystem()->getBodyShadowCopyStorage().end()) {
-    body = *fid;
+  BodyID body = ghostBodies().find(id);
+  if (!body) {
     std::stringstream msg;
-    msg << "Setting remote forces for system id: " << id << " in domain " << mpisys->getRank() << ".\n";
-//    std::cout << msg.str() << std::endl;
-  } else {
-
-    std::stringstream msg;
-    msg << "Could not find system id: " << id << " in domain " << mpisys->getRank() << ".\n";
+    msg << "Could not find system id: " << id << " in domain "
+        << theMPISystem()->getRank() << ".\n";
     throw std::logic_error(msg.str());
   }
 
@@ -1548,8 +1480,8 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
   int rank = mpisys->getRank();
 
   BodyID body;
-  if ( widx < theCollisionSystem()->getBodyShadowCopyStorage().size() ) {
-    body = theWorld()->getShadowBody(static_cast<unsigned int>(widx));
+  if ( widx < ghostBodies().size() ) {
+    body = ghostBodies().at(widx);
 
     Vec3 v = body->getLinearVel();
 
@@ -1622,10 +1554,10 @@ void getRemPartStructByIdx(int idx, particleData_t *particle) {
     unsigned int i(0);
     int count = 0;
     std::cout << rank << ")";
-    for (; i < theCollisionSystem()->getBodyShadowCopyStorage().size(); i++) {
+    for (; i < ghostBodies().size(); i++) {
       World::SizeType widx = static_cast<World::SizeType>(i);
       ConstBodyID body;
-      body = theCollisionSystem()->getBodyShadowCopyStorage().at(static_cast<unsigned int>(widx));
+      body = ghostBodies().at(widx);
       if(body->getType() == sphereType) {
         std::cout << count << " -> " << i << " / " << body->getSystemID() << "||";
         count++;
@@ -1709,28 +1641,18 @@ void clear_fbm_maps_() {
 
 //=================================================================================================
 bool mapLocalToSystem(int lidx, int vidx) {
-  WorldID world = theWorld();
-  World::SizeType widx = static_cast<World::SizeType>(lidx);
-  
-  int *idxMap = new int[theCollisionSystem()->getBodyShadowCopyStorage().size()]; 
+  const auto ghosts = ghostBodies();
+  const auto indices = ghosts.particleIndices();
+  if (lidx < 0 || static_cast<std::size_t>(lidx) >= indices.size()) {
+    throw std::out_of_range("mapLocalToSystem: remote particle index out of range");
+  }
 
-  getRemoteParticlesIndexMap(idxMap); 
-  int mappedIdx = static_cast<unsigned int>(idxMap[widx]);
-
-  MPISystemID mpisys = theMPISystem();
-
-  BodyID body = world->getShadowBody(mappedIdx);
-  if (fbmMapRemote[vidx] == body->getSystemID()) {
-    std::stringstream msg;
-    msg << "local particle: " << lidx << " = " << body->getSystemID() << " contains vertex " << vidx << " in local domain(" << mpisys->getRank() << ")" << "\n";
-//    throw std::logic_error(msg.str());
-    return true;
-  } else {
- //!   std::stringstream msg;
- //!   msg << "local particle: " << lidx << " = " << body->getSystemID() << " does not contains vertex " << vidx << " in local domain(" << mpisys->getRank() << ")" << "\n";
- //!   std::cout << msg.str() << std::endl;
+  const auto entry = fbmMapRemote.find(vidx);
+  if (entry == fbmMapRemote.end()) {
     return false;
   }
+  ConstBodyID body = ghosts.at(indices[static_cast<std::size_t>(lidx)]);
+  return entry->second == body->getSystemID();
 }
 
 bool mapLocalToSystem2(int lidx, int vidx) {
