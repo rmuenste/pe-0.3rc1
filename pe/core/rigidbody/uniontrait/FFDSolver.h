@@ -186,7 +186,7 @@ void UnionTrait< C<CD,FD,BG,response::FFDSolver> >::firstPositionHalfStep( real 
    pe_INTERNAL_ASSERT( checkInvariants()      , "Invalid union state detected"        );
    pe_INTERNAL_ASSERT( !hasSuperBody()        , "Invalid superordinate body detected" );
    pe_INTERNAL_ASSERT( !hasContacts()         , "Invalid contacts detected"           );
-   pe_INTERNAL_ASSERT( !this->hasConstraints(), "Invalid constraints detected"        );
+   pe_INTERNAL_ASSERT( !FFDTrait::hasConstraints(), "Invalid constraints detected"        );
 
    // Position update of the union according to the current velocity
    // (don't update a sleeping, fixed, or remote union)

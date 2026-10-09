@@ -66,6 +66,9 @@ class PlaneTrait< C<CD,FD,BG,response::FFDSolver> > : public PlaneBase
 protected:
    //**Type definitions****************************************************************************
    typedef PlaneBase  Parent;  //!< The type of the parent class.
+   //! The rigid body trait providing hasConstraints() (a dependent type, so that its lookup is
+   //! deferred to the instantiation for an FFDSolver configuration).
+   typedef RigidBodyTrait< C<CD,FD,BG,response::FFDSolver> >  FFDTrait;
    //**********************************************************************************************
 
    //**Constructor*********************************************************************************
@@ -184,7 +187,7 @@ void PlaneTrait< C<CD,FD,BG,response::FFDSolver> >::firstPositionHalfStep( real 
    pe_INTERNAL_ASSERT( checkInvariants()      , "Invalid plane state detected"        );
    pe_INTERNAL_ASSERT( !hasSuperBody()        , "Invalid superordinate body detected" );
    pe_INTERNAL_ASSERT( !hasContacts()         , "Invalid contacts detected"           );
-   pe_INTERNAL_ASSERT( !this->hasConstraints(), "Invalid constraints detected"        );
+   pe_INTERNAL_ASSERT( !FFDTrait::hasConstraints(), "Invalid constraints detected"        );
    pe_INTERNAL_ASSERT( !remote_               , "Invalid remote plane detected"       );
 }
 //*************************************************************************************************
@@ -213,7 +216,7 @@ void PlaneTrait< C<CD,FD,BG,response::FFDSolver> >::secondPositionHalfStep( real
    pe_INTERNAL_ASSERT( checkInvariants()      , "Invalid plane state detected"        );
    pe_INTERNAL_ASSERT( !hasSuperBody()        , "Invalid superordinate body detected" );
    pe_INTERNAL_ASSERT( !hasContacts()         , "Invalid contacts detected"           );
-   pe_INTERNAL_ASSERT( !this->hasConstraints(), "Invalid constraints detected"        );
+   pe_INTERNAL_ASSERT( !FFDTrait::hasConstraints(), "Invalid constraints detected"        );
    pe_INTERNAL_ASSERT( !remote_               , "Invalid remote plane detected"       );
 
    // Resetting the acting forces
