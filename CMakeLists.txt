@@ -753,13 +753,12 @@ if( PE_BUILD_EXAMPLES )
    )
 
    list(LENGTH PE_SERIAL_EXAMPLES list_len)
-   math(EXPR pairs_count "${list_len} / 2 - 1")
+   math(EXPR loop_end "${list_len} - 2")
 
-   foreach(i RANGE 0 ${pairs_count} 2)
-      math(EXPR idx1 "${i} * 2")
-      math(EXPR idx2 "${i} * 2 + 1")
-      list(GET PE_SERIAL_EXAMPLES ${idx1} exe_name)
-      list(GET PE_SERIAL_EXAMPLES ${idx2} src)
+   foreach(i RANGE 0 ${loop_end} 2)
+      math(EXPR j "${i} + 1")
+      list(GET PE_SERIAL_EXAMPLES ${i} exe_name)
+      list(GET PE_SERIAL_EXAMPLES ${j} src)
       pe_add_example(${exe_name} ${src})
    endforeach()
 
