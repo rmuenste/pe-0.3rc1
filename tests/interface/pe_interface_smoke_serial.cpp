@@ -63,6 +63,7 @@
 #include <pe/interface/sim_setup_serial.h>
 
 #include <boost/filesystem.hpp>
+#include <boost/version.hpp>
 
 #include <cstdlib>
 #include <exception>
@@ -77,6 +78,13 @@
 namespace {
 
 namespace fs = boost::filesystem;
+
+// fs::copy_option was removed in Boost 1.85; fs::copy_options exists since 1.74.
+#if BOOST_VERSION >= 107400
+const auto kOverwriteExisting = fs::copy_options::overwrite_existing;
+#else
+const auto kOverwriteExisting = fs::copy_option::overwrite_if_exists;
+#endif
 
 struct Args {
   std::string caseName;
@@ -173,7 +181,7 @@ void copyFixtures(const fs::path& source, const fs::path& destination) {
       fs::create_directories(target);
     } else if (fs::is_regular_file(it->path())) {
       fs::create_directories(target.parent_path());
-      fs::copy_file(it->path(), target, fs::copy_option::overwrite_if_exists);
+      fs::copy_file(it->path(), target, kOverwriteExisting);
     }
   }
 }
@@ -182,7 +190,7 @@ void selectConfig(const fs::path& runDir, const std::string& configName) {
   const fs::path source = runDir / configName;
   const fs::path target = runDir / "example.json";
   require(fs::exists(source), "Missing fixture config: " + source.string());
-  fs::copy_file(source, target, fs::copy_option::overwrite_if_exists);
+  fs::copy_file(source, target, kOverwriteExisting);
 }
 
 void enterRunDir(const fs::path& runDir) {
