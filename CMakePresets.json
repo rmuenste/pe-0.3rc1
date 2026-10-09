@@ -38,6 +38,17 @@
             "binaryDir": "${sourceDir}/build/presets/serial"
         },
         {
+            "name": "dev",
+            "displayName": "Serial Debug + Examples (editor)",
+            "description": "Debug build with interface tests and examples; its compile_commands.json backs clangd/IntelliSense",
+            "inherits": "debug",
+            "binaryDir": "${sourceDir}/build/presets/dev",
+            "cacheVariables": {
+                "PE_BUILD_EXAMPLES": "ON",
+                "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+            }
+        },
+        {
             "name": "debug",
             "displayName": "Serial Debug",
             "description": "Static Debug build with the complete serial CTest suite",
@@ -73,6 +84,12 @@
             "name": "build-serial",
             "displayName": "Build Serial Release",
             "configurePreset": "serial",
+            "jobs": 2
+        },
+        {
+            "name": "build-dev",
+            "displayName": "Build Serial Debug + Examples",
+            "configurePreset": "dev",
             "jobs": 2
         },
         {
