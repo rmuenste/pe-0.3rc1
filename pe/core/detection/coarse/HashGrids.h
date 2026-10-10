@@ -394,30 +394,37 @@ public:
     *
     * When the grid is not yet active (few bodies), falls back to returning all bodies
     * from `nonGridBodies_`.
+    *
+    * Bodies added since the last findContacts() call wait in `bodiesToAdd_` and are in
+    * neither a grid nor `nonGridBodies_` yet; they are always returned as well. Without
+    * this, a body created between simulation steps (particle insertion, or a shadow copy
+    * received in synchronize() after findContacts()) is invisible to point queries until
+    * the next contact search. The caller performs the exact containment test, so the extra
+    * candidates only cost one test each.
     */
    template< typename Container >
    void getBodiesNearPoint( real x, real y, real z, Container& bodies ) const
    {
-      // If grid is not active, return all bodies from nonGridBodies_
-      if( !gridActive_ ) {
-         for( typename BodyVector::const_iterator b = nonGridBodies_.begin();
-              b < nonGridBodies_.end(); ++b )
+      if( gridActive_ ) {
+         // Query all grids in hierarchy (bodies may be in any grid based on size)
+         for( typename GridList::const_iterator grid = gridList_.begin();
+              grid != gridList_.end(); ++grid )
          {
-            bodies.push_back( *b );
+            (*grid)->getBodiesNearPoint( x, y, z, bodies );
          }
-         return;
       }
 
-      // Query all grids in hierarchy (bodies may be in any grid based on size)
-      for( typename GridList::const_iterator grid = gridList_.begin();
-           grid != gridList_.end(); ++grid )
-      {
-         (*grid)->getBodiesNearPoint( x, y, z, bodies );
-      }
-
-      // Also include non-grid bodies (infinite-sized objects like planes)
+      // Non-grid bodies: infinite-sized objects like planes, or all bodies while the grid is
+      // not active
       for( typename BodyVector::const_iterator b = nonGridBodies_.begin();
            b < nonGridBodies_.end(); ++b )
+      {
+         bodies.push_back( *b );
+      }
+
+      // Bodies added since the last findContacts() call (not hashed yet)
+      for( typename BodyVector::const_iterator b = bodiesToAdd_.begin();
+           b < bodiesToAdd_.end(); ++b )
       {
          bodies.push_back( *b );
       }

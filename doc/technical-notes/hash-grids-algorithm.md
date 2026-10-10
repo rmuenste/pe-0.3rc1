@@ -40,7 +40,23 @@ The HHG algorithm partitions 3D space using several uniform grids of increasing 
 
 ---
 
-## **6. Advantages**
+## **6. Point Queries**
+- `getBodiesNearPoint(x, y, z, bodies)` returns candidate bodies for a point-in-body test. It is
+  used by the accelerated FBM classification of the CFD coupling
+  (`pointInsideParticlesAccelerated` in `src/interface/object_queries.cpp`); the caller does the
+  exact `containsPoint` test.
+- With the grid active it returns the bodies in the point's cell and its 26 neighbours on every
+  grid level, plus `nonGridBodies_`; with the grid inactive it returns `nonGridBodies_` (all
+  bodies).
+- In both cases it also returns the bodies in `bodiesToAdd_`. A body added to the detector waits
+  there until the next `findContacts()` inserts it, so without this a body created between
+  simulation steps (particle insertion, or a shadow copy received in `synchronize()` after
+  `findContacts()`) would be invisible to point queries for one step.
+  Test: `tests/interface/pe_hashgrid_pending_body_test.cpp` (`pe-hashgrid-pending-body`).
+
+---
+
+## **7. Advantages**
 - **Average O(N)** time for broad-phase detection due to spatial partitioning.
 - Constant-time insertion/removal using cached hash and cell indices.
 - Adaptable grid sizes keep memory usage low and permit large-scale simulations with many bodies.

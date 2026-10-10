@@ -630,3 +630,19 @@ set_tests_properties(pe-split-impulse-plain PROPERTIES
   SKIP_RETURN_CODE 77
   TIMEOUT 120
 )
+
+# HashGrids::getBodiesNearPoint must also return bodies added since the last findContacts()
+# (bodiesToAdd_), both with the grid inactive and active, so that FBM point queries see a
+# particle inserted between simulation steps. Serial, no MPI.
+add_executable(pe_hashgrid_pending_body_test
+  pe_hashgrid_pending_body_test.cpp
+)
+target_link_libraries(pe_hashgrid_pending_body_test PRIVATE pe_static)
+add_test(
+  NAME pe-hashgrid-pending-body
+  COMMAND pe_hashgrid_pending_body_test
+)
+set_tests_properties(pe-hashgrid-pending-body PROPERTIES
+  LABELS "unit;serial;detection"
+  TIMEOUT 120
+)
