@@ -702,7 +702,13 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
       accelFound = true;
       accelSystemId = body->getSystemID();
       uint64toByteArray(accelSystemId, bytes);
-      *inpr = bytes[0] + 1;
+      // inpr is the solid FLAG, not an identity: callers read the boolean return and
+      // take the identity from the byte array (FeatFloWer stores it in
+      // FictKNPR_uint64). The exhaustive pointInsideParticles() writes 1 here, so this
+      // path must write 1 as well. It used to write bytes[0] + 1, the most significant
+      // byte of the system id plus one, which agrees with 1 only while that byte is
+      // zero - true for ordinary serial ids, false from id 2^56 on.
+      *inpr = 1;
       break;
     }
   }
