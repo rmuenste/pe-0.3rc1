@@ -527,12 +527,29 @@ void debug_output_particles_() {
  * \param inpr An output parameter that is set to 1 if a particle contains pos, 0 otherwise
  * \param pos An array that cointans the 3d point
  */
+//=================================================================================================
+/*
+ *!\brief Keeps the smallest system id seen so far (the ownership rule for overlapping bodies).
+ */
+static inline void ownerCandidate( boost::uint64_t id, bool& found, boost::uint64_t& ownerId ) {
+  if( !found || id < ownerId ) { ownerId = id; found = true; }
+}
+//=================================================================================================
+
+
 bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]) {
 
   MPISystemID mpisys = theMPISystem();
   int rank = mpisys->getRank();
 
   WorldID world = theWorld();
+  // Ownership rule: the body with the MINIMUM system id among those containing the point.
+  // The point may lie in several overlapping bodies; returning "the first one found" made the
+  // answer depend on traversal order, and the accelerated query traverses in a different order
+  // than this one, so the two disagreed for overlapping bodies. The minimum is order-free, so
+  // both paths agree by construction. Neither can stop at the first hit any more.
+  bool found = false;
+  boost::uint64_t ownerId = 0;
   unsigned int i(0);
   for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
     World::SizeType widx = static_cast<World::SizeType>(i);
@@ -540,51 +557,37 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
 
     if(body->getType() == sphereType) {
       if(static_cast<Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes);
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == boxType) {
       if(static_cast<Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes);
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == ellipsoidType) {
       if(static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == cylinderType && !(body->isFixed())) {
       if(static_cast<Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == triangleMeshType && !(body->isFixed())) {
       if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == triangleMeshType && !(body->isFixed())) {
       if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
   }
@@ -598,48 +601,41 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
 
     if (body->getType() == sphereType) {
       if(static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])) {
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        i++;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == capsuleType) {
       if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes);
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == boxType) {
       if(static_cast<const Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes);
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == ellipsoidType) {
       if(static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes);
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == cylinderType && !(body->isFixed())) {
       if(static_cast<const Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
     else if(body->getType() == triangleMeshType && !(body->isFixed())) {
     //else if(body->getType() == triangleMeshType) {
       if(static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        uint64toByteArray(body->getSystemID(), bytes); 
-        *inpr = 1;
-        return true;
+        ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
+  }
+
+  if( found ) {
+    uint64toByteArray( ownerId, bytes );
+    *inpr = 1;
+    return true;
   }
 
   *inpr = 0;
@@ -699,12 +695,20 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
     }
 
     if (inside) {
-      accelFound = true;
-      accelSystemId = body->getSystemID();
-      uint64toByteArray(accelSystemId, bytes);
-      *inpr = bytes[0] + 1;
-      break;
+      // same ownership rule as the exhaustive path: minimum system id, so the answer does not
+      // depend on the order the candidates come out of the grid
+      ownerCandidate( body->getSystemID(), accelFound, accelSystemId );
     }
+  }
+
+  if (accelFound) {
+    // inpr is the solid FLAG, not an identity: callers read the boolean return and take the
+    // identity from the byte array (FeatFloWer stores it in FictKNPR_uint64). The exhaustive
+    // pointInsideParticles() writes 1 here, so this path must write 1 as well. It used to
+    // write bytes[0] + 1, the most significant byte of the system id plus one, which agrees
+    // with 1 only while that byte is zero - true for ordinary serial ids, false from 2^56 on.
+    uint64toByteArray(accelSystemId, bytes);
+    *inpr = 1;
   }
 
 #ifdef VERIFY_HASHGRID

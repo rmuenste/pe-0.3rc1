@@ -646,3 +646,74 @@ set_tests_properties(pe-hashgrid-pending-body PROPERTIES
   LABELS "unit;serial;detection"
   TIMEOUT 120
 )
+
+# ---------------------------------------------------------------------------------------
+# FBM classification query: the accelerated (HashGrid) point query against the exhaustive
+# one, on the same frozen state. Everything downstream of this query - FeatFloWer's KVEL
+# candidate sets, its alpha field, its forces - consumes the ANSWER, so a force comparison
+# cannot detect a classification miss; only this comparison can. Single- and two-body cases
+# cannot either: pe builds no grid below gridActivationThreshold (32 bodies), so every
+# stage here asserts the grid is ACTIVE and reports a stage that ran without one as having
+# tested nothing.
+#
+# Stages marked [control] run without refreshSpatialIndex() and are expected to show the
+# stale-cell miss; they do not fail the test. The refreshed stage is the verdict.
+#
+# CGAL-dependent mesh stages compile only when pe was built with CGAL; pe_cgal is linked
+# PUBLIC into the library target, so the definition and include dirs arrive automatically
+# and the test TU cannot disagree with the library about the TriangleMesh layout.
+add_executable(pe_fbm_query_stress pe_fbm_query_stress.cpp)
+target_link_libraries(pe_fbm_query_stress PRIVATE pe_static_lubstage_fluid)
+add_test(NAME pe-fbm-query-stress COMMAND pe_fbm_query_stress)
+
+# The test presets select by label (test-serial takes "serial", test-cgal takes "cgal"),
+# so a test without one of those labels is built by CI and never run. The mesh and
+# DistanceMap stages exist only in a CGAL build, which is what earns the second label.
+set(fbm_query_labels "integration;serial;fbm;query")
+if(PE_USE_CGAL)
+  list(APPEND fbm_query_labels "cgal")
+endif()
+set_tests_properties(pe-fbm-query-stress PROPERTIES LABELS "${fbm_query_labels}")
+
+# The parallel counterpart. Shadow copies, the synchronize() seam and migration across a
+# subdomain cut cannot be reached by any serial stage. Verdicts reduce over all ranks, so
+# no rank's silence is taken for agreement.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_fbm_query_stress_mpi pe_fbm_query_stress_mpi.cpp)
+  target_link_libraries(pe_fbm_query_stress_mpi PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+
+  # Open MPI refuses to start more ranks than the host has slots, so the 4-rank case
+  # cannot run on a two-core CI runner. That decomposition is not optional - a body
+  # lattice wider than a rank's slab is a defect only 4 ranks can reach, and it already
+  # caught one - so the test oversubscribes rather than being dropped.
+  #
+  # It asks through the environment rather than through a --oversubscribe preflag,
+  # because the flag has to be spelled for the right launcher: srun has no such option,
+  # and a configure-time probe of `mpiexec --version` recognised the local Open MPI but
+  # not the one on the CI runner. These MCA variables are what the flag sets anyway
+  # (rmaps_base_oversubscribe for Open MPI 4, the PRRTE mapping policy for 5), they are
+  # read by the launcher the ranks actually start under, and an MPI that does not know
+  # them ignores them. MPIEXEC_PREFLAGS stays honoured for whoever needs a real flag.
+  set(fbm_query_mpi_oversubscribe
+    "OMPI_MCA_rmaps_base_oversubscribe=1"
+    "PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe"
+  )
+
+  foreach(nranks 2 4)
+    add_test(
+      NAME pe-fbm-query-stress-mpi-${nranks}
+      COMMAND
+        ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${nranks}
+        ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_fbm_query_stress_mpi>
+        ${MPIEXEC_POSTFLAGS}
+    )
+    # PROCESSORS keeps ctest from co-scheduling the 4-rank run beside another test on
+    # a machine that has barely enough cores for it alone.
+    set_tests_properties(pe-fbm-query-stress-mpi-${nranks} PROPERTIES
+      LABELS "integration;mpi;fbm;query"
+      PROCESSORS ${nranks}
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+    )
+  endforeach()
+endif()
