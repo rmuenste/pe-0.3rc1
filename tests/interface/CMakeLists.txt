@@ -646,3 +646,44 @@ set_tests_properties(pe-hashgrid-pending-body PROPERTIES
   LABELS "unit;serial;detection"
   TIMEOUT 120
 )
+
+# ---------------------------------------------------------------------------------------
+# FBM classification query: the accelerated (HashGrid) point query against the exhaustive
+# one, on the same frozen state. Everything downstream of this query - FeatFloWer's KVEL
+# candidate sets, its alpha field, its forces - consumes the ANSWER, so a force comparison
+# cannot detect a classification miss; only this comparison can. Single- and two-body cases
+# cannot either: pe builds no grid below gridActivationThreshold (32 bodies), so every
+# stage here asserts the grid is ACTIVE and reports a stage that ran without one as having
+# tested nothing.
+#
+# Stages marked [control] run without refreshSpatialIndex() and are expected to show the
+# stale-cell miss; they do not fail the test. The refreshed stage is the verdict.
+#
+# CGAL-dependent mesh stages compile only when pe was built with CGAL; pe_cgal is linked
+# PUBLIC into the library target, so the definition and include dirs arrive automatically
+# and the test TU cannot disagree with the library about the TriangleMesh layout.
+add_executable(pe_fbm_query_stress pe_fbm_query_stress.cpp)
+target_link_libraries(pe_fbm_query_stress PRIVATE pe_static_lubstage_fluid)
+add_test(NAME pe-fbm-query-stress COMMAND pe_fbm_query_stress)
+set_tests_properties(pe-fbm-query-stress PROPERTIES LABELS "integration;fbm;query")
+
+# The parallel counterpart. Shadow copies, the synchronize() seam and migration across a
+# subdomain cut cannot be reached by any serial stage. Verdicts reduce over all ranks, so
+# no rank's silence is taken for agreement.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_fbm_query_stress_mpi pe_fbm_query_stress_mpi.cpp)
+  target_link_libraries(pe_fbm_query_stress_mpi PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+  foreach(nranks 2 4)
+    add_test(
+      NAME pe-fbm-query-stress-mpi-${nranks}
+      COMMAND
+        ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${nranks}
+        ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_fbm_query_stress_mpi>
+        ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-fbm-query-stress-mpi-${nranks} PROPERTIES
+      LABELS "integration;mpi;fbm;query"
+    )
+  endforeach()
+endif()
