@@ -665,7 +665,15 @@ set_tests_properties(pe-hashgrid-pending-body PROPERTIES
 add_executable(pe_fbm_query_stress pe_fbm_query_stress.cpp)
 target_link_libraries(pe_fbm_query_stress PRIVATE pe_static_lubstage_fluid)
 add_test(NAME pe-fbm-query-stress COMMAND pe_fbm_query_stress)
-set_tests_properties(pe-fbm-query-stress PROPERTIES LABELS "integration;fbm;query")
+
+# The test presets select by label (test-serial takes "serial", test-cgal takes "cgal"),
+# so a test without one of those labels is built by CI and never run. The mesh and
+# DistanceMap stages exist only in a CGAL build, which is what earns the second label.
+set(fbm_query_labels "integration;serial;fbm;query")
+if(PE_USE_CGAL)
+  list(APPEND fbm_query_labels "cgal")
+endif()
+set_tests_properties(pe-fbm-query-stress PROPERTIES LABELS "${fbm_query_labels}")
 
 # The parallel counterpart. Shadow copies, the synchronize() seam and migration across a
 # subdomain cut cannot be reached by any serial stage. Verdicts reduce over all ranks, so
@@ -673,17 +681,39 @@ set_tests_properties(pe-fbm-query-stress PROPERTIES LABELS "integration;fbm;quer
 if(PE_USE_MPI AND MPI_FOUND)
   add_executable(pe_fbm_query_stress_mpi pe_fbm_query_stress_mpi.cpp)
   target_link_libraries(pe_fbm_query_stress_mpi PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+
+  # Open MPI refuses to start more ranks than the host has slots, so the 4-rank case
+  # cannot run on a two-core CI runner as registered. That decomposition is not
+  # optional - a body lattice wider than a rank's slab is a defect only 4 ranks can
+  # reach, and it already caught one - so oversubscribe instead of dropping it. The
+  # probe asks mpiexec what it is rather than trusting a FindMPI variable, which also
+  # keeps the flag off srun, where it does not exist.
+  execute_process(
+    COMMAND ${MPIEXEC_EXECUTABLE} --version
+    OUTPUT_VARIABLE fbm_query_mpiexec_version
+    ERROR_VARIABLE fbm_query_mpiexec_version
+    TIMEOUT 15
+  )
+  set(fbm_query_mpi_preflags ${MPIEXEC_PREFLAGS})
+  if(fbm_query_mpiexec_version MATCHES "Open MPI"
+     AND NOT "--oversubscribe" IN_LIST fbm_query_mpi_preflags)
+    list(APPEND fbm_query_mpi_preflags "--oversubscribe")
+  endif()
+
   foreach(nranks 2 4)
     add_test(
       NAME pe-fbm-query-stress-mpi-${nranks}
       COMMAND
         ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${nranks}
-        ${MPIEXEC_PREFLAGS}
+        ${fbm_query_mpi_preflags}
         $<TARGET_FILE:pe_fbm_query_stress_mpi>
         ${MPIEXEC_POSTFLAGS}
     )
+    # PROCESSORS keeps ctest from co-scheduling the 4-rank run beside another test on
+    # a machine that has barely enough cores for it alone.
     set_tests_properties(pe-fbm-query-stress-mpi-${nranks} PROPERTIES
       LABELS "integration;mpi;fbm;query"
+      PROCESSORS ${nranks}
     )
   endforeach()
 endif()

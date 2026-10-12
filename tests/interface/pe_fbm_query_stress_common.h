@@ -55,7 +55,13 @@ inline Stats sweep(const std::vector<pe::Vec3>& pts) {
 inline void addSurfacePoints(std::vector<pe::Vec3>& pts, const pe::Vec3& c, pe::real r, pe::real eps) {
    static const double d[7][3] = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1},{0.577,0.577,0.577}};
    for (int k = 0; k < 7; ++k) {
-      const pe::Vec3 u(pe::real(d[k][0]), pe::real(d[k][1]), pe::real(d[k][2]));
+      // static_cast, not a functional cast: `pe::real(d[k][0])` also parses as a
+      // parameter declaration (type pe::real, declarator d[k][0]), so clang reads the
+      // whole line as a function declaration with three parameters named d and rejects
+      // it. gcc resolves the ambiguity the other way; the cast form is unambiguous.
+      const pe::Vec3 u(static_cast<pe::real>(d[k][0]),
+                       static_cast<pe::real>(d[k][1]),
+                       static_cast<pe::real>(d[k][2]));
       pts.push_back(c + u * (r - eps));
       pts.push_back(c + u * (r + eps));
    }
