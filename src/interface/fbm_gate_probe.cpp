@@ -175,7 +175,9 @@ extern "C" void fbm_gate_place_stage_( const int* stage, const int* shapeFilter,
    if( !gc.built ) throw std::logic_error( "fbm_gate_place_stage_: construction not built" );
 
    const int    nPlanes = static_cast<int>( gc.planes.size() );   // 5 for r_spacer = 0.06
-   const real   yRow[2] = { real(0.25), real(0.72) };
+   // Both rows on Q2 DOF planes of the level-2 mesh (y = m/36), so a DOF lies on every
+   // probe's axis: 0.25 = 9/36, 0.75 = 27/36.
+   const real   yRow[2] = { real(0.25), real(0.75) };
    const real   zRow[3] = { real(1)/6, real(1)/2, real(5)/6 };     // one per rank slab
    const real   zCut[2] = { real(1)/3, real(2)/3 };                // the subdomain planes
 
@@ -184,7 +186,15 @@ extern "C" void fbm_gate_place_stage_( const int* stage, const int* shapeFilter,
       const bool inPlay = ( *shapeFilter < 0 || *shapeFilter == p.shape );
       if( !inPlay || *stage == STAGE_PARK ) { park( p ); continue; }
 
-      const int k = static_cast<int>( j ) % nPlanes;
+      // The lattice plane must NOT alias the shape. Probe j has shape j % NUM_SHAPES, and
+      // NUM_SHAPES == nPlanes == 5, so k = j % nPlanes would pin every shape to one plane -
+      // and the plane k = 4 (5 span = 0.85) has its far boundary 6 span = 1.02 outside the
+      // domain, where no DOF can be missed. The first run showed exactly that: every shape
+      // differed except the cylinder, which happened to own plane 4. Adding the row index
+      // j / nPlanes (0..5) walks each shape over every plane while (k, iy, iz) stays a
+      // bijection onto the 5 x 2 x 3 slots: for a fixed row the shape index still runs 0..4.
+      const int jj = static_cast<int>( j );
+      const int k  = ( jj % nPlanes + jj / nPlanes ) % nPlanes;
       switch( *stage ) {
          case STAGE_LATTICE: {
             const int iy = ( static_cast<int>( j ) / nPlanes ) % 2;
