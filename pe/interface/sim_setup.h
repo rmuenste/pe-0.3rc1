@@ -10,6 +10,10 @@ void loadSimulationConfig(const std::string &fileName);
 
 }  // namespace pe
 extern "C" void step_simulation_();
+
+// Re-file bodies into the cells of their current AABBs; call after motion and before any
+// point classification (see the definition in src/interface/sim_setup.cpp).
+extern "C" void refresh_spatial_index_();
 extern "C" void step_el_frozen_trace_();
 void stepSimulation();
 void stepELFrozenTrace();

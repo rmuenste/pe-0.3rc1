@@ -102,6 +102,24 @@ extern "C" void step_simulation_() {
 //=================================================================================================
 
 //=================================================================================================
+// C wrapper: re-file every body into the cell its CURRENT AABB belongs to.
+//
+// stepSimulation() files bodies in findContacts() and then integrates positions, so afterwards
+// the cell assignment is one step behind the geometry. A point query visits 27 cells and a body
+// is filed by its AABB MINIMUM, so a body whose minimum sits just below a cell boundary can have
+// its far surface two cells from where it is filed - an interior point there comes back as fluid.
+// Callers that classify points after motion (FeatFloWer's FBM alpha field) must call this first.
+// It performs no contact detection and no physics; it is the same incremental update
+// findContacts() runs, which touches a cell only when a body's hash actually changes, and it
+// leaves pending bodies in bodiesToAdd_ where getBodiesNearPoint() already looks for them.
+//=================================================================================================
+extern "C" void refresh_spatial_index_() {
+  pe::theCollisionSystem()->getCoarseDetector().refreshSpatialIndex();
+}
+//=================================================================================================
+
+
+//=================================================================================================
 extern "C" void step_el_frozen_trace_() {
   stepELFrozenTrace();
 }
@@ -459,6 +477,24 @@ extern "C" void step_simulation_() {
   pe::stepSimulationSerial();
 }
 //=================================================================================================
+
+//=================================================================================================
+// C wrapper: re-file every body into the cell its CURRENT AABB belongs to.
+//
+// stepSimulation() files bodies in findContacts() and then integrates positions, so afterwards
+// the cell assignment is one step behind the geometry. A point query visits 27 cells and a body
+// is filed by its AABB MINIMUM, so a body whose minimum sits just below a cell boundary can have
+// its far surface two cells from where it is filed - an interior point there comes back as fluid.
+// Callers that classify points after motion (FeatFloWer's FBM alpha field) must call this first.
+// It performs no contact detection and no physics; it is the same incremental update
+// findContacts() runs, which touches a cell only when a body's hash actually changes, and it
+// leaves pending bodies in bodiesToAdd_ where getBodiesNearPoint() already looks for them.
+//=================================================================================================
+extern "C" void refresh_spatial_index_() {
+  pe::theCollisionSystem()->getCoarseDetector().refreshSpatialIndex();
+}
+//=================================================================================================
+
 
 //=================================================================================================
 extern "C" void step_el_frozen_trace_() {

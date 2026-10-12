@@ -374,6 +374,24 @@ public:
    /*!\name Utility functions */
    //@{
    template< typename Contacts > void findContacts( Contacts& contacts );
+
+   //**Spatial index refresh********************************************************************
+   /*!\brief Re-files every body into the cell its CURRENT AABB belongs to.
+    *
+    * findContacts() files bodies before contact resolution integrates positions, so between
+    * that call and the next one the cell assignment is one step old while the geometry is
+    * current. A point query visits only 27 cells, and a body is filed by its AABB MINIMUM, so
+    * a body whose minimum sits just below a cell boundary can have its far surface two cells
+    * away from where it is filed: an interior point there is then reported as fluid. The
+    * failure is governed by the position of the minimum corner relative to the cell lattice,
+    * not by how far the body moved, so no displacement bound can rule it out.
+    *
+    * Call this after motion and before classifying points. It performs no contact detection
+    * and no physics: the same incremental update findContacts() uses, which recomputes each
+    * body's hash and moves it between cells only when that hash actually changes. Pending
+    * bodies stay in bodiesToAdd_ and remain visible to getBodiesNearPoint() as before.
+    */
+   void refreshSpatialIndex();
                                  void clear       ();
    //@}
    //**********************************************************************************************
@@ -1288,29 +1306,17 @@ void HashGrids<C>::remove( BodyID body )
  * This function generates all contacts between all registered rigid bodies. The contacts are
  * added to the contact container \a contacts.
  */
-template< typename C >         // Type of the configuration
-template< typename Contacts >  // Contact container type
-void HashGrids<C>::findContacts( Contacts& contacts )
+
+//*************************************************************************************************
+/*!\brief Re-files every body into the cell its current AABB belongs to.
+ *
+ * See the declaration for why this is needed between motion and point classification.
+ */
+template< typename C >  // Type of the configuration
+void HashGrids<C>::refreshSpatialIndex()
 {
-   using namespace pe::detection::coarse::hhg;
+   using namespace pe::detection::coarse::hhg;   // hierarchyFactor
    typedef typename BS::Iterator Iterator;
-
-   pe_LOG_DEBUG_SECTION( log ) {
-      log << "   Finding the contacts via the hierarchical hash grids algorithm...";
-   }
-
-   // ----- UPDATE PHASE ----- //
-
-   // Finally add all bodies that were temporarily stored in 'bodiesToAdd_' to the data structure.
-   if( bodiesToAdd_.size() > 0 )
-   {
-      for( typename BodyVector::iterator body = bodiesToAdd_.begin(); body < bodiesToAdd_.end(); ++body ) {
-
-         if( gridActive_ ) addGrid( *body );
-         else              addList( *body );
-      }
-      bodiesToAdd_.clear();
-   }
 
    // Update the data structure (=> adapt to the current body distribution) by taking care of
    // moved, rotated and/or deformed bodies.
@@ -1429,6 +1435,34 @@ void HashGrids<C>::findContacts( Contacts& contacts )
          }
       }
    }
+}
+//*************************************************************************************************
+
+template< typename C >         // Type of the configuration
+template< typename Contacts >  // Contact container type
+void HashGrids<C>::findContacts( Contacts& contacts )
+{
+   using namespace pe::detection::coarse::hhg;
+   typedef typename BS::Iterator Iterator;
+
+   pe_LOG_DEBUG_SECTION( log ) {
+      log << "   Finding the contacts via the hierarchical hash grids algorithm...";
+   }
+
+   // ----- UPDATE PHASE ----- //
+
+   // Finally add all bodies that were temporarily stored in 'bodiesToAdd_' to the data structure.
+   if( bodiesToAdd_.size() > 0 )
+   {
+      for( typename BodyVector::iterator body = bodiesToAdd_.begin(); body < bodiesToAdd_.end(); ++body ) {
+
+         if( gridActive_ ) addGrid( *body );
+         else              addList( *body );
+      }
+      bodiesToAdd_.clear();
+   }
+
+   refreshSpatialIndex();
 
    // ----- DETECTION STEP ----- //
 
