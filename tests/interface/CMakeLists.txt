@@ -683,29 +683,28 @@ if(PE_USE_MPI AND MPI_FOUND)
   target_link_libraries(pe_fbm_query_stress_mpi PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
 
   # Open MPI refuses to start more ranks than the host has slots, so the 4-rank case
-  # cannot run on a two-core CI runner as registered. That decomposition is not
-  # optional - a body lattice wider than a rank's slab is a defect only 4 ranks can
-  # reach, and it already caught one - so oversubscribe instead of dropping it. The
-  # probe asks mpiexec what it is rather than trusting a FindMPI variable, which also
-  # keeps the flag off srun, where it does not exist.
-  execute_process(
-    COMMAND ${MPIEXEC_EXECUTABLE} --version
-    OUTPUT_VARIABLE fbm_query_mpiexec_version
-    ERROR_VARIABLE fbm_query_mpiexec_version
-    TIMEOUT 15
+  # cannot run on a two-core CI runner. That decomposition is not optional - a body
+  # lattice wider than a rank's slab is a defect only 4 ranks can reach, and it already
+  # caught one - so the test oversubscribes rather than being dropped.
+  #
+  # It asks through the environment rather than through a --oversubscribe preflag,
+  # because the flag has to be spelled for the right launcher: srun has no such option,
+  # and a configure-time probe of `mpiexec --version` recognised the local Open MPI but
+  # not the one on the CI runner. These MCA variables are what the flag sets anyway
+  # (rmaps_base_oversubscribe for Open MPI 4, the PRRTE mapping policy for 5), they are
+  # read by the launcher the ranks actually start under, and an MPI that does not know
+  # them ignores them. MPIEXEC_PREFLAGS stays honoured for whoever needs a real flag.
+  set(fbm_query_mpi_oversubscribe
+    "OMPI_MCA_rmaps_base_oversubscribe=1"
+    "PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe"
   )
-  set(fbm_query_mpi_preflags ${MPIEXEC_PREFLAGS})
-  if(fbm_query_mpiexec_version MATCHES "Open MPI"
-     AND NOT "--oversubscribe" IN_LIST fbm_query_mpi_preflags)
-    list(APPEND fbm_query_mpi_preflags "--oversubscribe")
-  endif()
 
   foreach(nranks 2 4)
     add_test(
       NAME pe-fbm-query-stress-mpi-${nranks}
       COMMAND
         ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${nranks}
-        ${fbm_query_mpi_preflags}
+        ${MPIEXEC_PREFLAGS}
         $<TARGET_FILE:pe_fbm_query_stress_mpi>
         ${MPIEXEC_POSTFLAGS}
     )
@@ -714,6 +713,7 @@ if(PE_USE_MPI AND MPI_FOUND)
     set_tests_properties(pe-fbm-query-stress-mpi-${nranks} PROPERTIES
       LABELS "integration;mpi;fbm;query"
       PROCESSORS ${nranks}
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
     )
   endforeach()
 endif()
