@@ -534,6 +534,25 @@ void debug_output_particles_() {
 static inline void ownerCandidate( boost::uint64_t id, bool& found, boost::uint64_t& ownerId ) {
   if( !found || id < ownerId ) { ownerId = id; found = true; }
 }
+
+/*!\brief Does this body contain the point?
+ *
+ * The ONE shape dispatch shared by the exhaustive query, the accelerated query and the two
+ * owner-list queries below, so the paths cannot drift apart - the Layer-1 review found the
+ * dispatch copied into each path and, in one of them, a branch duplicated verbatim. Fixed
+ * cylinders and fixed triangle meshes are skipped: the FBM treats them as geometry, not as
+ * particles.
+ */
+static inline bool bodyContainsPoint( ConstBodyID body, const double pos[3] ) {
+  const GeomType t = body->getType();
+  if( t == sphereType )       return static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  if( t == capsuleType )      return static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  if( t == boxType )          return static_cast<const Box*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  if( t == ellipsoidType )    return static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  if( t == cylinderType )     return !body->isFixed() && static_cast<const Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  if( t == triangleMeshType ) return !body->isFixed() && static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2]);
+  return false;
+}
 //=================================================================================================
 
 
@@ -555,36 +574,7 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     World::SizeType widx = static_cast<World::SizeType>(i);
     BodyID body = world->getBody(static_cast<unsigned int>(widx));
 
-    if(body->getType() == sphereType) {
-      if(static_cast<Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == capsuleType) {
-      if(static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == boxType) {
-      if(static_cast<Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == ellipsoidType) {
-      if(static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == cylinderType && !(body->isFixed())) {
-      if(static_cast<Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == triangleMeshType && !(body->isFixed())) {
-      if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
+    if( bodyContainsPoint( body, pos ) ) ownerCandidate( body->getSystemID(), found, ownerId );
   }
   for (int j(0); j < ghostBodies().size(); j++) {
 
@@ -594,37 +584,7 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
     ConstBodyID body;
     body = ghostBodies().at(widx);
 
-    if (body->getType() == sphereType) {
-      if(static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2])) {
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == capsuleType) {
-      if(static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == boxType) {
-      if(static_cast<const Box*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == ellipsoidType) {
-      if(static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == cylinderType && !(body->isFixed())) {
-      if(static_cast<const Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
-    else if(body->getType() == triangleMeshType && !(body->isFixed())) {
-    //else if(body->getType() == triangleMeshType) {
-      if(static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
+    if( bodyContainsPoint( body, pos ) ) ownerCandidate( body->getSystemID(), found, ownerId );
   }
 
   if( found ) {
@@ -668,26 +628,7 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
   // Check only candidate bodies (removes duplicates implicitly since we return on first match)
   for (std::vector<BodyID>::iterator it = candidates.begin(); it != candidates.end(); ++it) {
     BodyID body = *it;
-    bool inside = false;
-
-    if (body->getType() == sphereType) {
-      inside = static_cast<Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-    }
-    else if (body->getType() == capsuleType) {
-      inside = static_cast<Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-    }
-    else if (body->getType() == boxType) {
-      inside = static_cast<Box*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-    }
-    else if (body->getType() == ellipsoidType) {
-      inside = static_cast<Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-    }
-    else if (body->getType() == cylinderType && !body->isFixed()) {
-      inside = static_cast<Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-    }
-    else if (body->getType() == triangleMeshType && !body->isFixed()) {
-      inside = static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-    }
+    const bool inside = bodyContainsPoint( body, pos );
 
     if (inside) {
       // same ownership rule as the exhaustive path: minimum system id, so the answer does not
@@ -754,6 +695,52 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
 
   *inpr = 0;
   return false;
+}
+//=================================================================================================
+/*!\brief Every body containing the point, system ids ascending - the owner-LIST form of the
+ * two flag queries above.
+ *
+ * For FeatFloWer's multiple-ownership table (source/src_fbm/fbm_ownership.f90). *nOwners is
+ * the TOTAL count; ids[0 .. min(n, maxOwners)) are filled, so the caller can tell a truncated
+ * list from a complete one. Same traversal and the same bodyContainsPoint() as the flag
+ * queries, so a disagreement between the two owner lists is the same defect the flag queries
+ * show - visible one owner deeper, where the same minimum id can hide a second owner that only
+ * one path sees.
+ */
+#include <algorithm>
+static void finishOwnerList( std::vector<boost::uint64_t>& owners, int maxOwners,
+                             unsigned long long* ids, int* nOwners ) {
+  std::sort( owners.begin(), owners.end() );
+  owners.erase( std::unique( owners.begin(), owners.end() ), owners.end() );
+  *nOwners = static_cast<int>( owners.size() );
+  const int m = std::min( *nOwners, maxOwners );
+  for( int i = 0; i < m; ++i ) ids[i] = static_cast<unsigned long long>( owners[i] );
+}
+
+extern "C" void pointOwners( const double pos[3], const int* maxOwners,
+                             unsigned long long* ids, int* nOwners ) {
+  std::vector<boost::uint64_t> owners;
+  WorldID world = theWorld();
+  for( unsigned int i = 0; i < theCollisionSystem()->getBodyStorage().size(); ++i ) {
+    BodyID body = world->getBody( i );
+    if( bodyContainsPoint( body, pos ) ) owners.push_back( body->getSystemID() );
+  }
+  for( size_t j = 0; j < ghostBodies().size(); ++j ) {
+    ConstBodyID body = ghostBodies().at( j );
+    if( bodyContainsPoint( body, pos ) ) owners.push_back( body->getSystemID() );
+  }
+  finishOwnerList( owners, *maxOwners, ids, nOwners );
+}
+
+extern "C" void pointOwnersAccelerated( const double pos[3], const int* maxOwners,
+                                        unsigned long long* ids, int* nOwners ) {
+  std::vector<BodyID> candidates;
+  theCollisionSystem()->getCoarseDetector().getBodiesNearPoint(
+      static_cast<real>(pos[0]), static_cast<real>(pos[1]), static_cast<real>(pos[2]), candidates );
+  std::vector<boost::uint64_t> owners;
+  for( std::vector<BodyID>::const_iterator it = candidates.begin(); it != candidates.end(); ++it )
+    if( bodyContainsPoint( *it, pos ) ) owners.push_back( (*it)->getSystemID() );
+  finishOwnerList( owners, *maxOwners, ids, nOwners );
 }
 //=================================================================================================
 
