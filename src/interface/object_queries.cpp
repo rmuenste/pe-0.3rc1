@@ -585,11 +585,6 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
         ownerCandidate( body->getSystemID(), found, ownerId );
       }
     }
-    else if(body->getType() == triangleMeshType && !(body->isFixed())) {
-      if(static_cast<TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2])){
-        ownerCandidate( body->getSystemID(), found, ownerId );
-      }
-    }
   }
   for (int j(0); j < ghostBodies().size(); j++) {
 

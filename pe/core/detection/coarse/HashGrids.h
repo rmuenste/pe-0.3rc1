@@ -455,6 +455,17 @@ public:
     * The grid is activated once the number of bodies exceeds the gridActivationThreshold.
     */
    bool isGridActive() const { return gridActive_; }
+
+   /*!\brief The cell span of every grid in the hierarchy, in creation order.
+    *
+    * Read-only introspection for the FBM classification gate (pe/interface/fbm_gate_probe.h),
+    * whose construction stands on the first grid's span being the one its spacer bodies set.
+    */
+   void getCellSpans( std::vector<real>& spans ) const {
+      spans.clear();
+      for( typename GridList::const_iterator grid = gridList_.begin(); grid != gridList_.end(); ++grid )
+         spans.push_back( (*grid)->getCellSpan() );
+   }
    //@}
    //**********************************************************************************************
 
