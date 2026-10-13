@@ -73,6 +73,12 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
  */
 bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short int bytes[8]);
 
+/*!\brief Owner-list forms of the two queries: every containing body, ids ascending; *nOwners
+ * is the total, ids[0..min(total,*maxOwners)) are filled. extern "C" for FeatFloWer's
+ * multiple-ownership table (fbm_ownership.f90). */
+extern "C" void pointOwners( const double pos[3], const int* maxOwners, unsigned long long* ids, int* nOwners );
+extern "C" void pointOwnersAccelerated( const double pos[3], const int* maxOwners, unsigned long long* ids, int* nOwners );
+
 
 /*
  *!\brief The function checks if an id corresponds to a remote particle on the local domain

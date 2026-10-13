@@ -76,6 +76,7 @@ public:
         Grid,             //!< Regular grid packing (spheres only)
         MixedGrid,        //!< Mixed shape grid packing (spheres, boxes, capsules)
         TriangleMeshGrid, //!< Triangle mesh grid packing (cones from cone.obj)
+        GateProbe,        //!< Layer-2 FBM classification gate: spacers + probes (pe/interface/fbm_gate_probe.h)
         External,         //!< Load from external file
         None              //!< No initial packing
     };
@@ -103,6 +104,7 @@ public:
         if (method == "grid") return PackingMethod::Grid;
         if (method == "mixed_grid") return PackingMethod::MixedGrid;
         if (method == "tm_grid") return PackingMethod::TriangleMeshGrid;
+        if (method == "gate_probe") return PackingMethod::GateProbe;
         if (method == "external") return PackingMethod::External;
         if (method == "none") return PackingMethod::None;
         throw std::invalid_argument("Unknown packing method: " + method);

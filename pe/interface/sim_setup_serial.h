@@ -19,6 +19,7 @@
 #include <pe/interface/setup_optional_collision_params.h>
 #include <pe/interface/sim_setup_serial_features.h>
 #include <pe/interface/el_optional_api.h>
+#include <pe/interface/fbm_gate_probe.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -2491,6 +2492,7 @@ inline void setupHashGridTest(int cfd_rank) {
 
   int idx = 0;
   int sphereCount = 0, boxCount = 0, capsuleCount = 0, meshCount = 0;
+  int ellipsoidCount = 0, cylinderCount = 0, spacerCount = 0, probeCount = 0;
 
   if (packingMethod == SimulationConfig::PackingMethod::Grid) {
     // ==================================================================================
@@ -2522,24 +2524,18 @@ inline void setupHashGridTest(int cfd_rank) {
     // MIXED GRID PACKING: Mixed shapes with bounding sphere radius 0.02
     // ==================================================================================
 
-    // All shapes fit within bounding sphere of radius 0.02
-    const real boundingRadius = 0.02;
-
-    // Sphere: radius = bounding radius
-    const real sphereRadius = boundingRadius;  // 0.02
-
-    // Box: cube fitting in bounding sphere
-    // For a cube with side length a, bounding sphere radius = a*sqrt(3)/2
-    // So: a = 2*r/sqrt(3)
-    const real boxSideLength = 2.0 * boundingRadius / std::sqrt(3.0);  // ≈0.0231
-
-    // Capsule: cylinder with hemispherical caps
-    // Capsule radius = 0.01, cylindrical length = 0.02
-    // Bounding sphere = sqrt(0.01² + 0.01²) ≈ 0.01414 < 0.02 ✓
-    const real capsuleRadius = 0.01;
-    const real capsuleLength = 0.02;  // Length of cylindrical part (excluding caps)
-
-    int shapeType = 0;  // 0=sphere, 1=box, 2=capsule (cycle through)
+    // Every shape is sized by its x HALF-EXTENT ex = 0.02 (not a bounding radius) through the
+    // same helper the Layer-2 gate uses, so the two populations cannot drift apart. The largest
+    // reach of any shape is the box's half-diagonal ex*sqrt(3) = 0.0346 < 0.05, half the lattice
+    // spacing, so neighbours never touch. The five shapes close the gap to the Layer-1 stress
+    // test; the stale-index defect is shape-independent (a broad-phase defect), but the
+    // CONTAINMENT functions of ellipsoid and cylinder were never exercised against real DOFs.
+    // No shape is fixed: both point queries skip fixed cylinders and fixed triangle meshes.
+    const real probeHalfExtent = 0.02;
+    int shapeType = 0;
+    const int numShapeTypes = fbmgate::NUM_SHAPES;
+    int* shapeCounters[fbmgate::NUM_SHAPES] = { &sphereCount, &boxCount, &capsuleCount,
+                                                &ellipsoidCount, &cylinderCount };
 
     for (int iz = 0; iz < nz; ++iz) {
       for (int iy = 0; iy < ny; ++iy) {
@@ -2550,31 +2546,11 @@ inline void setupHashGridTest(int cfd_rank) {
             startPos + iz * spacing
           );
 
-          if (shapeType == 0) {
-            // Create sphere
-            SphereID sphere = createSphere(idx, position, sphereRadius, iron, true);
-            sphere->setLinearVel(0.0, 0.0, 0.0);
-            sphere->setAngularVel(0.0, 0.0, 0.0);
-            ++sphereCount;
-          }
-          else if (shapeType == 1) {
-            // Create box (cube)
-            Vec3 lengths(boxSideLength, boxSideLength, boxSideLength);
-            BoxID box = createBox(idx, position, lengths, iron, true);
-            box->setLinearVel(0.0, 0.0, 0.0);
-            box->setAngularVel(0.0, 0.0, 0.0);
-            ++boxCount;
-          }
-          else {
-            // Create capsule (oriented along z-axis by default)
-            CapsuleID capsule = createCapsule(idx, position, capsuleRadius, capsuleLength, iron, true);
-            capsule->setLinearVel(0.0, 0.0, 0.0);
-            capsule->setAngularVel(0.0, 0.0, 0.0);
-            ++capsuleCount;
-          }
+          fbmgate::createProbeShape(idx, shapeType, position, probeHalfExtent, iron);
+          ++*shapeCounters[shapeType];
 
           ++idx;
-          shapeType = (shapeType + 1) % 3;  // Cycle: 0→1→2→0→...
+          shapeType = (shapeType + 1) % numShapeTypes;
         }
       }
     }
@@ -2608,6 +2584,17 @@ inline void setupHashGridTest(int cfd_rank) {
     }
   }
 
+  else if (packingMethod == SimulationConfig::PackingMethod::GateProbe) {
+    // ==================================================================================
+    // GATE PROBE PACKING: the Layer-2 FBM classification gate construction.
+    // Spacers first (they set the HashGrid span), then probes parked outside the mesh until
+    // the Fortran driver places them stage by stage. Why it has to be built this way is in
+    // pe/interface/fbm_gate_probe.h.
+    // ==================================================================================
+    fbmgate::createGateProbeBodies(iron, spacerCount, probeCount);
+    idx = spacerCount + probeCount;
+  }
+
   // Set timestep from config
   TimeStep::stepsize(config.getStepsize());
 
@@ -2629,14 +2616,26 @@ inline void setupHashGridTest(int cfd_rank) {
       std::cout << "  Spheres: " << sphereCount << " (radius=0.01)\n";
     }
     else if (packingMethod == SimulationConfig::PackingMethod::MixedGrid) {
-      std::cout << "Packing: MixedGrid (bounding radius=0.02)\n";
+      std::cout << "Packing: MixedGrid (x half-extent=0.02)\n";
       std::cout << "  Spheres: " << sphereCount << " (radius=0.02)\n";
-      std::cout << "  Boxes: " << boxCount << " (side≈0.0231)\n";
-      std::cout << "  Capsules: " << capsuleCount << " (r=0.01, l=0.02)\n";
+      std::cout << "  Boxes: " << boxCount << " (side=0.04)\n";
+      std::cout << "  Capsules: " << capsuleCount << " (r=0.01, cylindrical part 0.02, along x)\n";
+      std::cout << "  Ellipsoids: " << ellipsoidCount << " (a=0.02, b=c=0.01)\n";
+      std::cout << "  Cylinders: " << cylinderCount << " (r=0.01, l=0.04, along x, not fixed)\n";
     }
     else if (packingMethod == SimulationConfig::PackingMethod::TriangleMeshGrid) {
       std::cout << "Packing: TriangleMeshGrid (bounding radius=0.02)\n";
       std::cout << "  Triangle Meshes (cones): " << meshCount << " (from cone.obj)\n";
+    }
+    else if (packingMethod == SimulationConfig::PackingMethod::GateProbe) {
+      const fbmgate::Construction& gc = fbmgate::construction();
+      std::cout << "Packing: GateProbe (Layer-2 FBM classification gate)\n";
+      std::cout << "  Spacers: " << spacerCount << " spheres, r=" << gc.rSpacer
+                << ", parked at y=z=2 - they set the span\n";
+      std::cout << "  Span: " << gc.span << " = (2r + 2ct)*sqrt(hierarchyFactor); planes at k*span: ";
+      for (size_t k = 0; k < gc.planes.size(); ++k) std::cout << gc.planes[k] << " ";
+      std::cout << "\n  Probes: " << probeCount << ", x half-extent ex=" << gc.ex
+                << " (AABB = span - 2*delta, delta=" << gc.delta << "), parked at y=z=3\n";
     }
     std::cout << std::endl;
   }
