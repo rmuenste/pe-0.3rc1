@@ -1,0 +1,105 @@
+# clang-format approximation of the PE legacy coding style.
+#
+# The canonical style is described in doc/technical-notes/coding-style.md and was inferred from
+# pe/config, pe/math, pe/util and pe/system. This file only APPROXIMATES it: several legacy
+# idioms (hand-aligned declaration tables, compact operators such as `i<n`, `Vector3<Type,TF>`
+# without a space after the comma, leading-comma template parameter lists) cannot be expressed
+# in clang-format. Running it over a whole legacy file rewrites roughly 15% of its lines.
+#
+# Use it on changed lines only:   git clang-format            (formats the staged diff)
+#                                 git clang-format --diff     (preview)
+# Use `clang-format -i` only on files you create from scratch.
+#
+# Requires clang-format >= 18 (checked with 18, 19, 20 and 23).
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++17
+ColumnLimit: 100
+
+# Indentation: 3 spaces, no tabs, no namespace indentation, access specifiers at column 0.
+IndentWidth: 3
+ContinuationIndentWidth: 3
+TabWidth: 3
+UseTab: Never
+AccessModifierOffset: -3
+NamespaceIndentation: None
+IndentCaseLabels: true
+IndentPPDirectives: AfterHash
+PPIndentWidth: 2
+
+# Braces: classes, structs and functions on their own line; control statements and
+# enums/unions keep the brace on the same line; `else`/`catch` start a new line.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterStruct: true
+  AfterUnion: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterControlStatement: Never
+  AfterCaseLabel: false
+  BeforeElse: true
+  BeforeCatch: true
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+# Parentheses: `if( x )`, `f( a, b )`, `f()`, `template< typename T >`.
+SpaceBeforeParens: Never
+SpacesInParens: Custom
+SpacesInParensOptions:
+  InConditionalStatements: true
+  InCStyleCasts: false
+  InEmptyParentheses: false
+  Other: true
+SpacesInAngles: Leave
+SpacesInSquareBrackets: false
+SpaceAfterTemplateKeyword: false
+
+# Declarations: `Type* p`, `const Type& r`, tabular alignment of consecutive declarations.
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+AlignConsecutiveDeclarations: Consecutive
+AlignConsecutiveAssignments: false
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+SpacesBeforeTrailingComments: 2
+AlignAfterOpenBracket: Align
+AlignEscapedNewlines: Left
+AlwaysBreakTemplateDeclarations: MultiLine
+PenaltyReturnTypeOnItsOwnLine: 1000
+
+# Constructor initializers: one per line, leading comma.
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 3
+PackConstructorInitializers: Never
+
+# Short constructs: only trivial in-class functions stay on one line.
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortEnumsOnASingleLine: false
+InsertBraces: false
+RemoveBracesLLVM: false
+Cpp11BracedListStyle: true
+
+# Vertical layout: keep the blank-line rhythm around //==== and //**** banners.
+MaxEmptyLinesToKeep: 4
+KeepEmptyLinesAtTheStartOfBlocks: true
+SeparateDefinitionBlocks: Leave
+FixNamespaceComments: true
+ShortNamespaceLines: 0
+
+# Never touch include order (some headers are order dependent, e.g. pe/system/Precision.h
+# includes pe/config/Precision.h inside namespace pe) or Doxygen/banner comments.
+SortIncludes: Never
+IncludeBlocks: Preserve
+ReflowComments: false
+...

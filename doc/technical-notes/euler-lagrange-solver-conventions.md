@@ -11,26 +11,35 @@ than left to be rediscovered from the source.
 > line numbers. An earlier version of this material cited fixed line numbers and they
 > had drifted by several hundred lines within a couple of months.
 
-## 1. Extend the E-L specialization, not `HardContactAndFluid`
+## 1. Two CFD-coupled specializations with different purposes
 
-Work that adds Euler–Lagrange behavior on the PE side belongs in the **existing E-L
-specialization**:
+PE has two collision-system specializations for coupling to a CFD solver. They serve
+different kinds of simulation, both are needed, and each is extended in its own way:
+
+| Specialization | Simulation type |
+|---|---|
+| `HardContactEulerLagrange` | **Unresolved** Euler–Lagrange particle simulations: particles are smaller than the CFD cells, and the CFD driver supplies hydrodynamic forces from closures (drag, pressure gradient, ...). |
+| `HardContactAndFluid` | **Particle-resolved** CFD simulations: the CFD mesh resolves each particle, and hydrodynamic forces come from the resolved flow field. |
+
+The E-L specialization consists of:
 
 - `pe/core/collisionsystem/HardContactEulerLagrange.h` — the full
   `CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >` specialization,
   with its own velocity-prediction and correction path.
 - `pe/core/response/HardContactEulerLagrange.h` — the matching response solver.
 
-It is selected at compile time in `pe/config/Collisions.h`:
+The active one is selected at compile time in `pe/config/Collisions.h`, e.g.:
 
 ```cpp
 #define pe_CONSTRAINT_SOLVER  pe::response::HardContactEulerLagrange
 ```
 
-`HardContactAndFluid` is a *different, independent* specialization that happens to also
-concern fluid coupling. It is **not** the E-L path, and E-L changes must not be made
-there. Reading one while intending to modify the other is the specific mistake this
-section exists to prevent — see §2 for why it is more than a cosmetic mix-up.
+Put a change in the specialization whose simulation type it serves: unresolved E-L
+behavior goes into `HardContactEulerLagrange`, particle-resolved behavior into
+`HardContactAndFluid`. Do not port a change from one to the other without checking that
+it fits the other's model. Since both are fluid-coupled, it is easy to read one while
+meaning to modify the other. §2 shows why that is more than a cosmetic
+mix-up: the two make opposite decisions about body forces.
 
 ## 2. The two solvers make opposite gravity/buoyancy decisions
 
