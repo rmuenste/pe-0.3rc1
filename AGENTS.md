@@ -117,6 +117,7 @@ Simulation setup note:
 The PE library can be built as static (default) or shared library. The library name is "pe" and will be found in the `build/lib` directory.
 
 When extending the codebase:
+- Follow the coding style in `doc/technical-notes/coding-style.md` (3-space indent, `if( x )`, `//****` banners, `likeThis_` members, `pe_` macros). New files use that style; when editing an existing file, match the file's own style. Format only changed lines (`git clang-format`), never whole legacy files.
 - Prefer adding to existing modules over creating new ones
 - Follow the existing naming conventions and class hierarchies
 - Use templates for performance-critical code

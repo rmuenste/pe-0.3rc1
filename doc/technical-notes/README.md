@@ -2,6 +2,10 @@
 
 This directory contains focused engineering notes for PE internals. Use this index to find the right deep-dive quickly; some analysis and roadmap notes may describe investigations or proposed work rather than canonical current behavior.
 
+## Coding Style
+
+- [coding-style.md](coding-style.md): Naming, file layout, banners, formatting, class structure and Doxygen conventions (inferred from `pe/config`, `pe/math`, `pe/util`, `pe/system`), where newer code deviates, and how to use the root `.clang-format`.
+
 ## Build and Configuration
 
 - [adding-json-parameters.md](adding-json-parameters.md): How to add a simulation parameter to `SimulationConfig` and load it from JSON at startup.
@@ -33,7 +37,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [ffd-solver.md](ffd-solver.md): Fast-Frictional Dynamics solver wiring and solver math notes.
 - [relaxation-models.md](relaxation-models.md): Analysis of hard-contact relaxation models and material parameter effects.
 - [new-collision-system-implementation-guide.md](new-collision-system-implementation-guide.md): Checklist for adding and wiring a new `CollisionSystem` specialization.
-- [euler-lagrange-solver-conventions.md](euler-lagrange-solver-conventions.md): Conventions for `HardContactEulerLagrange`, including the opposite gravity/buoyancy ownership versus `HardContactAndFluid`, and how to call solver-specific interface APIs safely.
+- [euler-lagrange-solver-conventions.md](euler-lagrange-solver-conventions.md): Conventions for `HardContactEulerLagrange` (unresolved Euler–Lagrange coupling) versus `HardContactAndFluid` (particle-resolved coupling), their opposite gravity/buoyancy ownership, and how to call solver-specific interface APIs safely.
 
 ## Lubrication and Short-Range Forces
 
