@@ -92,6 +92,16 @@ public:
    /*!\name Utility functions */
    //@{
    inline void setFloatingPointSize( int fpSize );
+   inline void setFormatMinor( unsigned int minor ) { formatMinor_ = minor; }
+   //@}
+   //**********************************************************************************************
+
+   //**Get functions*******************************************************************************
+   /*!\name Get functions */
+   //@{
+   //! Minor number of the checkpoint file format being read (see BodyBinaryWriter); the
+   //! marshalling reads attributes added in later formats only when the stream has them.
+   inline unsigned int formatMinor() const { return formatMinor_; }
    //@}
    //**********************************************************************************************
 
@@ -100,6 +110,7 @@ protected:
    /*!\name Member variables */
    //@{
    unsigned int fpSize_;
+   unsigned int formatMinor_ = 3;   //!< Format of the stream; the current writer format by default.
    using RecvBuffer<E>::cur_;
    using RecvBuffer<E>::end_;
    //@}

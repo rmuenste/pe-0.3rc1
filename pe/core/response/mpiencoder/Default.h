@@ -305,6 +305,7 @@ void MPIEncoder<C>::encodeSphere( SB& buffer, ConstSphereID s, const Vec3& offse
    buffer << s->getSystemID();                // Encoding the unique system-specific ID
    buffer << s->getID();                      // Encoding the user-specific ID
    buffer << s->getRadius();                  // Encoding the radius
+   buffer << s->getShellThickness();          // Encoding the wall thickness (0: solid)
    buffer << s->getMaterial();                // Encoding the material
    buffer << s->isVisible();                  // Encoding the visibility flag
    buffer << s->isFixed();                    // Encoding the fixation flag

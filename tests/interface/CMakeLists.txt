@@ -631,6 +631,21 @@ set_tests_properties(pe-split-impulse-plain PROPERTIES
   TIMEOUT 120
 )
 
+# Hollow (shell) spheres: Sphere::setShellThickness() mass and inertia, createHollowSphere(),
+# fixed bodies, and the checkpoint round trip of the wall thickness (file format 0.3). Serial.
+add_executable(pe_hollow_sphere_test
+  pe_hollow_sphere_test.cpp
+)
+target_link_libraries(pe_hollow_sphere_test PRIVATE pe_static)
+add_test(
+  NAME pe-hollow-sphere
+  COMMAND pe_hollow_sphere_test
+)
+set_tests_properties(pe-hollow-sphere PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 60
+)
+
 # HashGrids::getBodiesNearPoint must also return bodies added since the last findContacts()
 # (bodiesToAdd_), both with the grid inactive and active, so that FBM point queries see a
 # particle inserted between simulation steps. Serial, no MPI.

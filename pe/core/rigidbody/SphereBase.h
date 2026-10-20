@@ -80,6 +80,15 @@ public:
    //@{
    inline real getRadius() const;
    inline real getVolume() const;
+   inline real getShellThickness() const;
+   inline bool isHollow() const;
+   //@}
+   //**********************************************************************************************
+
+   //**Set functions*******************************************************************************
+   /*!\name Set functions */
+   //@{
+   void setShellThickness( real thickness );
    //@}
    //**********************************************************************************************
 
@@ -96,7 +105,9 @@ protected:
    /*!\name Volume, mass and density functions */
    //@{
    static inline real calcVolume( real radius );
+   static inline real calcVolume( real radius, real shellThickness );
    static inline real calcMass( real radius, real density );
+   static inline real calcMass( real radius, real shellThickness, real density );
    static inline real calcDensity( real radius, real mass );
    //@}
    //**********************************************************************************************
@@ -114,6 +125,9 @@ protected:
    //@{
    real radius_;  //!< Radius of the sphere.
                   /*!< The radius is constrained to values larger than 0.0. */
+   real shellThickness_;  //!< Wall thickness of a hollow sphere, 0 for a solid sphere.
+                          /*!< Only mass and inertia depend on it; the collision geometry is
+                               the outer radius in both cases. Constrained to [0, radius]. */
    //@}
    //**********************************************************************************************
 };
@@ -169,6 +183,64 @@ inline real SphereBase::calcVolume( real radius )
    return real(4.0)/real(3.0) * M_PI * radius * radius * radius;
 }
 //*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Calculates the material volume of a (hollow) sphere.
+ *
+ * \param radius The outer radius of the sphere \f$ (0..\infty) \f$.
+ * \param shellThickness The wall thickness \f$ [0..radius] \f$; 0 means solid.
+ * \return The volume of the shell, or of the whole ball for a solid sphere.
+ */
+inline real SphereBase::calcVolume( real radius, real shellThickness )
+{
+   if( shellThickness <= real(0) || shellThickness >= radius )
+      return calcVolume( radius );
+   const real inner( radius - shellThickness );
+   return real(4.0)/real(3.0) * M_PI * ( radius * radius * radius - inner * inner * inner );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Calculates the mass of a (hollow) sphere for a given radius, wall thickness and density.
+ *
+ * \param radius The outer radius of the sphere \f$ (0..\infty) \f$.
+ * \param shellThickness The wall thickness \f$ [0..radius] \f$; 0 means solid.
+ * \param density The density of the wall material.
+ * \return The mass of the shell, or of the whole ball for a solid sphere.
+ */
+inline real SphereBase::calcMass( real radius, real shellThickness, real density )
+{
+   return calcVolume( radius, shellThickness ) * density;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the wall thickness of a hollow sphere (0 for a solid sphere).
+ *
+ * \return The wall thickness.
+ */
+inline real SphereBase::getShellThickness() const
+{
+   return shellThickness_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether the sphere is a hollow shell.
+ *
+ * \return \a true if the wall thickness is positive and smaller than the radius.
+ */
+inline bool SphereBase::isHollow() const
+{
+   return shellThickness_ > real(0) && shellThickness_ < radius_;
+}
+//*************************************************************************************************
+
+
 
 
 //*************************************************************************************************
@@ -241,7 +313,15 @@ inline void SphereBase::calcBoundingBox()
  */
 inline void SphereBase::calcInertia()
 {
-   I_[0] = I_[4] = I_[8] = real(0.4) * mass_ * radius_ * radius_;
+   // Solid ball: (2/5) m R^2. Shell with inner radius r: (2/5) m (R^5 - r^5) / (R^3 - r^3),
+   // which tends to (2/3) m R^2 for a thin wall.
+   real factor( radius_ * radius_ );
+   if( isHollow() ) {
+      const real R( radius_ ), r( radius_ - shellThickness_ );
+      const real R3( R * R * R ), r3( r * r * r );
+      factor = ( R3 * R * R - r3 * r * r ) / ( R3 - r3 );
+   }
+   I_[0] = I_[4] = I_[8] = real(0.4) * mass_ * factor;
    Iinv_ = I_.getInverse();
 }
 //*************************************************************************************************

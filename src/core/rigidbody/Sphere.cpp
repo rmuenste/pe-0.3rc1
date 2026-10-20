@@ -1098,6 +1098,7 @@ void Sphere::print( std::ostream& os, const char* tab ) const
    }
 
    os << tab << "   System ID         = " << sid_ << "\n"
+      << tab << "   Shell thickness   = " << shellThickness_ << "\n"
       << tab << "   Total mass        = " << mass_ << "\n"
       << tab << "   Material          = " << Material::getName( material_ ) << "\n"
       << tab << "   Global position   = " << gpos_ << "\n"
@@ -1258,6 +1259,35 @@ PE_PUBLIC SphereID createSphere( id_t uid, const Vec3& gpos, real radius,
  * MPI process. This function must NOT be called explicitly, but is reserved for internal
  * use only!
  */
+//*************************************************************************************************
+/*!\brief Setup of a new hollow sphere (thin or thick shell).
+ * \ingroup sphere
+ *
+ * \param uid The user-specific ID of the sphere.
+ * \param gpos The global position of the center of the sphere.
+ * \param radius The outer radius of the sphere \f$ (0..\infty) \f$.
+ * \param shellThickness The wall thickness \f$ [0..radius] \f$; 0 gives a solid sphere.
+ * \param material The material of the sphere.
+ * \param visible Specifies if the sphere is visible in a visualization.
+ * \return Handle for the new sphere.
+ * \exception std::invalid_argument Invalid sphere radius, wall thickness or position.
+ *
+ * Same as createSphere() followed by Sphere::setShellThickness(): the collision geometry is the
+ * outer sphere, only the mass (wall volume times density) and the moment of inertia differ.
+ * A table tennis ball, for instance, is a 20 mm sphere with a 0.4 mm wall.
+ */
+PE_PUBLIC SphereID createHollowSphere( id_t uid, const Vec3& gpos, real radius, real shellThickness,
+                                       MaterialID material, bool visible )
+{
+   if( shellThickness < real(0) || shellThickness > radius )
+      throw std::invalid_argument( "Invalid sphere shell thickness" );
+   SphereID sphere = createSphere( uid, gpos, radius, material, visible );
+   sphere->setShellThickness( shellThickness );
+   return sphere;
+}
+//*************************************************************************************************
+
+
 SphereID instantiateSphere( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                             const Quat& q, real radius, MaterialID material,
                             bool visible, bool fixed, bool reg )

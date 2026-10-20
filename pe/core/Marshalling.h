@@ -41,6 +41,7 @@
 #include <pe/core/response/Types.h>
 #include <pe/core/rigidbody/Sphere.h>
 #include <pe/core/attachable/Spring.h>
+#include <pe/core/TypeConvertingRecvBuffer.h>
 #include <pe/core/rigidbody/Union.h>
 #include <pe/math/Vector3.h>
 #include <pe/util/Assert.h>
@@ -635,6 +636,7 @@ template< typename Buffer >
 inline void marshal( Buffer& buffer, const Sphere& obj ) {
    marshal( buffer, static_cast<const GeomPrimitive&>( obj ) );
    buffer << obj.getRadius();
+   buffer << obj.getShellThickness();
 }
 //*************************************************************************************************
 
@@ -647,10 +649,27 @@ inline void marshal( Buffer& buffer, const Sphere& obj ) {
  * \param hasSuperBody False if body is not part of a union. Passed on to rigid body unmarshalling.
  * \return void
  */
+namespace marshalling_detail {
+
+//! Whether a sphere record in \a buffer carries the shell thickness: always for MPI streams
+//! (both ends run the same build), and for checkpoint files from format 0.3 on. Format 0.2
+//! files (TypeConvertingRecvBuffer with formatMinor() 2) hold solid spheres only.
+template< typename Buffer >
+inline bool sphereShellInStream( const Buffer& ) { return true; }
+
+template< typename E >
+inline bool sphereShellInStream( const TypeConvertingRecvBuffer<E>& buffer ) { return buffer.formatMinor() >= 3; }
+
+} // namespace marshalling_detail
+
 template< typename Buffer >
 inline void unmarshal( Buffer& buffer, Sphere::Parameters& objparam, bool hasSuperBody ) {
    unmarshal( buffer, static_cast<GeomPrimitive::Parameters&>( objparam ), hasSuperBody );
    buffer >> objparam.radius_;
+   if( marshalling_detail::sphereShellInStream( buffer ) )
+      buffer >> objparam.shellThickness_;
+   else
+      objparam.shellThickness_ = real(0);
 }
 //*************************************************************************************************
 

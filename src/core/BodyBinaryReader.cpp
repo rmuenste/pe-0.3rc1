@@ -186,8 +186,12 @@ void BodyBinaryReader::readFile( const char* filename ) {
          if( magicNumber1 != 'P' || magicNumber2 != 'E' )
             throw std::runtime_error( "Invalid file format." );
 
-         if( fileFormatVersionMajor != 0 || fileFormatVersionMinor != 2 )
+         // 0.2: before the sphere shell thickness (read back as solid spheres); 0.3: current.
+         if( fileFormatVersionMajor != 0 || ( fileFormatVersionMinor != 2 && fileFormatVersionMinor != 3 ) )
             throw std::runtime_error( "Unsupported file format version." );
+         header_.setFormatMinor( fileFormatVersionMinor );
+         buffer_.setFormatMinor( fileFormatVersionMinor );
+         globals_.setFormatMinor( fileFormatVersionMinor );
 
          // read table of data type sizes
          byte sizes[5];
@@ -608,6 +612,7 @@ UnionID BodyBinaryReader::instantiateUnion( const Union::Parameters& objparam, b
          if( reassignSystemID )
             subobjsid = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
          SphereID subobj = instantiateSphere( subobjsid, subobjparam.uid_, subobjparam.gpos_, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setShellThickness( subobjparam.shellThickness_ );
          subobj->setRemote( false );
          if( global ) subobj->setGlobal();
       }
@@ -687,6 +692,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                if( reassignSystemID )
                   objparam.sid_ = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
                SphereID obj = instantiateSphere( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.radius_, objparam.material_, objparam.visible_, objparam.fixed_, false );
+               obj->setShellThickness( objparam.shellThickness_ );
                obj->setCollisionEnabled( objparam.collisionEnabled_ );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
