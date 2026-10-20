@@ -235,6 +235,10 @@ public:
    inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
    inline void            setSplitImpulse( bool enable );
    inline bool            getSplitImpulse() const { return useSplitImpulse_; }
+   inline void            setRestitution( bool enable );
+   inline bool            getRestitution() const { return useRestitution_; }
+   inline void            setRestitutionThreshold( real vn );
+   inline real            getRestitutionThreshold() const { return restitutionThreshold_; }
    inline void            setMinEps( real /*minEps*/ ) {}
    inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
    //@}
@@ -328,6 +332,8 @@ private:
    real erp_;                 //!< The error reduction parameter (0 <= erp_ <= 1).
    bool useAdaptiveBaumgarteCapping_;  //!< Enable adaptive velocity capping to prevent explosions
    bool useSplitImpulse_;     //!< Split impulse: penetration is removed by pseudo velocities that move the positions but are not kept as body velocity.
+   bool useRestitution_;      //!< Newton restitution: an impacting contact's normal target is -e * (pre-step normal velocity) instead of 0.
+   real restitutionThreshold_; //!< Impacts slower than this (and slower than 2 |g| dt) are treated as inelastic (no micro-bounces at rest).
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
    size_t iteration_;
@@ -456,6 +462,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , erp_              ( 0.7 )
    , useAdaptiveBaumgarteCapping_  ( false )  // OFF by default - opt-in feature
    , useSplitImpulse_  ( false )  // OFF by default: trajectories of existing runs stay unchanged
+   , useRestitution_   ( false )  // OFF by default: the solver stays inelastic unless asked
+   , restitutionThreshold_ ( 0 )
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
@@ -985,6 +993,66 @@ template< template<typename> class CD                           // Type of the c
 inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setSplitImpulse( bool enable )
 {
    useSplitImpulse_ = enable;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Enables or disables Newton restitution at impacting contacts.
+ *
+ * \param enable True to bounce impacting contacts with the material's coefficient of restitution.
+ * \return void
+ *
+ * Off (the default), every contact is inelastic: the velocity solve stops the normal approach
+ * (target normal velocity 0 plus the positional terms). On, a contact whose pre-step normal
+ * relative velocity \f$ \dot g_n^- \f$ is approaching faster than the threshold (see
+ * setRestitutionThreshold()) gets the Newton impact law as its normal target instead,
+ * \f$ \dot g_n^+ \geq -e \, \dot g_n^- \f$, with \a e the pairwise coefficient of restitution of
+ * the two materials (Material::getRestitution( m1, m2 ), carried by the contact). The positional
+ * terms (allowed approach of a separated contact, error reduction of a penetrating one) are
+ * dropped from the velocity target for that impacting step only; they resume on the next step,
+ * when the contact is separating or resting. Friction is unchanged: the tangential impulse is
+ * still bounded by mu times the (now larger) normal impulse, so a spinning ball converts spin
+ * into tangential velocity at the bounce as a Coulomb impact does.
+ *
+ * Resting contacts are not affected: their pre-step approach is at most about \f$ |g| dt \f$ per
+ * step, which stays below the threshold, so a body at rest on the ground does not micro-bounce.
+ * The term is folded into the per-contact distance (dist_), so every relaxation model sees it.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setRestitution( bool enable )
+{
+   useRestitution_ = enable;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the impact velocity below which restitution is not applied.
+ *
+ * \param vn Normal approach speed threshold (>= 0); the effective threshold is
+ *           max( vn, 2 |g| dt ), so the default 0 already excludes resting contacts.
+ * \return void
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setRestitutionThreshold( real vn )
+{
+   pe_INTERNAL_ASSERT( vn >= 0, "Restitution threshold must be non-negative." );
+   restitutionThreshold_ = vn;
 }
 //*************************************************************************************************
 
@@ -1945,6 +2013,24 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          pseudoDist_[j] = dist_[j];
          if( useSplitImpulse_ && dist_[j] < 0 )
             dist_[j] = 0;
+
+         // Newton restitution (setRestitution()): an impacting contact asks for the separation
+         // velocity -e * gdot_n^- instead of just stopping the approach. The relaxation sweeps
+         // use dist_ * dtinv as the allowed normal velocity, so a negative dist_ of e * gdot_n^- * dt
+         // is exactly that target; the positional terms are dropped for this step (see the setter).
+         // The pre-step body velocities are used: v_ / w_ are filled further below and carry the
+         // gravity increment, which would make resting contacts look like impacts.
+         if( useRestitution_ ) {
+            const real e( c->getRestitution() );
+            if( e > real( 0 ) ) {
+               const Vec3 gdotPre( b1->getLinearVel() - b2->getLinearVel()
+                                   + b1->getAngularVel() % r1_[j] - b2->getAngularVel() % r2_[j] );
+               const real vn( trans( n_[j] ) * gdotPre );
+               const real threshold( std::max( restitutionThreshold_, real( 2 ) * Settings::gravity().length() * dt ) );
+               if( vn < -threshold )
+                  dist_[j] = e * vn * dt;
+            }
+         }
 
          mu_[j]       = c->getFriction();
 

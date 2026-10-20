@@ -34,6 +34,16 @@ Strengths:
   normal-only solve on pseudo velocities that move the positions but are not kept
   as body velocity, so an overlapping start does not launch the bodies and a
   landing body does not bounce at restitution 0. Off by default.
+- Restitution: the hard-contact solvers are inelastic by construction (the velocity solve
+  stops the normal approach). `HardContactSemiImplicitTimesteppingSolvers.h` offers
+  `setRestitution( true )`: an impacting contact (pre-step normal approach faster than
+  `max( setRestitutionThreshold(), 2 |g| dt )`) then gets the Newton impact law
+  `gdot_n+ >= -e gdot_n-` as its normal target, with `e` the pairwise coefficient of
+  restitution of the two materials (`Material::getRestitution( m1, m2 )`); the
+  Coulomb bound uses the larger normal impulse, so spin and tangential velocity
+  exchange at the bounce like in a rigid-body impact. Resting contacts are excluded
+  by the threshold. Off by default. Tested by `tests/interface/pe_hcsits_restitution_test.cpp`
+  (ITTF drop test, rest, sliding backspin impact); used by `tools/table_tennis/`.
 
 Limitations:
 

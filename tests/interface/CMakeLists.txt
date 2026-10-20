@@ -646,6 +646,23 @@ set_tests_properties(pe-hollow-sphere PROPERTIES
   TIMEOUT 60
 )
 
+# Newton restitution of the semi-implicit hard-contact solver (setRestitution()): ITTF drop
+# test, inelastic default, rest without micro-bounces, sliding backspin impact. Linked against
+# the semi-implicit library variant; 77 = configured solver without the switch (skipped).
+add_executable(pe_hcsits_restitution_test
+  pe_hcsits_restitution_test.cpp
+)
+target_link_libraries(pe_hcsits_restitution_test PRIVATE pe_static_lubstage_plain)
+add_test(
+  NAME pe-hcsits-restitution
+  COMMAND pe_hcsits_restitution_test
+)
+set_tests_properties(pe-hcsits-restitution PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  SKIP_RETURN_CODE 77
+  TIMEOUT 120
+)
+
 # HashGrids::getBodiesNearPoint must also return bodies added since the last findContacts()
 # (bodiesToAdd_), both with the grid inactive and active, so that FBM point queries see a
 # particle inserted between simulation steps. Serial, no MPI.
