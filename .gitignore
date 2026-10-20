@@ -7,3 +7,7 @@
 # Logs
 debug.log
 
+
+# Runtime settings written by the Polyscope/ImGui tools
+.polyscope.ini
+imgui.ini
