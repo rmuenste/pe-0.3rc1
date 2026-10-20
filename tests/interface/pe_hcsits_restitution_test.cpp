@@ -1,7 +1,8 @@
 //=================================================================================================
 /*!
  *  \file tests/interface/pe_hcsits_restitution_test.cpp
- *  \brief Newton restitution of HardContactSemiImplicitTimesteppingSolvers (setRestitution()).
+ *  \brief Newton restitution of HardContactSemiImplicitTimesteppingSolvers (setRestitution())
+ *         and its capped post-pass variant (setRestitutionPostPass()).
  *
  *  With the switch off every contact is inelastic: a dropped sphere stops dead. With it on, an
  *  impacting contact gets the Newton impact law gdot_n^+ = -e gdot_n^- as its normal target, with
@@ -44,14 +45,15 @@ template< typename T, typename = void > struct HasRestitution : std::false_type 
 template< typename T > struct HasRestitution< T, std::void_t< decltype( std::declval<T&>().setRestitution( true ) ) > > : std::true_type {};
 typedef std::remove_reference<decltype( *theCollisionSystem() )>::type CollisionSystemType;
 
-template< typename Handle > void applySwitches( Handle& cs, bool restitution, bool split )
+template< typename Handle > void applySwitches( Handle& cs, bool restitution, bool split, bool postPass = false )
 {
    typedef typename std::remove_reference<decltype( *cs )>::type CS;
    if constexpr ( HasRestitution<CS>::value ) {
       cs->setRestitution( restitution );
       cs->setSplitImpulse( split );
+      cs->setRestitutionPostPass( postPass );
    }
-   else { (void)cs; (void)restitution; (void)split; }
+   else { (void)cs; (void)restitution; (void)split; (void)postPass; }
 }
 
 static int failures = 0;
@@ -190,7 +192,83 @@ int main()
       expect( v[0] < 0, "backspin impact: the horizontal velocity reverses" );
    }
 
-   applySwitches( cs, false, false );
+   // 5. The capped post-pass (Box3D scheme) on single contacts: same drop apex, same rest, same
+   //    sliding backspin impact as the in-solve Newton target.
+   {
+      applySwitches( cs, true, true, true );
+      Scene s = build( e, real(0.3), Vec3( 0, 0, h0 + kRadius ), Vec3(), Vec3() );
+      const real apex( firstReboundApex( s.ball, real(1e-4), 20000 ) );
+      std::printf( "post-pass drop test: rebound apex %.4f m (expected %.4f)\n",
+                   static_cast<double>( apex ), static_cast<double>( e * e * h0 ) );
+      expect( std::fabs( apex - e * e * h0 ) < real(0.03) * e * e * h0, "post-pass: rebound apex within 3% of e^2 h0" );
+
+      Scene r = build( e, real(0.3), Vec3( 0, 0, kRadius ), Vec3(), Vec3() );
+      real maxVz( 0 );
+      for( int i = 0; i < 1000; ++i ) {
+         theWorld()->simulationStep( real(1e-3) );
+         maxVz = std::max( maxVz, std::fabs( r.ball->getLinearVel()[2] ) );
+      }
+      expect( maxVz < real(1e-3), "post-pass: a resting sphere stays at rest" );
+
+      const real mu( 0.3 ), vx( 1 ), vz( -3 ), w( -400 );
+      Scene b = build( e, mu, Vec3( 0, 0, kRadius + real(0.002) ), Vec3( vx, 0, vz ), Vec3( 0, w, 0 ) );
+      bool bounced = false;
+      for( int i = 0; i < 200 && !bounced; ++i ) {
+         theWorld()->simulationStep( real(1e-4) );
+         bounced = b.ball->getLinearVel()[2] > 0;
+      }
+      const Vec3 v( b.ball->getLinearVel() );
+      const real vzImpact( -std::sqrt( vz * vz + 2 * kG * real(0.002) ) );
+      const real vxExpected( vx - mu * ( 1 + e ) * std::fabs( vzImpact ) );
+      const real vzExpected( -e * vzImpact );
+      std::printf( "post-pass backspin impact: v' = (%.3f, %.3f, %.3f) expected (%.3f, 0, %.3f)\n",
+                   static_cast<double>( v[0] ), static_cast<double>( v[1] ), static_cast<double>( v[2] ),
+                   static_cast<double>( vxExpected ), static_cast<double>( vzExpected ) );
+      expect( bounced, "post-pass backspin impact: the sphere bounced" );
+      expect( std::fabs( v[0] - vxExpected ) < real(0.1) * std::fabs( vxExpected ), "post-pass backspin impact: friction uses the full (1+e) impulse" );
+      expect( std::fabs( v[2] - vzExpected ) < real(0.1) * vzExpected, "post-pass backspin impact: v_z' = e |v_z| within 10%" );
+   }
+
+   // 6. Two simultaneous contacts: a flat box with spin about a horizontal axis lands on its
+   //    four corners. The leading edge impacts, the trailing edge is separating but its
+   //    constraint still takes part in the solve. Newton's law in the sweep then returns more
+   //    kinetic energy than came in (e = 1); the capped post-pass cannot gain energy.
+   for( int postPass = 0; postPass < 2; ++postPass ) {
+      applySwitches( cs, true, true, postPass == 1 );
+      WorldID world = theWorld();
+      world->clear();
+      world->setGravity( 0, 0, -kG );
+      MaterialID mat = material();
+      Material::setRestitution( mat, mat, real(1) );
+      Material::setStaticFriction( mat, mat, real(0) );
+      Material::setDynamicFriction( mat, mat, real(0) );
+      createPlane( 1, 0, 0, 1, 0, mat );
+      const Vec3 lengths( real(0.4), real(0.2), real(0.1) );
+      BoxID box = createBox( 2, Vec3( 0, 0, real(0.5) * lengths[2] - real(1e-6) ), lengths, mat );
+      box->setLinearVel( Vec3( 0, 0, real(-1) ) );
+      box->setAngularVel( Vec3( 0, real(8), 0 ) );   // trailing edge rises at 8 * 0.2 - 1 = 0.6 m/s
+      const real m( box->getMass() );
+      const Mat3 I( box->getInertia() );
+      const Vec3 v0( box->getLinearVel() ), w0( box->getAngularVel() );
+      const real E0( real(0.5) * m * ( trans( v0 ) * v0 ) + real(0.5) * ( trans( w0 ) * ( I * w0 ) ) );
+      world->simulationStep( real(1e-4) );
+      const Vec3 v1( box->getLinearVel() ), w1( box->getAngularVel() );
+      const real E1( real(0.5) * m * ( trans( v1 ) * v1 ) + real(0.5) * ( trans( w1 ) * ( I * w1 ) ) );
+      const real ratio( E1 / E0 );
+      std::printf( "two-corner impact, %s: kinetic energy after / before = %.4f, v' = (%.3f, %.3f, %.3f), omega_y' = %.3f\n",
+                   postPass ? "capped post-pass  " : "Newton in the solve",
+                   static_cast<double>( ratio ), static_cast<double>( v1[0] ), static_cast<double>( v1[1] ),
+                   static_cast<double>( v1[2] ), static_cast<double>( w1[1] ) );
+      if( postPass ) {
+         expect( ratio <= real(1) + real(1e-6), "two-corner impact: the capped post-pass does not create energy" );
+         expect( v1[2] > real(0.3), "two-corner impact: the box still bounces with the post-pass" );
+      }
+      else {
+         expect( ratio > real(1.02), "two-corner impact: the in-solve Newton target creates energy (the case the post-pass fixes)" );
+      }
+   }
+
+   applySwitches( cs, false, false, false );
    if( failures == 0 ) std::printf( "pe_hcsits_restitution_test: all checks passed\n" );
    else std::printf( "pe_hcsits_restitution_test: %d check(s) failed\n", failures );
    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

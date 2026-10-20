@@ -56,7 +56,11 @@ for the same return.
   thickness (applied on the next serve), ball/table restitution and
   friction (pairwise `Material::set*`), solver (dt, steps per frame, iterations, erp, split
   impulse (on by default: the position correction adds no momentum; off is the Baumgarte
-  term, an artificial rebound), restitution switch).
+  term, an artificial rebound), restitution switch, and `capped post-pass (Box3D scheme)`:
+  the solve stays inelastic and a separate pass adds the bounce with the restitution impulse
+  capped at e times the compression impulse, so several contacts impacting at once cannot
+  create energy; single contacts such as the ball on the table are unchanged. Headless:
+  `--post-pass`).
 - **Status**: time, ball state, the ghost-serve verdict (prefixed with the launch-point legality)
   and the event list (bounces by side, net crossings in either direction, net hits, floor).
 - **Side view**: x-z plot of the trajectory with the table and the net.
