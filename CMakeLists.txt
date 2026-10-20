@@ -88,6 +88,11 @@ option(PE_BUILD_LIVE_VIEWER "Build the interactive live viewer tool" OFF)
 # (tools/contact_viewer). Same FetchContent dependencies as the live viewer.
 option(PE_BUILD_CONTACT_VIEWER "Build the interactive contact viewer tool" OFF)
 
+# Interactive Polyscope table tennis demo (tools/table_tennis): serves with velocity and spin on
+# an ITTF-size table, ghost serve preset. Same FetchContent dependencies; needs the
+# HardContactSemiImplicitTimesteppingSolvers solver (PE_CONSTRAINT_SOLVER) for restitution.
+option(PE_BUILD_TABLE_TENNIS_DEMO "Build the interactive table tennis demo" OFF)
+
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
 # NOTE: the option is PE_-namespaced, but the compile define it sets
 # (USE_ACCELERATED_POINT_QUERY) is kept unprefixed because the C++ sources test it.
@@ -448,7 +453,7 @@ if(PE_USE_JSON)
     FetchContent_Declare(
         json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.11.2  # You can specify a specific version/tag
+        GIT_TAG v3.12.0  # CMake 4 needs >= 3.12.0 (cmake_minimum_required 3.5); 3.11.x declares 3.1
     )
     
     # Make json available for the project
@@ -812,6 +817,16 @@ endif()
 #==================================================================================================
 if( PE_BUILD_CONTACT_VIEWER )
    add_subdirectory( tools/contact_viewer )
+endif()
+
+
+#==================================================================================================
+#
+# Interactive table tennis demo
+#
+#==================================================================================================
+if( PE_BUILD_TABLE_TENNIS_DEMO )
+   add_subdirectory( tools/table_tennis )
 endif()
 
 

@@ -70,7 +70,15 @@ All concrete geometry types inherit from RigidBody through their respective trai
 1. **Sphere** (`pe/core/rigidbody/Sphere.h`)
    - Inherits from: `SphereTrait<Config>`
    - Geometry type: `sphereType`
-   - Properties: radius
+   - Properties: radius, optional shell thickness (hollow sphere)
+   - Hollow spheres: `createHollowSphere( uid, gpos, radius, shellThickness, material )` or
+     `Sphere::setShellThickness( t )` on an existing sphere (0 = solid). Only the mass (wall
+     volume times density) and the inertia, `(2/5) m (R^5 - r^5) / (R^3 - r^3)` with the
+     thin-shell limit `(2/3) m R^2`, differ from the solid sphere; collision geometry,
+     contact generation and bounding box are those of the outer sphere, so no detection or
+     solver code is involved. The thickness is marshalled with the sphere (MPI shadow copies,
+     checkpoint file format 0.3; format 0.2 files read back as solid spheres). Set it before
+     adding the sphere to a union. Test: `tests/interface/pe_hollow_sphere_test.cpp`.
 
 2. **Box** (`pe/core/rigidbody/Box.h`)
    - Inherits from: `BoxTrait<Config>`

@@ -34,6 +34,7 @@
 //*************************************************************************************************
 
 #include <cmath>
+#include <stdexcept>
 #include <pe/core/rigidbody/SphereBase.h>
 #include <pe/core/Materials.h>
 #include <pe/core/MPI.h>
@@ -65,6 +66,7 @@ SphereBase::SphereBase( id_t sid, id_t uid, const Vec3& gpos,
                         real radius, MaterialID material, bool visible )
    : GeomPrimitive( sphereType, true, visible, sid, uid, material )  // Initializing the base object
    , radius_( radius )                                               // Radius of the sphere
+   , shellThickness_( 0 )                                            // Solid sphere
 {
    // Checking the radius
    // Since the sphere constructor is never directly called but only used in a small number
@@ -104,6 +106,52 @@ SphereBase::SphereBase( id_t sid, id_t uid, const Vec3& gpos,
  */
 SphereBase::~SphereBase()
 {}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
+//  SET FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Makes the sphere a hollow shell of the given wall thickness (0: solid).
+ *
+ * \param thickness The wall thickness \f$ [0..radius] \f$; 0 restores the solid sphere.
+ * \return void
+ * \exception std::invalid_argument Thickness negative or larger than the radius.
+ *
+ * Only the mass and the moment of inertia change: the mass is the wall volume times the
+ * material density and the inertia (2/5) m (R^5 - r^5) / (R^3 - r^3), which tends to the
+ * thin-shell value (2/3) m R^2. The collision geometry, the contact generation and the
+ * bounding box are those of the solid sphere with the same outer radius. A thickness equal
+ * to the radius is a solid sphere.
+ *
+ * Fixed spheres keep their infinite inverse mass and inertia. Call this before adding the
+ * sphere to a union: a union does not re-read the mass and inertia of its parts afterwards.
+ * The thickness is marshalled with the sphere, so remote (shadow) copies and checkpoints carry
+ * it; checkpoint files written before this attribute (format 0.2) read back as solid spheres.
+ */
+void SphereBase::setShellThickness( real thickness )
+{
+   if( thickness < real(0) || thickness > radius_ )
+      throw std::invalid_argument( "Invalid sphere shell thickness" );
+
+   shellThickness_ = ( thickness >= radius_ ) ? real(0) : thickness;
+
+   const bool translationFree( invMass_ != real(0) );
+   const bool rotationFree( Iinv_[0] != real(0) );
+
+   mass_ = calcMass( radius_, shellThickness_, Material::getDensity( material_ ) );
+   calcInertia();   // also sets Iinv_ = inverse( I_ )
+
+   invMass_ = translationFree ? real(1) / mass_ : real(0);
+   if( !rotationFree )
+      Iinv_ = real(0);
+}
 //*************************************************************************************************
 
 } // namespace pe

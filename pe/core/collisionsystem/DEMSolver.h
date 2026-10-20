@@ -1833,7 +1833,11 @@ void CollisionSystem< C<CD,FD,BG,response::DEMSolver> >::synchronize()
                   case sphereType: {
                      Sphere::Parameters subobjparam;
                      unmarshal( buffer, subobjparam, false );
-                     obj = instantiateSphere( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+                     {
+                        SphereID sphere = instantiateSphere( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
+                        sphere->setShellThickness( subobjparam.shellThickness_ );
+                        obj = sphere;
+                     }
                      obj->setCollisionEnabled( subobjparam.collisionEnabled_ );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );

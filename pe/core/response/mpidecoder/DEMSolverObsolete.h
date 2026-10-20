@@ -430,7 +430,7 @@ typename MPIDecoder< C<CD,FD,BG,response::DEMSolverObsolete> >::BodyID
    bool visible, fixed;
    id_t sid, uid;
    MaterialID material;
-   real radius;
+   real radius, shellThickness;
    Vec3 gpos, rpos, v, w, vdot, wdot;
    Quat q;
 
@@ -438,6 +438,7 @@ typename MPIDecoder< C<CD,FD,BG,response::DEMSolverObsolete> >::BodyID
    buffer >> sid;       // Decoding the unique system-specific ID
    buffer >> uid;       // Decoding the user-specific ID
    buffer >> radius;    // Decoding the radius of the sphere
+   buffer >> shellThickness;  // Decoding the wall thickness (0: solid)
    buffer >> material;  // Decoding the material of the sphere
    buffer >> visible;   // Decoding the visibility flag
    buffer >> fixed;     // Decoding the fixation flag
@@ -460,7 +461,9 @@ typename MPIDecoder< C<CD,FD,BG,response::DEMSolverObsolete> >::BodyID
    pe_INTERNAL_ASSERT( bodystorage_.find( sid ) == bodystorage_.end(), "Sphere primitive already known" );
 
    // Instantiating a remote sphere primitive
-   BodyID body = instantiateSphere( sid, uid, gpos, rpos, q, radius, material, visible, fixed );
+   SphereID sphere = instantiateSphere( sid, uid, gpos, rpos, q, radius, material, visible, fixed );
+   sphere->setShellThickness( shellThickness );
+   BodyID body = sphere;
    body->setUpdated( true );
 
    if( superordinate ) {

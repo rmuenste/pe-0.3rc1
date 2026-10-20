@@ -159,6 +159,7 @@ public:
    //**Type definitions****************************************************************************
    struct Parameters : public GeomPrimitive::Parameters {
       real radius_;
+      real shellThickness_;   //!< Wall thickness of a hollow sphere, 0 for a solid one.
    };
    //**********************************************************************************************
 
@@ -243,6 +244,8 @@ protected:
    /*! \cond PE_INTERNAL */
    friend SphereID createSphere( id_t uid, const Vec3& gpos, real radius,
                                  MaterialID material, bool visible );
+   friend SphereID createHollowSphere( id_t uid, const Vec3& gpos, real radius, real shellThickness,
+                                       MaterialID material, bool visible );
    friend SphereID instantiateSphere( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                                       const Quat& q, real radius, MaterialID material,
                                       bool visible, bool fixed, bool reg );
@@ -412,6 +415,8 @@ inline SphereID createSphere( id_t uid, real x, real y, real z, real radius,
                               MaterialID material, bool visible=true );
        SphereID createSphere( id_t uid, const Vec3& gpos, real radius,
                               MaterialID material, bool visible=true );
+       SphereID createHollowSphere( id_t uid, const Vec3& gpos, real radius, real shellThickness,
+                                    MaterialID material, bool visible=true );
        SphereID instantiateSphere( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos,
                                    const Quat& q, real radius, MaterialID material,
                                    bool visible, bool fixed, bool reg=true );
