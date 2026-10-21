@@ -44,7 +44,7 @@ for the same return.
 
 - **Serve**: mode radio (Launch: ball velocity + spin; Toss & serve: bat stroke; Toss, serve &
   receive: the stroke plus a held bat on the other side, see below; in Launch mode a checkbox adds
-  the held bat too);
+  the held bat too; Ball machine: spinless balls fed from the other side by a program, see below);
   preset combo (ghost serve, flat, fast topspin, sidespin that curves back; all launch
   legally from behind the end line and land on the opponent's side, checked by `--smoke`), ball
   position, launch velocity
@@ -287,6 +287,105 @@ Headless: `--receive` adds the held bat to either mode (`--mode-receive` selects
 screenshot), `--receiver tilt yaw riseFraction` sets the angles and the intercept, and
 `--receiver-pos x y z` places it by hand. `--smoke` runs every bat preset and every launch preset
 against the held bat and checks that the bat is placed and touched.
+
+## Ball machine
+
+The fourth mode of the Serve window. An invisible machine behind the far end line
+(x = +1.57 m, 25 cm above the table by default; the launch point is adjustable) feeds balls to
+the player's side, the server's side at x < 0, one after the other. The balls carry no spin and
+their pace is medium: the planner picks the launch velocity for each shot from its landing
+point and the height it is to cross the net, and the speed follows (4.7 m/s for a short ball,
+6.3 m/s to mid-depth, 7.9 m/s deep with the default 15 cm clearance; 5.1 m/s and 41 deg for a
+lob with 50 cm). A shot that would need more than the `max launch speed` (12 m/s) is not fired.
+
+- **Program**: the shot list, typed or chosen from the combo. Shots are separated by `-`, `,` or
+  blanks; the words of one shot are joined by `_`: `left` / `middle` / `right` (as seen by the
+  player facing the machine, y = +0.45 / 0 / -0.45 m), `short` / `mid` / `deep` (x = -0.40 /
+  -0.80 / -1.15 m), `high` (a lob) or `flat` (default), `random` (a target drawn anywhere on
+  the player's side when the shot is fired, one in four a lob). Examples: `left-right`,
+  `right-right-high_middle-left`, `short_left-deep_right`. The program repeats.
+- **Planning**: the flight model is the demo's own (gravity and quadratic drag, integrated like
+  the solver does it), so the balls land where they are aimed: within 1 mm in the smoke test.
+  For a given elevation the range grows with the speed, and at a fixed landing point the net
+  clearance grows with the elevation, so two bisections find speed and elevation for the
+  requested landing point and clearance (`net clearance, flat balls` / `high balls`).
+- **Firing**: `Fire` (key `s`) takes the next shot of the program; `Run` (space) feeds: the next
+  shot goes when the previous ball has settled or the `interval` (2 s) is up. `Reset` rewinds
+  the program and clears the landing spots. The feed stops by itself after a whole program of
+  shots the planner rejected. There is one ball in the world, reused from shot to shot: as soon
+  as it has reached the floor, settled or got more than 1 m beyond the table's edges its shot is
+  closed and it is parked at the launch point, hidden, so no balls pile up out of sight and the
+  feed does not wait for a ball rolling away on the floor.
+- **Legality** (a rally ball, not a serve): the ball must cross the net without touching it and
+  then bounce on the player's side, with no bounce on the machine's side first. The verdict of
+  every shot is listed in the Serve window with its landing point against the aim and the net
+  clearance; the Status window shows the open shot. The event names switch sides in this mode
+  (`bounce, player side`, `crosses the net (toward the player)`).
+- **View**: the ball's trail is off by default in this mode (`show the ball's trail` turns it
+  on, also in the side view), since balls to different spots would pile up into a tangle. What
+  stays on the table are the landing spots of the legal shots (orange), the program's targets
+  (blue) and the launch point (grey).
+
+### The player's bat: spin returns
+
+With `return` set to topspin, backspin or sidespin (topspin by default) a bat on the player's
+side returns every fed ball with a brushing stroke. It is the same union as the server's bat,
+kinematic (pose and velocity prescribed per step), parked out of play between strokes. The
+stroke is planned when the shot is fired:
+
+1. **Dry run.** The fed ball is simulated once with the bats parked; the samples after its bounce
+   on the player's side give the intercept, at `meet the ball at` of the time from the bounce to
+   the apex (0.6 by default: on the rise, about 0.7 m behind the end line for a mid-depth ball).
+2. **Stroke search.** Bat speed (3 m/s to `max bat speed`, 10 m/s), stroke elevation and
+   azimuth, blade tilt and yaw are scanned on a grid, each candidate through a rigid impact
+   model (Newton restitution and Coulomb friction with sticking against the moving face, the
+   ball's shell inertia; the ball/rubber pair, e = 0.8, mu = 0.8) and the flight model with drag
+   and Magnus lift. A stroke is feasible if the bat does not sweep through the ball before the
+   contact or dip into the table, the ball leaves under `max ball speed` (12 m/s), crosses the net
+   at least 3 cm clear and comes down on the machine's side. Among the feasible strokes the one
+   with the wanted spin at or above `spin goal` (30 rev/s) and the landing closest to `aim` wins;
+   if none reaches the goal, the one with the most spin. Topspin strokes brush upward with a
+   closed blade, chops downward with an open blade, sidespin strokes sweep sideways; about ten
+   thousand candidates take 0.1 s.
+3. **Execution and readout.** The stroke runs in pe as a straight segment through the contact,
+   0.12 s before to 0.05 s after it. The hit is detected as a velocity jump at the planned
+   contact; the return is then judged like a fed ball in the other direction (over the net,
+   onto the machine's side), and the ball's spin and speed off the bat are listed with the shot.
+   The planner and pe agree to a few millimetres at the landing because the impact model is the
+   solver's contact law and the dry run is the simulation itself.
+
+Measured with the defaults on `left-right-short_middle-deep_middle` (the `--smoke` cases):
+
+| return | bat | ball off the bat | lands at x |
+|---|---|---|---|
+| topspin | 9 ... 10 m/s, 40 ... 65 deg up, blade closed 20 ... 30 deg | 6.6 ... 8.3 m/s, 34 ... 44 rev/s topspin | 0.69 ... 0.82 m |
+| backspin | 4 ... 6 m/s, 50 ... 60 deg down, blade open 20 ... 40 deg | 3.6 ... 6.2 m/s, 31 ... 52 rev/s backspin | 0.81 m |
+| sidespin | 10 m/s, sweeping 45 ... 90 deg across | 5.4 ... 8.5 m/s, 31 ... 44 rev/s about z | 0.72 ... 0.79 m |
+
+The spin comes from the Coulomb slip, so it is bounded by the bat's tangential speed (a thin
+shell takes 1/2.5 of it as spin velocity): 30 rev/s needs about 9.5 m/s of tangential bat speed,
+which is what the search finds. Real rubbers add spin beyond this limit (the sponge's
+tangential elasticity), which the model does not have.
+
+Headless: `--return topspin|backspin|sidespin|none`, `--spin-goal rps`, `--meet f`,
+`--bat-speed v`, `--return-aim x y`; with the bat in play every `SHOT` line is followed by a
+`RETURN` line (the planned stroke, the predicted and the measured ball off the bat, the landing
+of the return). `--smoke` runs the four-shot program under every style and checks that each ball
+is struck, returned legally and carries at least 15 rev/s of the wanted spin.
+
+Headless: `--machine "<program>"` runs one pass of the program (`--shots n` for more), each shot
+until the ball has settled, and prints a `SHOT` line per shot (aim, speed, elevation, landing
+point, error, net clearance, legality) and a `MACHINE` summary; `--machine-pos x y z`,
+`--interval s`, `--clearance flat high` and `--max-speed v` set the machine, `--mode-machine`
+selects the mode for a screenshot, `--trail` turns the trail on. `--smoke` runs every built-in
+program once and checks that every shot is fired, legal, within the speed cap and within 10 cm
+of its aim.
+
+```bash
+./build-viewer/tools/table_tennis/pe_table_tennis --machine "right-right-high_middle-left" --quiet
+./build-viewer/tools/table_tennis/pe_table_tennis --machine "random" --shots 20 --quiet
+./build-viewer/tools/table_tennis/pe_table_tennis --machine "left-right" --return backspin --quiet
+```
 
 ## Headless modes
 
