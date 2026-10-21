@@ -37,22 +37,27 @@ Strengths:
 - Restitution: the hard-contact solvers are inelastic by construction (the velocity solve
   stops the normal approach). `HardContactSemiImplicitTimesteppingSolvers.h` offers
   `setRestitution( true )`: an impacting contact (pre-step normal approach faster than
-  `max( setRestitutionThreshold(), 2 |g| dt )`) then gets the Newton impact law
-  `gdot_n+ >= -e gdot_n-` as its normal target, with `e` the pairwise coefficient of
-  restitution of the two materials (`Material::getRestitution( m1, m2 )`); the
-  Coulomb bound uses the larger normal impulse, so spin and tangential velocity
-  exchange at the bounce like in a rigid-body impact. Resting contacts are excluded
-  by the threshold. Off by default. Tested by `tests/interface/pe_hcsits_restitution_test.cpp`
+  `max( setRestitutionThreshold(), 2 |g| dt )`) is then bounced with the Newton impact law
+  `gdot_n+ >= -e gdot_n-`, with `e` the pairwise coefficient of restitution of the two
+  materials (`Material::getRestitution( m1, m2 )`); the Coulomb bound uses the full normal
+  impulse, so spin and tangential velocity exchange at the bounce like in a rigid-body
+  impact. Resting contacts are excluded by the threshold. Off by default. Tested by `tests/interface/pe_hcsits_restitution_test.cpp`
   (ITTF drop test, rest, sliding backspin impact); used by `tools/table_tennis/`.
-  `setRestitutionPostPass( true )` switches to the Box3D scheme: the relaxation stays
-  inelastic and `setRestitutionIterations()` (default 2) extra Gauss-Seidel sweeps add the
-  bounce afterwards, with the separating part of each contact's impulse capped at `e` times
+  Two schemes apply the law. The default is the Box3D scheme, `setRestitutionPostPass( true )`:
+  the relaxation stays inelastic and `setRestitutionIterations()` (default 4) extra
+  Gauss-Seidel sweeps add the bounce afterwards, with the separating part of each contact's impulse capped at `e` times
   its compression impulse (Newton as target, Poisson as ceiling) and only for contacts that
   actually carried compression impulse. Single-contact impacts give the same result; with
   several contacts of one body impacting in the same step the in-solve Newton target can
   return more kinetic energy than came in (a spinning box landing on two corners, tested),
   which the capped pass rules out. Unlike Box3D the pass re-relaxes the Coulomb friction of a
-  contact whose normal impulse it changed, so the `(1+e)` friction bound is kept.
+  contact whose normal impulse it changed, so the `(1+e)` friction bound is kept. Four sweeps
+  keep a box landing flat on four corners symmetric (two leave a spurious spin, tested).
+  `setRestitutionPostPass( false )` restores the original scheme: the Newton target
+  `-e gdot_n-` folded into the contact's target distance inside the relaxation, with the
+  positional terms dropped for the impacting step and no cap. `tools/impact_lab/` plays both
+  schemes back side by side on the multi-contact impacts (flat and spinning box, wedge, chain,
+  pile) and shows the pass's cap and clamp counters (`getRestitutionPassStats()`).
 
 Limitations:
 

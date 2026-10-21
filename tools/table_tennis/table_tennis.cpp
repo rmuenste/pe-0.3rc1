@@ -114,8 +114,8 @@ struct SolverParams {
    double erp           = 0.7;
    bool   splitImpulse  = true;
    bool   restitution   = true;
-   bool   restitutionPostPass = false;   // Box3D scheme: inelastic solve, then a capped bounce pass
-   int    restitutionIterations = 2;
+   bool   restitutionPostPass = true;    // solver default: inelastic solve, then a capped bounce pass (Box3D scheme); false = Newton target in the solve
+   int    restitutionIterations = 4;
 };
 
 //! Toss & serve mode: the ball is tossed straight up from the open palm and a bat on a
@@ -1716,7 +1716,7 @@ void drawPhysicsWindow()
       if( s.solver.restitution ) {
          ImGui::Checkbox( "capped post-pass (Box3D scheme)", &s.solver.restitutionPostPass );
          if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
-            ImGui::SetTooltip( "Off: the Newton target -e v_n is part of the contact solve.\nOn: the solve stays inelastic and a separate pass adds the bounce,\nwith the restitution impulse capped at e times the compression impulse (Poisson),\nso several contacts impacting at once cannot create energy. Single contacts are unchanged." );
+            ImGui::SetTooltip( "On (default): the solve stays inelastic and a separate pass adds the bounce,\nwith the restitution impulse capped at e times the compression impulse (Poisson),\nso several contacts impacting at once cannot create energy.\nOff: the Newton target -e v_n is part of the contact solve (the original scheme). Single contacts are unchanged." );
          if( s.solver.restitutionPostPass )
             ImGui::SliderInt( "post-pass sweeps", &s.solver.restitutionIterations, 1, 10 );
       }
@@ -1974,6 +1974,7 @@ int main( int argc, char** argv )
       else if( arg == "--mode-toss" ) s.mode = kModeToss;
       else if( arg == "--mode-receive" ) s.mode = kModeReceive;
       else if( arg == "--post-pass" ) s.solver.restitutionPostPass = true;
+      else if( arg == "--no-post-pass" ) s.solver.restitutionPostPass = false;   // the in-solve Newton target
       else if( arg == "--receive" ) wantReceive = true;
       else if( arg == "--receiver" && i + 3 < argc ) { wantReceive = true; s.receiver.tilt = num( i ); s.receiver.yaw = num( i ); s.receiver.riseFraction = num( i ); }
       else if( arg == "--receiver-pos" && i + 3 < argc ) { wantReceive = true; s.receiver.autoPlace = false; for( int k = 0; k < 3; ++k ) s.receiver.pos[k] = num( i ); }
@@ -2005,7 +2006,7 @@ int main( int argc, char** argv )
       else if( arg == "--no-magnus" ) s.aero.magnus = false;
       else if( arg == "--quiet" )     quiet = true;
       else {
-         std::fprintf( stderr, "usage: %s [--smoke] [--screenshot <file.png> [--at T] [--preset k] [--top] [--mode-toss | --mode-receive]] [--post-pass] [--toss ...] [--serve vx vy vz wx wy wz [--pos x y z] [--cor e] [--mu m] [--shell t_m] [--mass kg] [--dt s] [--time T] [--lift k] [--cd c] [--no-drag] [--no-magnus] [--dump file.csv] [--quiet]] [--receive] [--receiver tilt yaw riseFraction] [--receiver-pos x y z]\n", argv[0] );
+         std::fprintf( stderr, "usage: %s [--smoke] [--screenshot <file.png> [--at T] [--preset k] [--top] [--mode-toss | --mode-receive]] [--post-pass | --no-post-pass] [--toss ...] [--serve vx vy vz wx wy wz [--pos x y z] [--cor e] [--mu m] [--shell t_m] [--mass kg] [--dt s] [--time T] [--lift k] [--cd c] [--no-drag] [--no-magnus] [--dump file.csv] [--quiet]] [--receive] [--receiver tilt yaw riseFraction] [--receiver-pos x y z]\n", argv[0] );
          return EXIT_FAILURE;
       }
    }

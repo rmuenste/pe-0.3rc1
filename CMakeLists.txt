@@ -93,6 +93,11 @@ option(PE_BUILD_CONTACT_VIEWER "Build the interactive contact viewer tool" OFF)
 # HardContactSemiImplicitTimesteppingSolvers solver (PE_CONSTRAINT_SOLVER) for restitution.
 option(PE_BUILD_TABLE_TENNIS_DEMO "Build the interactive table tennis demo" OFF)
 
+# Interactive Polyscope impact lab (tools/impact_lab): the in-solve Newton target and the capped
+# restitution post-pass of HardContactSemiImplicitTimesteppingSolvers side by side on impacts
+# with several contacts (flat and spinning box landings, wedge, chain, pile). Same dependencies.
+option(PE_BUILD_IMPACT_LAB "Build the interactive restitution impact lab" OFF)
+
 # Option to enable/disable accelerated point query using HashGrid spatial hashing
 # NOTE: the option is PE_-namespaced, but the compile define it sets
 # (USE_ACCELERATED_POINT_QUERY) is kept unprefixed because the C++ sources test it.
@@ -827,6 +832,16 @@ endif()
 #==================================================================================================
 if( PE_BUILD_TABLE_TENNIS_DEMO )
    add_subdirectory( tools/table_tennis )
+endif()
+
+
+#==================================================================================================
+#
+# Interactive restitution impact lab
+#
+#==================================================================================================
+if( PE_BUILD_IMPACT_LAB )
+   add_subdirectory( tools/impact_lab )
 endif()
 
 

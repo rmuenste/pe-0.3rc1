@@ -1,8 +1,8 @@
 //=================================================================================================
 /*!
  *  \file tests/interface/pe_hcsits_restitution_test.cpp
- *  \brief Newton restitution of HardContactSemiImplicitTimesteppingSolvers (setRestitution())
- *         and its capped post-pass variant (setRestitutionPostPass()).
+ *  \brief Restitution of HardContactSemiImplicitTimesteppingSolvers (setRestitution()): the
+ *         capped post-pass default and the in-solve Newton target (setRestitutionPostPass( false )).
  *
  *  With the switch off every contact is inelastic: a dropped sphere stops dead. With it on, an
  *  impacting contact gets the Newton impact law gdot_n^+ = -e gdot_n^- as its normal target, with
@@ -45,7 +45,18 @@ template< typename T, typename = void > struct HasRestitution : std::false_type 
 template< typename T > struct HasRestitution< T, std::void_t< decltype( std::declval<T&>().setRestitution( true ) ) > > : std::true_type {};
 typedef std::remove_reference<decltype( *theCollisionSystem() )>::type CollisionSystemType;
 
-template< typename Handle > void applySwitches( Handle& cs, bool restitution, bool split, bool postPass = false )
+// The factory defaults of the restitution switch: capped post-pass with four sweeps.
+template< typename Handle > bool defaultIsCappedPostPass( Handle& cs, size_t& sweeps )
+{
+   typedef typename std::remove_reference<decltype( *cs )>::type CS;
+   if constexpr ( HasRestitution<CS>::value ) {
+      sweeps = cs->getRestitutionIterations();
+      return cs->getRestitutionPostPass();
+   }
+   else { (void)cs; sweeps = 0; return false; }
+}
+
+template< typename Handle > void applySwitches( Handle& cs, bool restitution, bool split, bool postPass )
 {
    typedef typename std::remove_reference<decltype( *cs )>::type CS;
    if constexpr ( HasRestitution<CS>::value ) {
@@ -125,10 +136,20 @@ int main()
    CollisionSystemID cs = theCollisionSystem();
    char what[256];
 
-   // 1. ITTF drop test, restitution on, split impulse off and on.
+   // 0. Factory defaults: restitution bounces through the capped post-pass with four sweeps
+   //    (setRestitutionPostPass( false ) restores the in-solve Newton target).
+   {
+      size_t sweeps( 0 );
+      const bool postPass( defaultIsCappedPostPass( cs, sweeps ) );
+      std::printf( "defaults: post-pass %s, %zu sweeps\n", postPass ? "on" : "off", sweeps );
+      expect( postPass && sweeps == 4, "defaults: capped post-pass with four sweeps" );
+   }
+
+   // 1. ITTF drop test with the in-solve Newton target (the original scheme, the reference for
+   //    the post-pass cases below), split impulse off and on.
    const real h0( 0.305 ), e( 0.9 );
    for( int split = 0; split < 2; ++split ) {
-      applySwitches( cs, true, split == 1 );
+      applySwitches( cs, true, split == 1, false );
       Scene s = build( e, real(0.3), Vec3( 0, 0, h0 + kRadius ), Vec3(), Vec3() );
       const real apex( firstReboundApex( s.ball, real(1e-4), 20000 ) );
       const real expected( e * e * h0 );
@@ -142,10 +163,10 @@ int main()
    //    push-out of the one-step penetration (erp * |v_z| dt / dt = 0.7 |v_z|) is an artificial
    //    rebound of about 0.1 m (printed for information, not asserted; see the solver comment).
    {
-      applySwitches( cs, false, false );
+      applySwitches( cs, false, false, false );
       Scene s0 = build( e, real(0.3), Vec3( 0, 0, h0 + kRadius ), Vec3(), Vec3() );
       const real apexBaumgarte( firstReboundApex( s0.ball, real(1e-4), 20000 ) );
-      applySwitches( cs, false, true );
+      applySwitches( cs, false, true, false );
       Scene s = build( e, real(0.3), Vec3( 0, 0, h0 + kRadius ), Vec3(), Vec3() );
       const real apex( firstReboundApex( s.ball, real(1e-4), 20000 ) );
       std::printf( "drop test, restitution off: rebound apex %.4f m (split impulse), %.4f m (Baumgarte artifact)\n",
@@ -155,7 +176,7 @@ int main()
 
    // 3. Rest: no micro-bounces.
    {
-      applySwitches( cs, true, false );
+      applySwitches( cs, true, false, false );
       Scene s = build( e, real(0.3), Vec3( 0, 0, kRadius ), Vec3(), Vec3() );
       real maxVz( 0 ), maxDev( 0 );
       for( int i = 0; i < 1000; ++i ) {
@@ -169,7 +190,7 @@ int main()
 
    // 4. Sliding backspin impact.
    {
-      applySwitches( cs, true, true );
+      applySwitches( cs, true, true, false );
       const real mu( 0.3 ), vx( 1 ), vz( -3 ), w( -400 );
       Scene s = build( e, mu, Vec3( 0, 0, kRadius + real(0.002) ), Vec3( vx, 0, vz ), Vec3( 0, w, 0 ) );
       bool bounced = false;
@@ -192,15 +213,19 @@ int main()
       expect( v[0] < 0, "backspin impact: the horizontal velocity reverses" );
    }
 
-   // 5. The capped post-pass (Box3D scheme) on single contacts: same drop apex, same rest, same
-   //    sliding backspin impact as the in-solve Newton target.
+   // 5. The capped post-pass (Box3D scheme, the default) on single contacts: same drop apex with
+   //    split impulse on and off, same rest, same sliding backspin impact as the in-solve target.
    {
+      for( int split = 0; split < 2; ++split ) {
+         applySwitches( cs, true, split == 1, true );
+         Scene s = build( e, real(0.3), Vec3( 0, 0, h0 + kRadius ), Vec3(), Vec3() );
+         const real apex( firstReboundApex( s.ball, real(1e-4), 20000 ) );
+         std::printf( "post-pass drop test, split %s: rebound apex %.4f m (expected %.4f)\n", split ? "on " : "off",
+                      static_cast<double>( apex ), static_cast<double>( e * e * h0 ) );
+         std::snprintf( what, sizeof( what ), "post-pass (split %s): rebound apex within 3%% of e^2 h0", split ? "on" : "off" );
+         expect( std::fabs( apex - e * e * h0 ) < real(0.03) * e * e * h0, what );
+      }
       applySwitches( cs, true, true, true );
-      Scene s = build( e, real(0.3), Vec3( 0, 0, h0 + kRadius ), Vec3(), Vec3() );
-      const real apex( firstReboundApex( s.ball, real(1e-4), 20000 ) );
-      std::printf( "post-pass drop test: rebound apex %.4f m (expected %.4f)\n",
-                   static_cast<double>( apex ), static_cast<double>( e * e * h0 ) );
-      expect( std::fabs( apex - e * e * h0 ) < real(0.03) * e * e * h0, "post-pass: rebound apex within 3% of e^2 h0" );
 
       Scene r = build( e, real(0.3), Vec3( 0, 0, kRadius ), Vec3(), Vec3() );
       real maxVz( 0 );
@@ -229,7 +254,36 @@ int main()
       expect( std::fabs( v[2] - vzExpected ) < real(0.1) * vzExpected, "post-pass backspin impact: v_z' = e |v_z| within 10%" );
    }
 
-   // 6. Two simultaneous contacts: a flat box with spin about a horizontal axis lands on its
+   // 6. Flat landing: a box lands exactly flat on its four corners without spin, e = 0.8. It must
+   //    come up at e |v_z| with no rotation. The capped pass stops after a fixed number of sweeps,
+   //    and with too few the corners swept first take more of the bounce (a visible spurious
+   //    spin with two sweeps); four sweeps, the default, keep the landing symmetric.
+   for( int postPass = 0; postPass < 2; ++postPass ) {
+      applySwitches( cs, true, true, postPass == 1 );
+      WorldID world = theWorld();
+      world->clear();
+      world->setGravity( 0, 0, -kG );
+      MaterialID mat = material();
+      const real eFlat( 0.8 );
+      Material::setRestitution( mat, mat, eFlat );
+      Material::setStaticFriction( mat, mat, real(0) );
+      Material::setDynamicFriction( mat, mat, real(0) );
+      createPlane( 1, 0, 0, 1, 0, mat );
+      const Vec3 lengths( real(0.4), real(0.2), real(0.1) );
+      BoxID box = createBox( 2, Vec3( 0, 0, real(0.5) * lengths[2] - real(1e-6) ), lengths, mat );
+      box->setLinearVel( Vec3( 0, 0, real(-1) ) );
+      world->simulationStep( real(1e-4) );
+      const Vec3 v1( box->getLinearVel() ), w1( box->getAngularVel() );
+      std::printf( "flat landing, %s: v_z' = %.4f (expected %.4f), |omega'| = %.4f rad/s\n",
+                   postPass ? "capped post-pass  " : "Newton in the solve",
+                   static_cast<double>( v1[2] ), static_cast<double>( eFlat ), static_cast<double>( w1.length() ) );
+      std::snprintf( what, sizeof( what ), "flat landing (%s): v_z' = e |v_z| within 2%%", postPass ? "post-pass" : "in-solve" );
+      expect( std::fabs( v1[2] - eFlat ) < real(0.02) * eFlat, what );
+      std::snprintf( what, sizeof( what ), "flat landing (%s): no spurious spin (|omega'| < 0.01 rad/s)", postPass ? "post-pass" : "in-solve" );
+      expect( w1.length() < real(0.01), what );
+   }
+
+   // 7. Two simultaneous contacts: a flat box with spin about a horizontal axis lands on its
    //    four corners. The leading edge impacts, the trailing edge is separating but its
    //    constraint still takes part in the solve. Newton's law in the sweep then returns more
    //    kinetic energy than came in (e = 1); the capped post-pass cannot gain energy.
@@ -268,7 +322,7 @@ int main()
       }
    }
 
-   applySwitches( cs, false, false, false );
+   applySwitches( cs, false, false, true );
    if( failures == 0 ) std::printf( "pe_hcsits_restitution_test: all checks passed\n" );
    else std::printf( "pe_hcsits_restitution_test: %d check(s) failed\n", failures );
    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
