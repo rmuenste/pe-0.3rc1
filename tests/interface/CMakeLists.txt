@@ -663,6 +663,22 @@ set_tests_properties(pe-hcsits-restitution PROPERTIES
   TIMEOUT 120
 )
 
+# Static against dynamic coefficient of friction (Contact.cpp): a sliding contact must take the
+# dynamic coefficient, a resting one the static coefficient. Box sliding on a plane, box resting
+# on and sliding down an incline whose slope lies between the two coefficients, box on a fixed box.
+add_executable(pe_contact_friction_coefficient_test
+  pe_contact_friction_coefficient_test.cpp
+)
+target_link_libraries(pe_contact_friction_coefficient_test PRIVATE pe_static_lubstage_plain)
+add_test(
+  NAME pe-contact-friction-coefficient
+  COMMAND pe_contact_friction_coefficient_test
+)
+set_tests_properties(pe-contact-friction-coefficient PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 120
+)
+
 # HashGrids::getBodiesNearPoint must also return bodies added since the last findContacts()
 # (bodiesToAdd_), both with the grid inactive and active, so that FBM point queries see a
 # particle inserted between simulation steps. Serial, no MPI.

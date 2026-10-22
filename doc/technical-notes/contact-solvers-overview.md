@@ -63,6 +63,19 @@ Limitations:
 
 - Results depend on iteration count and relaxation parameters.
 - Runtime scales with contacts times iterations.
+- The default relaxation model, `ApproximateInelasticCoulombContactByDecoupling`, relaxes the
+  normal and the tangential components of a sliding contact one after the other and
+  under-delivers the Coulomb friction of a body on several contacts: a box sliding on its four
+  corners decelerates with 0.90 mu g instead of mu g (measured in
+  `tests/interface/pe_contact_friction_coefficient_test.cpp`; thin boxes lose more, tall ones
+  less). `InelasticCoulombContactByDecoupling` and the orthogonal-projection and
+  maximum-dissipation models give mu g to four digits. Set the model with
+  `setRelaxationModel()` when the sliding friction has to be quantitative.
+- Static against dynamic coefficient: `Contact.cpp` selects the static coefficient of the
+  material pair below `frictionThreshold` (1e-8) of tangential relative speed and the dynamic
+  one above it, so a sliding contact always gets the dynamic coefficient and a sticking one the
+  static coefficient; there is no velocity-dependent transition between them. (Before the fix of
+  the tangential speed in `Contact.cpp` every contact got the static coefficient.)
 - It is a hard-contact solver, not a fluid-coupled solver.
 
 If a "default-like" baseline solver is needed for hard-contact-only work, this
