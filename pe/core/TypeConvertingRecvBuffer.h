@@ -110,7 +110,7 @@ protected:
    /*!\name Member variables */
    //@{
    unsigned int fpSize_;
-   unsigned int formatMinor_ = 3;   //!< Format of the stream; the current writer format by default.
+   unsigned int formatMinor_ = 4;   //!< Format of the stream; the current writer format by default.
    using RecvBuffer<E>::cur_;
    using RecvBuffer<E>::end_;
    //@}

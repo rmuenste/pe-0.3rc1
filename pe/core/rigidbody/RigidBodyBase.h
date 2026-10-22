@@ -122,6 +122,8 @@ protected:
    /*!\name Sleep mode functions */
    //@{
    inline void calcMotion();
+   inline bool drivesMotion() const;
+   inline void wakeByContact();
    //@}
    //**********************************************************************************************
 
@@ -147,6 +149,10 @@ protected:
                           in a Union, the relative position is 0. */
    mutable Vec3 v_;  //!< The linear velocity of this rigid body.
    mutable Vec3 w_;  //!< Angular velocity of this rigid body.
+   Vec3 surfaceVel_; //!< Surface velocity of this rigid body in its own body frame.
+                     /*!< A velocity of the surface material relative to the body, like the
+                          belt of a conveyor whose frame stands still. It enters the friction
+                          of the contacts of the body only (see RigidBody::setRelSurfaceVel()). */
    Vec3 force_;      //!< Total force (external+contact) acting in the body's center of mass.
    Vec3 torque_;     //!< Total torque (external+contact) acting in the body's center of mass.
    Vec3 prevFluidForce_;   //!< Previous timestep's fluid force (for mean-force stabilization).
@@ -221,12 +227,50 @@ inline void RigidBodyBase::calcMotion()
    // Calculating the current motion of the rigid body (recency-weighted average)
    motion_ = ( sleepBias * motion_ ) + ( real(1) - sleepBias )*( v_.sqrLength() + w_.sqrLength() );
 
-   // Activating the sleep mode of the rigid body
-   if( motion_ < sleepThreshold ) {
+   // Activating the sleep mode of the rigid body. A body that drives the motion of others (a
+   // fixed body with a prescribed velocity or a body with a surface velocity) never sleeps:
+   // sleeping would reset, i.e. freeze, the prescribed velocity.
+   if( motion_ < sleepThreshold && !drivesMotion() ) {
       awake_ = false;
       v_.reset();
       w_.reset();
    }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether the rigid body drives the motion of the bodies it touches.
+ *
+ * \return \a true for a fixed body with a non-zero (prescribed) linear or angular velocity and
+ *         for a body with a non-zero surface velocity, \a false otherwise.
+ *
+ * Such a body never falls asleep (see calcMotion()), and the hard-contact collision systems wake
+ * every body in contact with it (see wakeByContact()).
+ */
+inline bool RigidBodyBase::drivesMotion() const
+{
+   return ( fixed_ && ( !isDefault( v_ ) || !isDefault( w_ ) ) ) || !isDefault( surfaceVel_ );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Waking the rigid body because it touches a body that drives its motion.
+ *
+ * \return void
+ *
+ * Like wake(), but the motion is also raised to twice the sleep threshold, so that the body
+ * cannot fall asleep again at the end of the current time step, even if it moves slower than
+ * the threshold (a sleeping body loses its velocity). A body resting on a slowly moving platform
+ * is therefore kept awake for as long as the contact exists. Without sleep mode
+ * (pe::sleepThreshold = 0) this is the same as wake().
+ */
+inline void RigidBodyBase::wakeByContact()
+{
+   awake_ = true;
+   if( motion_ < real(2) * sleepThreshold )
+      motion_ = real(2) * sleepThreshold;
 }
 //*************************************************************************************************
 

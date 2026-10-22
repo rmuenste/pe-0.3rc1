@@ -33,7 +33,9 @@
 //*************************************************************************************************
 
 #include <algorithm>
+#include <iostream>
 #include <ostream>
+#include <type_traits>
 #include <pe/core/CollisionSystem.h>
 #include <pe/core/ExclusiveSection.h>
 #include <pe/core/attachable/ForceGenerator.h>
@@ -50,6 +52,57 @@
 
 
 namespace pe {
+
+//=================================================================================================
+//
+//  UTILITY FUNCTIONS
+//
+//=================================================================================================
+
+namespace {
+
+//*************************************************************************************************
+/*!\brief Whether a collision system honours the surface velocities of the rigid bodies.
+ *
+ * Detects the opt-in marker \c static \c constexpr \c bool \c hasSurfaceVelocity of the collision
+ * system specializations (HardContactSemiImplicitTimesteppingSolvers, HardContactAndFluid,
+ * HardContactEulerLagrange).
+ */
+template< typename CS, typename = void >
+struct HasSurfaceVelocity : public std::false_type
+{};
+
+template< typename CS >
+struct HasSurfaceVelocity< CS, std::void_t<decltype( CS::hasSurfaceVelocity )> >
+   : public std::integral_constant<bool, CS::hasSurfaceVelocity>
+{};
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Warns once if a surface velocity is set but the configured solver ignores it.
+ *
+ * \return void
+ */
+void checkSurfaceVelocitySupport()
+{
+   static bool warned( false );
+   if( warned || HasSurfaceVelocity< CollisionSystem<Config> >::value || !RigidBody::isSurfaceVelUsed() )
+      return;
+   warned = true;
+
+   std::cerr << pe_YELLOW << "\n **** WARNING: a rigid body carries a surface velocity (RigidBody::setRelSurfaceVel()),"
+             << " but the configured collision response is not marked as honouring surface velocities"
+             << " (hasSurfaceVelocity); they are likely ignored (see"
+             << " doc/technical-notes/contact-solvers-overview.md) ****\n" << pe_OLDCOLOR;
+   pe_LOG_WARNING_SECTION( log ) {
+      log << "Surface velocities are set, but the configured collision response does not support them.";
+   }
+}
+//*************************************************************************************************
+
+} // namespace
+
 
 //=================================================================================================
 //
@@ -345,6 +398,9 @@ void World::simulationStep( real timestep )
    pe_LOG_PROGRESS_SECTION( log ) {
       log << "Start of simulation step " << TimeStep::step_ << " (step size=" << TimeStep::size_ << ")";
    }
+
+   // Surface velocities need a collision system that honours them
+   checkSurfaceVelocitySupport();
 
    // Triggering the active force generators
    ForceGenerator::applyForces();

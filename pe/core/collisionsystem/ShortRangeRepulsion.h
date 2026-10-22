@@ -1909,6 +1909,7 @@ void CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::synchronize()
                      obj->setCollisionEnabled( subobjparam.collisionEnabled_ );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
 
                      pe_LOG_DEBUG_SECTION( log ) {
@@ -1922,6 +1923,7 @@ void CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::synchronize()
                      obj = instantiateBox( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.lengths_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
 
                      pe_LOG_DEBUG_SECTION( log ) {
@@ -1935,6 +1937,7 @@ void CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::synchronize()
                      obj = instantiateCapsule( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
 
                      pe_LOG_DEBUG_SECTION( log ) {
@@ -1948,6 +1951,7 @@ void CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::synchronize()
                      obj = instantiateCylinder( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
 
                      pe_LOG_DEBUG_SECTION( log ) {
@@ -1964,6 +1968,7 @@ void CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::synchronize()
                      obj = instantiatePlane( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.material_, subobjparam.visible_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
 
                      pe_LOG_DEBUG_SECTION( log ) {
@@ -1981,6 +1986,7 @@ void CollisionSystem< C<CD,FD,BG,response::ShortRangeRepulsion> >::synchronize()
                      obj = instantiateUnion( subobjparam, process->getOffset(), true, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
 
                      pe_LOG_DEBUG_SECTION( log ) {

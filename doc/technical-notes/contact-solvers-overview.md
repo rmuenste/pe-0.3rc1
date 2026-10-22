@@ -74,13 +74,58 @@ Limitations:
 - Static against dynamic coefficient: `Contact.cpp` selects the static coefficient of the
   material pair below `frictionThreshold` (1e-8) of tangential relative speed and the dynamic
   one above it, so a sliding contact always gets the dynamic coefficient and a sticking one the
-  static coefficient; there is no velocity-dependent transition between them. (Before the fix of
-  the tangential speed in `Contact.cpp` every contact got the static coefficient.)
+  static coefficient; there is no velocity-dependent transition between them. The tangential
+  speed includes the relative surface velocity (see
+  [Kinematic Bodies And Surface Velocities](#kinematic-bodies-and-surface-velocities)): a box
+  riding a belt at belt speed sticks, a box held on a running belt slides. (Before the fix of the
+  tangential speed in `Contact.cpp` every contact got the static coefficient.)
 - It is a hard-contact solver, not a fluid-coupled solver.
 
 If a "default-like" baseline solver is needed for hard-contact-only work, this
 is the oldest and most robust family to look at. The actual solver is still the
 one selected by the user in `pe/config/Collisions.h` before compilation.
+
+## Kinematic Bodies And Surface Velocities
+
+A fixed body with a prescribed velocity is pe's kinematic body, and a surface velocity
+(`RigidBody::setRelSurfaceVel()`) is a conveyor belt that does not move; semantics, API and the
+`PE_MOBILE_INFINITE` build option are in
+[rigid-body-documentation.md](rigid-body-documentation.md#kinematic-moving-fixed-bodies). What the
+response solvers do with them:
+
+| Solver | moving fixed body | surface velocity | wakes bodies touching a driver |
+|---|---|---|---|
+| `HardContactSemiImplicitTimesteppingSolvers` | integrated with its own `v_`/`w_`, no gravity, no damping | friction rows of all relaxation models and of the restitution post-pass | yes |
+| `HardContactAndFluid` | same | friction rows of all relaxation models | yes |
+| `HardContactEulerLagrange` | same | friction rows of all relaxation models | yes |
+| `DEMSolver`, `DEMSolverObsolete` | solver-specific | not marked as supported (warning); see below | - |
+| others (`ShortRangeRepulsion`, `FFDSolver`, the legacy friction solvers) | solver-specific | **not supported**: `World::simulationStep()` prints a one-time warning | - |
+
+How the surface velocity enters the hard-contact solvers: the contact stores the relative
+tangential surface velocity (body 1 minus body 2, already projected onto the tangent plane,
+`Contact::getSurfaceVel()`); the solver caches it per contact (`surfaceVel_`) and adds it to the
+relative contact velocity `gdot` of the friction relaxations
+(`relaxApproximateInelasticCoulombContactsByDecoupling`, `relaxInelasticCoulombContactsByDecoupling`,
+`relaxInelasticCoulombContactsByOrthogonalProjections`,
+`relaxInelasticGeneralizedMaximumDissipationContacts`, and the friction re-relaxation of the hcsits
+restitution post-pass). It is never added to the frictionless model, the split-impulse position
+solve or the restitution target, and its normal component is zero, so the normal constraint is
+unaffected (a frictionless box on a running belt stays exactly at rest, tested). The solvers mark
+the support with `static constexpr bool hasSurfaceVelocity = true;` next to their
+`ContactSolver` typedef. The DEM solvers take their tangential force from
+`Contact::getRelVel()`, which contains the surface velocity, so they should honour it, but the
+`DEMSolver` configuration does not compile on master (`ContactVector::addLubricationContact()`
+calls `Contact::setLubricationFlag()`, which its contact trait lacks; pre-existing), so this is
+unverified and they are not marked. `ShortRangeRepulsion` is frictionless, so a surface velocity could not do
+anything there; the warning says so instead of letting a conveyor silently stand still. The
+lubrication stage ignores surface velocities.
+
+The same three hard-contact systems skip a contact between two fixed bodies (the coarse
+detectors never create one; the `pe_INTERNAL_ASSERT` stays as a safety net), wake and hold awake a
+body that touches a moving fixed body or a surface velocity (with sleep mode compiled in), give
+sleeping bodies a zero velocity correction, and exempt fixed bodies from `World::setDamping()`.
+Tests: `tests/interface/pe_kinematic_body_test.cpp`, `tests/interface/pe_surface_velocity_test.cpp`
+(each against all three hard-contact pipelines).
 
 ## Lubrication (Runtime Add-On, Not A Solver Family)
 

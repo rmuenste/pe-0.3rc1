@@ -186,8 +186,9 @@ void BodyBinaryReader::readFile( const char* filename ) {
          if( magicNumber1 != 'P' || magicNumber2 != 'E' )
             throw std::runtime_error( "Invalid file format." );
 
-         // 0.2: before the sphere shell thickness (read back as solid spheres); 0.3: current.
-         if( fileFormatVersionMajor != 0 || ( fileFormatVersionMinor != 2 && fileFormatVersionMinor != 3 ) )
+         // 0.2: before the sphere shell thickness (read back as solid spheres); 0.3: before the
+         // surface velocity (read back as zero); 0.4: current.
+         if( fileFormatVersionMajor != 0 || fileFormatVersionMinor < 2 || fileFormatVersionMinor > 4 )
             throw std::runtime_error( "Unsupported file format version." );
          header_.setFormatMinor( fileFormatVersionMinor );
          buffer_.setFormatMinor( fileFormatVersionMinor );
@@ -612,6 +613,7 @@ UnionID BodyBinaryReader::instantiateUnion( const Union::Parameters& objparam, b
          if( reassignSystemID )
             subobjsid = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
          SphereID subobj = instantiateSphere( subobjsid, subobjparam.uid_, subobjparam.gpos_, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setShellThickness( subobjparam.shellThickness_ );
          subobj->setRemote( false );
          if( global ) subobj->setGlobal();
@@ -622,6 +624,7 @@ UnionID BodyBinaryReader::instantiateUnion( const Union::Parameters& objparam, b
          if( reassignSystemID )
             subobjsid = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
          BoxID subobj = instantiateBox( subobjsid, subobjparam.uid_, subobjparam.gpos_, subobjparam.rpos_, subobjparam.q_, subobjparam.lengths_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( false );
          if( global ) subobj->setGlobal();
       }
@@ -631,6 +634,7 @@ UnionID BodyBinaryReader::instantiateUnion( const Union::Parameters& objparam, b
          if( reassignSystemID )
             subobjsid = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
          CapsuleID subobj = instantiateCapsule( subobjsid, subobjparam.uid_, subobjparam.gpos_, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( false );
          if( global ) subobj->setGlobal();
       }
@@ -640,12 +644,14 @@ UnionID BodyBinaryReader::instantiateUnion( const Union::Parameters& objparam, b
          if( reassignSystemID )
             subobjsid = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
          CylinderID subobj = instantiateCylinder( subobjsid, subobjparam.uid_, subobjparam.gpos_, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( false );
          if( global ) subobj->setGlobal();
       }
       for( std::vector<Union::Parameters>::const_iterator it = objparam.unions_.begin(); it != objparam.unions_.end(); ++it ) {
          const Union::Parameters& subobjparam = *it;
          UnionID subobj = instantiateUnion( subobjparam, global, reassignSystemID );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( false );
       }
       for( std::vector<Plane::Parameters>::const_iterator it = objparam.planes_.begin(); it != objparam.planes_.end(); ++it ) {
@@ -654,6 +660,7 @@ UnionID BodyBinaryReader::instantiateUnion( const Union::Parameters& objparam, b
          if( reassignSystemID )
             subobjsid = global ? UniqueID<RigidBody>::createGlobal() : UniqueID<RigidBody>::create();
          PlaneID subobj = instantiatePlane( subobjsid, subobjparam.uid_, subobjparam.gpos_, subobjparam.rpos_, subobjparam.q_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( false );
          if( global ) subobj->setGlobal();
       }
@@ -696,6 +703,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                obj->setCollisionEnabled( objparam.collisionEnabled_ );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                if( global ) obj->setGlobal();
                manager->add( obj );
@@ -714,6 +722,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                obj->setCollisionEnabled( objparam.collisionEnabled_ );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                if( global ) obj->setGlobal();
                manager->add( obj );
@@ -729,6 +738,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                BoxID obj = instantiateBox( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.lengths_, objparam.material_, objparam.visible_, objparam.fixed_, false );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                if( global ) obj->setGlobal();
                manager->add( obj );
@@ -744,6 +754,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                CapsuleID obj = instantiateCapsule( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.radius_, objparam.length_, objparam.material_, objparam.visible_, objparam.fixed_, false );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                if( global ) obj->setGlobal();
                manager->add( obj );
@@ -759,6 +770,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                CylinderID obj = instantiateCylinder( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.radius_, objparam.length_, objparam.material_, objparam.visible_, objparam.fixed_, false );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                if( global ) obj->setGlobal();
                manager->add( obj );
@@ -774,6 +786,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                TriangleMeshID obj = instantiateTriangleMesh( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.vertices_, objparam.faceIndices_, objparam.material_, objparam.visible_, objparam.fixed_, false );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
 
 #ifdef PE_USE_CGAL
@@ -819,6 +832,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                UnionID obj = instantiateUnion( objparam, global, reassignSystemID );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                manager->add( obj );
             }
@@ -836,6 +850,7 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                PlaneID obj = instantiatePlane( objparam.sid_, objparam.uid_, objparam.gpos_, objparam.rpos_, objparam.q_, objparam.material_, objparam.visible_, false );
                obj->setLinearVel( objparam.v_ );
                obj->setAngularVel( objparam.w_ );
+               obj->setRelSurfaceVel( objparam.surfaceVel_ );
                obj->setRemote( false );
                if( global ) obj->setGlobal();
                manager->add( obj );

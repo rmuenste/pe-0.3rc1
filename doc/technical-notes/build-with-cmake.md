@@ -73,6 +73,15 @@ The static library is written to `build/lib/libpe.a`.
 - `-DPE_USE_OPENCL=ON|OFF`: Enable OpenCL support, default `OFF`.
 - `-DPE_USE_IRRLICHT=ON|OFF`: Enable Irrlicht visualization, default `OFF`.
 - `-DPE_USE_JSON=ON|OFF`: Enable JSON support, default `ON`.
+- `-DPE_MOBILE_INFINITE=ON|OFF`: Mobile infinite bodies, default `ON` for every compiler. Defines
+  `MOBILE_INFINITE=1` (or `0`) for pe and all its users: a fixed body may carry a prescribed velocity
+  (a kinematic body, see [rigid-body-documentation.md](rigid-body-documentation.md#kinematic-moving-fixed-bodies)).
+  Before this option the macro was defined for GCC only, so Clang/Intel builds silently ignored the
+  velocity of fixed bodies. With `OFF` (the original pe semantics) `examples/shaker` exits with a
+  message and `conveyor --moving-belt` is skipped.
+- Sleep mode is compiled out (`pe::sleepThreshold = 0` in `pe/config/SleepMode.h`); to enable it
+  without editing the header pass `-DPE_PREPROCESSOR_FLAGS=-DPE_SLEEP_THRESHOLD=<threshold>`
+  (a threshold on the recency-averaged `v^2 + w^2` of a body).
 
 ## Building Specific Targets
 
@@ -106,7 +115,7 @@ For fixture layout, process isolation, CGAL-specific smoke coverage, and adding 
 
 ## Building Examples
 
-Examples are useful for reproductions and manual checks, but they are not the default build. Some examples may lag the current configured solver/API, so prefer building the specific example you need instead of treating `-DPE_BUILD_EXAMPLES=ON` as a required smoke test.
+Examples are useful for reproductions and manual checks, but they are not the default build. (Until 2026-10 the serial example list in `CMakeLists.txt` was walked with a double stride, so `chain`, `domino`, `nano` and `shaker` were never built; they are now.) Some examples may lag the current configured solver/API, so prefer building the specific example you need instead of treating `-DPE_BUILD_EXAMPLES=ON` as a required smoke test.
 
 ```bash
 cmake -S . -B build-examples -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DPE_LIBRARY_TYPE=STATIC -DPE_BUILD_EXAMPLES=ON

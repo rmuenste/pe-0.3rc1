@@ -11,8 +11,11 @@
  *   region reg block -0.5 0.5 -0.2 0.2 -0.2 0.35   five fixed Planes (floor + 4 side walls)
  *   fix bx mesh/surface meshes/box.stl             (box.stl is exactly this open box, 10 facets)
  *   fix cv mesh/surface meshes/conveyor.stl        fixed Box, top face at z = 0, x in [-0.1,0.5]
- *       surface_vel -4.5 0 0                       belt->setLinearVel(-4.5,0,0), position reset
- *                                                  every step so the belt stays in place
+ *       surface_vel -4.5 0 0                       belt->setSurfaceVel(-4.5,0,0): a surface
+ *                                                  velocity, used by the contact friction only;
+ *                                                  the belt does not move (--moving-belt: the old
+ *                                                  path, a fixed box moving with setLinearVel()
+ *                                                  and put back with setPosition() every step)
  *   fix inface mesh/surface insertion_face.stl     insertion volume x[0.3,0.45] y[-0.17,0.17]
  *       + insert/stream extrude_length 0.1           z[0.2,0.3] (face extruded 0.1 against the
  *                                                  insertion velocity), centres inside (all_in no)
@@ -39,6 +42,10 @@
  *  global bodies, the insertion draws identical candidates on every process and creates each
  *  particle on its owner. The thermo output is reduced over all processes. The run ends with a
  *  self check (particle count, container bounds, finite energies) that sets the exit code.
+ *
+ *  The thermo column vx_belt is the mean x velocity of the particles in the bottom layer on the
+ *  belt (centre above the belt, below 2 r_max); the summary averages it over the second half of
+ *  the run, to compare the surface-velocity belt with the --moving-belt one.
  */
 //=================================================================================================
 
@@ -63,6 +70,39 @@
 using namespace pe;
 using lp::Candidate;
 using lp::rout;
+
+
+//*************************************************************************************************
+/*!\brief Mean x velocity of the particles in the bottom layer on the belt, over all processes.
+ *
+ * \param world The simulation world.
+ * \param xmin, xmax The belt extent along x.
+ * \param zmax Upper bound of the centres of the bottom layer (the belt top is z = 0).
+ * \param count On return the number of particles in the layer.
+ * \return The mean x velocity (0 for an empty layer).
+ */
+static real beltLayerVelocity( WorldID world, real xmin, real xmax, real zmax, unsigned int& count )
+{
+   real sum[2] = { 0, 0 };
+   for( World::Bodies::CastIterator<Sphere> s=world->begin<Sphere>(); s!=world->end<Sphere>(); ++s ) {
+      if( s->isRemote() ) continue;
+      const Vec3& p( s->getPosition() );
+      if( p[0] < xmin || p[0] > xmax || p[2] < 0 || p[2] > zmax ) continue;
+      sum[0] += s->getLinearVel()[0];
+      sum[1] += 1;
+   }
+#if HAVE_MPI
+   if( MPISettings::size() > 1 ) {
+      real all[2];
+      MPI_Allreduce( sum, all, 2, MPITrait<real>::getType(), MPI_SUM, MPISettings::comm() );
+      sum[0] = all[0];
+      sum[1] = all[1];
+   }
+#endif
+   count = static_cast<unsigned int>( sum[1] + real(0.5) );
+   return count > 0 ? sum[0] / sum[1] : real(0);
+}
+//*************************************************************************************************
 
 typedef Configuration< pe_COARSE_COLLISION_DETECTOR, pe_FINE_COLLISION_DETECTOR, pe_BATCH_GENERATOR,
                        response::HardContactSemiImplicitTimesteppingSolvers >::Config IntendedConfig;
@@ -114,6 +154,7 @@ int main( int argc, char* argv[] )
    real friction( 0.5 );
    real erp( 0.5 );       // error reduction parameter; acts like a restitution of ~erp on impacts (RUNBOOK 6.20)
    bool splitImpulse( false );   // --split-impulse: the erp correction moves positions without adding momentum
+   bool movingBelt( false );     // --moving-belt: belt velocity as a moving fixed body (the old path)
    std::string outDir( "./paraview" );
    bool vtk( true );
    for( int i=1; i<argc; ++i ) {
@@ -124,12 +165,23 @@ int main( int argc, char* argv[] )
       else if( arg == "--erp" && i+1 < argc ) erp = std::atof( argv[++i] );
       else if( arg == "--tend" && i+1 < argc ) tEnd = std::atof( argv[++i] );
       else if( arg == "--split-impulse" ) splitImpulse = true;
+      else if( arg == "--moving-belt" ) movingBelt = true;
       else if( arg == "--help" || arg == "-h" ) {
-         rout() << "usage: conveyor [--friction <mu per material, default 0.5>] [--erp <0.5>] [--tend <1.4>] [--split-impulse] [--out <dir>] [--no-vtk]\n"
+         rout() << "usage: conveyor [--friction <mu per material, default 0.5>] [--erp <0.5>] [--tend <1.4>] [--split-impulse] [--moving-belt] [--out <dir>] [--no-vtk]\n"
+                << "  --moving-belt: belt as a fixed box moving with the belt velocity and put back every step\n"
+                << "                 (the path before surface velocities) instead of a belt surface velocity\n"
                 << "  runs serially or under MPI (mpiexec -n <p>): slab decomposition along x\n";
          return 0;
       }
    }
+
+#if !MOBILE_INFINITE
+   if( movingBelt ) {
+      // A fixed body cannot carry a velocity in this build: the belt would silently stand still.
+      rout() << "conveyor: --moving-belt needs mobile infinite bodies (configure pe with -DPE_MOBILE_INFINITE=ON)\n";
+      return lp::kSkipExitCode;
+   }
+#endif
 
    setSeed( 32452867 );   // same seed as the LIGGGHTS insert/stream command (and on every process)
 
@@ -193,7 +245,10 @@ int main( int argc, char* argv[] )
    {
       belt = createBox( ++id, beltCenter, beltLengths, wall );
       belt->setFixed( true );
-      belt->setLinearVel( beltVel );    // surface velocity (MOBILE_INFINITE allows this on fixed bodies)
+      if( movingBelt )
+         belt->setLinearVel( beltVel );   // moving fixed body (needs MOBILE_INFINITE), reset every step
+      else
+         belt->setSurfaceVel( beltVel );  // surface velocity: friction only, the belt stays in place
    }
 
    // Insertion volume: insertion_face.stl (z = 0.2, x in [0.3,0.45], y in [-0.17,0.17])
@@ -214,7 +269,8 @@ int main( int argc, char* argv[] )
              << " insertion            = " << massPerIns << " kg every " << tInsert
              << " s until " << massTotal << " kg\n"
              << " number fraction r=" << radii[0] << " = " << numFrac0 << "\n"
-             << " belt velocity        = " << beltVel << " m/s\n"
+             << " belt velocity        = " << beltVel << " m/s ("
+             << ( movingBelt ? "moving fixed box, reset every step" : "surface velocity" ) << ")\n"
              << " friction per material= " << friction << "  (pair value " << 2*friction << "), erp " << erp
              << ( splitImpulse ? " (split impulse)" : "" ) << "\n"
              << " vtk output           = " << ( vtk ? "every " : "disabled" )
@@ -232,8 +288,12 @@ int main( int argc, char* argv[] )
    timer.start();
 
    rout() << std::setw(8) << "step" << std::setw(10) << "time" << std::setw(8) << "atoms"
-          << std::setw(14) << "mass_ins" << std::setw(14) << "ke" << std::setw(14) << "vmax" << "\n";
+          << std::setw(14) << "mass_ins" << std::setw(14) << "ke" << std::setw(14) << "vmax"
+          << std::setw(10) << "n_belt" << std::setw(12) << "vx_belt" << "\n";
    lp::Thermo th;
+   const real beltLayerTop( 2.0 * radii[1] );   // centres of the bottom layer on the belt
+   real vxBeltSum( 0 );                         // time average over the second half of the run
+   unsigned int vxBeltSamples( 0 );
 
    for( unsigned int step=0; step<steps; ++step )
    {
@@ -289,21 +349,30 @@ int main( int argc, char* argv[] )
       //--- one hard-contact time step -----------------------------------------------------------
       world->simulationStep( dt );
 
-      // The belt is a fixed body with a prescribed surface velocity. pe integrates the position
-      // of fixed bodies with their velocity, so put the belt back where it belongs and keep the
-      // surface velocity for the next contact solve.
-      belt->setPosition( beltCenter );
-      belt->setLinearVel( beltVel );
+      // --moving-belt: the belt is a fixed body moving with the belt velocity. pe integrates the
+      // position of fixed bodies with their velocity, so put the belt back where it belongs and
+      // keep the velocity for the next contact solve. (A surface velocity needs neither.)
+      if( movingBelt ) {
+         belt->setPosition( beltCenter );
+         belt->setLinearVel( beltVel );
+      }
 
       //--- screen output (like thermo) ----------------------------------------------------------
       if( (step+1) % thermoSteps == 0 || step+1 == steps )
       {
          th.measure( world );   // reduced over all processes
+         unsigned int nBelt( 0 );
+         const real vxBelt( beltLayerVelocity( world, -0.1, 0.5, beltLayerTop, nBelt ) );
+         if( (step+1)*dt > 0.5*tEnd && nBelt > 0 ) {
+            vxBeltSum += vxBelt;
+            ++vxBeltSamples;
+         }
          rout() << std::setw(8) << step+1 << std::setw(10) << std::fixed << std::setprecision(4) << (step+1)*dt
                 << std::setw(8) << th.n
                 << std::setw(14) << std::setprecision(4) << massInserted
                 << std::setw(14) << std::scientific << std::setprecision(5) << th.ke
-                << std::setw(14) << std::fixed << std::setprecision(4) << th.vmax << "\n" << std::flush;
+                << std::setw(14) << std::fixed << std::setprecision(4) << th.vmax
+                << std::setw(10) << nBelt << std::setw(12) << vxBelt << "\n" << std::flush;
       }
    }
 
@@ -318,6 +387,8 @@ int main( int argc, char* argv[] )
           << " mass inserted       = " << massInserted << " kg in " << nInsertions << " insertions\n"
           << " particle x range    = [" << th.lo[0] << ", " << th.hi[0] << "]\n"
           << " particle z range    = [" << th.zmin() << ", " << th.zmax() << "]\n"
+          << " belt x / belt layer vx (mean over t > " << 0.5*tEnd << " s) = " << belt->getPosition()[0] << " / "
+          << ( vxBeltSamples > 0 ? vxBeltSum / vxBeltSamples : real(0) ) << " m/s\n"
           << " wall-clock time     = " << timer.total() << " s for " << steps << " steps\n"
           << "--------------------------------------------------------------------------------\n";
 

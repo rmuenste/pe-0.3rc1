@@ -104,6 +104,7 @@ public:
       bool visible_, fixed_, collisionEnabled_;
       id_t sid_, uid_;
       Vec3 gpos_, rpos_, v_, w_;
+      Vec3 surfaceVel_;   // Surface velocity in the body frame (zero for checkpoints < 0.4)
       Quat q_;
    };
    //**********************************************************************************************
@@ -151,6 +152,9 @@ public:
    inline const Vec3&    getLinearVel()      const;
    inline const Vec3     getRelAngularVel()  const;
    inline const Vec3&    getAngularVel()     const;
+   inline const Vec3&    getRelSurfaceVel()  const;
+   inline const Vec3     getSurfaceVel()     const;
+   inline bool           hasSurfaceVel()     const;
    inline const Quat&    getQuaternion()     const;
    inline const Rot3&    getRotation()       const;
    inline real           getMass()           const;
@@ -201,6 +205,11 @@ public:
    inline void setLinearDofMask( const Vec3& mask );
    inline const Vec3& getLinearDofMask() const;
    inline void setAngularDofMask( const Vec3& mask );
+   inline void setRelSurfaceVel( real vx, real vy, real vz );
+   inline void setRelSurfaceVel( const Vec3& svel );
+   inline void setSurfaceVel   ( real vx, real vy, real vz );
+   inline void setSurfaceVel   ( const Vec3& svel );
+          void setTargetPose   ( const Vec3& gpos, const Quat& q, real dt );
    inline const Vec3& getAngularDofMask() const;
    //@}
    //**********************************************************************************************
@@ -330,6 +339,13 @@ public:
    //@}
    //**********************************************************************************************
 
+   //**Surface velocity functions*****************************************************************
+   /*!\name Surface velocity functions */
+   //@{
+   static inline bool isSurfaceVelUsed();
+   //@}
+   //**********************************************************************************************
+
    //**MPI functions*******************************************************************************
    /*!\name MPI functions */
    //@{
@@ -437,6 +453,8 @@ private:
    /*!\name Member variables */
    //@{
    Bodies superBodies_;   //!< All superordinate bodies containing this rigid body.
+
+   static bool surfaceVelUsed_;  //!< Whether a non-zero surface velocity was ever set on this process.
    //@}
    //**********************************************************************************************
 
@@ -815,6 +833,42 @@ inline const Vec3& RigidBody::getAngularVel() const
    if( hasSuperBody() )
       w_ = sb_->getAngularVel();
    return w_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the surface velocity of the rigid body in its own body frame.
+ *
+ * \return The surface velocity in the body frame (see setRelSurfaceVel()).
+ */
+inline const Vec3& RigidBody::getRelSurfaceVel() const
+{
+   return surfaceVel_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the surface velocity of the rigid body in the global world frame.
+ *
+ * \return The surface velocity in the world frame at the current orientation of the body.
+ */
+inline const Vec3 RigidBody::getSurfaceVel() const
+{
+   return R_ * surfaceVel_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether the rigid body has a non-zero surface velocity.
+ *
+ * \return \a true if a component of the surface velocity is non-zero, \a false otherwise.
+ */
+inline bool RigidBody::hasSurfaceVel() const
+{
+   return !isDefault( surfaceVel_ );
 }
 //*************************************************************************************************
 
@@ -1406,6 +1460,95 @@ inline void RigidBody::setAngularVel( const Vec3& avel )
       w_ = avel;
       wake();
    }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Setting the surface velocity of the rigid body in its own body frame.
+ *
+ * \param vx The x-component of the surface velocity in the body frame.
+ * \param vy The y-component of the surface velocity in the body frame.
+ * \param vz The z-component of the surface velocity in the body frame.
+ * \return void
+ *
+ * See setRelSurfaceVel( const Vec3& ).
+ */
+inline void RigidBody::setRelSurfaceVel( real vx, real vy, real vz )
+{
+   setRelSurfaceVel( Vec3( vx, vy, vz ) );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Setting the surface velocity of the rigid body in its own body frame.
+ *
+ * \param svel The surface velocity in the body frame.
+ * \return void
+ *
+ * The surface velocity is a velocity of the surface material of the body relative to the body
+ * itself, like the belt of a conveyor whose frame stands still or a treadmill. It is given in
+ * the body frame and turns with the body. At a contact, the world-frame surface velocities of
+ * the two primitives (plus that of an enclosing Union) are projected onto the tangent plane of
+ * the contact and enter the relative contact velocity of the friction only: the normal
+ * (non-penetration) constraint never sees them, and the body itself is not moved by its surface
+ * velocity. The default is zero.
+ *
+ * Unlike the linear and angular velocity, the surface velocity can be set on fixed bodies
+ * independently of MOBILE_INFINITE and on bodies contained in a Union (it is a property of the
+ * primitive; a Union's own surface velocity applies to all its primitives). Setting it wakes
+ * the (superordinate) body. It is honoured by the HardContactSemiImplicitTimesteppingSolvers,
+ * HardContactAndFluid and HardContactEulerLagrange collision systems; with any other solver
+ * World::simulationStep() warns once (see contact-solvers-overview.md).
+ *
+ * In case of a <b>MPI parallel simulation</b> the surface velocity travels with shadow copies
+ * and checkpoints (file format 0.4), but a change of the surface velocity of a body that already
+ * has shadow copies is not sent to them: set it on global bodies on every process, or before
+ * the body is first synchronized.
+ */
+inline void RigidBody::setRelSurfaceVel( const Vec3& svel )
+{
+   surfaceVel_ = svel;
+   if( !isDefault( svel ) )
+      surfaceVelUsed_ = true;
+   if( hasSuperBody() )
+      getTopSuperBody()->wake();
+   else
+      wake();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Setting the surface velocity of the rigid body in the global world frame.
+ *
+ * \param vx The x-component of the surface velocity in the world frame.
+ * \param vy The y-component of the surface velocity in the world frame.
+ * \param vz The z-component of the surface velocity in the world frame.
+ * \return void
+ *
+ * See setSurfaceVel( const Vec3& ).
+ */
+inline void RigidBody::setSurfaceVel( real vx, real vy, real vz )
+{
+   setSurfaceVel( Vec3( vx, vy, vz ) );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Setting the surface velocity of the rigid body in the global world frame.
+ *
+ * \param svel The surface velocity in the world frame.
+ * \return void
+ *
+ * The given world-frame velocity is converted to the body frame at the current orientation of
+ * the body and stored there, i.e. it turns with the body afterwards (see setRelSurfaceVel()).
+ */
+inline void RigidBody::setSurfaceVel( const Vec3& svel )
+{
+   setRelSurfaceVel( trans( R_ ) * svel );
 }
 //*************************************************************************************************
 
@@ -2422,6 +2565,29 @@ inline RigidBody::AttachedBodyIterator RigidBody::endAttachedBodies()
 inline RigidBody::ConstAttachedBodyIterator RigidBody::endAttachedBodies() const
 {
    return attachedBodies_.end();
+}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
+//  SURFACE VELOCITY FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Returns whether a non-zero surface velocity was set on any rigid body of this process.
+ *
+ * \return \a true once setRelSurfaceVel() or setSurfaceVel() was called with a non-zero value.
+ *
+ * Used by World::simulationStep() to warn when the configured collision system does not honour
+ * surface velocities.
+ */
+inline bool RigidBody::isSurfaceVelUsed()
+{
+   return surfaceVelUsed_;
 }
 //*************************************************************************************************
 

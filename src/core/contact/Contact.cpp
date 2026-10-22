@@ -77,10 +77,12 @@ Contact::Contact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, re
    pe_INTERNAL_ASSERT( b2_->getSuperBody() == b2_, "Invalid superordinate rigid body" );
    pe_INTERNAL_ASSERT( !( b1_->isFixed() && b2_->isFixed() ), "Invalid contact between two fixed rigid bodies" );
 
-   // Calculating the relative velocity
+   // Calculating the relative velocity. The tangential slip includes the relative surface
+   // velocity (conveyor belts, computed by the ContactBase constructor; tangential, body 1 minus
+   // body 2), so a box riding a belt at belt speed sticks and a box held on a running belt slides.
    const Vec3 rvel( b1_->velFromWF( gpos_ ) - b2_->velFromWF( gpos_ ) );  // Relative velocity
    const real nvel( trans(normal_) * rvel );                              // Normal relative velocity
-   const real tvel( ( rvel - normal_ * nvel ).length() );                // Tangential relative speed
+   const real tvel( ( rvel - normal_ * nvel + surfaceVel_ ).length() );  // Tangential relative speed
 
    // Calculating the coefficient of restitution between the two colliding (sub-)bodies
    // In case the normal relative velocity between the two colliding rigid bodies is smaller than the
@@ -142,10 +144,12 @@ Contact::Contact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal,
    pe_INTERNAL_ASSERT( b2_->getSuperBody() == b2_, "Invalid superordinate rigid body" );
    pe_INTERNAL_ASSERT( !( b1_->isFixed() && b2_->isFixed() ), "Invalid contact between two fixed rigid bodies" );
 
-   // Calculating the relative velocity
+   // Calculating the relative velocity. The tangential slip includes the relative surface
+   // velocity (conveyor belts, computed by the ContactBase constructor; tangential, body 1 minus
+   // body 2), so a box riding a belt at belt speed sticks and a box held on a running belt slides.
    const Vec3 rvel( b1_->velFromWF( gpos_ ) - b2_->velFromWF( gpos_ ) );  // Relative velocity
    const real nvel( trans(normal_) * rvel );                              // Normal relative velocity
-   const real tvel( ( rvel - normal_ * nvel ).length() );                // Tangential relative speed
+   const real tvel( ( rvel - normal_ * nvel + surfaceVel_ ).length() );  // Tangential relative speed
 
    // Calculating the coefficient of restitution between the two colliding (sub-)bodies
    // In case the normal relative velocity between the two colliding rigid bodies is smaller than the
