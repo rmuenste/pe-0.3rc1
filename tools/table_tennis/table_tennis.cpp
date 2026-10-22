@@ -714,19 +714,20 @@ Quat orientationFor( const Vec3& n )
    return Quat( axis, real( std::atan2( sinA, cosA ) ) );
 }
 
-//! The bat: a union of the blade (heavy, so that the prescribed motion is not disturbed by the
-//! ball), one rubber disc per side and a handle. Cylinder axes run along x; the blade normal is
-//! the union's x axis. The union is a dynamic body whose pose and velocity are prescribed before
-//! every step (a fixed body cannot carry a velocity in this build), its mass of about a tonne
-//! makes the ball's reaction on it negligible.
+//! The bat: a union of the blade, one rubber disc per side and a handle. Cylinder axes run along
+//! x; the blade normal is the union's x axis. The union is a fixed (kinematic) body: infinite
+//! mass, so the ball cannot push it, and driven along its stroke with setTargetPose() before every
+//! step (driveFixedBat()), so the contacts see the stroke velocity. The densities only give the
+//! bat a realistic mass (blade 90 g, rubbers 45 g each); a fixed body's mass does not enter the
+//! contacts.
 void createBat()
 {
    Sim& s = sim();
    if( s.batBody ) { destroy( s.batBody ); s.batBody = nullptr; s.batParts.clear(); }
    if( s.matBlade == 0 ) {
-      s.matBlade  = makeMaterial( "tt_blade", 1.0e7 );    // the mass of the bat sits in the blade
-      s.matRubber = makeMaterial( "tt_rubber", 1.0e3 );
-      s.matHandle = makeMaterial( "tt_handle", 1.0e3 );   // light, so the centre of mass stays in the blade
+      s.matBlade  = makeMaterial( "tt_blade", 800.0 );    // plywood
+      s.matRubber = makeMaterial( "tt_rubber", 1200.0 );
+      s.matHandle = makeMaterial( "tt_handle", 600.0 );
    }
    const Vec3 pos( s.bat.toss[0] - 0.4, s.bat.toss[1], s.bat.toss[2] );
    UnionID bat = nullptr;
@@ -740,6 +741,7 @@ void createBat()
       s.batParts = { blade, r1, r2, handle };
       bat = u;
    }
+   bat->setFixed( true );
    s.batBody = bat;
    applyContactParams();
 }
@@ -779,8 +781,78 @@ Quat batOrientation( const Vec3& n, const Vec3* handleDir )
    return Quat( n, real( angle ) ) * q0;
 }
 
+//! Holds a fixed bat union still: the blade centre (the union's first part, \a blade) at
+//! \a centre, orientation \a q, zero velocity. setPosition() places the union's centre of mass,
+//! so the blade's offset in the union frame is rotated along.
+void holdFixedBat( UnionID bat, BodyID blade, const Vec3& centre, const Quat& q )
+{
+   bat->setOrientation( q );
+   bat->setPosition( centre - q.rotate( blade->getRelPosition() ) );
+   bat->setLinearVel( 0, 0, 0 );
+   bat->setAngularVel( 0, 0, 0 );
+}
 
-//! Pose and velocity of the bat at simulated time \a t of the current serve.
+//! Drives a fixed bat union through one step of \a dt: placed with the blade centre at
+//! \a centre0 / \a q0 (where the previous step left it, up to rounding), then given the velocities
+//! with which the step takes it to \a centre1 / \a q1 (RigidBody::setTargetPose()). The solver
+//! integrates a fixed body with exactly these velocities, and the contacts see them.
+void driveFixedBat( UnionID bat, BodyID blade, const Vec3& centre0, const Quat& q0, const Vec3& centre1, const Quat& q1, double dt )
+{
+   const Vec3 rel( blade->getRelPosition() );
+   bat->setOrientation( q0 );
+   bat->setPosition( centre0 - q0.rotate( rel ) );
+   bat->setTargetPose( centre1 - q1.rotate( rel ), q1, real( dt ) );
+}
+
+
+//! Blade centre and orientation of the server's bat at simulated time \a t of the current serve:
+//! the stroke from preTime before the contact to postTime after it, held at its ends outside.
+void batPose( double t, Vec3& centre, Quat& q )
+{
+   Sim& s = sim();
+   const BatParams& b = s.bat;
+   const double t0 = s.contactTime - b.preTime, t1 = s.contactTime + b.postTime;
+   const double tau = std::max( t0, std::min( t, t1 ) ) - s.contactTime;
+   const Vec3 centreAtContact( s.contactPoint - real( kBallRadius + kBatHalfThickness ) * s.batNormal );
+   centre = centreAtContact + real( tau ) * s.batVel;
+   if( b.swingRate != 0.0 ) {
+      // Pendulum: pivot P = contact-time centre - rho r(theta_c), translating with the arm.
+      Vec3 a, d0, e1;
+      swingFrame( b, a, d0, e1 );
+      const double thetaC = b.swingPhase * kPi / 180.0, theta = thetaC + b.swingRate * tau;
+      const Vec3 pivotC( centreAtContact - real( b.swingRadius ) * swingRadial( d0, e1, thetaC ) );
+      centre = pivotC + real( tau ) * s.batVel + real( b.swingRadius ) * swingRadial( d0, e1, theta );
+      const Vec3 toPivot( -swingRadial( d0, e1, thetaC ) );   // handle along the arm at contact
+      const Quat qC = batOrientation( s.batNormal, &toPivot );
+      q = Quat( a, real( b.swingRate * tau ) ) * qC;
+   }
+   else {
+      Vec3 n( s.batNormal );
+      if( b.wristRate != 0.0 ) {
+         // Rotate the normal about z by wristRate * (t - contactTime) (zero rotation at contact).
+         const double ang = b.wristRate * tau;
+         n = Vec3( std::cos( ang ) * n[0] - std::sin( ang ) * n[1], std::sin( ang ) * n[0] + std::cos( ang ) * n[1], n[2] );
+      }
+      const Vec3 up( 0, 0, 1 );
+      q = batOrientation( n, b.handleUp ? &up : nullptr );
+   }
+}
+
+
+const Vec3 kBatPark( -3.0, -6.0, 1.0 );
+
+//! Parks the server's bat out of play (the modes without the toss and stroke). It is a fixed
+//! body, so it stays where it is put; the earlier dynamic bat fell to the floor instead.
+void parkBat()
+{
+   Sim& s = sim();
+   if( s.batBody ) holdFixedBat( s.batBody, s.batParts[0], kBatPark, Quat() );
+}
+
+
+//! Pose and velocity of the bat for the step that starts at simulated time \a t of the current
+//! serve: during the stroke a kinematic step from batPose( t ) to batPose( t + dt ), otherwise
+//! held still at the end of the stroke.
 void driveBat( double t )
 {
    Sim& s = sim();
@@ -802,46 +874,18 @@ void driveBat( double t )
          }
       }
    }
+   const double dt = s.solver.dt;
    const double t0 = s.contactTime - b.preTime, t1 = s.contactTime + b.postTime;
-   const double tc = std::max( t0, std::min( t, t1 ) );
-   const double tau = tc - s.contactTime;
-   const bool moving = t >= t0 && t <= t1;
-   const Vec3 centreAtContact( s.contactPoint - real( kBallRadius + kBatHalfThickness ) * s.batNormal );
-   Vec3 centre( centreAtContact + real( tau ) * s.batVel );
-   Vec3 vel( s.batVel );
-   Vec3 w( 0, 0, 0 );
-   Quat q;
-   if( b.swingRate != 0.0 ) {
-      // Pendulum: pivot P = contact-time centre - rho r(theta_c), translating with the arm.
-      Vec3 a, d0, e1;
-      swingFrame( b, a, d0, e1 );
-      const double thetaC = b.swingPhase * kPi / 180.0, theta = thetaC + b.swingRate * tau;
-      const Vec3 pivotC( centreAtContact - real( b.swingRadius ) * swingRadial( d0, e1, thetaC ) );
-      centre = pivotC + real( tau ) * s.batVel + real( b.swingRadius ) * swingRadial( d0, e1, theta );
-      vel    = s.batVel + real( b.swingRate * b.swingRadius ) * ( -std::sin( theta ) * d0 + std::cos( theta ) * e1 );
-      w      = real( b.swingRate ) * a;
-      const Vec3 toPivot( -swingRadial( d0, e1, thetaC ) );   // handle along the arm at contact
-      const Quat qC = batOrientation( s.batNormal, &toPivot );
-      q = Quat( a, real( b.swingRate * tau ) ) * qC;
+   Vec3 c0, c1;
+   Quat q0, q1;
+   batPose( t, c0, q0 );
+   if( t + dt > t0 && t < t1 ) {   // the step overlaps the stroke
+      batPose( t + dt, c1, q1 );
+      driveFixedBat( s.batBody, s.batParts[0], c0, q0, c1, q1, dt );
    }
    else {
-      Vec3 n( s.batNormal );
-      if( b.wristRate != 0.0 ) {
-         // Rotate the normal about z by wristRate * (t - contactTime) (zero rotation at contact).
-         const double ang = b.wristRate * tau;
-         n = Vec3( std::cos( ang ) * n[0] - std::sin( ang ) * n[1], std::sin( ang ) * n[0] + std::cos( ang ) * n[1], n[2] );
-         w = Vec3( 0, 0, b.wristRate );
-      }
-      const Vec3 up( 0, 0, 1 );
-      q = batOrientation( n, b.handleUp ? &up : nullptr );
+      holdFixedBat( s.batBody, s.batParts[0], c0, q0 );
    }
-   // setPosition() places the union's centre of mass; orient first, then shift so that the
-   // blade's centre (the first part) is at the required point.
-   s.batBody->setOrientation( q );
-   const Vec3 bladeOffset( s.batParts[0]->getPosition() - s.batBody->getPosition() );
-   s.batBody->setPosition( centre - bladeOffset );
-   s.batBody->setLinearVel( moving ? vel : Vec3( 0, 0, 0 ) );
-   s.batBody->setAngularVel( moving ? w : Vec3( 0, 0, 0 ) );
 }
 
 
@@ -859,9 +903,9 @@ void planStroke()
 }
 
 
-//! The receiving bat: the same union as the server's bat, but fixed (it is never moved during
-//! a step), so the solver treats it as an infinitely heavy, resting surface. The face toward the
-//! ball is the first rubber (body +x side).
+//! The receiving bat: the same fixed union as the server's bat, but held still (it is placed
+//! before the serve arrives and never moved during a step), so the solver treats it as an
+//! infinitely heavy, resting surface. The face toward the ball is the first rubber (body +x side).
 void createReceiver()
 {
    Sim& s = sim();
@@ -1237,8 +1281,9 @@ void advance( int n );
 
 const Vec3 kPlayerPark( -3.0, 6.0, 1.0 );
 
-//! The player's bat: the same union as the server's bat (heavy blade, rubber per side, handle),
-//! dynamic, so that it can carry the stroke velocity; parked out of play between strokes.
+//! The player's bat: the same fixed union as the server's bat (blade, rubber per side, handle),
+//! driven along its stroke with setTargetPose() (driveFixedBat()); parked out of play between
+//! strokes.
 void createPlayerBat()
 {
    Sim& s = sim();
@@ -1255,6 +1300,7 @@ void createPlayerBat()
       s.playerParts = { blade, r1, r2, handle };
       bat = u;
    }
+   bat->setFixed( true );
    s.playerBody = bat;
 }
 
@@ -1262,40 +1308,34 @@ void parkPlayerBat()
 {
    Sim& s = sim();
    if( !s.playerBody ) return;
-   s.playerBody->setOrientation( Quat() );
-   const Vec3 bladeOffset( s.playerParts[0]->getPosition() - s.playerBody->getPosition() );
-   s.playerBody->setPosition( kPlayerPark - bladeOffset );
-   s.playerBody->setLinearVel( 0, 0, 0 );
-   s.playerBody->setAngularVel( 0, 0, 0 );
+   holdFixedBat( s.playerBody, s.playerParts[0], kPlayerPark, Quat() );
 }
 
-//! Pose and velocity of the player's bat at time \a t of the current shot: a straight stroke at
-//! constant velocity through the planned contact, from preTime before it to postTime after it;
-//! parked otherwise. The handle hangs down and back.
+//! Pose and velocity of the player's bat for the step that starts at time \a t of the current
+//! shot: a straight stroke at constant velocity through the planned contact, from preTime before
+//! it to postTime after it, as kinematic steps (driveFixedBat()); parked otherwise. The handle
+//! hangs down and back.
 void drivePlayerBat( double t )
 {
    Sim& s = sim();
    if( !s.playerBody ) return;
    const ReturnPlan& r = s.returnPlan;
+   const double dt = s.solver.dt;
    const double t0 = r.contactTime - s.player.preTime, t1 = r.contactTime + s.player.postTime;
-   if( !r.ok || t < t0 || t > t1 ) { parkPlayerBat(); return; }
-   const double tau = t - r.contactTime;
+   if( !r.ok || t + dt <= t0 || t > t1 ) { parkPlayerBat(); return; }
    const Vec3 centreAtContact( r.contactPoint - real( kBallRadius + kBatHalfThickness ) * r.normal );
-   const Vec3 centre( centreAtContact + real( tau ) * r.batVel );
+   const double tau0 = std::max( t0, t ) - r.contactTime, tau1 = std::min( t1, t + dt ) - r.contactTime;
    const Vec3 handleDir( -1, 0, -1 );
    const Quat q = batOrientation( r.normal, &handleDir );
-   s.playerBody->setOrientation( q );
-   const Vec3 bladeOffset( s.playerParts[0]->getPosition() - s.playerBody->getPosition() );
-   s.playerBody->setPosition( centre - bladeOffset );
-   s.playerBody->setLinearVel( r.batVel );
-   s.playerBody->setAngularVel( 0, 0, 0 );
+   driveFixedBat( s.playerBody, s.playerParts[0], centreAtContact + real( tau0 ) * r.batVel, q,
+                  centreAtContact + real( tau1 ) * r.batVel, q, dt );
 }
 
-//! Rigid impact of the ball (velocity \a v, spin \a w) on the flat face of a massive bat moving
-//! at \a V, face normal \a n toward the ball: Newton restitution \a e along the normal, Coulomb
-//! friction \a mu with sticking when the cone allows it, \a k = I / (m r^2) of the ball (2/3 for
-//! a thin shell). Impulses per unit ball mass. Returns false if the ball does not approach the
-//! face.
+//! Rigid impact of the ball (velocity \a v, spin \a w) on the flat face of a fixed (kinematic,
+//! infinitely heavy) bat moving at \a V, face normal \a n toward the ball, as in pe: Newton
+//! restitution \a e along the normal, Coulomb friction \a mu with sticking when the cone allows it,
+//! \a k = I / (m r^2) of the ball (2/3 for a thin shell). Impulses per unit ball mass. Returns
+//! false if the ball does not approach the face.
 bool impactOnBat( const Vec3& v, const Vec3& w, const Vec3& n, const Vec3& V, double e, double mu, double k, Vec3& vOut, Vec3& wOut )
 {
    const Vec3 u( v - real( kBallRadius ) * ( w % n ) - V );   // ball surface at the contact point, relative to the bat
@@ -1836,7 +1876,7 @@ void advance( int n )
    if( !s.error.empty() || s.settled ) return;
    try {
       for( int i = 0; i < n; ++i ) {
-         if( usesBat() ) driveBat( s.time );
+         if( usesBat() ) driveBat( s.time ); else parkBat();   // hidden and out of play otherwise
          if( s.mode == kModeMachine ) drivePlayerBat( s.time );
          applyAerodynamics();
          s.world->simulationStep( real( s.solver.dt ) );
