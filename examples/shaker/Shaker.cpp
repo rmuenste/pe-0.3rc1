@@ -33,6 +33,7 @@
 //*************************************************************************************************
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -54,9 +55,8 @@ using namespace pe::timing;
 using namespace pe::irrlicht;
 #endif
 
-#if !MOBILE_INFINITE
-#  error "The engine is not compiled with mobile infinite bodies. Add -DMOBILE_INFINITE to the compiler flags and recompile pe."
-#endif
+// The shaker moves its fixed walls with a prescribed velocity (mobile infinite bodies). That needs
+// MOBILE_INFINITE=1, the default of the CMake option PE_MOBILE_INFINITE; without it main() exits.
 
 
 
@@ -76,6 +76,13 @@ using namespace pe::irrlicht;
  */
 int main( int argc, char* argv[] )
 {
+#if !MOBILE_INFINITE
+   UNUSED( argc );
+   UNUSED( argv );
+   std::cerr << "shaker: the engine is compiled without mobile infinite bodies (MOBILE_INFINITE=0), so the\n"
+             << "fixed container walls cannot move. Configure pe with -DPE_MOBILE_INFINITE=ON (the default).\n";
+   return EXIT_FAILURE;
+#else
    /////////////////////////////////////
    // Simulation parameter definition
 
@@ -321,12 +328,26 @@ int main( int argc, char* argv[] )
       simTime.end();
    }
 
+   // Final state: container position and the height of the granular bed
+   size_t numSpheres( 0 );
+   real zMean( 0 ), zMax( 0 );
+   for( World::Iterator body=world->begin(); body!=world->end(); ++body ) {
+      if( body->getType() != sphereType ) continue;
+      ++numSpheres;
+      zMean += body->getPosition()[2];
+      zMax = max( zMax, body->getPosition()[2] );
+   }
+   if( numSpheres > 0 ) zMean /= numSpheres;
+
    std::cout << "\n"
+             << " Container bottom z   : " << wallBottom->getPosition()[2] << "\n"
+             << " Spheres, mean / max z: " << numSpheres << ", " << zMean << " / " << zMax << "\n"
              << " Total WC-Time        : " << simTime.total() << "\n"
              << " Average per time step: " << simTime.average() << "\n";
    std::cout << "\n--------------------------------------------------------------------------------\n"
              << std::endl;
 
    return 0;
+#endif
 }
 //*************************************************************************************************

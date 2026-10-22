@@ -148,6 +148,21 @@ if(PE_CONSTRAINT_SOLVER)
   list(APPEND PE_PUBLIC_DEFINITIONS "pe_CONSTRAINT_SOLVER=${PE_CONSTRAINT_SOLVER}")
 endif()
 
+# Mobile infinite bodies (MOBILE_INFINITE): a fixed body (setFixed( true ), infinite mass and
+# inertia) may carry a prescribed linear and angular velocity. It is then a kinematic body:
+# contacts see its velocity, the hard-contact solvers move it with that velocity and it pushes
+# other bodies without being pushed back. With OFF, fixing a body zeroes its velocity and the
+# velocity setters ignore fixed bodies (the original pe behaviour). The value changes the meaning
+# of pe's headers, so it is a public definition of the pe targets, the same for every compiler.
+# (Before this option, MOBILE_INFINITE=1 was defined for GCC only.)
+option(PE_MOBILE_INFINITE "Allow fixed (infinite-mass) bodies to carry a prescribed velocity" ON)
+if(PE_MOBILE_INFINITE)
+  list(APPEND PE_PUBLIC_DEFINITIONS MOBILE_INFINITE=1)
+else()
+  list(APPEND PE_PUBLIC_DEFINITIONS MOBILE_INFINITE=0)
+endif()
+message(STATUS "Mobile infinite (kinematic fixed) bodies: ${PE_MOBILE_INFINITE}")
+
 # NDEBUG changes the class layout of pe's rigid bodies (e.g. MPIRigidBodyTrait::debugFlag_), so
 # it must not depend on the build flags of the user: with PE_NDEBUG=ON, NDEBUG is a public
 # definition of the pe targets. Default: ON unless this is a Debug build.
@@ -193,7 +208,6 @@ set(PE_CXX_FLAGS)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
  
   message(STATUS "We found a GNU compiler")
-  list(APPEND PE_PUBLIC_DEFINITIONS MOBILE_INFINITE=1)
   list(APPEND PE_CXX_FLAGS
     -Wall
     -Wextra
@@ -765,7 +779,9 @@ if( PE_BUILD_EXAMPLES )
    list(LENGTH PE_SERIAL_EXAMPLES list_len)
    math(EXPR pairs_count "${list_len} / 2 - 1")
 
-   foreach(i RANGE 0 ${pairs_count} 2)
+   # One iteration per (name, source) pair; the loop used to step by 2 as well, which skipped
+   # every other example (chain, domino, nano and shaker were never built).
+   foreach(i RANGE 0 ${pairs_count})
       math(EXPR idx1 "${i} * 2")
       math(EXPR idx2 "${i} * 2 + 1")
       list(GET PE_SERIAL_EXAMPLES ${idx1} exe_name)

@@ -431,8 +431,14 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   // x-velocity (Kroupa 2016 shear cell; here symmetric +-U/2 by config).
   // Global planes exist on every rank and are never shadow-copied; the
   // tangential velocity leaves the plane geometry invariant (d = n*x).
-  // setLinearVel on a fixed body requires MOBILE_INFINITE (GCC build).
+  // setLinearVel on a fixed body requires MOBILE_INFINITE, the default of the CMake option
+  // PE_MOBILE_INFINITE for every compiler (with OFF the call is ignored and the walls stand still).
   if (config.getZWallsEnabled()) {
+#if !MOBILE_INFINITE
+    if (config.getZWallVelocityBottom() != 0.0 || config.getZWallVelocityTop() != 0.0)
+      throw std::runtime_error("moving z-walls need mobile infinite bodies: configure pe with "
+                               "-DPE_MOBILE_INFINITE=ON (the default)");
+#endif
     MaterialID wallMaterial = createMaterial("el_tv_wall", real(1.0),
                                              config.getRestitution(),
                                              config.getStaticFriction(),
