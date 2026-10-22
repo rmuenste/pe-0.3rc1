@@ -80,7 +80,7 @@ Contact::Contact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal, re
    // Calculating the relative velocity
    const Vec3 rvel( b1_->velFromWF( gpos_ ) - b2_->velFromWF( gpos_ ) );  // Relative velocity
    const real nvel( trans(normal_) * rvel );                              // Normal relative velocity
-   const real tvel( trans(normal_) * ( rvel - normal_ * nvel ) );         // Tangential relative velocity
+   const real tvel( ( rvel - normal_ * nvel ).length() );                // Tangential relative speed
 
    // Calculating the coefficient of restitution between the two colliding (sub-)bodies
    // In case the normal relative velocity between the two colliding rigid bodies is smaller than the
@@ -145,7 +145,7 @@ Contact::Contact( GeomID g1, GeomID g2, const Vec3& gpos, const Vec3& normal,
    // Calculating the relative velocity
    const Vec3 rvel( b1_->velFromWF( gpos_ ) - b2_->velFromWF( gpos_ ) );  // Relative velocity
    const real nvel( trans(normal_) * rvel );                              // Normal relative velocity
-   const real tvel( trans(normal_) * ( rvel - normal_ * nvel ) );         // Tangential relative velocity
+   const real tvel( ( rvel - normal_ * nvel ).length() );                // Tangential relative speed
 
    // Calculating the coefficient of restitution between the two colliding (sub-)bodies
    // In case the normal relative velocity between the two colliding rigid bodies is smaller than the
