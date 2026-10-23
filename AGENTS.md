@@ -21,8 +21,11 @@ The main lightweight smoke test is `tests/interface/pe_interface_smoke_serial.cp
 ### Optional
 - MPI (for parallel execution)
 - CGAL (for computational geometry)
+- Eigen 3.4 and nlohmann/json 3.12 (on by default)
 - OpenCL (for GPGPU support) (maybe outdated, no active usage since 2022)
 - Irrlicht >= 1.7.9 (for visualization) (deprecated, project is not actively maintained)
+
+Eigen, nlohmann/json and CGAL are taken from the system if installed and otherwise downloaded as pinned, hash-checked archives (`cmake/PEGetTPL.cmake`); see "Third-party libraries" in `doc/technical-notes/build-with-cmake.md`, also for offline builds.
 
 ## Architecture Overview
 

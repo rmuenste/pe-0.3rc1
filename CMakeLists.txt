@@ -76,6 +76,16 @@ set( PE_USE_CGAL       OFF     CACHE BOOL    "Build with CGAL library support." 
 # Option to enable/disable JSON support
 option(PE_USE_JSON "Use nlohmann/json library" ON)
 
+# Third-party libraries (Eigen, nlohmann/json, CGAL) are taken from the system if installed, and
+# otherwise downloaded as pinned, hash-verified archives (cmake/PEGetTPL.cmake). See "Third-party
+# libraries" in doc/technical-notes/build-with-cmake.md, also for offline builds.
+option(PE_PREFER_EXTERNAL_TPL
+       "Use installed third-party libraries (find_package) before downloading them" ON)
+option(PE_NO_EXTERNAL_DOWNLOAD
+       "Never download third-party libraries; a missing one is a configure error" OFF)
+set(PE_TPL_CACHE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cache" CACHE PATH
+    "Directory for downloaded third-party archives, shared by all build directories (empty: none)")
+
 option(PE_BUILD_INTERFACE_TESTS
        "Build lightweight PE interface smoke tests when BUILD_TESTING is enabled"
        ${BUILD_TESTING})
@@ -346,21 +356,36 @@ else()
    set( DEFINES "${DEFINES} HAVE_BLAS=0" )
 endif()
 
+# Third-party libraries that pe can download: system first, then the pinned archive. The pins
+# (URLs and SHA-256) are moved with tools/bump_tpl_pin.py. Each archive was verified against an
+# independent source when it was pinned (doc/technical-notes/build-with-cmake.md); the second
+# URL is a copy in https://github.com/tudo-math-ls3/pe-third-party, used when upstream fails.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/PEGetTPL.cmake)
+
 # Configuration of the Eigen library
 #============================================================================
 if( PE_USE_EIGEN )
-  include(FetchContent)
-  FetchContent_Declare(
-    eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
+  # Header-only. Installed packages (Ubuntu 24.04 libeigen3-dev, RHEL 9 eigen3-devel) provide
+  # Eigen3::Eigen. The download is not configured with Eigen's own CMakeLists (tests, docs,
+  # BLAS/LAPACK): SOURCE_SUBDIR names a directory that does not exist, and Eigen3::Eigen is
+  # created from the source tree below.
+  pe_get_tpl(
+    PACKAGE_NAME  Eigen3
+    VERSION       3.4.0
+    CONFIG
+    TARGET        Eigen3::Eigen
+    OVERRIDE_FIND_PACKAGE
+    URLS          https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.bz2
+                  https://github.com/tudo-math-ls3/pe-third-party/releases/download/eigen-3.4.0/eigen-3.4.0.tar.bz2
+    URL_HASH      SHA256=b4c198460eba6f28d34894e3a5710998818515104d6e74e5cc331ce31e46e626
+    SOURCE_SUBDIR pe-no-cmake
   )
+  if( NOT TARGET Eigen3::Eigen )
+    add_library(Eigen3::Eigen INTERFACE IMPORTED GLOBAL)
+    set_target_properties(Eigen3::Eigen PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
+  endif()
 
-  FetchContent_Populate(eigen)
-  # Create an interface library manually
-  add_library(Eigen3::Eigen INTERFACE IMPORTED)
-  target_include_directories(Eigen3::Eigen INTERFACE ${eigen_SOURCE_DIR})
-  
   list(APPEND PE_THIRD_PARTY_LIBS Eigen3::Eigen)
   add_definitions(-DPE_USE_EIGEN)
   list(APPEND PE_PUBLIC_DEFINITIONS PE_USE_EIGEN)
@@ -374,10 +399,21 @@ endif()
 # NEW APPROACH TO ADD CGAL
 #============================================================================
 if(PE_USE_CGAL)
-  # Try to find an existing CGAL installation first
-  find_package(CGAL QUIET HINTS
-    ${CGAL_DIR}                               # If passed from parent
-    ${CMAKE_BINARY_DIR}/extern/cgal/install/lib/cmake/CGAL  # Default install location from main project
+  # An existing CGAL installation of any version first (Ubuntu 24.04 libcgal-dev is 5.6), else the
+  # header-only library archive of CGAL 5.3.2. Its SHA-256 is the one CGAL published in
+  # sha256sum.txt of the v5.3.2 release (uploaded together with the archive on 2022-06-06).
+  # CGAL's own CMakeLists is not run; the include directory of the archive is used instead.
+  # There is no copy in pe-third-party yet, so the pin has only the upstream URL.
+  pe_get_tpl(
+    PACKAGE_NAME  CGAL
+    VERSION       5.3.2
+    FIND_ANY_VERSION
+    FIND_PACKAGE_ARGS HINTS
+                  ${CGAL_DIR}                                             # If passed from parent
+                  ${CMAKE_BINARY_DIR}/extern/cgal/install/lib/cmake/CGAL  # Default install location from main project
+    URLS          https://github.com/CGAL/cgal/releases/download/v5.3.2/CGAL-5.3.2-library.tar.xz
+    URL_HASH      SHA256=404e43f09fa590681976429e683278351056041e28f57e999eac4341a83811ad
+    SOURCE_SUBDIR pe-no-cmake
   )
 
   if(CGAL_FOUND)
@@ -387,16 +423,7 @@ if(PE_USE_CGAL)
       set(CGAL_INCLUDE_DIR ${CGAL_INCLUDE_DIRS})
     endif()
   else()
-    message(STATUS "CGAL installation not found; cloning CGAL")
-    FetchContent_Declare(
-      cgal
-      GIT_REPOSITORY https://github.com/CGAL/cgal.git
-      GIT_TAG v5.3.2
-    )
-    FetchContent_Populate(cgal)
-
-    file(GLOB CGAL_PACKAGE_INCLUDE_DIRS "${cgal_SOURCE_DIR}/*/include")
-    set(CGAL_INCLUDE_DIR ${CGAL_PACKAGE_INCLUDE_DIRS})
+    set(CGAL_INCLUDE_DIR "${cgal_SOURCE_DIR}/include")
   endif()
 
   if(NOT TARGET CGAL::CGAL AND NOT CGAL_INCLUDE_DIR)
@@ -465,22 +492,29 @@ endif()
 #==============================================================================
 if(PE_USE_JSON)
 
-    # Set custom download directory
-    set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/external" CACHE PATH "Directory for downloaded dependencies")
-    
-    # Configure nlohmann/json
-    FetchContent_Declare(
-        json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.12.0  # CMake 4 needs >= 3.12.0 (cmake_minimum_required 3.5); 3.11.x declares 3.1
+    # Header-only, used by pe's sources only (not by its headers), so it is linked PRIVATE.
+    # pe pins 3.12.0 and accepts an installed copy only from 3.12 on, so that installed and
+    # downloaded builds use the same json. 3.12 became the minimum because the CMakeLists of
+    # 3.11.x declares cmake_minimum_required(VERSION 3.1), which CMake 4 rejects; Ubuntu 24.04 has
+    # 3.11.3, so CI downloads the archive. As for Eigen, the CMakeLists of the download is not
+    # run (no JSON_* cache options in pe's cache); nlohmann_json::nlohmann_json is created below.
+    pe_get_tpl(
+        PACKAGE_NAME  nlohmann_json
+        VERSION       3.12.0
+        CONFIG
+        TARGET        nlohmann_json::nlohmann_json
+        OVERRIDE_FIND_PACKAGE
+        URLS          https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+                      https://github.com/tudo-math-ls3/pe-third-party/releases/download/nlohmann-json-3.12.0/json.tar.xz
+        URL_HASH      SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+        SOURCE_SUBDIR pe-no-cmake
     )
-    
-    # Make json available for the project
-    FetchContent_MakeAvailable(json)
-    
-    # Get the source directory for the downloaded library
-    FetchContent_GetProperties(json SOURCE_DIR json_SOURCE_DIR)
-    
+    if( NOT TARGET nlohmann_json::nlohmann_json )
+        add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED GLOBAL)
+        set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${nlohmann_json_SOURCE_DIR}/include")
+    endif()
+
     # Set HAVE_JSON variable for config.h template
     set(HAVE_JSON ON)
 
@@ -488,11 +522,8 @@ if(PE_USE_JSON)
     add_compile_definitions(HAVE_JSON)
     list(APPEND PE_PUBLIC_DEFINITIONS HAVE_JSON)
 
-    # Add the JSON include directory explicitly
-    list(APPEND PE_THIRD_PARTY_INCLUDE_DIRS ${json_SOURCE_DIR}/include)
-
-    message(STATUS "nlohmann/json will be downloaded to: ${FETCHCONTENT_BASE_DIR}")
-    message(STATUS "nlohmann/json include directory: ${json_SOURCE_DIR}/include")
+    list(APPEND PE_THIRD_PARTY_LIBS nlohmann_json::nlohmann_json)
+    message(STATUS "nlohmann/json support enabled")
 else()
     set(HAVE_JSON OFF)
     message(STATUS "nlohmann/json will NOT be used")
@@ -663,7 +694,6 @@ if( PE_LIBRARY_TYPE STREQUAL SHARED OR PE_LIBRARY_TYPE STREQUAL BOTH )
       target_link_libraries(pe_shared PUBLIC pe_cgal)
    endif()
    target_compile_definitions(pe_shared PUBLIC PE_SHARED_LIB_SELECT_EXPORTS)
-   add_dependencies(pe_static eigen)
 endif()
 
 
@@ -721,9 +751,6 @@ if(PE_IS_TOP_LEVEL AND BUILD_TESTING AND PE_BUILD_INTERFACE_TESTS AND TARGET pe_
          PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PE_THIRD_PARTY_INCLUDE_DIRS} )
       if( PE_USE_CGAL AND TARGET pe_cgal )
          target_link_libraries( ${name} PUBLIC pe_cgal )
-      endif()
-      if( TARGET eigen )
-         add_dependencies( ${name} eigen )
       endif()
    endfunction()
 
