@@ -52,6 +52,17 @@ namespace pe {
 
 //=================================================================================================
 //
+//  DEFINITION AND INITIALIZATION OF THE STATIC MEMBER VARIABLES
+//
+//=================================================================================================
+
+bool RigidBody::surfaceVelUsed_ = false;
+
+
+
+
+//=================================================================================================
+//
 //  CONSTRUCTORS
 //
 //=================================================================================================
@@ -224,6 +235,57 @@ void RigidBody::setTranslationFixed( bool fixed )
 
    // Signaling the fixation change to the superordinate body
    signalFixation();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Setting the velocities that move the rigid body onto a target pose in one time step.
+ *
+ * \param gpos The target global position (the center of mass, as getPosition()/setPosition()).
+ * \param q The target global orientation (a unit quaternion).
+ * \param dt The size of the next time step \f$ (0..\infty) \f$.
+ * \return void
+ * \exception std::invalid_argument Invalid time step size.
+ *
+ * This function sets the linear velocity \f$ (\vec{x}_t - \vec{x}) / \Delta t \f$ and the angular
+ * velocity \f$ \vec{a}\,\varphi / \Delta t \f$, where \f$ \vec{a} \f$ and \f$ \varphi \in [0,\pi] \f$
+ * are the axis and angle of the shortest-arc rotation \f$ q_t q^{-1} \f$ from the current to the
+ * target orientation. A fixed (kinematic) body is integrated with exactly these velocities by the
+ * hard-contact collision systems, so after the next World::simulationStep( dt ) its pose equals
+ * the target up to rounding, and its contacts see the velocity with which it gets there (like
+ * Box3D's b3Body_SetTargetTransform()). Call it before every step to make a fixed body follow a
+ * prescribed trajectory (a bat, a piston, a stirrer). On a non-fixed body the function only sets
+ * the velocities; gravity, forces and contacts act on top of them.
+ *
+ * The position is the center of mass (for a Union the center of mass of the union), which the
+ * body rotates about. To prescribe the motion of another reference point \f$ \vec{p} \f$ given in
+ * the body frame, pass \f$ \vec{x}_t = \vec{p}_t - R(q_t)\,\vec{p} \f$.
+ *
+ * The velocities are set with setLinearVel() and setAngularVel(), so the body is woken, and the
+ * function has no effect on a body contained in a Union and, without MOBILE_INFINITE (CMake option
+ * PE_MOBILE_INFINITE=OFF), on a fixed body.
+ */
+void RigidBody::setTargetPose( const Vec3& gpos, const Quat& q, real dt )
+{
+   if( !( dt > real(0) ) )
+      throw std::invalid_argument( "Invalid time step size" );
+
+   // Shortest-arc rotation from the current to the target orientation
+   Quat dq( q * q_.getInverse() );
+   if( dq[0] < real(0) )
+      dq = Quat( -dq[0], -dq[1], -dq[2], -dq[3] );
+
+   const Vec3 axis( dq[1], dq[2], dq[3] );
+   const real s( axis.length() );
+   Vec3 avel;
+   if( s > real(0) ) {
+      const real angle( real(2) * std::atan2( s, dq[0] ) );   // accurate for small angles, too
+      avel = axis * ( angle / ( s * dt ) );
+   }
+
+   setLinearVel ( ( gpos - gpos_ ) / dt );
+   setAngularVel( avel );
 }
 //*************************************************************************************************
 

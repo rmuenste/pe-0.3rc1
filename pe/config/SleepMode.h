@@ -32,9 +32,18 @@
  * The sleep threshold can be set to any non-negative value \f$ [0..\infty) \f$. A value of zero
  * switches off sleep mode entirely.\n
  * For more details about the calculation of the motion of a rigid body, see the description of
- * the RigidBody::calcMotion() function.
+ * the RigidBody::calcMotion() function.\n
+ * The default of zero can be overridden without editing this file by defining PE_SLEEP_THRESHOLD
+ * for pe and all its users, e.g. -DPE_PREPROCESSOR_FLAGS=-DPE_SLEEP_THRESHOLD=1e-6 in CMake.
+ * Bodies that drive the motion of others (a fixed body with a prescribed velocity, a body with
+ * a surface velocity) never fall asleep, and the hard-contact collision systems keep the bodies
+ * touching them awake.
  */
+#ifdef PE_SLEEP_THRESHOLD
+const real sleepThreshold = static_cast<real>( PE_SLEEP_THRESHOLD );
+#else
 const real sleepThreshold = static_cast<real>( 0 );
+#endif
 //*************************************************************************************************
 
 

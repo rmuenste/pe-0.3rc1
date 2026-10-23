@@ -2266,22 +2266,26 @@ UnionID instantiateUnion( const Union::Parameters& objparam, const Vec3& offset,
       for( std::vector<Sphere::Parameters>::const_iterator it = objparam.spheres_.begin(); it != objparam.spheres_.end(); ++it ) {
          const Sphere::Parameters& subobjparam = *it;
          SphereID subobj = instantiateSphere( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - offset, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setShellThickness( subobjparam.shellThickness_ );
          subobj->setRemote( remote );
       }
       for( std::vector<Box::Parameters>::const_iterator it = objparam.boxes_.begin(); it != objparam.boxes_.end(); ++it ) {
          const Box::Parameters& subobjparam = *it;
          BoxID subobj = instantiateBox( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - offset, subobjparam.rpos_, subobjparam.q_, subobjparam.lengths_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( remote );
       }
       for( std::vector<Capsule::Parameters>::const_iterator it = objparam.capsules_.begin(); it != objparam.capsules_.end(); ++it ) {
          const Capsule::Parameters& subobjparam = *it;
          CapsuleID subobj = instantiateCapsule( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - offset, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( remote );
       }
       for( std::vector<Cylinder::Parameters>::const_iterator it = objparam.cylinders_.begin(); it != objparam.cylinders_.end(); ++it ) {
          const Cylinder::Parameters& subobjparam = *it;
          CylinderID subobj = instantiateCylinder( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - offset, subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( remote );
       }
       for( std::vector<Union::Parameters>::const_iterator it = objparam.unions_.begin(); it != objparam.unions_.end(); ++it ) {
@@ -2293,9 +2297,11 @@ UnionID instantiateUnion( const Union::Parameters& objparam, const Vec3& offset,
       for( std::vector<Plane::Parameters>::const_iterator it = objparam.planes_.begin(); it != objparam.planes_.end(); ++it ) {
          const Plane::Parameters& subobjparam = *it;
          PlaneID subobj = instantiatePlane( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - offset, subobjparam.rpos_, subobjparam.q_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_ );
+         subobj->setRelSurfaceVel( subobjparam.surfaceVel_ );
          subobj->setRemote( remote );
       }
    }
+   ret->setRelSurfaceVel( objparam.surfaceVel_ );   // also for nested unions (recursion above)
    ret->setRemote( remote );
 
    return ret;

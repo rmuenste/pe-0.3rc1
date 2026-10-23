@@ -130,10 +130,11 @@ inertia and a well-defined table friction.
 The second mode of the Serve window replaces the launch velocity by a toss and a bat stroke.
 
 - **Bat**: a pe union of a blade cylinder (155 mm, 6 mm), one 2 mm rubber disc per side and a
-  handle. It is a dynamic body of about a tonne (blade material density 1e7 kg/m^3) whose pose
-  and velocity are prescribed before every step, so it behaves as a kinematic bat: a fixed body
-  cannot carry a velocity in this build, and the ball's reaction on a tonne is negligible. The
-  contact solver sees the bat's velocity, so the ball takes the normal impulse (restitution,
+  handle, about 180 g. It is a fixed (kinematic) body: infinite mass, so the ball cannot push it,
+  driven along the stroke with `RigidBody::setTargetPose()` before every step (the velocity
+  that takes it from this step's pose to the next one; pe integrates a fixed body with exactly
+  that velocity). Outside the stroke it is held still at zero velocity, and in the modes without
+  the toss it is parked out of play. The contact solver sees the bat's velocity, so the ball takes the normal impulse (restitution,
   `rubber restitution` slider, default 0.8) and the Coulomb tangential impulse (`rubber
   friction`, default 0.8) from a moving surface, which is what turns a brushing stroke into spin.
   Missing by construction: the sponge's tangential elasticity, i.e. real rubbers give more spin
@@ -235,8 +236,8 @@ and lands on the opponent's side over the net.
 
 ## Toss, serve & receive (held bat)
 
-The third mode adds a receiver who does not swing: a second bat, the same union as the server's
-but a fixed body, held still where the serve arrives. The point is to see what each serve's spin
+The third mode adds a receiver who does not swing: a second bat, the same fixed union as the
+server's, but held still where the serve arrives (placed before the serve, zero velocity). The point is to see what each serve's spin
 does to the ball coming off a passive blade, and what the receiver has to do with the blade angle
 to cope with it.
 
@@ -329,8 +330,8 @@ lob with 50 cm). A shot that would need more than the `max launch speed` (12 m/s
 ### The player's bat: spin returns
 
 With `return` set to topspin, backspin or sidespin (topspin by default) a bat on the player's
-side returns every fed ball with a brushing stroke. It is the same union as the server's bat,
-kinematic (pose and velocity prescribed per step), parked out of play between strokes. The
+side returns every fed ball with a brushing stroke. It is the same fixed union as the server's
+bat, driven with `setTargetPose()` along its stroke and parked out of play between strokes. The
 stroke is planned when the shot is fired:
 
 1. **Dry run.** The fed ball is simulated once with the bats parked; the samples after its bounce
@@ -351,8 +352,9 @@ stroke is planned when the shot is fired:
    0.12 s before to 0.05 s after it. The hit is detected as a velocity jump at the planned
    contact; the return is then judged like a fed ball in the other direction (over the net,
    onto the machine's side), and the ball's spin and speed off the bat are listed with the shot.
-   The planner and pe agree to a few millimetres at the landing because the impact model is the
-   solver's contact law and the dry run is the simulation itself.
+   The planner and pe agree to a few millimetres at the landing (4 ... 9 mm on the smoke cases, pe
+   slightly longer) because the impact model is the solver's contact law against an infinitely
+   heavy moving face, which is what the fixed bat is, and the dry run is the simulation itself.
 
 Measured with the defaults on `left-right-short_middle-deep_middle` (the `--smoke` cases):
 

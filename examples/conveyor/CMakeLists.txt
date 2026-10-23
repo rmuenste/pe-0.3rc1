@@ -10,10 +10,13 @@ target_link_libraries(conveyor PRIVATE
 
 # Self-checking runs (the example's exit code: particle count, container bounds, finite energies;
 # 77 = unintended solver, reported as skipped). Serial, and under MPI with 2 and 4 processes.
-# Each with the Baumgarte term and with the split-impulse position correction ("-split").
-foreach(variant "" "-split")
+# Each with the Baumgarte term and with the split-impulse position correction ("-split"), and
+# once with the belt as a moving fixed body instead of a surface velocity ("-moving-belt").
+foreach(variant "" "-split" "-moving-belt")
   if(variant STREQUAL "-split")
     set(extra --split-impulse)
+  elseif(variant STREQUAL "-moving-belt")
+    set(extra --moving-belt)
   else()
     set(extra)
   endif()

@@ -1,5 +1,6 @@
 # Build artifacts
 /build/
+/build-*/
 
 # IDE/editor settings
 /.vscode/

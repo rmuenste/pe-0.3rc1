@@ -47,6 +47,7 @@ The RigidBody class manages essential physical and geometric properties:
 - `mass_`, `invMass_`: Mass and inverse mass
 - `I_`, `Iinv_`: Moment of inertia tensor and its inverse (body frame)
 - `v_`, `w_`: Linear and angular velocity
+- `surfaceVel_`: Surface velocity in the body frame (conveyor belts, see below; default zero)
 - `force_`, `torque_`: Accumulated forces and torques
 
 ### Geometric Properties
@@ -136,6 +137,122 @@ ConcreteGeometry (e.g., Sphere)
 ### MPI and Parallel Simulation
 - `isRemote()`, `setRemote()`: Remote body management
 - `isGlobal()`, `setGlobal()`: Global body handling
+
+### Prescribed Motion
+- `setTargetPose( gpos, q, dt )`: velocities that move the body onto a pose in one step
+- `setRelSurfaceVel()`, `setSurfaceVel()`, `getRelSurfaceVel()`, `getSurfaceVel()`, `hasSurfaceVel()`:
+  surface velocity in the body / world frame
+
+## Kinematic (Moving Fixed) Bodies
+
+pe has no separate kinematic body type (unlike Box3D's `b3_kinematicBody` or Bullet's kinematic
+flag): **a fixed body with a prescribed velocity is the kinematic body.** `setFixed( true )` gives
+the body infinite mass and inertia (`invMass_ = 0`, `Iinv_ = 0`); with mobile infinite bodies it
+keeps its linear and angular velocity, and `setLinearVel()` / `setAngularVel()` (and the `Rel`
+variants) work on it. The hard-contact collision systems (`HardContactSemiImplicitTimesteppingSolvers`,
+`HardContactAndFluid`, `HardContactEulerLagrange`) then
+
+- integrate its position and orientation with exactly that velocity (a global fixed body with
+  `v_` alone, a local one with `v_ + dv_` where `dv_ = 0`), with neither gravity nor world damping
+  (`World::setDamping()` does not touch a prescribed velocity);
+- let its contacts see the velocity, so it pushes and drags other bodies without being pushed back.
+
+The velocity persists until it is set again; to stop the body set it to zero. A shaker wall, a
+piston or a moving platform is therefore a fixed body whose velocity is set before each step
+(`examples/shaker`), and a bat or a stirrer that follows a trajectory uses `setTargetPose()`.
+
+**Mobile infinite bodies are a build option** (`MOBILE_INFINITE`, CMake option
+`PE_MOBILE_INFINITE`, default `ON` for every compiler; before 2026-10 the macro was defined for
+GCC only, so the same code behaved differently under Clang/AppleClang/Intel):
+
+| | `PE_MOBILE_INFINITE=ON` (default) | `OFF` (original pe) |
+|---|---|---|
+| `setFixed( true )` / `fix()` | keeps `v_`, `w_` | zeroes `v_`, `w_` |
+| velocity setters on a fixed body | set the velocity | silently ignored |
+| `isActive()` of a fixed body | `awake_` | `false` |
+| `setTargetPose()` on a fixed body | moves it | no effect |
+| surface velocity | works | works (independent of the macro) |
+
+### setTargetPose()
+
+`RigidBody::setTargetPose( const Vec3& gpos, const Quat& q, real dt )` sets
+`v = (gpos - getPosition()) / dt` and `w = axis * angle / dt` from the shortest-arc rotation
+`q * getQuaternion()^-1` (angle in `[0, pi]`, computed with `atan2`, accurate for small angles).
+After the next `World::simulationStep( dt )` a fixed body sits on the target pose to rounding
+(1e-16 in `tests/interface/pe_kinematic_body_test.cpp`, global and local bodies, a fixed Union,
+rotations beyond pi), and its contacts see the velocity it got there with (Box3D's
+`b3Body_SetTargetTransform()`). The position is the **center of mass** (`getPosition()`, for a
+Union the union's center of mass), which the body rotates about; to prescribe another reference
+point `p` given in the body frame pass `gpos = p_target - R(q) p`. On a non-fixed body the
+function only sets the velocities (gravity, forces and contacts act on top). It wakes the body,
+has no effect on bodies inside a Union (like the velocity setters) and throws
+`std::invalid_argument` for `dt <= 0`.
+
+### Surface velocity
+
+`setRelSurfaceVel( v )` gives a body a velocity of its surface material relative to the body,
+in the body frame, so it turns with the body (Box3D's `b3SurfaceMaterial::tangentVelocity`,
+LIGGGHTS' `surface_vel` of a stationary mesh). `setSurfaceVel( v )` takes a world-frame vector and
+stores it in the body frame at the current orientation. A conveyor belt is then a fixed box that
+does not move at all (`examples/conveyor`), a treadmill a fixed plane. At a contact
+(`ContactBase::calcSurfaceVel()`):
+
+- each side's world-frame surface velocity is that of the primitive plus that of its enclosing
+  top-level Union, so it can be set on a body inside a Union (one belt of a machine) or on the
+  Union (all of it); the difference body 1 minus body 2 is projected onto the tangent plane and
+  stored as `Contact::getSurfaceVel()`;
+- it enters the relative contact velocity of the **friction only**. The normal
+  (non-penetration) constraint never sees it, a frictionless contact ignores it, and the body
+  itself is not moved by it. `Contact::getRelVel()` contains it, `getNormalRelVel()` does not.
+- the choice between the static and the dynamic coefficient of friction (`Contact::Contact()`)
+  uses the slip including it: a box riding a belt at belt speed gets the static coefficient, a
+  box held on a running belt the dynamic one.
+
+It works on fixed and non-fixed bodies, independently of `MOBILE_INFINITE`, and is honoured by
+the three hard-contact systems (`static constexpr bool hasSurfaceVelocity` in the collision
+system; any other solver: `World::simulationStep()` warns once, see
+[contact-solvers-overview.md](contact-solvers-overview.md#kinematic-bodies-and-surface-velocities)).
+An angular surface velocity is not provided: a fixed body of revolution (a roller, a turntable)
+can simply rotate in place with `setAngularVel()`.
+
+It is marshalled with every rigid body record (`marshal( Buffer&, const RigidBody& )`): MPI
+shadow copies in the `synchronize()` of the five collision systems that use it (also of bodies
+inside a Union) and checkpoints from file format 0.4 (0.2/0.3 files read back with zero surface
+velocity; checked with a 0.3 file written by the previous version). The legacy
+`MPIEncoder`/`MPIDecoder` path (`DEMSolverObsolete`, `FFDSolver`) does not carry it; those solvers
+do not support surface velocities anyway. It is
+not part of the per-step shadow-copy update notification (which would cost every particle 24 bytes
+per step): a change on a body that already has shadow copies does not reach them. Set it on
+global bodies (on every process, the usual case for belts and walls) or before the body is first
+synchronized. The lubrication stage does not see it.
+
+### Pairs of fixed bodies
+
+Two fixed bodies never get a contact: the coarse detectors (`HashGrids::collide()`,
+`SweepAndPrune`, `ExhaustiveSearch`) drop the pair before the fine detection, so a kinematic body
+may move through walls, planes and other fixed bodies (tested: a moving fixed box passing through
+a fixed box and a plane creates no contact, also in a Debug build). The hard-contact solvers keep
+their `pe_INTERNAL_ASSERT` as a safety net and, in release builds, skip such a contact should one
+ever reach them (its diagonal block would be zero and its impulse not a number).
+
+### Sleeping
+
+Sleep mode is compiled out by default (`pe::sleepThreshold = 0`, `pe/config/SleepMode.h`; enable
+it with `-DPE_PREPROCESSOR_FLAGS=-DPE_SLEEP_THRESHOLD=<threshold>`). With it on:
+
+- a body that drives the motion of others (`RigidBodyBase::drivesMotion()`: fixed with a non-zero
+  velocity, or any body with a non-zero surface velocity) never falls asleep; sleeping would zero,
+  i.e. freeze, the prescribed velocity (the Bullet pitfall);
+- the hard-contact systems wake every body that touches such a body, or a contact with a non-zero
+  surface velocity, before its velocity is cached (`RigidBodyBase::wakeByContact()`), and hold it
+  awake for the step. The hold matters: friction accelerates a resting body gradually, and a body
+  woken with its old (sub-threshold) motion fell asleep again at the end of the step and lost the
+  velocity it had gained, so a platform never carried it;
+- a sleeping body gets no velocity correction (`dv = dw = 0`, the stale-entry fix of fixed bodies).
+
+Tests: `tests/interface/pe_kinematic_body_test.cpp` (fixed bodies keep velocities, fixed-fixed
+pairs, `setTargetPose()`, sleep) and `tests/interface/pe_surface_velocity_test.cpp`, both run
+against the three hard-contact pipelines (CTest `pe-kinematic-body*`, `pe-surface-velocity*`).
 
 ## Adding a New Concrete Geometry: Cone Example
 

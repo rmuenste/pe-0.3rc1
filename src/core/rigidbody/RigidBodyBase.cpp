@@ -66,6 +66,7 @@ RigidBodyBase::RigidBodyBase( BodyID body )
    , rpos_()                  // Relative position within the body frame of the superordinate body
    , v_()                     // Linear velocity
    , w_()                     // Angular velocity
+   , surfaceVel_()            // Surface velocity in the body frame (none)
    , force_()                 // Total force
    , torque_()                // Total torque
    , prevFluidForce_()        // Previous fluid force (mean-force stabilization)

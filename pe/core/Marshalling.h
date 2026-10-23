@@ -197,6 +197,7 @@ inline void marshal( Buffer& buffer, const RigidBody& obj ) {
       marshal( buffer, obj.getLinearVel() );
       marshal( buffer, obj.getAngularVel() );
    }
+   marshal( buffer, obj.getRelSurfaceVel() );   // also for subordinate bodies: a primitive's property
 }
 //*************************************************************************************************
 
@@ -249,6 +250,20 @@ inline void marshalDynamically( Buffer& buffer, const RigidBody& obj ) {
 //*************************************************************************************************
 
 
+namespace marshalling_detail {
+
+//! Whether a rigid body record in \a buffer carries the surface velocity: always for MPI streams
+//! (both ends run the same build), and for checkpoint files from format 0.4 on. Older files
+//! (TypeConvertingRecvBuffer with formatMinor() < 4) hold bodies without surface velocity.
+template< typename Buffer >
+inline bool surfaceVelInStream( const Buffer& ) { return true; }
+
+template< typename E >
+inline bool surfaceVelInStream( const TypeConvertingRecvBuffer<E>& buffer ) { return buffer.formatMinor() >= 4; }
+
+} // namespace marshalling_detail
+
+
 //*************************************************************************************************
 /*!\brief Unmarshalling rigid body parameters.
  *
@@ -282,6 +297,10 @@ inline void unmarshal( Buffer& buffer, RigidBody::Parameters& objparam, bool has
       unmarshal( buffer, objparam.v_ );
       unmarshal( buffer, objparam.w_ );
    }
+   if( marshalling_detail::surfaceVelInStream( buffer ) )
+      unmarshal( buffer, objparam.surfaceVel_ );
+   else
+      objparam.surfaceVel_ = Vec3();
 }
 //*************************************************************************************************
 

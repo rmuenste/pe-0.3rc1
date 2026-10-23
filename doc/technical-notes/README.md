@@ -17,7 +17,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [technical-overview.md](technical-overview.md): Broad architecture guide for PE's simulation workflow and main implementation areas.
 - [simulation-setup-examples.md](simulation-setup-examples.md): Concrete serial and MPI simulation setup patterns, with references to repository examples.
 - [frozen-field-cpp-interface.md](frozen-field-cpp-interface.md): Collective callback-driven tracer interface, global TriangleMesh/DistanceMap setup, and exit attribution.
-- [rigid-body-documentation.md](rigid-body-documentation.md): `RigidBody` base class, common rigid-body API, and inheritance model.
+- [rigid-body-documentation.md](rigid-body-documentation.md): `RigidBody` base class, common rigid-body API, and inheritance model; kinematic (moving fixed) bodies and the `PE_MOBILE_INFINITE` option, `setTargetPose()`, surface velocities (conveyor belts), fixed-fixed pairs, sleep mode.
 - [triangle-mesh.md](triangle-mesh.md): `TriangleMesh` hierarchy, related types, implementation details, and ecosystem notes.
 - [vec3-mat3-documentation.md](vec3-mat3-documentation.md): Usage and conventions for `Vec3` and `Mat3`.
 - [plane-conventions.md](plane-conventions.md): PE's plane representation, non-standard conventions, and common pitfalls.
@@ -32,7 +32,8 @@ This directory contains focused engineering notes for PE internals. Use this ind
 
 ## Collision Response and Solvers
 
-- [contact-solvers-overview.md](contact-solvers-overview.md): Overview of compile-time selected response solver families and tradeoffs.
+- [contact-solvers-overview.md](contact-solvers-overview.md): Overview of compile-time selected response solver families and tradeoffs, including which solvers honour moving fixed bodies and surface velocities.
+- [kinematic-bodies-in-other-engines.md](kinematic-bodies-in-other-engines.md): How eleven engines (Bullet, Box3D, Jolt, PhysX, Rapier, Chrono, waLBerla, Yade, LMGC90, MercuryDPM, LIGGGHTS) handle moving infinite-mass bodies, surface velocities, fixed-fixed pairs and sleeping, compared with pe's kinematic bodies; what pe adopted and the open follow-ups.
 - [hard-contact-response-walkthrough.md](hard-contact-response-walkthrough.md): Sequential-impulse hard-contact response walkthrough.
 - [ffd-solver.md](ffd-solver.md): Fast-Frictional Dynamics solver wiring and solver math notes.
 - [relaxation-models.md](relaxation-models.md): Analysis of hard-contact relaxation models and material parameter effects.

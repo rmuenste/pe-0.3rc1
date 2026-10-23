@@ -176,6 +176,10 @@ public:
        pe::pe_CONTACT_SOLVER macro. */
    typedef response::HardContactAndFluid<Config>  ContactSolver;
 
+   //! Opt-in marker: the friction of this pipeline honours the surface velocities of the
+   //! bodies (RigidBody::setRelSurfaceVel()); World::simulationStep() warns without it.
+   static constexpr bool hasSurfaceVelocity = true;
+
    //! Opt-in marker: this pipeline invokes the shared lubrication stage, so it honors
    //! lubricationEnabled_ (see pe/interface/setup_optional_collision_params.h).
    static constexpr bool hasLubricationStage = true;
@@ -357,6 +361,7 @@ private:
    std::vector<Vec3> r1_, r2_;
    std::vector<BodyID> body1_, body2_;
    std::vector<Vec3> n_, t_, o_;
+   std::vector<Vec3> surfaceVel_;   //!< Relative tangential surface velocity of each contact (Contact::getSurfaceVel()).
    std::vector<real> dist_;
    std::vector<real> mu_;
    std::vector<Mat3> diag_nto_;
@@ -1758,7 +1763,21 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
 
       contactsMask_[i] = false;
 
+      // Two fixed bodies (both of infinite mass) never get a contact: the coarse detectors drop
+      // the pair (HashGrids, SweepAndPrune, ExhaustiveSearch). Should one slip through anyway,
+      // it is skipped, also in release builds: its diagonal block would be zero and its impulse
+      // not a number.
       pe_INTERNAL_ASSERT( !b1->isFixed() || !b2->isFixed(), "Invalid contact between two fixed objects." );
+      if( b1->isFixed() && b2->isFixed() )
+         continue;
+
+      // A body touching a body that drives its motion (a fixed body with a prescribed velocity,
+      // a surface velocity) is woken and kept awake for this step, before its velocity is
+      // cached below; a sleeping body would neither see the contact nor be carried.
+      if( b1->drivesMotion() || b2->drivesMotion() || !isDefault( c->getSurfaceVel() ) ) {
+         if( !b1->isFixed() ) b1->wakeByContact();
+         if( !b2->isFixed() ) b2->wakeByContact();
+      }
 
       /* Possible contact types
        *
@@ -1874,6 +1893,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
    r1_.resize( numContactsMaskedHard );
    r2_.resize( numContactsMaskedHard );
    n_.resize( numContactsMaskedHard );
+   surfaceVel_.resize( numContactsMaskedHard );
    t_.resize( numContactsMaskedHard );
    o_.resize( numContactsMaskedHard );
    dist_.resize( numContactsMaskedHard );
@@ -1913,6 +1933,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          r1_[j]       = c->getPosition() - b1->getPosition();
          r2_[j]       = c->getPosition() - b2->getPosition();
          n_[j]        = c->getNormal();   // points from body 2 towards body 1 and is normalized
+         surfaceVel_[j] = c->getSurfaceVel();   // tangential: enters the friction only
          // construct vector perpendicular to the normal (cross product with cardinal basis vector where the 1 component is where the other vector has its component of smallest magnitude)
          if( std::fabs( n_[j][0] ) < std::fabs( n_[j][1] ) ) {
             if( std::fabs( n_[j][0] ) < std::fabs( n_[j][2] ) )
@@ -2619,6 +2640,10 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxApproxim
       // Calculate the relative contact velocity in the global world frame (if no contact reaction is present at contact i)
       Vec3 gdot    ( ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] ) + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i] - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i] /* + diag_[i] * p */ );
 
+      // Surface velocities (conveyor belts): tangential by construction, so they enter the
+      // friction only and leave the normal (non-penetration) row alone.
+      gdot += surfaceVel_[i];
+
       // Change from the global world frame to the contact frame
       Mat3 contactframe( n_[i], t_[i], o_[i] );
       Vec3 gdot_nto( trans( contactframe ) * gdot );
@@ -2833,6 +2858,10 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
 
       // Calculate the relative contact velocity in the global world frame (if no contact reaction is present at contact i)
       Vec3 gdot    ( ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] ) + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i] - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i] /* + diag_[i] * p */ );
+
+      // Surface velocities (conveyor belts): tangential by construction, so they enter the
+      // friction only and leave the normal (non-penetration) row alone.
+      gdot += surfaceVel_[i];
 
       // Change from the global world frame to the contact frame
       Mat3 contactframe( n_[i], t_[i], o_[i] );
@@ -3135,6 +3164,10 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
       // Calculate the relative contact velocity in the global world frame (if no contact reaction is present at contact i)
       Vec3 gdot    ( ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] ) + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i] - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i] /* + diag_[i] * p */ );
 
+      // Surface velocities (conveyor belts): tangential by construction, so they enter the
+      // friction only and leave the normal (non-penetration) row alone.
+      gdot += surfaceVel_[i];
+
       // Change from the global world frame to the contact frame
       Mat3 contactframe( n_[i], t_[i], o_[i] );
       Vec3 gdot_nto( trans( contactframe ) * gdot );
@@ -3248,6 +3281,10 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::relaxInelasti
 
       // Calculate the relative contact velocity in the global world frame (if no contact reaction is present at contact i)
       Vec3 gdot    ( ( v_[body1_[i]->index_] + dv_[body1_[i]->index_] ) - ( v_[body2_[i]->index_] + dv_[body2_[i]->index_] ) + ( w_[body1_[i]->index_] + dw_[body1_[i]->index_] ) % r1_[i] - ( w_[body2_[i]->index_] + dw_[body2_[i]->index_] ) % r2_[i] /* + diag_[i] * p */ );
+
+      // Surface velocities (conveyor belts): tangential by construction, so they enter the
+      // friction only and leave the normal (non-penetration) row alone.
+      gdot += surfaceVel_[i];
 
       // Change from the global world frame to the contact frame
       Mat3 contactframe( n_[i], t_[i], o_[i] );
@@ -3903,6 +3940,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
 
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -3917,6 +3955,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj->setCollisionEnabled( subobjparam.collisionEnabled_ );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -3926,6 +3965,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj = instantiateBox( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.lengths_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -3935,6 +3975,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj = instantiateCapsule( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -3944,6 +3985,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj = instantiateCylinder( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.radius_, subobjparam.length_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -3956,6 +3998,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj = instantiatePlane( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.material_, subobjparam.visible_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -3965,6 +4008,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj = instantiateTriangleMesh( subobjparam.sid_, subobjparam.uid_, subobjparam.gpos_ - process->getOffset(), subobjparam.rpos_, subobjparam.q_, subobjparam.vertices_, subobjparam.faceIndices_, subobjparam.material_, subobjparam.visible_, subobjparam.fixed_, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      
 #ifdef PE_USE_CGAL
@@ -4003,6 +4047,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                      obj = instantiateUnion( subobjparam, process->getOffset(), true, false );
                      obj->setLinearVel( subobjparam.v_ );
                      obj->setAngularVel( subobjparam.w_ );
+                     obj->setRelSurfaceVel( subobjparam.surfaceVel_ );
                      obj->setOwner( process->getRank(), *process );
                      break;
                   }
@@ -4799,6 +4844,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::initializeVel
    else {
       pe_INTERNAL_ASSERT( body->getLinearVel() == Vec3( 0, 0, 0 ) && body->getAngularVel() == Vec3( 0, 0, 0 ), "Sleeping body has non-zero velocities." );
       pe_INTERNAL_ASSERT( body->getForce() == Vec3( 0, 0, 0 ) && body->getTorque() == Vec3( 0, 0, 0 ), "Sleeping body has non-zero forces or torques." );
+
+      // Sleeping body: no velocity correction either (same stale-entry argument as above).
+      dv = Vec3( 0, 0, 0 );
+      dw = Vec3( 0, 0, 0 );
    }
 
    if( Settings::forceReset() )
@@ -4877,8 +4926,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::integratePosi
       body->q_ = dq * body->q_;
       body->R_ = body->q_.toRotationMatrix();
 
-      // Damping the movement
-      if( Settings::damping() < real(1) ) {
+      // Damping the movement; not the prescribed velocity of a fixed (kinematic) body
+      if( Settings::damping() < real(1) && !body->isFixed() ) {
          const real drag( std::pow( Settings::damping(), dt ) );
          v *= drag;
          w *= drag;

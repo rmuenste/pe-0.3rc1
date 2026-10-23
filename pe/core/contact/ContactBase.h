@@ -133,6 +133,7 @@ public:
 
    inline real         getNormalRelVel()   const;
    inline const Vec3   getRelVel()         const;
+   inline const Vec3&  getSurfaceVel()     const;
           real         getNormalRelAcc()   const;
           real         getNormalRelForce() const;
    //@}
@@ -146,6 +147,13 @@ public:
    //**********************************************************************************************
 
 protected:
+   //**Utility functions***************************************************************************
+   /*!\name Utility functions */
+   //@{
+   inline void calcSurfaceVel( ConstGeomID g1, ConstGeomID g2 );
+   //@}
+   //**********************************************************************************************
+
    //**Member variables****************************************************************************
    /*!\name Member variables */
    //@{
@@ -173,6 +181,11 @@ protected:
    real dampingN_;     //!< Damping coefficient in normal direction of the contact region.
    real dampingT_;     //!< Damping coefficient in tangential direction of the contact region.
    real friction_;     //!< Coefficient of friction of the contact.
+   Vec3 surfaceVel_;   //!< Relative tangential surface velocity of the contact.
+                       /*!< The world-frame surface velocity of the primitive of body 1 minus
+                            that of body 2 (RigidBody::setRelSurfaceVel(), each plus that of an
+                            enclosing Union), projected onto the tangent plane of the contact.
+                            Zero unless one of the bodies carries a surface velocity. */
 
    static id_t nextContact_;  //!< Contact counter.
    //@}
@@ -218,7 +231,10 @@ inline ContactBase::ContactBase( GeomID g1, GeomID g2, const Vec3& gpos, const V
    , dampingN_(0)                  // Damping coefficient in normal direction of the contact region
    , dampingT_(0)                  // Damping coefficient in tangential direction of the contact region
    , friction_(0)                  // Coefficient of friction
-{}
+   , surfaceVel_()                 // Relative tangential surface velocity
+{
+   calcSurfaceVel( g1, g2 );
+}
 //*************************************************************************************************
 
 
@@ -254,7 +270,10 @@ inline ContactBase::ContactBase( GeomID g1, GeomID g2, const Vec3& gpos, const V
    , dampingN_(0)                  // Damping coefficient in normal direction of the contact region
    , dampingT_(0)                  // Damping coefficient in tangential direction of the contact region
    , friction_(0)                  // Coefficient of friction
-{}
+   , surfaceVel_()                 // Relative tangential surface velocity
+{
+   calcSurfaceVel( g1, g2 );
+}
 //*************************************************************************************************
 
 
@@ -542,10 +561,31 @@ inline real ContactBase::getNormalRelVel() const
 /*!\brief Calculation of the relative velocity between the two contacting rigid bodies.
  *
  * \return The relative velocity.
+ *
+ * The relative velocity of the surface material of body 1 with respect to that of body 2 at the
+ * contact point: the rigid-body velocities plus the relative tangential surface velocity
+ * (getSurfaceVel()), which has no normal component.
  */
 inline const Vec3 ContactBase::getRelVel() const
 {
-   return b1_->velFromWF( gpos_ ) - b2_->velFromWF( gpos_ );
+   return b1_->velFromWF( gpos_ ) - b2_->velFromWF( gpos_ ) + surfaceVel_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the relative tangential surface velocity of the contact.
+ *
+ * \return The surface velocity of body 1 minus that of body 2, in the tangent plane.
+ *
+ * The surface velocities of the two contacting primitives (see RigidBody::setRelSurfaceVel())
+ * in the world frame, projected onto the tangent plane of the contact. It belongs to the
+ * relative velocity of the friction only; the normal relative velocity (getNormalRelVel()) does
+ * not contain it.
+ */
+inline const Vec3& ContactBase::getSurfaceVel() const
+{
+   return surfaceVel_;
 }
 //*************************************************************************************************
 
@@ -570,6 +610,40 @@ inline const Vec3 ContactBase::getRelVel() const
 inline void ContactBase::setIndex( size_t index )
 {
    index_ = index;
+}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
+//  UTILITY FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Calculation of the relative tangential surface velocity of the contact.
+ *
+ * \param g1 The first contacting geometric primitive.
+ * \param g2 The second contacting geometric primitive.
+ * \return void
+ *
+ * The surface velocity of a side is that of its primitive plus that of the enclosing top-level
+ * Union, if any (both in the world frame, see RigidBody::setRelSurfaceVel()). The difference of
+ * side 1 and side 2 is projected onto the tangent plane, so that the normal relative velocity
+ * never contains it. Without surface velocities this is two zero tests.
+ */
+inline void ContactBase::calcSurfaceVel( ConstGeomID g1, ConstGeomID g2 )
+{
+   Vec3 vs;
+   if( g1->hasSurfaceVel() ) vs += g1->getSurfaceVel();
+   if( b1_ != g1 && b1_->hasSurfaceVel() ) vs += b1_->getSurfaceVel();
+   if( g2->hasSurfaceVel() ) vs -= g2->getSurfaceVel();
+   if( b2_ != g2 && b2_->hasSurfaceVel() ) vs -= b2_->getSurfaceVel();
+
+   if( !isDefault( vs ) )
+      surfaceVel_ = vs - normal_ * ( trans( normal_ ) * vs );
 }
 //*************************************************************************************************
 

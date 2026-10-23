@@ -272,6 +272,8 @@ inline real DEMSolver<C,U1,U2>::resolveContact( ContactID c ) const
    // Calculating the relative velocity in normal and tangential direction
    // The negative signs result from the different definition of the relative
    // normal velocity of the pe (see Contact::getType)
+   // (getRelVel() contains the relative tangential surface velocity of the contact; not verified,
+   // the DEMSolver configuration does not compile at the moment, so it is not marked as supported)
    const real relVelN( -c->getNormalRelVel() );
    const Vec3 relVel ( -c->getRelVel() );
    const Vec3 relVelT( relVel - ( relVelN * c->getNormal() ) );

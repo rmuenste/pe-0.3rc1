@@ -679,6 +679,39 @@ set_tests_properties(pe-contact-friction-coefficient PROPERTIES
   TIMEOUT 120
 )
 
+# Kinematic (moving fixed) bodies and surface velocities. pe_kinematic_body_test: a fixed body
+# keeps a prescribed velocity (MOBILE_INFINITE, CMake option PE_MOBILE_INFINITE), no contacts
+# between fixed bodies, RigidBody::setTargetPose() lands on the target, bodies on a moving
+# platform are woken and carried. pe_surface_velocity_test: RigidBody::setRelSurfaceVel() belts
+# (box, rotated, plane, union, ceiling) carry what lies on them, no effect on the normal
+# direction, checkpoint round trip. Each source is linked against the configured library and the
+# two solver variants, so every hard-contact pipeline runs it. 77 = configured system without the
+# feature (skipped). Serial, no MPI.
+foreach(kinematic_test kinematic_body surface_velocity)
+  string(REPLACE "_" "-" kinematic_test_name ${kinematic_test})
+  foreach(variant "" "_fluid" "_plain")
+    if(variant STREQUAL "_fluid")
+      set(kinematic_lib pe_static_lubstage_fluid)
+    elseif(variant STREQUAL "_plain")
+      set(kinematic_lib pe_static_lubstage_plain)
+    else()
+      set(kinematic_lib pe_static)
+    endif()
+    string(REPLACE "_" "-" variant_name "${variant}")
+    add_executable(pe_${kinematic_test}${variant}_test pe_${kinematic_test}_test.cpp)
+    target_link_libraries(pe_${kinematic_test}${variant}_test PRIVATE ${kinematic_lib})
+    add_test(
+      NAME pe-${kinematic_test_name}${variant_name}
+      COMMAND pe_${kinematic_test}${variant}_test
+    )
+    set_tests_properties(pe-${kinematic_test_name}${variant_name} PROPERTIES
+      LABELS "unit;serial;rigidbody"
+      SKIP_RETURN_CODE 77
+      TIMEOUT 120
+    )
+  endforeach()
+endforeach()
+
 # HashGrids::getBodiesNearPoint must also return bodies added since the last findContacts()
 # (bodiesToAdd_), both with the grid inactive and active, so that FBM point queries see a
 # particle inserted between simulation steps. Serial, no MPI.
