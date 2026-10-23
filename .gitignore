@@ -12,3 +12,6 @@ debug.log
 # Runtime settings written by the Polyscope/ImGui tools
 .polyscope.ini
 imgui.ini
+
+# Archives of downloaded third-party libraries (PE_TPL_CACHE_DIRECTORY, cmake/PEGetTPL.cmake)
+/thirdparty/cache/

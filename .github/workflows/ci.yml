@@ -18,7 +18,7 @@ jobs:
   build-and-test:
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -64,15 +64,33 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      # Only the Boost libraries pe links (find_package(Boost ...) in CMakeLists.txt), not
+      # libboost-all-dev. cmake and git come with the runner image.
       - name: Install build dependencies
+        timeout-minutes: 15
         run: |
+          printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/80-ci-retries
           sudo apt-get update
-          sudo apt-get install --yes \
-            cmake \
-            git \
+          sudo apt-get install --yes --no-install-recommends \
             ninja-build \
-            libboost-all-dev \
+            libboost-thread-dev \
+            libboost-filesystem-dev \
+            libboost-program-options-dev \
+            libboost-random-dev \
+            libboost-system-dev \
+            libeigen3-dev \
             ${{ matrix.packages }}
+
+      # Archives that pe_get_tpl() downloads (nlohmann/json here: Ubuntu's 3.11.3 is older than
+      # the pinned 3.12.0). The key changes with the pins; an older cache is still restored, and
+      # pe_get_tpl() only uses archives whose hash matches the pin.
+      - name: Cache third-party archives
+        uses: actions/cache@v6
+        with:
+          path: thirdparty/cache
+          key: pe-tpl-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: pe-tpl-
 
       - name: Configure
         run: cmake --preset "${{ matrix.preset }}"
