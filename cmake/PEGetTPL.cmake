@@ -29,6 +29,8 @@
 #     URLS          <url> [<url>...]       archive URLs, upstream first, then mirrors
 #     URL_HASH      <ALGO>=<hex>           hash of the archive, e.g. SHA256=...
 #     [TARGET       <target>]              target the package provides (e.g. Eigen3::Eigen)
+#     [OPTIONAL_TARGET <target>]           like TARGET, but an installed package is also used if
+#                                          it does not define <target> (e.g. an older CGAL)
 #     [SOURCE_SUBDIR <dir>]                as for FetchContent_Declare(); a directory that does
 #                                          not exist keeps the TPL's own CMakeLists from running
 #     [CONFIG]                             find_package() in config mode
@@ -40,10 +42,15 @@
 #
 #  Order of the sources (see doc/technical-notes/build-with-cmake.md, "Third-party libraries"):
 #
-#  1. TARGET already exists (e.g. defined by a parent project): it is used, nothing else is done.
+#  1. TARGET or OPTIONAL_TARGET already exists (e.g. defined by a parent project): it is used,
+#     nothing else is done.
 #  2. If PE_PREFER_EXTERNAL_TPL or PE_NO_EXTERNAL_DOWNLOAD is ON, or <name>_DIR is set (other
-#     than to FetchContent's redirect directory): find_package(). If TARGET is given, the
-#     package is only used if it defines TARGET.
+#     than to FetchContent's redirect directory or to the directory an earlier find_package()
+#     found by itself): find_package(). If TARGET is given, the package is only used if it
+#     defines TARGET.
+#     If <name> was declared with FetchContent_Declare() before (e.g. by a parent project), that
+#     declaration is made available and steps 3 and 4 are skipped: FetchContent would ignore
+#     pe's own declaration anyway.
 #  3. FETCHCONTENT_SOURCE_DIR_<NAME> (upper case) set: that local source tree is used.
 #  4. The archive <name>-<version>-<file of the first URL> in PE_TPL_CACHE_DIRECTORY (or, if
 #     that is empty, in <build>/_deps/pe-tpl-archives) is used if its hash matches. Otherwise
@@ -148,11 +155,14 @@ endfunction()
 function( pe_get_tpl )
    cmake_parse_arguments( PARSE_ARGV 0 TPL
       "CONFIG;FIND_ANY_VERSION;OVERRIDE_FIND_PACKAGE"
-      "PACKAGE_NAME;VERSION;URL_HASH;SOURCE_SUBDIR;TARGET"
+      "PACKAGE_NAME;VERSION;URL_HASH;SOURCE_SUBDIR;TARGET;OPTIONAL_TARGET"
       "URLS;COMPONENTS;FIND_PACKAGE_ARGS" )
 
    if( TPL_UNPARSED_ARGUMENTS )
       message( FATAL_ERROR "pe_get_tpl: unknown arguments ${TPL_UNPARSED_ARGUMENTS}" )
+   endif()
+   if( TPL_TARGET AND TPL_OPTIONAL_TARGET )
+      message( FATAL_ERROR "pe_get_tpl: give either TARGET or OPTIONAL_TARGET, not both" )
    endif()
    foreach( required PACKAGE_NAME VERSION URLS URL_HASH )
       if( NOT TPL_${required} )
@@ -177,15 +187,17 @@ function( pe_get_tpl )
    endif()
 
    # 1. A target provided by someone else, e.g. a parent project that includes pe.
-   if( TPL_TARGET AND TARGET ${TPL_TARGET} )
-      message( STATUS "pe TPL ${name}: using the existing target ${TPL_TARGET}" )
+   set( existing ${TPL_TARGET} ${TPL_OPTIONAL_TARGET} )
+   if( existing AND TARGET ${existing} )
+      message( STATUS "pe TPL ${name}: using the existing target ${existing}" )
       set( ${name}_FOUND TRUE PARENT_SCOPE )
       return()
    endif()
 
-   # 2. An installed package. A <name>_DIR that points to FetchContent's redirect directory was
-   # set by an earlier OVERRIDE_FIND_PACKAGE download, not by the user: it must not switch a
-   # reconfigure with PE_PREFER_EXTERNAL_TPL=OFF over to an installed package.
+   # 2. An installed package. <name>_DIR is not always set by the user: an earlier
+   # OVERRIDE_FIND_PACKAGE download sets it to FetchContent's redirect directory, and an earlier
+   # find_package() caches the directory it found (recorded in PE_TPL_<name>_FOUND_DIR). Neither
+   # may switch a reconfigure with PE_PREFER_EXTERNAL_TPL=OFF over to an installed package.
    set( user_dir FALSE )
    if( ${name}_DIR )
       get_filename_component( dir "${${name}_DIR}" REALPATH )
@@ -193,7 +205,8 @@ function( pe_get_tpl )
       if( CMAKE_FIND_PACKAGE_REDIRECTS_DIR )
          get_filename_component( redirects "${CMAKE_FIND_PACKAGE_REDIRECTS_DIR}" REALPATH )
       endif()
-      if( NOT dir STREQUAL redirects )
+      if( NOT dir STREQUAL redirects AND
+          NOT "${${name}_DIR}" STREQUAL "${PE_TPL_${name}_FOUND_DIR}" )
          set( user_dir TRUE )
       endif()
    endif()
@@ -217,6 +230,10 @@ function( pe_get_tpl )
                           "define ${TPL_TARGET}; it is not used" )
          set( ${name}_FOUND FALSE )
       endif()
+      if( ${name}_FOUND AND NOT user_dir )
+         set( PE_TPL_${name}_FOUND_DIR "${${name}_DIR}" CACHE INTERNAL
+              "<name>_DIR found by find_package(), not set by the user" )
+      endif()
       if( ${name}_FOUND )
          message( STATUS "pe TPL ${name}: found version ${${name}_VERSION} in ${${name}_DIR}" )
          foreach( var FOUND VERSION INCLUDE_DIRS )
@@ -232,11 +249,25 @@ function( pe_get_tpl )
       endif()
    endif()
 
-   # 3. and 4. The pinned archive.
-   if( TPL_SOURCE_SUBDIR AND CMAKE_VERSION VERSION_LESS 3.18 )
-      message( FATAL_ERROR "pe TPL ${name}: not installed, and using the downloaded archive needs "
-                           "CMake 3.18 or newer (FetchContent SOURCE_SUBDIR)" )
+   # A FetchContent declaration of <name> made before this call, e.g. by a parent project, wins:
+   # FetchContent uses the first declaration of a name. pe's pinned archive would not be used,
+   # so it is neither required nor downloaded, and pe does not write its version into the
+   # redirect directory. FetchContent keeps declarations in this global property (unchanged from
+   # CMake 3.15 to 4.x); content populated without a declaration counts as well.
+   get_property( declared GLOBAL PROPERTY _FetchContent_${lower}_savedDetails DEFINED )
+   FetchContent_GetProperties( ${name} )
+   if( declared OR ${lower}_POPULATED )
+      FetchContent_MakeAvailable( ${name} )
+      foreach( var SOURCE_DIR BINARY_DIR POPULATED )
+         set( ${lower}_${var} "${${lower}_${var}}" PARENT_SCOPE )
+      endforeach()
+      set( ${name}_FOUND FALSE PARENT_SCOPE )
+      message( STATUS "pe TPL ${name}: using the FetchContent declaration made before pe's, "
+                      "in ${${lower}_SOURCE_DIR}" )
+      return()
    endif()
+
+   # 3. and 4. The pinned archive.
    set( urls ${TPL_URLS} )
    list( GET urls 0 first_url )
    get_filename_component( file "${first_url}" NAME )
@@ -314,7 +345,19 @@ function( pe_get_tpl )
       string( APPEND CMAKE_CXX_FLAGS " -w" )
    endif()
 
-   FetchContent_MakeAvailable( ${name} )
+   if( TPL_SOURCE_SUBDIR AND CMAKE_VERSION VERSION_LESS 3.18 )
+      # Before CMake 3.18, FetchContent_MakeAvailable() ignores SOURCE_SUBDIR and would run the
+      # TPL's top-level CMakeLists. Populate the sources and add SOURCE_SUBDIR as 3.18 does.
+      FetchContent_GetProperties( ${name} )
+      if( NOT ${lower}_POPULATED )
+         FetchContent_Populate( ${name} )
+      endif()
+      if( EXISTS "${${lower}_SOURCE_DIR}/${TPL_SOURCE_SUBDIR}/CMakeLists.txt" )
+         add_subdirectory( "${${lower}_SOURCE_DIR}/${TPL_SOURCE_SUBDIR}" "${${lower}_BINARY_DIR}" )
+      endif()
+   else()
+      FetchContent_MakeAvailable( ${name} )
+   endif()
    cmake_policy( POP )
 
    foreach( var SOURCE_DIR BINARY_DIR POPULATED )
