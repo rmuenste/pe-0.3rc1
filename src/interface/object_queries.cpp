@@ -154,6 +154,27 @@ void set_pe_resume_expectation_(const double *simTime, const int *step, const ch
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Sets the pe configuration file from a C or Fortran driver.
+ *
+ * Call it before the commf2c_* setup entry point. The name takes precedence over --pe-config on
+ * the command line, the environment variable PE_CONFIG_FILE and the default example.json (see
+ * SimulationConfig::getConfigFile()).
+ *
+ * \param name Null-terminated path of the JSON file, absolute or relative to the working
+ *             directory. From Fortran, bind it as `character(kind=c_char), dimension(*)` and
+ *             append c_null_char.
+ */
+extern "C"
+void set_pe_config_file_(const char *name) {
+  if (name == nullptr || *name == '\0') {
+    throw std::invalid_argument("set_pe_config_file_: empty file name");
+  }
+  SimulationConfig::setConfigFile(std::string(name));
+}
+//*************************************************************************************************
+
 extern "C"
 void set_el_hydro_state(const short int bytes[8],
                         const double *dragB,

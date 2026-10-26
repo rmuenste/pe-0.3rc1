@@ -16,7 +16,9 @@ pe::FrozenFieldTraceResult pe::runFrozenFieldTrace(
 - The caller initializes MPI before entering the function.
 - The operation uses all ranks in `MPI_COMM_WORLD`.
 - Every rank calls the function once and supplies the same surface mesh.
-- `example.json` must be available in the process working directory.
+- The configuration file must be available: `--pe-config <file>`, `PE_CONFIG_FILE`, or the
+  deprecated default `example.json` in the working directory (see
+  [adding-json-parameters.md](adding-json-parameters.md)).
 - `processesX_ * processesY_ * processesZ_` must equal the communicator size.
 
 The unit cube is decomposed uniformly using the configured process grid. Every rank supplies the

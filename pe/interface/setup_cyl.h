@@ -1,479 +1,240 @@
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_cyl.h
+ *  \brief Example PE setup for a cylindrical domain (parallel PE mode)
+ *
+ *  Copyright (C) 2023 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
 
-using namespace pe::povray;
+#ifndef _PE_INTERFACE_SETUP_CYL_H_
+#define _PE_INTERFACE_SETUP_CYL_H_
 
-void setupCyl(MPI_Comm ex0) {
 
-  auto& config = SimulationConfig::getInstance();
-  world = theWorld();
-  world->setGravity( 0.0, 0.0, -98.1 );
-  world->setLiquidSolid(true);
-  world->setLiquidDensity(1000.0);
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
-  world->setDamping( 1.0 );
+#include <cmath>
+#include <exception>
+#include <iostream>
+#include <string>
+#include <pe/config/SimulationConfig.h>
+#include <pe/interface/decompose.h>
 
-  // Configuration of the MPI system
-  mpisystem = theMPISystem();
-  mpisystem->setComm(ex0);
 
-  const real dx( 2.00 );
-  const real dy( 2.00 );
-  const real dz( 8.0 / 16.0 );
 
-  int my_rank;
-  MPI_Comm_rank(ex0, &my_rank);
 
-  // Checking the total number of MPI processes
-  if( config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() != mpisystem->getSize() ) {
-     std::cerr << "\n Invalid number of MPI processes: " << mpisystem->getSize() << "!=" << config.getProcessesX()*config.getProcessesY()*config.getProcessesZ() << "\n\n" << std::endl;
-     std::exit(EXIT_FAILURE);
-  }
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
-  /////////////////////////////////////////////////////
-  // Setup of the MPI processes: 3D Rectilinear Domain Decomposition
+//*************************************************************************************************
+/*!\brief Example setup: one sphere in a cylindrical domain (parallel PE mode).
+ *
+ * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
+ * \return void
+ *
+ * Reached from Fortran through commf2c_cyl_(). This setup is the reference example for a
+ * parallel interface setup function with a cylindrical domain. It shows the usual steps:
+ *
+ *  -# load the configuration file and set the world and fluid properties,
+ *  -# validate the process layout before anything is created,
+ *  -# create the cartesian communicator and decompose the domain,
+ *  -# create the domain boundary in a global section and the particles on their owning process,
+ *  -# synchronize, activate the output and print a setup summary on rank 0.
+ *
+ * \b Domain: the boundary is a fixed, global InnerCylinder of radius \c cylinderRadius and
+ * height \c cylinderHeight. Its axis is the z-axis, and it reaches from z = 0 to
+ * z = cylinderHeight. The inside of the InnerCylinder (mantle and both caps) is the simulated
+ * domain. Keep this placement: the contact points of the sphere-InnerCylinder collision
+ * (MaxContacts::collideSphereInnerCylinder()) are only correct for a cylinder whose axis passes
+ * through the origin and whose bottom cap lies at the origin, i.e. for this position and the
+ * rotation by -pi/2 about the y-axis (an InnerCylinder is created along the x-axis).
+ *
+ * \b Decomposition: the cylinder is cut along its height axis into processesZ_ slabs of equal
+ * height; processesX_ and processesY_ must be 1.
+ *
+ * \b Particles: a single sphere in the center of the cylinder.
+ *
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity, fluid density
+ * and viscosity, particle density, the sphere radius (benchRadius_), the process layout, step
+ * size, number of time steps, the VTK switch and spacing, and the lubrication settings (applied
+ * by commf2c_cyl_() after this setup). The size of the cylinder is fixed by the case constants.
+ *
+ * Every error path aborts the run with a message.
+ */
+void setupCyl( MPI_Comm ex0 )
+{
+   // Case constants: size of the cylindrical domain and fixed user IDs
+   const real cylinderRadius( 1.0 );
+   const real cylinderHeight( 8.0 );
+   const pe::id_t cylinderId( 1000000 );
+   const pe::id_t sphereId( 1 );
 
-  // Computing the Cartesian coordinates of the neighboring processes
-  int dims   [] = { config.getProcessesX(), config.getProcessesY(), config.getProcessesZ() };
-  int periods[] = { false, false, false };
-  int reorder   = false;
+   auto& config = SimulationConfig::getInstance();
 
-  int rank;           // Rank of the neighboring process
-  int center[3];      // Definition of the coordinates array 'center' (the cartesian topology)
-  MPI_Comm cartcomm;  // The new MPI communicator with Cartesian topology
+   int myRank( 0 );
+   MPI_Comm_rank( ex0, &myRank );
 
-  /*
-   * Here the actual cartesian communicator is created from MPI_COMM_WORLD and the parameters
-   * of the cartesian grid setup
-   * \param MPI_COMM_WORLD The default communicator
-   * \param ndims Number of dimensions of the cartesian grid
-   * \param dims Array of size ndims, dims[i] = number of processes in dimension i 
-   * \param wrap_around Array of size ndims with wrap_around[i] = wrapping on/off for dimension i 
-   */
-  MPI_Cart_create(ex0, 3, dims, periods, reorder, &cartcomm);
-  if( cartcomm == MPI_COMM_NULL ) {
-     std::cout << "Error creating 3D communicator" << std::endl;
-     MPI_Finalize();
-     return;
-  }
+   // Prints the message once and aborts the whole run
+   const auto abortSetup = [&]( const std::string& message ) {
+      if( myRank == 0 )
+         std::cerr << "\nERROR in setupCyl: " << message << "\n" << std::endl;
+      MPI_Abort( ex0, 1 );
+   };
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "> 3D communicator created" << std::endl;
-    std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-  }
-  mpisystem->setComm(cartcomm);
-
-  // Here the cartesian coordinates of the different processes are created
-  /*  
-   * \param comm2D The cartesian communicator created by MPI_Cart_create
-   * \param my_rank The rank with regard to MPI_COMM_WORLD
-   * \param ndims Dimensions of the cartesian grid
-   * \param coord An array of a size equivalent to the dimension of the cartesian grid
-   *  coord[0] x coord[0] would correspond to the cartesian coordinates of the first process of a 2D cartesian grid
-   */
-  MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
-
-  int my_cart_rank;
-  MPI_Cart_rank(cartcomm, center, &my_cart_rank);
-
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "3D coordinates were created" << std::endl;
-    std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
-  }
-
-//===========================================================================================================
-  int px = config.getProcessesX();
-  int py = config.getProcessesY();
-  int pz = config.getProcessesZ();
-
-  real bx = 0.0;
-  real by = 0.0;
-  real bz = 0.0;
-
-  int west     [] = { center[0]-1, center[1]  , center[2] };
-  int east     [] = { center[0]+1, center[1]  , center[2] };
-  int south    [] = { center[0]  , center[1]-1, center[2] };
-  int north    [] = { center[0]  , center[1]+1, center[2] };
-  int southwest[] = { center[0]-1, center[1]-1, center[2] };
-  int southeast[] = { center[0]+1, center[1]-1, center[2] };
-  int northwest[] = { center[0]-1, center[1]+1, center[2] };
-  int northeast[] = { center[0]+1, center[1]+1, center[2] };
-
-  // bottom
-  int bottom         [] = { center[0]  , center[1]  , center[2]-1 };
-  int bottomwest     [] = { center[0]-1, center[1]  , center[2]-1 };
-  int bottomeast     [] = { center[0]+1, center[1]  , center[2]-1 };
-  int bottomsouth    [] = { center[0]  , center[1]-1, center[2]-1 };
-  int bottomnorth    [] = { center[0]  , center[1]+1, center[2]-1 };
-  int bottomsouthwest[] = { center[0]-1, center[1]-1, center[2]-1 };
-  int bottomsoutheast[] = { center[0]+1, center[1]-1, center[2]-1 };
-  int bottomnorthwest[] = { center[0]-1, center[1]+1, center[2]-1 };
-  int bottomnortheast[] = { center[0]+1, center[1]+1, center[2]-1 };
-
-  // top
-  int top         [] = { center[0]  , center[1]  , center[2]+1 };
-  int topwest     [] = { center[0]-1, center[1]  , center[2]+1 };
-  int topeast     [] = { center[0]+1, center[1]  , center[2]+1 };
-  int topsouth    [] = { center[0]  , center[1]-1, center[2]+1 };
-  int topnorth    [] = { center[0]  , center[1]+1, center[2]+1 };
-  int topsouthwest[] = { center[0]-1, center[1]-1, center[2]+1 };
-  int topsoutheast[] = { center[0]+1, center[1]-1, center[2]+1 };
-  int topnorthwest[] = { center[0]-1, center[1]+1, center[2]+1 };
-  int topnortheast[] = { center[0]+1, center[1]+1, center[2]+1 };
-
-   // Specify local domain
-   defineLocalDomain( intersect(
-      intersect(
-      HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-      HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ),
-      HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-      HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
-      HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-      HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz ) ) ) );
-
-   // Connecting the west neighbor
-   if( west[0] >= 0 ) {
-      MPI_Cart_rank( cartcomm, west, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
+   try {
+      SimulationConfig::loadConfigFile( myRank == 0 );
+   }
+   catch( const std::exception& e ) {
+      abortSetup( e.what() );
    }
 
-   // Connecting the east neighbor
-   if( east[0] < px ) {
-      MPI_Cart_rank( cartcomm, east, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
+   // World and fluid properties
+   world = theWorld();
+   world->setGravity( config.getGravity() );
+   world->setViscosity( config.getFluidViscosity() );
+   world->setLiquidDensity( config.getFluidDensity() );
+   world->setLiquidSolid( true );
+   world->setDamping( 1.0 );
+
+   TimeStep::stepsize( config.getStepsize() );
+
+   // Validation of the process layout and the particle (nothing is created before this point)
+   mpisystem = theMPISystem();
+   mpisystem->setComm( ex0 );
+
+   const int px( config.getProcessesX() );
+   const int py( config.getProcessesY() );
+   const int pz( config.getProcessesZ() );
+   const real sphereRadius( config.getBenchRadius() );
+
+   if( px != 1 || py != 1 || pz < 1 ) {
+      abortSetup( "the cylinder is decomposed along its height axis only: processesX_ and "
+                  "processesY_ must be 1 and processesZ_ at least 1, got " + std::to_string( px ) +
+                  " x " + std::to_string( py ) + " x " + std::to_string( pz ) + "." );
+   }
+   if( pz != mpisystem->getSize() ) {
+      abortSetup( "invalid number of MPI processes: " + std::to_string( mpisystem->getSize() ) +
+                  " != " + std::to_string( pz ) + " (processesZ_)." );
+   }
+   if( sphereRadius <= real(0) || sphereRadius >= cylinderRadius ||
+       real(2) * sphereRadius >= cylinderHeight ) {
+      abortSetup( "benchRadius_ = " + std::to_string( sphereRadius ) + " does not fit into the "
+                  "cylinder (radius " + std::to_string( cylinderRadius ) + ", height " +
+                  std::to_string( cylinderHeight ) + ")." );
    }
 
-   // Connecting the south neighbor
-   if( south[1] >= 0 ) {
-      MPI_Cart_rank( cartcomm, south, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
+   // Cartesian communicator with one process per slab
+   int dims   [] = { px, py, pz };
+   int periods[] = { false, false, false };
+   int reorder   = false;
+   MPI_Comm cartcomm;
+
+   MPI_Cart_create( ex0, 3, dims, periods, reorder, &cartcomm );
+   if( cartcomm == MPI_COMM_NULL )
+      abortSetup( "failed to create the cartesian communicator." );
+   mpisystem->setComm( cartcomm );
+
+   int center[3];
+   MPI_Cart_coords( cartcomm, mpisystem->getRank(), 3, center );
+
+   // Slabs along the height axis; in x and y each slab covers the whole cylinder
+   const real slabHeight( cylinderHeight / pz );
+   decomposeDomain( center, -cylinderRadius, -cylinderRadius, real(0),
+                    real(2) * cylinderRadius, real(2) * cylinderRadius, slabHeight,
+                    px, py, pz );
+
+   pe_LOG_INFO_SECTION( log ) {
+      log << "Cylinder slab " << center[2] << " of " << pz << ": z in [" << center[2] * slabHeight
+          << ", " << ( center[2] + 1 ) * slabHeight << "]\n";
    }
 
-   // Connecting the north neighbor
-   if( north[1] < py ) {
-      MPI_Cart_rank( cartcomm, north, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the bottom neighbor
-   if( bottom[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottom, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ) );
-   }
-
-   // Connecting the top neighbor
-   if( top[2] < pz ) {
-      MPI_Cart_rank( cartcomm, top, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,0,+1), +(bz+top[2]*dz   ) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ) );
-   }
-
-   // Connecting the south-west neighbor
-   if( southwest[0] >= 0 && southwest[1] >= 0 ) {
-      MPI_Cart_rank( cartcomm, southwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -(bz+center[0]*dx) ),
-         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
-   }
-
-
-   // Connecting the south-east neighbor
-   if( southeast[0] < px && southeast[1] >= 0 ) {
-      MPI_Cart_rank( cartcomm, southeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the north-west neighbor
-   if( northwest[0] >= 0 && northwest[1] < py ) {
-      MPI_Cart_rank( cartcomm, northwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the north-east neighbor
-   if( northeast[0] < px && northeast[1] < py ) {
-      MPI_Cart_rank( cartcomm, northeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
-         HalfSpace( Vec3(0,0,+1), +(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the bottom-west neighbor
-   if( bottomwest[0] >= 0 && bottomwest[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ) );
-   }
-
-   // Connecting the bottom-east neighbor
-   if( bottomeast[0] < px && bottomeast[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(+1,0,0), +(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ) );
-   }
-
-   // Connecting the bottom-south neighbor
-   if( bottomsouth[1] >= 0 && bottomsouth[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomsouth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ) );
-   }
-
-   // Connecting the bottom-north neighbor
-   if( bottomnorth[1] < py && bottomnorth[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomnorth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,+1,0), +(by+north[1]*dy ) ),
-         HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ) );
-   }
-
-   // Connecting the bottom-south-west neighbor
-   if( bottomsouthwest[0] >= 0 && bottomsouthwest[1] >= 0 && bottomsouthwest[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomsouthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-                                HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-                                HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ) );
-   }
-
-   // Connecting the bottom-south-east neighbor
-   if( bottomsoutheast[0] < px && bottomsoutheast[1] >= 0 && bottomsoutheast[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomsoutheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
-                                HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-                                HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ) );
-   }
-
-   // Connecting the bottom-north-west neighbor
-   if( bottomnorthwest[0] >= 0 && bottomnorthwest[1] < py && bottomnorthwest[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomnorthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-                                HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
-                                HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ) );
-   }
-
-   // Connecting the bottom-north-east neighbor
-   if( bottomnortheast[0] < px && bottomnortheast[1] < py && bottomnortheast[2] >= 0 ) {
-      MPI_Cart_rank( cartcomm, bottomnortheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
-                                HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
-                                HalfSpace( Vec3(0,0,-1), -(bz+center[2]*dz) ) ) );
-   }
-
-   // Connecting the top-west neighbor
-   if( topwest[0] >= 0 && topwest[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topwest, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-         HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ) );
-   }
-
-   // Connecting the top-east neighbor
-   if( topeast[0] < px && topeast[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topeast, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
-         HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ),
-         HalfSpace( Vec3(0,+1,0), +(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,-1,0), -(by+north[1]*dy ) ) ) );
-   }
-
-   // Connecting the top-south neighbor
-   if( topsouth[1] >= 0 && topsouth[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topsouth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-         HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ) );
-   }
-
-   // Connecting the top-north neighbor
-   if( topnorth[1] < py && topnorth[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topnorth, &rank );
-      connect( rank, intersect(
-         HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
-         HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ),
-         HalfSpace( Vec3(+1,0,0), +(bx+center[0]*dx) ),
-         HalfSpace( Vec3(-1,0,0), -(bx+east[0]*dx  ) ) ) );
-   }
-
-   // Connecting the top-south-west neighbor
-   if( topsouthwest[0] >= 0 && topsouthwest[1] >= 0 && topsouthwest[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topsouthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-                                HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-                                HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the top-south-east neighbor
-   if( topsoutheast[0] < px && topsoutheast[1] >= 0 && topsoutheast[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topsoutheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0),  +(bx+east[0]*dx  ) ),
-                                HalfSpace( Vec3(0,-1,0), -(by+center[1]*dy) ),
-                                HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the top-north-west neighbor
-   if( topnorthwest[0] >= 0 && topnorthwest[1] < py && topnorthwest[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topnorthwest, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(-1,0,0), -(bx+center[0]*dx) ),
-                                HalfSpace( Vec3(0,1,0),  +(by+north[1]*dy ) ),
-                                HalfSpace( Vec3(0,0,1),  +(bz+top[2]*dz   ) ) ) );
-   }
-
-   // Connecting the top-north-east neighbor
-   if( topnortheast[0] < px && topnortheast[1] < py && topnortheast[2] < pz ) {
-      MPI_Cart_rank( cartcomm, topnortheast, &rank );
-      connect( rank, intersect( HalfSpace( Vec3(1,0,0), +(bx+east[0]*dx ) ),
-                                HalfSpace( Vec3(0,1,0), +(by+north[1]*dy) ),
-                                HalfSpace( Vec3(0,0,1), +(bz+top[2]*dz  ) ) ) );
-   }
-
-//===========================================================================================================
-
-
-   // Checking the process setup
    theMPISystem()->checkProcesses();
 
-  MaterialID gr = createMaterial("ground", 1120.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  std::cout << "[Creating a plane] " << std::endl;
-  pe_GLOBAL_SECTION
-  {
-     // Creating the ground plane
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
-     createPlane( 1778,+1.0, 0.0, 0.0, 0, granite, false ); // right border
-     createPlane( 1779,-1.0, 0.0, 0.0,-2.0, granite, false ); // left border
- 
-     createPlane( 1780, 0.0, 1.0, 0.0, 0, granite, false ); // back border
-     createPlane( 1781, 0.0,-1.0, 0.0,-2, granite, false ); // front border
+   // Materials (name, density, restitution, static and dynamic friction, Poisson's ratio,
+   // Young's modulus, stiffness, normal and tangential damping)
+   MaterialID wallMaterial = createMaterial( "cylinderWall", 1.0,
+                                             0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
+   MaterialID particleMaterial = createMaterial( "particleMaterial", config.getParticleDensity(),
+                                                 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5 );
 
-  }
+   // Domain boundary: global, so every process knows it
+   pe_GLOBAL_SECTION
+   {
+      const Vec3 cylinderPos( 0.0, 0.0, 0.5 * cylinderHeight );
+      InnerCylinderID cylinder = createInnerCylinder( cylinderId, cylinderPos, cylinderRadius,
+                                                      cylinderHeight, wallMaterial );
+      cylinder->rotate( 0.0, -0.5 * M_PI, 0.0 );   // axis from x to z, see the documentation
+      cylinder->setFixed( true );
+   }
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "#==================================================================================" << std::endl;
-  }
+   // Particles: created only on the process that owns the position
+   const Vec3 spherePos( 0.0, 0.0, 0.5 * cylinderHeight );
+   if( world->ownsPoint( spherePos ) )
+      createSphere( sphereId, spherePos, sphereRadius, particleMaterial );
 
-  // Setup of the VTK visualization
-  if( g_vtk ) {
-     vtk::WriterID vtk = vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(), false, true);
-  }
-  
+   world->synchronize();
 
-  const real lx = px * dx;
-  const real ly = py * dy;
-  const real lz = pz * dz;
+   if( config.getVtk() )
+      vtk::activateWriter( "./paraview", config.getVisspacing(), 0, config.getTimesteps(),
+                           false, true );
 
-  const int nx = 1;//  lx / space;
-  const int ny = 1;//  ly / space;
-  const int nz = 1;// (lz / space);
+   // Setup summary: every sphere counts once, on its owner (not as a shadow copy)
+   unsigned long spheresLocal( 0 );
+   for( World::Iterator body = world->begin(); body != world->end(); ++body ) {
+      if( body->getType() == sphereType && !body->isRemote() )
+         ++spheresLocal;
+   }
+   unsigned long spheresTotal( 0 );
+   MPI_Reduce( &spheresLocal, &spheresTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
+   const real domainVolume( M_PI * cylinderRadius * cylinderRadius * cylinderHeight );
+   const real sphereVolume( real(4) / real(3) * M_PI * std::pow( sphereRadius, 3 ) );
+   const real volumeFraction( spheresTotal * sphereVolume / domainVolume * real(100) );
+   const char* lubrication( config.getLubricationEnabled() ? "enabled" : "disabled" );
 
-  pe_EXCLUSIVE_SECTION(0) {
+   pe_EXCLUSIVE_SECTION( 0 ) {
+      std::cout << "\n--" << "CYLINDER SETUP"
+                << "----------------------------------------------------------------\n"
+                << " Total number of MPI processes           = " << pz << "\n"
+                << " Slabs along the cylinder axis           = " << pz << "\n"
+                << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+                << " Cylinder radius / height                = " << cylinderRadius << " / "
+                                                                   << cylinderHeight << "\n"
+                << " Domain volume                           = " << domainVolume << "\n"
+                << " Total number of spheres                 = " << spheresTotal << "\n"
+                << " Sphere radius                           = " << sphereRadius << "\n"
+                << " Fluid viscosity                         = " << config.getFluidViscosity()
+                                                                   << "\n"
+                << " Fluid density                           = " << config.getFluidDensity() << "\n"
+                << " Particle density                        = " << config.getParticleDensity()
+                                                                   << "\n"
+                << " Gravity constant                        = " << world->getGravity() << "\n"
+                << " Lubrication (json)                      = " << lubrication << "\n"
+                << " Volume fraction[%]                      = " << volumeFraction << "\n"
+                << std::endl;
+      std::cout << std::string( 80, '-' ) << "\n" << std::endl;
+   }
 
-    std::cout << "nx, ny, nz: " << (Vec3(nx, ny, nz)) << std::endl;
-
-  }
-
-  int idx = 0;
-
-  // Create a custom material for the benchmark
-  MaterialID myMaterial = createMaterial("Bench", 1100, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
-  Vec3 position( 0.99,  1.0, 6.9);
-
-  real radBench = 0.1;
-  if (world->ownsPoint( position )) {
-    CapsuleID cap = createCapsule(idx, position, radBench, 3 * radBench, myMaterial, true);
-    std::cout << "[Creating capsule] at: " << (position) << " in domain: " << my_rank << std::endl;
-    std::cout << "[capsule sid]: " << cap->getSystemID()  << std::endl;
-    ++idx;
-  }
-
-  position = Vec3( 1.0,  1.0, 7.2);
-  if (world->ownsPoint( position )) {
-    CapsuleID cap = createCapsule(idx, position, radBench, 3 * radBench, myMaterial, true);
-    std::cout << "[Creating capsule] at: " << (position) << " in domain: " << my_rank << std::endl;
-    std::cout << "[capsule sid]: " << cap->getSystemID()  << std::endl;
-    ++idx;
-  }
-
-  // Synchronization of the MPI processes
-  world->synchronize();
-
-  // Calculating the total number of particles and primitives
-  unsigned long particlesTotal ( 0 );
-  unsigned long primitivesTotal( 0 );
-  unsigned long bla = idx;
-  int numBodies =  theCollisionSystem()->getBodyStorage().size();
-  unsigned long bodiesUpdate = static_cast<unsigned long>(numBodies);
-  MPI_Reduce( &bla, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesUpdate, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-
-  pe_EXCLUSIVE_SECTION( 0 ) {
-    std::cout << "\n--" << "SIMULATION SETUP"
-      << "--------------------------------------------------------------\n"
-      << " Total number of MPI processes           = " << px * py * pz << "\n"
-      << " particles x              = " << nx << "\n" 
-      << " particles y              = " << ny << "\n" 
-      << " particles z              = " << nz << "\n" 
-      << " Stepsize  dt             = " << config.getStepsize() << "\n" 
-      << " visspacing               = " << config.getVisspacing() << "\n" 
-      << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
-     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
-  }
-
-  MPI_Barrier(cartcomm);
-   
-
+   MPI_Barrier( cartcomm );
 }
+//*************************************************************************************************
+
+#endif

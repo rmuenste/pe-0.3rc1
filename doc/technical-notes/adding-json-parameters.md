@@ -2,6 +2,24 @@
 
 This guide shows how to make a simulation parameter configurable via the JSON file so that it is loaded at startup. Follow these steps for each new parameter.
 
+## Which file is loaded
+
+Setups load the configuration with `SimulationConfig::loadConfigFile()`, not with a fixed file
+name. The file is the first of:
+
+1. a name set by the application: `SimulationConfig::setConfigFile()` in C++, or
+   `set_pe_config_file_(name)` (null-terminated) from a C or Fortran driver, called before the
+   `commf2c_*` setup entry point;
+2. `--pe-config <file>` or `--pe-config=<file>` on the command line of the program. pe reads it
+   from `/proc/self/cmdline` (Linux) or `_NSGetArgv()` (macOS), so it also works when pe is a
+   library of a program with a Fortran `main`; the host program must ignore the option;
+3. the environment variable `PE_CONFIG_FILE` (with Open MPI pass it on with `mpirun -x`);
+4. `example.json`, deprecated (`config.defaultFileName`, see [deprecations.md](deprecations.md)).
+
+Paths are absolute or relative to the working directory. `loadConfigFile()` prints the file and
+where its name came from (`PE configuration file: run1.json (from the command line option
+--pe-config)`) and stops with an error if the file does not exist.
+
 ## 1) Add storage, defaults, and accessors
 - File: `pe/config/SimulationConfig.h`
   - Add a member variable with a sensible default type (e.g., `real newParam_;`).
@@ -17,13 +35,13 @@ This guide shows how to make a simulation parameter configurable via the JSON fi
         config.setNewParam(j["newParam_"].get<real>());
     ```
   - Keep key names consistent with the member variables already used (e.g., `"stepsize_"`).
-  - JSON parsing requires builds with `HAVE_JSON` enabled; otherwise the loader is a no-op.
+  - JSON parsing requires builds with `HAVE_JSON` enabled; otherwise the loader throws.
 
 ## 3) Apply the parameter in setup (if needed)
 - If the parameter affects runtime behavior, apply it after loading the config in your setup routine (e.g., `pe/interface/sim_setup_serial.h`):
   ```cpp
   auto& config = SimulationConfig::getInstance();
-  // after SimulationConfig::loadFromFile(...)
+  // after SimulationConfig::loadConfigFile()
   someTarget->setNewParam( config.getNewParam() );
   ```
 - Use the appropriate target object (world, collision system, solver, etc.).

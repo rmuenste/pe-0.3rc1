@@ -290,7 +290,7 @@ Google/LLVM-like style:
 | Function braces | own line | same line |
 | Template heads | `template< typename T >` | `template <typename T>` / `template<class T>` |
 | Entity framing | `//****` frames + `/*!\brief` | plain `//` or `//!` comments, few banners |
-| Include guards | `_PE_DIR_FILE_H_` | `PE_INTERFACE_..._H`, `_FC2_..._HPP_`, `_PE_SETUP_ATC_H_` |
+| Include guards | `_PE_DIR_FILE_H_` | `PE_INTERFACE_..._H`, `_FC2_..._HPP_`, `_PE_DECOMPOSE_H_` |
 | File names | `CamelCase.h` | `snake_case.h` (`setup_atc.h`, `el_optional_api.h`) |
 | Namespace close | `} // namespace pe` | `}  // namespace pe` |
 

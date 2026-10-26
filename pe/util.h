@@ -36,6 +36,7 @@
 #include <pe/util/Constraints.h>
 #include <pe/util/Convert.h>
 #include <pe/util/ConvexHull.h>
+#include <pe/util/Deprecation.h>
 #include <pe/util/DimensionOf.h>
 #include <pe/util/DisableIf.h>
 #include <pe/util/EmptyType.h>

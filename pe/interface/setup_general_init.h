@@ -1,5 +1,32 @@
-#ifndef _PE_SETUP_GENERAL_INIT_H_
-#define _PE_SETUP_GENERAL_INIT_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_general_init.h
+ *  \brief Minimal general-purpose PE bootstrap for CFD applications (parallel PE mode)
+ *
+ *  Copyright (C) 2023 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
+
+#ifndef _PE_INTERFACE_SETUP_GENERAL_INIT_H_
+#define _PE_INTERFACE_SETUP_GENERAL_INIT_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
 #include <iostream>
 
@@ -8,6 +35,15 @@
 #include <pe/core/MPISystemID.h>
 #include <pe/core/World.h>
 #include <pe/core/WorldID.h>
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief Minimal general-purpose PE bootstrap for CFD applications (parallel PE mode).

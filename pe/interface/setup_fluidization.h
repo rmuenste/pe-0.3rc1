@@ -1,13 +1,51 @@
-#ifndef _PE_SETUP_FLUIDIZATION_H_
-#define _PE_SETUP_FLUIDIZATION_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_fluidization.h
+ *  \brief PE setup for the fluidization column case (parallel PE mode)
+ *
+ *  Copyright (C) 2026 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
+
+#ifndef _PE_INTERFACE_SETUP_FLUIDIZATION_H_
+#define _PE_INTERFACE_SETUP_FLUIDIZATION_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <iostream>
 #include <string>
 
 #include <pe/config/SimulationConfig.h>
+#include <pe/core/MPITrait.h>
 #include <pe/interface/decompose.h>
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief PE setup for the fluidization column case (parallel PE mode).
@@ -18,7 +56,7 @@
  * with a ground plane at z = 0. A fixed number of equal spheres is seeded on a regular lattice
  * that is filled x-first, then y, then z, starting above the ground plane.
  *
- * Read from example.json: gravity, fluid density and viscosity, particle density, the process
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity, fluid density and viscosity, particle density, the process
  * layout (processesX_/Y_/Z_), the step size, the VTK switch and spacing, and the lattice
  * spacing factor (gap between sphere surfaces in units of the particle radius).
  *
@@ -49,7 +87,23 @@ void setupFluidization(MPI_Comm ex0) {
 
   world = theWorld();
 
-  loadSimulationConfig("example.json");
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupFluidization: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
+  try {
+    SimulationConfig::loadConfigFile(myRank == 0);
+  }
+  catch (const std::exception& e) {
+    abortSetup(e.what());
+  }
 
   const real simViscosity(config.getFluidViscosity());
   const real simRho(config.getFluidDensity());
@@ -69,21 +123,13 @@ void setupFluidization(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  int myRank = 0;
-  MPI_Comm_rank(ex0, &myRank);
-
-  // Prints the message once and aborts the whole run
-  const auto abortSetup = [&](const std::string& message) {
-    if (myRank == 0) {
-      std::cerr << "\nERROR in setupFluidization: " << message << "\n" << std::endl;
-    }
-    MPI_Abort(ex0, 1);
-  };
-
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();
   const int pz = config.getProcessesZ();
 
+  if (px <= 0 || py <= 0 || pz <= 0) {
+    abortSetup("processesX_, processesY_ and processesZ_ must be positive.");
+  }
   if (px * py * pz != mpisystem->getSize()) {
     abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
                " != " + std::to_string(px * py * pz) + " (processesX_*Y_*Z_).");
@@ -132,12 +178,6 @@ void setupFluidization(MPI_Comm ex0) {
   int center[3];
   MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "> 3D communicator created" << std::endl;
-    std::cout << Vec3(dims[0], dims[1], dims[2]) << std::endl;
-    std::cout << "Rank:" << myRank << "->" << Vec3(center[0], center[1], center[2]) << std::endl;
-  }
-
   const real dx = (xMax - xMin) / px;
   const real dy = (yMax - yMin) / py;
   const real dz = (zMax - zMin) / pz;
@@ -153,7 +193,7 @@ void setupFluidization(MPI_Comm ex0) {
   MaterialID gr = createMaterial("ground", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   pe_GLOBAL_SECTION
   {
-     g_ground = createPlane(777, 0.0, 0.0, 1.0, 0.0, gr, true);
+     createPlane(777, 0.0, 0.0, 1.0, 0.0, gr, true);
   }
 
   MaterialID myMaterial = createMaterial("FluidizationParticles", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
@@ -197,25 +237,40 @@ void setupFluidization(MPI_Comm ex0) {
   //===============================================================================================
   // Setup summary
   //===============================================================================================
+  // Every body counts once: the bodies a process owns (not its shadow copies of neighbouring
+  // bodies), plus the global bodies, which every process holds
+  unsigned long localBodies(0);
+  unsigned long globalBodies(0);
+  for (World::Iterator body = world->begin(); body != world->end(); ++body) {
+    if (body->isGlobal()) {
+      ++globalBodies;
+    }
+    else if (!body->isRemote()) {
+      ++localBodies;
+    }
+  }
+
   unsigned long particlesTotal(0);
   unsigned long primitivesTotal(0);
-  unsigned long localBodies = static_cast<unsigned long>(theCollisionSystem()->getBodyStorage().size());
   MPI_Reduce(&localParticles, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
   MPI_Reduce(&localBodies, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
+  primitivesTotal += globalBodies;
 
   const real sphereVol = (real(4.0) / real(3.0)) * M_PI * radParticle * radParticle * radParticle;
   const real localVol = static_cast<real>(localParticles) * sphereVol;
   const real localMass = localVol * rhoParticle;
   real totalMass(0.0);
   real totalVol(0.0);
-  MPI_Reduce(&localMass, &totalMass, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm);
-  MPI_Reduce(&localVol, &totalVol, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm);
+  MPI_Reduce(&localMass, &totalMass, 1, MPITrait<real>::getType(), MPI_SUM, 0, cartcomm);
+  MPI_Reduce(&localVol, &totalVol, 1, MPITrait<real>::getType(), MPI_SUM, 0, cartcomm);
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "FLUIDIZATION SETUP"
       << "--------------------------------------------------------------\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
+      << " Process grid (x, y, z)                  = " << px << " x " << py << " x " << pz << "\n"
+      << " Subdomain size                          = " << Vec3(dx, dy, dz) << "\n"
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"

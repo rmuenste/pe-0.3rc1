@@ -2106,7 +2106,17 @@ void MaxContacts::collideSphereCylinder( SphereID s, CylinderID c, CC& contacts 
  * \param contacts Contact container for the generated contacts.
  * \return void
  *
- * TODO
+ * TODO: The contact normals and penetration depths are correct for any placement, but the
+ *       contact points are only correct if the cylinder axis passes through the origin and the
+ *       cylinder reaches from the origin in the direction of its local -x axis, e.g. a cylinder
+ *       at (0,0,L/2) rotated by -pi/2 about the y-axis (as in pe/interface/setup_cyl.h). The
+ *       mantle contact point uses the sphere position r2Pos instead of the relative position
+ *       rPos along the axis, and the cap contact points are not offset by the cylinder
+ *       position and half length. With the usual rotation by +pi/2 the cap contact points are
+ *       about one cylinder length off; with the axis away from the origin the mantle points
+ *       are wrong as well. The wrong lever arms produce spurious torques. Checked by calling
+ *       this function directly for several placements (2026-10). The ellipsoid variant
+ *       collideEllipsoidInnerCylinder() mirrors this function and should be checked as well.
  */
 template< typename CC >  // Type of the contact container
 void MaxContacts::collideSphereInnerCylinder( SphereID s, InnerCylinderID c, CC& contacts )

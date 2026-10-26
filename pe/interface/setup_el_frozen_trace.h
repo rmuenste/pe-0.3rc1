@@ -1,8 +1,36 @@
-#ifndef _PE_SETUP_EL_FROZEN_TRACE_H_
-#define _PE_SETUP_EL_FROZEN_TRACE_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_el_frozen_trace.h
+ *  \brief PE setup for the Euler-Lagrange frozen-field tracer case (parallel PE mode)
+ *
+ *  Copyright (C) 2026 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
+
+#ifndef _PE_INTERFACE_SETUP_EL_FROZEN_TRACE_H_
+#define _PE_INTERFACE_SETUP_EL_FROZEN_TRACE_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -12,6 +40,15 @@
 #include <pe/interface/decompose.h>
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/setup_optional_collision_params.h>
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief PE setup for the Euler-Lagrange frozen-field tracer case (parallel PE mode).
@@ -32,7 +69,7 @@
  *   - otherwise: a regular lattice of fixed-diameter tracers between x = xmin and x = 0.3,
  *     with lattice sites inside the obstacle cylinder skipped.
  *
- * Read from example.json: gravity, fluid density and viscosity, particle density, material
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity, fluid density and viscosity, particle density, material
  * coefficients, initial particle velocity, step size and substeps, the lubrication settings,
  * and the VTK switch and spacing.
  *
@@ -63,7 +100,24 @@ void setupELFrozenTrace(MPI_Comm ex0,
   //===============================================================================================
   auto &config = SimulationConfig::getInstance();
   WorldID world = theWorld();
-  loadSimulationConfig("example.json");
+
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupELFrozenTrace: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
+  try {
+    SimulationConfig::loadConfigFile(myRank == 0);
+  }
+  catch (const std::exception& e) {
+    abortSetup(e.what());
+  }
 
   config.setCfdDomainMin(Vec3(xmin, ymin, zmin));
   config.setCfdDomainMax(Vec3(xmax, ymax, zmax));
@@ -82,17 +136,6 @@ void setupELFrozenTrace(MPI_Comm ex0,
   //===============================================================================================
   MPISystemID mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
-
-  int myRank = 0;
-  MPI_Comm_rank(ex0, &myRank);
-
-  // Prints the message once and aborts the whole run
-  const auto abortSetup = [&](const std::string& message) {
-    if (myRank == 0) {
-      std::cerr << "\nERROR in setupELFrozenTrace: " << message << "\n" << std::endl;
-    }
-    MPI_Abort(ex0, 1);
-  };
 
   const int px = config.getProcessesX();
   const int commSize = mpisystem->getSize();

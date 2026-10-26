@@ -1,0 +1,15 @@
+{
+  "timesteps_": 1500,
+  "stepsize_": 0.001,
+  "substeps_": 1,
+  "vtk_": false,
+  "useCheckpointer_": false,
+  "resume_": false,
+  "benchRadius_": 0.25,
+  "particleDensity_": 2.0,
+  "fluidViscosity_": 0.01,
+  "fluidDensity_": 1.0,
+  "gravity_": [0.0, 0.0, -9.81],
+  "packingMethod_": "none",
+  "lubricationEnabled_": false
+}

@@ -8,9 +8,10 @@ This directory contains focused engineering notes for PE internals. Use this ind
 
 ## Build and Configuration
 
-- [adding-json-parameters.md](adding-json-parameters.md): How to add a simulation parameter to `SimulationConfig` and load it from JSON at startup.
+- [adding-json-parameters.md](adding-json-parameters.md): Which configuration file is loaded (`--pe-config`, `PE_CONFIG_FILE`, `set_pe_config_file_()`), and how to add a simulation parameter to `SimulationConfig` and load it from JSON at startup.
 - [build-with-cmake.md](build-with-cmake.md): General CMake build setup, Unix Makefiles workflow, Ninja workflow, target-specific build commands, and third-party libraries (system first, pinned and hash-checked downloads, archive cache, offline builds, `tools/bump_tpl_pin.py`).
 - [command-line-interface.md](command-line-interface.md): Shared command-line helper API in `pe::CommandLineInterface`.
+- [deprecations.md](deprecations.md): Run-time deprecation mechanism (`pe::reportDeprecated()`, `deprecationsAsErrors_`), how to add a deprecation, and the list of current deprecations.
 
 ## Architecture and Core Types
 

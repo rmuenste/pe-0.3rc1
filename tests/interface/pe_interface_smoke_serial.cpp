@@ -28,6 +28,7 @@
 //    ├── pe_interface_smoke_serial --case atc-external           → fresh process → setupATCSerial → exit
 //    ├── pe_interface_smoke_serial --case atc-cgal-distancemap   → fresh process → setupATCSerial → exit
 //    ├── pe_interface_smoke_serial --case span-complex-distancemaps → fresh process → setupSpanComplexSerial → exit
+//    ├── pe_interface_smoke_serial --case cyl-example            → fresh process → setupCylSerial → steps → exit
 //    ├── pe_interface_smoke_serial --case fluidization-srr-fresh → fresh process → setupFluidizationSRRSerial → exit
 //    ├── pe_interface_smoke_serial --case atc-resume-roundtrip   → fresh process
 //    │     ├── forks seed child  → child process → setupATCSerial → writes checkpoint → exit
@@ -65,6 +66,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/version.hpp>
 
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -285,6 +287,45 @@ void requireCommonConfig(bool resume, pe::SimulationConfig::PackingMethod packin
   require(config.getPackingMethod() == packingMethod, "Config packingMethod_ has unexpected value");
 }
 
+// The cylinder example: one sphere in the center of a fixed InnerCylinder (axis z, z in [0, 8]).
+// The driver adds gravity, as the CFD side does for HardContactEulerLagrange; the sphere has to
+// fall onto the bottom cap and come to rest on the axis without picking up spin.
+void runCylExample() {
+  pe::setupCylSerial(1);
+  requireCommonConfig(false, pe::SimulationConfig::None);
+  requireCounts(1, 0, 0);
+  require(countBodies(pe::innerCylinderType) == 1, "Expected exactly one InnerCylinder");
+
+  pe::WorldID world = pe::theWorld();
+  pe::BodyID sphere = nullptr;
+  for (pe::World::Iterator it = world->begin(); it != world->end(); ++it) {
+    if (it->getType() == pe::innerCylinderType) {
+      require(it->isFixed(), "The InnerCylinder should be fixed");
+    } else if (it->getType() == pe::sphereType) {
+      sphere = *it;
+    }
+  }
+  require(sphere != nullptr, "Expected one sphere");
+  require((sphere->getPosition() - pe::Vec3(0.0, 0.0, 4.0)).length() < 1e-12,
+          "The sphere should start in the center of the cylinder");
+
+  const auto& config = pe::SimulationConfig::getInstance();
+  for (size_t step = 0; step < config.getTimesteps(); ++step) {
+    sphere->addForce(sphere->getMass() * world->getGravity());
+    world->simulationStep(config.getStepsize());
+  }
+
+  const pe::Vec3 pos = sphere->getPosition();
+  const pe::real radius = config.getBenchRadius();
+  require(std::fabs(pos[2] - radius) < 0.01 * radius,
+          "The sphere should rest on the bottom cap at z = " + std::to_string(radius) +
+              ", got z = " + std::to_string(pos[2]));
+  require(std::sqrt(pos[0] * pos[0] + pos[1] * pos[1]) < 1e-6,
+          "The sphere should stay on the cylinder axis");
+  require(sphere->getLinearVel().length() < 1e-3, "The sphere should be at rest");
+  require(sphere->getAngularVel().length() < 1e-6, "The sphere should not pick up spin");
+}
+
 void runAtcExternal() {
   pe::setupATCSerial(1);
   requireCommonConfig(false, pe::SimulationConfig::External);
@@ -409,6 +450,8 @@ int main(int argc, char** argv) {
       selectConfig(runDir, "atc_cgal_distancemap.json");
     } else if (args.caseName == "span-complex-distancemaps") {
       selectConfig(runDir, "span_complex_distancemaps.json");
+    } else if (args.caseName == "cyl-example") {
+      selectConfig(runDir, "cyl_example.json");
     } else if (args.caseName == "fluidization-srr-fresh") {
       selectConfig(runDir, "fluidization_srr_fresh.json");
     } else if (args.caseName == "fluidization-srr-resume-roundtrip") {
@@ -452,6 +495,8 @@ int main(int argc, char** argv) {
         runAtcCgalDistanceMap();
       } else if (args.caseName == "span-complex-distancemaps") {
         runSpanComplexDistanceMaps();
+      } else if (args.caseName == "cyl-example") {
+        runCylExample();
       } else if (args.caseName == "fluidization-srr-fresh") {
         runFluidizationSrrFresh();
       }

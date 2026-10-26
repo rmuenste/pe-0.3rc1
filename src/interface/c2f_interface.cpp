@@ -397,7 +397,7 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
 
 
 //=================================================================================================
-// NOTE: setupLubricationLab() and setupDrill() parallel implementations are WIP
+// NOTE: there are no parallel implementations of the Lubrication Lab and Drill cases
 // Only serial mode (PE_SERIAL_MODE) is currently supported for these simulations
 // These stubs prevent linker errors and provide clear runtime error messages
 //=================================================================================================

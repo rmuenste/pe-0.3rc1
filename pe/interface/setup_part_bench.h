@@ -1,12 +1,50 @@
-#ifndef _PE_SETUP_PART_BENCH_H_
-#define _PE_SETUP_PART_BENCH_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_part_bench.h
+ *  \brief PE setup for the single-particle sedimentation benchmark (parallel PE mode)
+ *
+ *  Copyright (C) 2023 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
 
+#ifndef _PE_INTERFACE_SETUP_PART_BENCH_H_
+#define _PE_INTERFACE_SETUP_PART_BENCH_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
+
+#include <exception>
 #include <iostream>
 #include <string>
 
 #include <pe/config/SimulationConfig.h>
+#include <pe/core/MPITrait.h>
 #include <pe/interface/decompose.h>
 #include <pe/interface/setup_optional_collision_params.h>
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief PE setup for the single-particle sedimentation benchmark (parallel PE mode).
@@ -25,7 +63,7 @@
  * so the sphere lies exactly on the corner edge of the PE quarter domain. This is intended
  * and not a positioning error; do not "fix" it by moving the sphere or the domain origin.
  *
- * Read from example.json: gravity, fluid density and viscosity, particle density and radius
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity, fluid density and viscosity, particle density and radius
  * (benchRadius_), the process layout (processesX_/Y_/Z_), the step size, and the VTK switch
  * and spacing. The lubrication switch is applied by the entry point after this setup.
  *
@@ -52,7 +90,23 @@ void setupParticleBench(MPI_Comm ex0) {
 
   world = theWorld();
 
-  loadSimulationConfig("example.json");
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupParticleBench: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
+  try {
+    SimulationConfig::loadConfigFile(myRank == 0);
+  }
+  catch (const std::exception& e) {
+    abortSetup(e.what());
+  }
 
   const real simViscosity( config.getFluidViscosity() );
   const real simRho( config.getFluidDensity() );
@@ -73,21 +127,13 @@ void setupParticleBench(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  int myRank = 0;
-  MPI_Comm_rank(ex0, &myRank);
-
-  // Prints the message once and aborts the whole run
-  const auto abortSetup = [&](const std::string& message) {
-    if (myRank == 0) {
-      std::cerr << "\nERROR in setupParticleBench: " << message << "\n" << std::endl;
-    }
-    MPI_Abort(ex0, 1);
-  };
-
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();
   const int pz = config.getProcessesZ();
 
+  if( px <= 0 || py <= 0 || pz <= 0 ) {
+    abortSetup("processesX_, processesY_ and processesZ_ must be positive.");
+  }
   if( px * py * pz != mpisystem->getSize() ) {
     abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
                " != " + std::to_string(px * py * pz) + " (processesX_*Y_*Z_).");
@@ -115,12 +161,6 @@ void setupParticleBench(MPI_Comm ex0) {
   int center[3];
   MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "> 3D communicator created" << std::endl;
-    std::cout << Vec3(dims[0], dims[1], dims[2]) << std::endl;
-    std::cout << "Rank:" << myRank << "->" << Vec3(center[0], center[1], center[2]) << std::endl;
-  }
-
   const real dz( LZ / pz );
 
   // Quarter domain: origin at (0,0,0), extending in +x/+y (see the function documentation)
@@ -138,7 +178,7 @@ void setupParticleBench(MPI_Comm ex0) {
   pe_GLOBAL_SECTION
   {
      // Creating the ground plane
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
+     createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );
   }
 
   setOptionalSlipLength(theCollisionSystem(), slipLength);
@@ -162,12 +202,23 @@ void setupParticleBench(MPI_Comm ex0) {
   //===============================================================================================
   // Setup summary
   //===============================================================================================
+  // Every body counts once: the bodies a process owns (not its shadow copies of neighbouring
+  // bodies), plus the global bodies, which every process holds
+  unsigned long bodiesLocal( 0 );
+  unsigned long globalBodies( 0 );
+  for( World::Iterator body = world->begin(); body != world->end(); ++body ) {
+    if( body->isGlobal() )
+      ++globalBodies;
+    else if( !body->isRemote() )
+      ++bodiesLocal;
+  }
+
   unsigned long particlesLocal = (spear != nullptr) ? 1UL : 0UL;
-  unsigned long bodiesLocal    = static_cast<unsigned long>( theCollisionSystem()->getBodyStorage().size() );
   unsigned long particlesTotal( 0 );
   unsigned long primitivesTotal( 0 );
   MPI_Reduce( &particlesLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  primitivesTotal += globalBodies;
 
   real sphereVol(0);
   real sphereMass(0);
@@ -178,14 +229,16 @@ void setupParticleBench(MPI_Comm ex0) {
 
   real totalMass(0);
   real totalVol(0);
-  MPI_Reduce( &sphereMass, &totalMass, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &sphereVol, &totalVol, 1, MPI_DOUBLE, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &sphereMass, &totalMass, 1, MPITrait<real>::getType(), MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &sphereVol, &totalVol, 1, MPITrait<real>::getType(), MPI_SUM, 0, cartcomm );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "PARTICLE BENCH SETUP"
       << "--------------------------------------------------------------\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
+      << " Process grid (x, y, z)                  = " << px << " x " << py << " x " << pz << "\n"
+      << " Subdomain size                          = " << Vec3(dx, dy, dz) << "\n"
       << " Total number of particles               = " << particlesTotal << "\n"
       << " Total number of objects                 = " << primitivesTotal << "\n"
       << " Fluid Viscosity                         = " << simViscosity << "\n"

@@ -1,19 +1,60 @@
-#ifndef _PE_SETUP_ARCHIMEDES_H_
-#define _PE_SETUP_ARCHIMEDES_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_archimedes.h
+ *  \brief PE setup for the Archimedes screw case (parallel PE mode)
+ *
+ *  Copyright (C) 2024 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
+
+#ifndef _PE_INTERFACE_SETUP_ARCHIMEDES_H_
+#define _PE_INTERFACE_SETUP_ARCHIMEDES_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
 #include <cmath>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include <boost/filesystem.hpp>
+
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/setup_optional_collision_params.h>
+#include <pe/util/Deprecation.h>
+
 
 using namespace pe::povray;
+
+
+
+
+//=================================================================================================
+//
+//  UTILITY FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief Loads dividing planes from a text file and converts them to half spaces.
@@ -26,7 +67,7 @@ using namespace pe::povray;
  * \param halfSpaces The half spaces are appended to this list in file order.
  * \return false if the file could not be opened, true otherwise.
  *
- * Lines that do not contain six numbers are skipped with a message.
+ * Lines that do not contain six numbers are skipped with a warning.
  */
 inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool positive,
                                      std::vector<HalfSpace> &halfSpaces)
@@ -46,7 +87,7 @@ inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool
       // Read the plane's point and normal from the line
       if (!(iss >> px >> py >> pz >> nx >> ny >> nz))
       {
-         std::cerr << "Error: Malformed line in " << filename << ": " << line << "\n";
+         std::cerr << "Warning: skipping malformed line in " << filename << ": " << line << "\n";
          continue;
       }
 
@@ -58,21 +99,8 @@ inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool
       }
       const Vec3 point(px, py, pz);
 
-      // trans(-point) * normal:
-      //  - < 0: The global origin is outside the half space
-      //  - > 0: The global origin is inside the half space
-      //  - = 0: The global origin is on the surface of the half space
-      const bool originOutside = (trans(-point) * normal < 0.0);
-
-      // Distance of the plane from the origin (point-normal formula), signed by the side
-      // of the origin
-      double dO = std::abs(nx * px + ny * py + nz * pz) / normal.length();
-      if (!originOutside)
-      {
-         dO = -dO;
-      }
-
-      halfSpaces.emplace_back(normal, dO);
+      // Signed distance of the plane from the origin along the (oriented) unit normal
+      halfSpaces.emplace_back(normal, trans(point) * normal / normal.length());
    }
 
    return true;
@@ -80,13 +108,22 @@ inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool
 //*************************************************************************************************
 
 
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
+
 //*************************************************************************************************
 /*!\brief PE setup for the Archimedes screw case (parallel PE mode).
  *
  * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
  *
- * Reached from Fortran through commf2c_archimedes_(). Spheres are seeded in rings along the
- * centerline of the screw channel; the screw itself is a fixed global triangle mesh.
+ * Reached from Fortran through commf2c_archimedes_(). The domain is the helical channel of the
+ * screw: its boundary is the fixed global triangle mesh "archimedes.obj", whose interior is the
+ * simulated part. Spheres are seeded in rings along the centerline of the channel.
  *
  * Decomposition: the domain is not a box. It is cut into slabs by the planes of
  * "planes_div30x.txt", following the channel in x-direction. The supported and standard
@@ -98,17 +135,29 @@ inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool
  * of "planes_div30y.txt" (note: this second direction is driven by processesZ_, not by
  * processesY_). Both plane files need at least processesX_ planes, in slab order.
  *
- * Input files, read from the working directory:
- *   - example.json        configuration
+ * Input files; a missing file aborts the run before anything is created. The configuration
+ * file is named by SimulationConfig::getConfigFile() (--pe-config, PE_CONFIG_FILE, or the
+ * deprecated default example.json); all other files are read from the working directory:
  *   - planes_div30x.txt   slab planes
  *   - planes_div30y.txt   cross-channel planes
- *   - vertices.txt        centerline of the channel for seeding
- *   - archimedes.obj      screw mesh
+ *   - vertices.txt        centerline of the channel for seeding (only if spheres are seeded)
+ *   - archimedes.obj      channel boundary mesh
  *
- * Read from example.json: gravity, fluid density and viscosity, particle density and radius
+ * Read from the configuration file: gravity, fluid density and viscosity, particle density and radius
  * (benchRadius_), the process layout, step size, packing method (None creates no spheres),
- * the checkpoint and resume settings, the lubrication settings, and the VTK switch and
- * spacing.
+ * the checkpoint and resume settings, the lubrication settings, the VTK switch and spacing,
+ * the position of the channel mesh (domainBoundary_.position), resetAngularVelocityOnResume_
+ * and deprecationsAsErrors_.
+ *
+ * The channel volume in the setup summary (and with it the volume fraction) is the volume of
+ * archimedes.obj, so the mesh has to be closed.
+ *
+ * Deprecated (see doc/technical-notes/deprecations.md):
+ *   - config.defaultFileName: the configuration file is the default example.json.
+ *   - archimedes.position: without domainBoundary_.position the built-in position of the
+ *     channel mesh is used.
+ *   - archimedes.resetAngularVelocityOnResume: on resume, the angular velocities of all
+ *     spheres are reset to zero unless resetAngularVelocityOnResume_ is false.
  *
  * Sphere user IDs are numbered per process and are therefore not unique across processes.
  * Use the system ID (getSystemID()) wherever a globally unique ID is needed.
@@ -125,12 +174,9 @@ void setupArchimedes(MPI_Comm ex0)
    const std::string centerlineFile( "vertices.txt" );
    const std::string meshFile( "archimedes.obj" );
 
-   const Vec3 archimedesPos(0.0274099, -2.56113, 0.116155);
-   const int  archimedesId( 1000000 );   // Fixed user ID of the global screw mesh
-
-   // TODO: origin of this value is undocumented; it is only used for the volume fraction
-   //       in the setup summary.
-   const real channelVolume( 0.604 );
+   // Deprecated: used only if domainBoundary_.position is not set (archimedes.position)
+   const Vec3 legacyMeshPos(0.0274099, -2.56113, 0.116155);
+   const int  archimedesId( 1000000 );   // Fixed user ID of the global channel mesh
 
    //===================================================================================
    // Configuration, world and fluid properties
@@ -138,7 +184,23 @@ void setupArchimedes(MPI_Comm ex0)
    auto& config = SimulationConfig::getInstance();
    world = theWorld();
 
-   loadSimulationConfig("example.json");
+   int myRank = 0;
+   MPI_Comm_rank(ex0, &myRank);
+
+   // Prints the message once and aborts the whole run
+   const auto abortSetup = [&](const std::string& message) {
+      if (myRank == 0) {
+         std::cerr << "\nERROR in setupArchimedes: " << message << "\n" << std::endl;
+      }
+      MPI_Abort(ex0, 1);
+   };
+
+   try {
+      SimulationConfig::loadConfigFile(myRank == 0);
+   }
+   catch (const std::exception& e) {
+      abortSetup(e.what());
+   }
 
    const real simViscosity( config.getFluidViscosity() );
    const real simRho( config.getFluidDensity() );
@@ -158,17 +220,6 @@ void setupArchimedes(MPI_Comm ex0)
    //===================================================================================
    mpisystem = theMPISystem();
    mpisystem->setComm(ex0);
-
-   int myRank = 0;
-   MPI_Comm_rank(ex0, &myRank);
-
-   // Prints the message once and aborts the whole run
-   const auto abortSetup = [&](const std::string& message) {
-      if (myRank == 0) {
-         std::cerr << "\nERROR in setupArchimedes: " << message << "\n" << std::endl;
-      }
-      MPI_Abort(ex0, 1);
-   };
 
    const int px = config.getProcessesX();
    const int py = config.getProcessesY();
@@ -202,16 +253,64 @@ void setupArchimedes(MPI_Comm ex0)
       abortSetup("resume_ is set but the checkpointer is not enabled (useCheckpointer_).");
    }
 
+   // All input files are expected in the working directory
+   const std::string cwd = boost::filesystem::current_path().string();
+   const auto requireFile = [&](const std::string& file, const std::string& purpose) {
+      if (!boost::filesystem::is_regular_file(file))
+      {
+         abortSetup("the " + purpose + " file " + file + " was not found in the working "
+                    "directory " + cwd + ".");
+      }
+   };
+   requireFile(planesXFile, "slab plane");
+   requireFile(planesYFile, "cross-channel plane");
+   requireFile(meshFile, "channel mesh");
+   if (seedSpheres)
+   {
+      requireFile(centerlineFile, "centerline");
+   }
+
+   // Deprecated input and behaviour (nothing is created yet, so stopping here is clean)
+   const auto deprecated = [&](const std::string& id, const std::string& message) {
+      if (!reportDeprecated(id, message, myRank == 0))
+      {
+         abortSetup("deprecated input or behaviour (deprecationsAsErrors_ is set), see the "
+                    "PE DEPRECATED message.");
+      }
+   };
+
+   Vec3 meshPos(legacyMeshPos);
+   if (config.hasDomainBoundaryPosition())
+   {
+      meshPos = config.getDomainBoundaryPosition();
+   }
+   else
+   {
+      deprecated("archimedes.position",
+                 "the position of " + meshFile + " is built in; set it in the configuration file with "
+                 "\"domainBoundary_\": { \"position\": [x, y, z] }. The built-in position is "
+                 "[0.0274099, -2.56113, 0.116155].");
+   }
+
+   const bool resetAngularVelocity = resume && config.getResetAngularVelocityOnResume();
+   if (resetAngularVelocity)
+   {
+      deprecated("archimedes.resetAngularVelocityOnResume",
+                 "the angular velocities of all spheres are reset to zero after the resume, so "
+                 "the run does not continue the saved state. Set "
+                 "\"resetAngularVelocityOnResume_\": false in the configuration file to keep them.");
+   }
+
    // Slab planes are oriented in -x, cross-channel planes in +y
    std::vector<HalfSpace> halfSpaces;
    std::vector<HalfSpace> halfSpacesY;
    if (!loadArchimedesHalfSpaces(planesXFile, 0, false, halfSpaces))
    {
-      abortSetup("could not open the plane file " + planesXFile + ".");
+      abortSetup("could not read the plane file " + planesXFile + ".");
    }
    if (!loadArchimedesHalfSpaces(planesYFile, 1, true, halfSpacesY))
    {
-      abortSetup("could not open the plane file " + planesYFile + ".");
+      abortSetup("could not read the plane file " + planesYFile + ".");
    }
    if (halfSpaces.size() < static_cast<std::size_t>(px) ||
        halfSpacesY.size() < static_cast<std::size_t>(px))
@@ -246,6 +345,11 @@ void setupArchimedes(MPI_Comm ex0)
      log << "Center: " << center[0] << " " << center[1] << "\n";
    }
 
+   // TODO: Open point. decomposeDomain2DArchimedes() always intersects the slab with the
+   //       cross-channel half space of planes_div30y.txt, also for processesZ_ = 1. Each
+   //       process then owns only one side of that plane, and the other side of the channel
+   //       has no owning process. To decide: apply the y-plane only for processesZ_ = 2 (and
+   //       require planes_div30y.txt only then), or make processesZ_ = 2 mandatory.
    decomposeDomain2DArchimedes(center, cartcomm, halfSpaces, halfSpacesY, px, py, pz);
 
    // Checking the process setup
@@ -297,23 +401,33 @@ void setupArchimedes(MPI_Comm ex0)
       }
    }
 
-   // All spheres start without spin. NOTE: this also resets the angular velocities that
-   // were restored from a checkpoint on resume; kept as it is for now.
-   for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
+   // Deprecated (archimedes.resetAngularVelocityOnResume): new spheres start without spin
+   // anyway, so this only changes the angular velocities restored from the checkpoint.
+   if (resetAngularVelocity)
    {
-      BodyID body = world->getBody(j);
-      if (body->getType() == sphereType)
+      for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
       {
-        body->setAngularVel(Vec3(0,0,0));
+         BodyID body = world->getBody(j);
+         if (body->getType() == sphereType)
+         {
+           body->setAngularVel(Vec3(0,0,0));
+         }
       }
    }
 
+   real channelVolume(0);
    pe_GLOBAL_SECTION
    {
       MaterialID archi = createMaterial("archimedes", 1.0, 0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+      // TODO: Open point. The mesh is created with convex = true (5th argument), but the
+      //       helical channel is not convex. To check: do sphere-channel collisions go through
+      //       this mesh (then convex = true is wrong), or are they handled elsewhere?
       TriangleMeshID archimedes = createTriangleMesh(archimedesId, Vec3(0, 0, 0.0), meshFile, archi, true, true, Vec3(1.0, 1.0, 1.0), false, false);
-      archimedes->setPosition(archimedesPos);
+      archimedes->setPosition(meshPos);
       archimedes->setFixed(true);
+
+      // The sign of the mesh volume depends on the orientation of its faces
+      channelVolume = std::abs(archimedes->getVolume());
    }
 
    // Synchronization of the MPI processes
@@ -328,22 +442,32 @@ void setupArchimedes(MPI_Comm ex0)
    //===================================================================================
    // Setup summary
    //===================================================================================
+   // Every body counts once: the bodies a process owns (not its shadow copies of neighbouring
+   // bodies), plus the global bodies, which every process holds
    unsigned long spheresLocal(0);
    unsigned long bodiesLocal(0);
-   for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++)
+   unsigned long globalBodies(0);
+   for (World::Iterator body = world->begin(); body != world->end(); ++body)
    {
-      BodyID body = world->getBody(j);
-      if (body->getType() == sphereType)
+      if (body->isGlobal())
       {
-         ++spheresLocal;
+         ++globalBodies;
       }
-      ++bodiesLocal;
+      else if (!body->isRemote())
+      {
+         ++bodiesLocal;
+         if (body->getType() == sphereType)
+         {
+            ++spheresLocal;
+         }
+      }
    }
 
    unsigned long particlesTotal(0);
    unsigned long primitivesTotal(0);
    MPI_Reduce(&spheresLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
    MPI_Reduce(&bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm);
+   primitivesTotal += globalBodies;
 
    const real partVol = 4. / 3. * M_PI * std::pow(sphereRad, 3);
    const std::string packing = resume ? "checkpoint" : (seedSpheres ? "centerline rings" : "none");

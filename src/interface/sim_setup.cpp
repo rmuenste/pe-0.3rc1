@@ -60,9 +60,6 @@ namespace pe {
 } // namespace pe
 
 // Global variables
-bool g_vtk = pe::SimulationConfig::getInstance().getVtk();
-PlaneID g_ground(0);
-
 // Configuration of the simulation world
 WorldID world;
 int called = 0;
@@ -268,23 +265,6 @@ void stepSimulation() {
 }
 
 
-namespace pe {
-
-//*************************************************************************************************
-/*!\brief Wrapper function for backwards compatibility.
- *
- * \param fileName Path to the JSON configuration file.
- * \return void
- *
- * This function is a backwards-compatible wrapper that calls SimulationConfig::loadFromFile().
- * New code should call SimulationConfig::loadFromFile() directly.
- */
-void loadSimulationConfig(const std::string &fileName) {
-    SimulationConfig::loadFromFile(fileName);
-}
-
-} // namespace pe
-
 
 #include <pe/interface/setup_part_bench.h>
 #include <pe/interface/setup_fluidization.h>
@@ -294,7 +274,6 @@ void loadSimulationConfig(const std::string &fileName) {
 #include <pe/interface/setup_creep.h>
 #include <pe/interface/setup_archimedes.h>
 #include <pe/interface/setup_span.h>
-#include <pe/interface/setup_drill.h>
 #include <pe/interface/setup_atc.h>
 #include <pe/interface/setup_el_frozen_trace.h>
 #include <pe/interface/setup_el_terminal_velocity.h>

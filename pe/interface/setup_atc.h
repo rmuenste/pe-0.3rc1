@@ -1,9 +1,45 @@
-#ifndef _PE_SETUP_ATC_H_
-#define _PE_SETUP_ATC_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_atc.h
+ *  \brief PE setup for the ATC (Application Test Case) case (parallel PE mode)
+ *
+ *  Copyright (C) 2025 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
+
+#ifndef _PE_INTERFACE_SETUP_ATC_H_
+#define _PE_INTERFACE_SETUP_ATC_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
 #include <iostream>
 
 #include <pe/core/MPI.h>
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief ATC (Application Test Case) setup for parallel PE mode -- NOT FUNCTIONAL YET.

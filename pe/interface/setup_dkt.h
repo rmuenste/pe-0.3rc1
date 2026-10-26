@@ -1,11 +1,48 @@
-#ifndef _PE_SETUP_DKT_H_
-#define _PE_SETUP_DKT_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_dkt.h
+ *  \brief PE setup for the draft-kiss-tumble benchmark (parallel PE mode)
+ *
+ *  Copyright (C) 2023 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
 
+#ifndef _PE_INTERFACE_SETUP_DKT_H_
+#define _PE_INTERFACE_SETUP_DKT_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
+
+#include <exception>
 #include <iostream>
 #include <string>
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief PE setup for the draft-kiss-tumble benchmark (parallel PE mode).
@@ -16,9 +53,11 @@
  * other, slightly offset in x, in a 2 x 2 x 8 column. The column has a ground plane at
  * z = 0 and four side walls at x = 0, x = 2, y = 0 and y = 2; it is open at the top.
  *
- * Read from example.json: gravity, fluid density and viscosity, particle density and radius
- * (benchRadius_), the process layout (processesX_/Y_/Z_), the step size, and the VTK switch
- * and spacing.
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity, fluid density
+ * and viscosity, particle density and radius (benchRadius_), the contact material of the
+ * spheres (restitution_, staticFriction_, dynamicFriction_), the process layout
+ * (processesX_/Y_/Z_), the step size, and the VTK switch and spacing. The radius is checked
+ * before anything is created: both spheres have to fit into the column without overlapping.
  *
  * Fixed in this file: the column size and the two sphere start positions.
  *
@@ -43,9 +82,26 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   // Configuration, world and fluid properties
   //===============================================================================================
   auto& config = SimulationConfig::getInstance();
-  world = theWorld();
 
-  loadSimulationConfig("example.json");
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupDraftKissTumbBench: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
+  try {
+    SimulationConfig::loadConfigFile(myRank == 0);
+  }
+  catch (const std::exception& e) {
+    abortSetup(e.what());
+  }
+
+  world = theWorld();
 
   world->setGravity( config.getGravity() );
   world->setLiquidSolid(true);
@@ -61,21 +117,13 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  int myRank = 0;
-  MPI_Comm_rank(ex0, &myRank);
-
-  // Prints the message once and aborts the whole run
-  const auto abortSetup = [&](const std::string& message) {
-    if (myRank == 0) {
-      std::cerr << "\nERROR in setupDraftKissTumbBench: " << message << "\n" << std::endl;
-    }
-    MPI_Abort(ex0, 1);
-  };
-
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();
   const int pz = config.getProcessesZ();
 
+  if( px <= 0 || py <= 0 || pz <= 0 ) {
+    abortSetup("processesX_, processesY_ and processesZ_ must be positive.");
+  }
   if( px*py*pz != mpisystem->getSize() ) {
     abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
                " != " + std::to_string(px*py*pz) + " (processesX_*Y_*Z_).");
@@ -84,6 +132,21 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   const real radBench = config.getBenchRadius();
   if( radBench <= real(0) ) {
     abortSetup("benchRadius_ must be positive.");
+  }
+
+  // Both spheres have to lie inside the column and must not overlap at the start
+  for( const Vec3& position : spherePositions ) {
+    if( position[0] - radBench <= real(0) || position[0] + radBench >= LX ||
+        position[1] - radBench <= real(0) || position[1] + radBench >= LY ||
+        position[2] - radBench <= real(0) || position[2] + radBench >= LZ ) {
+      abortSetup("benchRadius_ = " + std::to_string(radBench) + " is too large: the sphere at " +
+                 "z = " + std::to_string(position[2]) + " does not fit into the column.");
+    }
+  }
+  if( ( spherePositions[1] - spherePositions[0] ).length() <= real(2) * radBench ) {
+    abortSetup("benchRadius_ = " + std::to_string(radBench) + " is too large: the two spheres, " +
+               std::to_string(( spherePositions[1] - spherePositions[0] ).length()) +
+               " apart, would overlap at the start.");
   }
 
   //===============================================================================================
@@ -104,13 +167,6 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   int center[3];
   MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "> 3D communicator created" << std::endl;
-    std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-    std::cout << "3D coordinates were created" << std::endl;
-    std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
-  }
-
   // The decomposition covers exactly the column between the walls for any process layout.
   // (The subdomain size in x and y used to be fixed to 2.0, which matched the walls only
   // for processesX_ = processesY_ = 1; for that layout nothing has changed.)
@@ -119,6 +175,14 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   const real dz( LZ / pz );
 
   decomposeDomain(center, 0.0, 0.0, 0.0, dx, dy, dz, px, py, pz);
+
+  pe_LOG_INFO_SECTION( log ) {
+    log << "Subdomain (" << center[0] << "," << center[1] << "," << center[2] << ") of "
+        << px << " x " << py << " x " << pz << ": x in [" << center[0] * dx << ", "
+        << ( center[0] + 1 ) * dx << "], y in [" << center[1] * dy << ", "
+        << ( center[1] + 1 ) * dy << "], z in [" << center[2] * dz << ", "
+        << ( center[2] + 1 ) * dz << "]\n";
+  }
 
   // Checking the process setup
   theMPISystem()->checkProcesses();
@@ -131,7 +195,7 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   MaterialID gr = createMaterial("ground", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
   pe_GLOBAL_SECTION
   {
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );   // ground plane
+     createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );              // ground plane
 
      createPlane( 1778,+1.0, 0.0, 0.0, 0,   granite, false );     // wall at x = 0
      createPlane( 1779,-1.0, 0.0, 0.0,-LX,  granite, false );     // wall at x = LX
@@ -139,16 +203,21 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
      createPlane( 1781, 0.0,-1.0, 0.0,-LY,  granite, false );     // wall at y = LY
   }
 
-  MaterialID myMaterial = createMaterial("Bench", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  // Contact material from restitution_/staticFriction_/dynamicFriction_ (defaults 0.0/0.1/0.05
+  // are the former hard-coded values), as in setupDraftKissTumbSerial()
+  MaterialID myMaterial = createMaterial("Bench", config.getParticleDensity(), config.getRestitution(),
+                                         config.getStaticFriction(), config.getDynamicFriction(),
+                                         0.2, 80, 100, 10, 11);
 
   // User IDs are numbered per process (see the function documentation)
   int idx = 0;
   for( const Vec3& position : spherePositions ) {
     if (world->ownsPoint( position )) {
       SphereID sphere = createSphere(idx, position, radBench, myMaterial, true);
-      std::cout << "[Creating particle] at: " << position << " in domain: " << myRank << std::endl;
-      std::cout << "[particle mass]: " << sphere->getMass()  << std::endl;
-      std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
+      pe_LOG_INFO_SECTION( log ) {
+        log << "Created sphere " << idx << " at " << position << ", mass " << sphere->getMass()
+            << "\n";
+      }
       ++idx;
     }
   }
@@ -165,21 +234,21 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
   // Setup summary
   //===============================================================================================
   unsigned long particlesLocal = static_cast<unsigned long>(idx);
-  unsigned long bodiesLocal    = static_cast<unsigned long>( theCollisionSystem()->getBodyStorage().size() );
   unsigned long particlesTotal ( 0 );
-  unsigned long primitivesTotal( 0 );
   MPI_Reduce( &particlesLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "DRAFT-KISS-TUMBLE SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
+      << " Process grid (x, y, z)                  = " << px << " x " << py << " x " << pz << "\n"
+      << " Subdomain size                          = " << Vec3(dx, dy, dz) << "\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
       << " Column size                             = " << Vec3(LX, LY, LZ) << "\n"
       << " Particle radius                         = " << radBench << "\n"
-      << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
+      << " Restitution / static / dynamic friction = " << config.getRestitution() << " / "
+      << config.getStaticFriction() << " / " << config.getDynamicFriction() << "\n"
+      << " Total number of particles               = " << particlesTotal << "\n" << std::endl;
      std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
 
     if( particlesTotal != 2 ) {

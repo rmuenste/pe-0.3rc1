@@ -1,9 +1,37 @@
-#ifndef _PE_SETUP_EL_TERMINAL_VELOCITY_H_
-#define _PE_SETUP_EL_TERMINAL_VELOCITY_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_el_terminal_velocity.h
+ *  \brief PE setup for the Euler-Lagrange terminal-velocity case (parallel PE mode)
+ *
+ *  Copyright (C) 2026 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
+
+#ifndef _PE_INTERFACE_SETUP_EL_TERMINAL_VELOCITY_H_
+#define _PE_INTERFACE_SETUP_EL_TERMINAL_VELOCITY_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -17,8 +45,20 @@
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/setup_optional_collision_params.h>
 
+
+
+
+//=================================================================================================
+//
+//  UTILITY FUNCTIONS
+//
+//=================================================================================================
+
 namespace {
 
+//*************************************************************************************************
+/*!\brief Returns \a text in lower case (ASCII letters only).
+ */
 std::string elTerminalLower(std::string text) {
   for (std::size_t i = 0; i < text.size(); ++i) {
     if (text[i] >= 'A' && text[i] <= 'Z') {
@@ -27,7 +67,13 @@ std::string elTerminalLower(std::string text) {
   }
   return text;
 }
+//*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns the smallest surface gap between two spheres of the given diameter at
+ *        \a positions, or the largest real value for fewer than two spheres.
+ */
 pe::real elTerminalMinPairGap(const std::vector<pe::Vec3>& positions, pe::real diameter) {
   if (positions.size() < 2) {
     return std::numeric_limits<pe::real>::max();
@@ -42,7 +88,14 @@ pe::real elTerminalMinPairGap(const std::vector<pe::Vec3>& positions, pe::real d
   }
   return minGap;
 }
+//*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns the index (0, 1, 2) of the axis name x, y or z (any case).
+ *
+ * \exception std::runtime_error For any other name (seedCylinderAxis_).
+ */
 int elTerminalAxisIndex(const std::string& axis) {
   const std::string a = elTerminalLower(axis);
   if (a == "x") return 0;
@@ -50,7 +103,16 @@ int elTerminalAxisIndex(const std::string& axis) {
   if (a == "z") return 2;
   throw std::runtime_error("seedCylinderAxis_ must be x, y, or z");
 }
+//*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns the volume of the seeding domain: the CFD box, or a cylinder of radius
+ *        \a cylinderRadius along \a cylinderAxis spanning the box.
+ *
+ * \exception std::runtime_error For an unknown seedDomain_, a non-positive cylinder radius or an
+ *            unknown axis.
+ */
 pe::real elTerminalSeedDomainVolume(pe::real xmin, pe::real xmax,
                                     pe::real ymin, pe::real ymax,
                                     pe::real zmin, pe::real zmax,
@@ -75,7 +137,15 @@ pe::real elTerminalSeedDomainVolume(pe::real xmin, pe::real xmax,
   (void)cylinderCenter;
   return std::acos(real(-1)) * cylinderRadius * cylinderRadius * length;
 }
+//*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns whether \a pos lies in the seeding domain, for a cylinder at least \a inset
+ *        inside its wall.
+ *
+ * \exception std::runtime_error For an unknown seedDomain_ or axis.
+ */
 bool elTerminalInsideSeedDomain(const pe::Vec3& pos,
                                 const std::string& seedDomain,
                                 const pe::Vec3& cylinderCenter,
@@ -100,7 +170,19 @@ bool elTerminalInsideSeedDomain(const pe::Vec3& pos,
   const real radial = std::sqrt(da * da + db * db);
   return radial <= cylinderRadius - inset;
 }
+//*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Returns reproducible random sphere positions for the requested volume fraction.
+ *
+ * The positions are a random selection (std::mt19937_64 with \a seed) of the sites of a regular
+ * grid with spacing diameter + \a seedMinGap inside the seeding domain, so no two spheres are
+ * closer than \a seedMinGap.
+ *
+ * \exception std::runtime_error If the domain is too small for one sphere, or the grid cannot
+ *            reach the requested volume fraction.
+ */
 std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
                                             pe::real ymin, pe::real ymax,
                                             pe::real zmin, pe::real zmax,
@@ -171,8 +253,18 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
   std::vector<Vec3> positions(candidates.begin(), candidates.begin() + targetCount);
   return positions;
 }
+//*************************************************************************************************
 
 } // namespace
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief PE setup for the unresolved Euler-Lagrange single-particle terminal-velocity case.
@@ -181,7 +273,7 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  * setupELFrozenTrace this routine:
  *   - creates free mobile spheres from particles.xyz or deterministic random seeding,
  *   - uses the GENERAL decomposeDomain so the PE decomposition follows whatever axis the CFD
- *     mesh is partitioned on (driven by processesX_/Y_/Z_ in example.json). For the z-split
+ *     mesh is partitioned on (driven by processesX_/Y_/Z_ in the configuration file). For the z-split
  *     QBOX9Z3 mesh this means processesZ_=3, so PE and CFD own the same spatial slabs.
  *     With periodicX_/periodicY_/periodicZ_ (json) the decomposition switches to the
  *     matching decomposePeriodic* variant (supported combinations: X, Z, XY, XYZ);
@@ -207,7 +299,24 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   //===============================================================================================
   auto &config = SimulationConfig::getInstance();
   WorldID world = theWorld();
-  loadSimulationConfig("example.json");
+
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupELTerminalVelocity: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
+  try {
+    SimulationConfig::loadConfigFile(myRank == 0);
+  }
+  catch (const std::exception& e) {
+    abortSetup(e.what());
+  }
 
   config.setCfdDomainMin(Vec3(xmin, ymin, zmin));
   config.setCfdDomainMax(Vec3(xmax, ymax, zmax));
@@ -227,17 +336,6 @@ void setupELTerminalVelocity(MPI_Comm ex0,
   MPISystemID mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
   const int commSize = mpisystem->getSize();
-
-  int myRank = 0;
-  MPI_Comm_rank(ex0, &myRank);
-
-  // Prints the message once and aborts the whole run
-  const auto abortSetup = [&](const std::string& message) {
-    if (myRank == 0) {
-      std::cerr << "\nERROR in setupELTerminalVelocity: " << message << "\n" << std::endl;
-    }
-    MPI_Abort(ex0, 1);
-  };
 
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();

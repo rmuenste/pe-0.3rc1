@@ -5016,6 +5016,12 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::initiali
             body->setEulerLagrangeRefVelocity( unew );
          }
          else {
+            // TODO: With more than one MPI process this force increment ends up scaled by
+            //       relaxationParam_ (0.9): dv_ is folded with relaxationParam_ in
+            //       synchronizeVelocities(). A sphere falling under a gravity force added with
+            //       addForce() accelerates at 0.9 g with 2 or 3 processes and at g with one
+            //       (measured with setupCyl(), 2026-10). The hydro branch above is folded
+            //       into v_ in full and is not affected.
             dv = ( body->getInvMass() * dt ) * body->getForce();
          }
 //         std::cout << "Force: " << (body->getForce()) << std::endl;

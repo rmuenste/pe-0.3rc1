@@ -102,7 +102,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -203,7 +203,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
  */
 inline void setupFluidizationSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -382,7 +382,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
  */
 inline void setupFluidizationSRRSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -677,7 +677,7 @@ inline void setupELFrozenTraceSerial(int cfd_rank,
                                      real ymin, real ymax,
                                      real zmin, real zmax) {
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -835,7 +835,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -996,7 +996,7 @@ inline void setupATCSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);
@@ -1308,7 +1308,7 @@ inline void setupCreepSerial(int cfd_rank) {
  */
 inline void setupDNSDragSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto& config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -1557,7 +1557,7 @@ inline void setupDraftKissTumbSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -1684,20 +1684,105 @@ inline void setup2x2x2Serial(int cfd_rank) {
 }
 
 /**
- * @brief Cylinder setup for serial mode
+ * @brief Example setup: one sphere in a cylindrical domain (serial mode)
+ *
+ * Serial counterpart of setupCyl() in setup_cyl.h, reached from Fortran through
+ * commf2c_cyl_() in a PE_SERIAL_MODE build. Every CFD rank runs this setup and
+ * creates all bodies; only the representative rank (cfd_rank 1) prints and writes
+ * output (see doc/technical-notes/pe-interface-serial-mode.md).
+ *
+ * Domain: a fixed InnerCylinder of radius 1 and height 8 whose axis is the z-axis,
+ * from z = 0 to z = 8 (same geometry as setupCyl(); see there why the cylinder has
+ * to be placed exactly like this). Particles: one sphere in the center.
+ *
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity,
+ * fluid density and viscosity, particle density, the sphere radius (benchRadius_),
+ * step size, number of time steps, the VTK switch and spacing, and the lubrication
+ * settings.
  *
  * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ * @throws std::runtime_error If the configuration file cannot be loaded or the
+ *         sphere does not fit into the cylinder.
  */
 inline void setupCylSerial(int cfd_rank) {
+  // Case constants (same as setupCyl() in setup_cyl.h)
+  const real cylinderRadius(1.0);
+  const real cylinderHeight(8.0);
+  const id_t cylinderId(1000000);
+  const id_t sphereId(1);
+
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::getInstance().setCfdRank(cfd_rank);
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
+  auto& config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  // World and fluid properties
   WorldID world = theWorld();
+  applyOptionalLubricationParams(*theCollisionSystem(), config);
 
-  world->setGravity(0.0, 0.0, -9.81);
+  world->setGravity(config.getGravity());
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(config.getFluidDensity());
+  world->setViscosity(config.getFluidViscosity());
   world->setDamping(1.0);
+  world->setAutoForceReset(true);
+  TimeStep::stepsize(config.getStepsize());
 
-  TimeStep::stepsize(0.001);
+  // Validation (nothing is created before this point)
+  const real sphereRadius(config.getBenchRadius());
+  if (sphereRadius <= real(0) || sphereRadius >= cylinderRadius ||
+      real(2) * sphereRadius >= cylinderHeight) {
+    throw std::runtime_error("setupCylSerial: benchRadius_ = " + std::to_string(sphereRadius) +
+                             " does not fit into the cylinder (radius " +
+                             std::to_string(cylinderRadius) + ", height " +
+                             std::to_string(cylinderHeight) + ")");
+  }
+
+  // Materials (name, density, restitution, static and dynamic friction, Poisson's ratio,
+  // Young's modulus, stiffness, normal and tangential damping)
+  MaterialID wallMaterial = createMaterial("cylinderWall", 1.0,
+                                           0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+  MaterialID particleMaterial = createMaterial("particleMaterial", config.getParticleDensity(),
+                                               0.5, 0.1, 0.05, 0.3, 300, 1e6, 1e5, 2e5);
+
+  // Domain boundary: an InnerCylinder is created along the x-axis; rotating it by -pi/2
+  // about the y-axis turns its axis into the z-axis
+  InnerCylinderID cylinder = createInnerCylinder(cylinderId, Vec3(0.0, 0.0, 0.5 * cylinderHeight),
+                                                 cylinderRadius, cylinderHeight, wallMaterial);
+  cylinder->rotate(0.0, -0.5 * M_PI, 0.0);
+  cylinder->setFixed(true);
+
+  // Particles: every instance creates all of them
+  const Vec3 spherePos(0.0, 0.0, 0.5 * cylinderHeight);
+  createSphere(sphereId, spherePos, sphereRadius, particleMaterial);
+
+  if (isRepresentative && config.getVtk()) {
+    vtk::activateWriter("./paraview", config.getVisspacing(), 0, config.getTimesteps(), false);
+  }
+
+  // Setup summary
+  if (isRepresentative) {
+    const real domainVolume(M_PI * cylinderRadius * cylinderRadius * cylinderHeight);
+    const real sphereVolume(real(4) / real(3) * M_PI * std::pow(sphereRadius, 3));
+    std::cout << "\n--" << "CYLINDER SETUP (serial)"
+              << "-------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Cylinder radius / height                = " << cylinderRadius << " / "
+                                                                 << cylinderHeight << "\n"
+              << " Domain volume                           = " << domainVolume << "\n"
+              << " Sphere radius                           = " << sphereRadius << "\n"
+              << " Fluid viscosity                         = " << config.getFluidViscosity() << "\n"
+              << " Fluid density                           = " << config.getFluidDensity() << "\n"
+              << " Particle density                        = " << config.getParticleDensity() << "\n"
+              << " Gravity constant                        = " << world->getGravity() << "\n"
+              << " Lubrication (json)                      = "
+              << (config.getLubricationEnabled() ? "enabled" : "disabled") << "\n"
+              << " Volume fraction[%]                      = "
+              << sphereVolume / domainVolume * 100.0 << "\n"
+              << std::string(80, '-') << "\n" << std::endl;
+  }
 }
 
 /**
@@ -1735,7 +1820,7 @@ inline size_t estimateDistanceMapMemoryBytes(const DistanceMap& dm) {
  */
 inline void setupSpanComplexSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto& config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -1849,7 +1934,7 @@ inline void setupLubricationLabSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -1932,7 +2017,7 @@ inline void setupDrillSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -2104,7 +2189,7 @@ inline void setupRotationSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
 
   // Load configuration from JSON file
-  SimulationConfig::loadFromFile("example.json");
+  SimulationConfig::loadConfigFile(cfd_rank == 1);
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);

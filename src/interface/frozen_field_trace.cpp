@@ -577,7 +577,7 @@ FrozenFieldTraceResult runFrozenFieldTrace(
 
    std::string localError;
    try {
-      SimulationConfig::loadFromFile( "example.json" );
+      SimulationConfig::loadConfigFile( rank == 0 );
    }
    catch( const std::exception& error ) {
       localError = error.what();
@@ -589,7 +589,7 @@ FrozenFieldTraceResult runFrozenFieldTrace(
    const int py = config.getProcessesY();
    const int pz = config.getProcessesZ();
    if( px <= 0 || py <= 0 || pz <= 0 || px * py * pz != size )
-      collectiveAbort( comm, "process grid in example.json does not match MPI_COMM_WORLD" );
+      collectiveAbort( comm, "process grid in the configuration file does not match MPI_COMM_WORLD" );
    if( config.getStepsize() <= 0.0 || config.getSubsteps() <= 0 || config.getBenchRadius() <= 0.0 )
       collectiveAbort( comm, "stepsize_, substeps_, and benchRadius_ must be positive" );
 

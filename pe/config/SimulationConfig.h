@@ -30,6 +30,7 @@
 
 #include <pe/config/Precision.h>
 #include <pe/math/Vector3.h>
+#include <pe/util/Deprecation.h>
 #include <boost/filesystem.hpp>
 #include <string>
 #include <vector>
@@ -94,6 +95,14 @@ public:
     //@{
     //! Reads a JSON configuration file; throws std::runtime_error if pe was built without JSON support (PE_USE_JSON=OFF)
     static void loadFromFile(const std::string& fileName);
+    //! Reads the configuration file getConfigFile() and reports its name and source
+    static void loadConfigFile(bool console = true);
+    //! Sets the configuration file; takes precedence over --pe-config, PE_CONFIG_FILE and the default
+    static void setConfigFile(const std::string& fileName);
+    //! Name of the configuration file: setConfigFile(), --pe-config, PE_CONFIG_FILE or example.json
+    static std::string getConfigFile();
+    //! Where getConfigFile() takes the name from, e.g. "the command line option --pe-config"
+    static std::string getConfigFileSource();
     //@}
     //**************************************************************************************
 
@@ -160,6 +169,10 @@ public:
     void setVerbose(bool value) { verbose_ = value; }
     bool getVtk() const { return vtk_; }
     void setVtk(bool value) { vtk_ = value; }
+    //! json key deprecationsAsErrors_ (default false): treat deprecated input and behaviour as
+    //! errors instead of warnings, see pe/util/Deprecation.h. Stored in pe::reportDeprecated().
+    bool getDeprecationsAsErrors() const { return ::pe::deprecationsAsErrors(); }
+    void setDeprecationsAsErrors(bool value) { ::pe::setDeprecationsAsErrors(value); }
     //@}
     //**************************************************************************************
 
@@ -184,6 +197,10 @@ public:
     void setResume(bool value) { resume_ = value; }
     const std::string& getResumeCheckpointFile() const { return resumeCheckpointFile_; }
     void setResumeCheckpointFile(const std::string& file) { resumeCheckpointFile_ = file; }
+    //! Deprecated (default true): reset the angular velocities of all spheres after a resume.
+    //! Set resetAngularVelocityOnResume_ to false to continue with the restored ones.
+    bool getResetAngularVelocityOnResume() const { return resetAngularVelocityOnResume_; }
+    void setResetAngularVelocityOnResume(bool value) { resetAngularVelocityOnResume_ = value; }
 
     // Resume expectations. All opt-in: an unset expectation is not checked, a set one that is
     // violated aborts the run. Sentinels mean "unset" -- a negative step index and an empty tag
@@ -251,7 +268,12 @@ public:
     const boost::filesystem::path& getDomainBoundaryFilePath() const { return domainBoundaryFilePath_; }
     void setDomainBoundaryFilePath(const boost::filesystem::path& path) { domainBoundaryFilePath_ = path; }
     const Vec3& getDomainBoundaryPosition() const { return domainBoundaryPosition_; }
-    void setDomainBoundaryPosition(const Vec3& value) { domainBoundaryPosition_ = value; }
+    void setDomainBoundaryPosition(const Vec3& value) {
+        domainBoundaryPosition_ = value;
+        hasDomainBoundaryPosition_ = true;
+    }
+    //! True once domainBoundary_.position was set explicitly (json key present).
+    bool hasDomainBoundaryPosition() const { return hasDomainBoundaryPosition_; }
     bool getDomainBoundaryFixed() const { return domainBoundaryFixed_; }
     void setDomainBoundaryFixed(bool value) { domainBoundaryFixed_ = value; }
     bool getDomainBoundaryVisible() const { return domainBoundaryVisible_; }
@@ -463,6 +485,7 @@ private:
     boost::filesystem::path checkpoint_path_; //!< Path for checkpoint files
     bool resume_;                //!< Resume from checkpoint
     std::string resumeCheckpointFile_; //!< Checkpoint base name/path used for resume loading
+    bool resetAngularVelocityOnResume_; //!< Deprecated: reset sphere angular velocities after a resume
     bool resumeExpectedTimeSet_;       //!< Whether resumeExpectedTime_ carries a driver expectation
     real resumeExpectedTime_;          //!< Simulation time the driver expects the checkpoint to hold
     real resumeTimeToleranceSteps_;    //!< Allowed time deviation, in units of the checkpoint stepSize
@@ -492,6 +515,7 @@ private:
     bool domainBoundaryEnabled_; //!< Enable ATC triangle mesh domain boundary setup
     boost::filesystem::path domainBoundaryFilePath_; //!< Triangle mesh file used for ATC domain boundary
     Vec3 domainBoundaryPosition_; //!< World-frame position applied to the ATC domain boundary
+    bool hasDomainBoundaryPosition_; //!< True once domainBoundaryPosition_ was explicitly set
     bool domainBoundaryFixed_; //!< Whether the ATC domain boundary is fixed
     bool domainBoundaryVisible_; //!< Whether the ATC domain boundary is visible to PE writers
     bool domainBoundaryDistanceMapEnabled_; //!< Enable domain boundary distance map construction

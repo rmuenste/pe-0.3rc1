@@ -3,12 +3,6 @@
 #include <pe/config/SimulationConfig.h>
 #include <string>
 
-namespace pe {
-
-// Configuration loading function (available in all modes)
-void loadSimulationConfig(const std::string &fileName);
-
-}  // namespace pe
 extern "C" void step_simulation_();
 
 // Re-file bodies into the cells of their current AABBs; call after motion and before any
@@ -26,8 +20,6 @@ void setupArchimedes(MPI_Comm ex0);
 void setupDraftKissTumbBench(MPI_Comm ex0);
 void setupGeneralInit(MPI_Comm ex0);
 void setupSpan(MPI_Comm ex0);
-void setupLubricationLab(MPI_Comm ex0);
-void setupDrill(MPI_Comm ex0);
 void setupATC(MPI_Comm ex0);
 void setupELFrozenTrace(MPI_Comm ex0,
                         pe::real xmin, pe::real xmax,

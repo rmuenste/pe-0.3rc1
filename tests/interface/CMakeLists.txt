@@ -469,6 +469,10 @@ if(PE_USE_CGAL)
   )
 endif()
 pe_add_interface_serial_test(
+  pe-interface-serial-cyl-example
+  cyl-example
+)
+pe_add_interface_serial_test(
   pe-interface-serial-fluidization-srr-fresh
   fluidization-srr-fresh
 )

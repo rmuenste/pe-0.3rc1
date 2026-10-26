@@ -279,8 +279,12 @@ To add a new serial coupled case `xyz`:
    as the reference: it reads its parameters from the configuration, validates
    the process layout, calls the shared `decompose*` functions from
    [decompose.h](../../pe/interface/decompose.h), and aborts with a message on
-   every error path. Most older `setup_*.h` files predate these conventions
-   (hardcoded geometry, silent `return` on errors) and are not good templates.
+   every error path. [setup_cyl.h](../../pe/interface/setup_cyl.h) is the
+   minimal example of the same steps: a fixed global `InnerCylinder` as the
+   domain boundary, decomposed into slabs along its height axis, with one
+   sphere created on its owning process. Most older `setup_*.h` files predate
+   these conventions (hardcoded geometry, silent `return` on errors) and are not
+   good templates.
 3. **Smoke test** (recommended) — add a case to
    [tests/interface/pe_interface_smoke_serial.cpp](../../tests/interface/pe_interface_smoke_serial.cpp)
    and register it in `tests/interface/CMakeLists.txt`. See

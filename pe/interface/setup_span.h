@@ -1,6 +1,34 @@
-#ifndef _PE_SETUP_SPAN_H_
-#define _PE_SETUP_SPAN_H_
+//=================================================================================================
+/*!
+ *  \file pe/interface/setup_span.h
+ *  \brief PE setup for the span (chip) case (parallel PE mode)
+ *
+ *  Copyright (C) 2025 Michael Fast, Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  pe is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+ *  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along with pe. If not,
+ *  see <http://www.gnu.org/licenses/>.
+ */
+//=================================================================================================
 
+#ifndef _PE_INTERFACE_SETUP_SPAN_H_
+#define _PE_INTERFACE_SETUP_SPAN_H_
+
+
+//*************************************************************************************************
+// Includes
+//*************************************************************************************************
+
+#include <exception>
 #include <iostream>
 #include <string>
 
@@ -8,7 +36,17 @@
 #include <pe/core/detection/fine/DistanceMap.h>
 #include <pe/interface/decompose.h>
 
+
 using namespace pe::povray;
+
+
+
+
+//=================================================================================================
+//
+//  SETUP FUNCTIONS
+//
+//=================================================================================================
 
 //*************************************************************************************************
 /*!\brief PE setup for the span (chip) case (parallel PE mode).
@@ -19,7 +57,7 @@ using namespace pe::povray;
  * The case is a single free triangle-mesh chip ("chip1.obj") with DistanceMap acceleration
  * in a fixed, non-periodic box without boundary planes.
  *
- * Read from example.json: gravity, fluid density and viscosity, step size, the process layout
+ * Read from the configuration file (SimulationConfig::getConfigFile()): gravity, fluid density and viscosity, step size, the process layout
  * (processesX_/Y_/Z_), and the VTK switch and spacing.
  *
  * Fixed in this file: the domain size, the chip mesh file, its position and its density.
@@ -45,7 +83,23 @@ void setupSpan(MPI_Comm ex0) {
   auto& config = SimulationConfig::getInstance();
   world = theWorld();
 
-  loadSimulationConfig("example.json");
+  int myRank = 0;
+  MPI_Comm_rank(ex0, &myRank);
+
+  // Prints the message once and aborts the whole run
+  const auto abortSetup = [&](const std::string& message) {
+    if (myRank == 0) {
+      std::cerr << "\nERROR in setupSpan: " << message << "\n" << std::endl;
+    }
+    MPI_Abort(ex0, 1);
+  };
+
+  try {
+    SimulationConfig::loadConfigFile(myRank == 0);
+  }
+  catch (const std::exception& e) {
+    abortSetup(e.what());
+  }
 
   const real simRho( config.getFluidDensity() );
   const real simViscosity( config.getFluidViscosity() );
@@ -64,21 +118,13 @@ void setupSpan(MPI_Comm ex0) {
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
-  int myRank = 0;
-  MPI_Comm_rank(ex0, &myRank);
-
-  // Prints the message once and aborts the whole run
-  const auto abortSetup = [&](const std::string& message) {
-    if (myRank == 0) {
-      std::cerr << "\nERROR in setupSpan: " << message << "\n" << std::endl;
-    }
-    MPI_Abort(ex0, 1);
-  };
-
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();
   const int pz = config.getProcessesZ();
 
+  if( px <= 0 || py <= 0 || pz <= 0 ) {
+    abortSetup("processesX_, processesY_ and processesZ_ must be positive.");
+  }
   if( px*py*pz != mpisystem->getSize() ) {
     abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
                " != " + std::to_string(px*py*pz) + " (processesX_*Y_*Z_).");
@@ -101,13 +147,6 @@ void setupSpan(MPI_Comm ex0) {
   // Cartesian coordinates of this process within the process grid
   int center[3];
   MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
-
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "> 3D communicator created" << std::endl;
-    std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-    std::cout << "3D coordinates were created" << std::endl;
-    std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
-  }
 
   const real dx( LX / px );
   const real dy( LY / py );
@@ -169,25 +208,39 @@ void setupSpan(MPI_Comm ex0) {
   //===============================================================================================
   // Setup summary
   //===============================================================================================
+  // Every body counts once: the bodies a process owns (not its shadow copies of neighbouring
+  // bodies), plus the global bodies, which every process holds
   unsigned long meshesLocal( 0 );
   unsigned long bodiesLocal( 0 );
-  for (unsigned int j(0); j < theCollisionSystem()->getBodyStorage().size(); j++) {
-    BodyID body = world->getBody(j);
-    if (body->getType() == triangleMeshType) {
-      ++meshesLocal;
+  unsigned long globalMeshes( 0 );
+  unsigned long globalBodies( 0 );
+  for( World::Iterator body = world->begin(); body != world->end(); ++body ) {
+    if( body->isRemote() )
+      continue;
+    const bool isMesh( body->getType() == triangleMeshType );
+    if( body->isGlobal() ) {
+      ++globalBodies;
+      if( isMesh ) ++globalMeshes;
     }
-    ++bodiesLocal;
+    else {
+      ++bodiesLocal;
+      if( isMesh ) ++meshesLocal;
+    }
   }
 
   unsigned long meshesTotal( 0 );
   unsigned long bodiesTotal( 0 );
   MPI_Reduce( &meshesLocal, &meshesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
   MPI_Reduce( &bodiesLocal, &bodiesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  meshesTotal += globalMeshes;
+  bodiesTotal += globalBodies;
 
   pe_EXCLUSIVE_SECTION( 0 ) {
     std::cout << "\n--" << "SPAN (CHIP) SETUP"
       << "--------------------------------------------------------------\n"
       << " Total number of MPI processes           = " << px * py * pz << "\n"
+      << " Process grid (x, y, z)                  = " << px << " x " << py << " x " << pz << "\n"
+      << " Subdomain size                          = " << Vec3(dx, dy, dz) << "\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
       << " Total number of triangle meshes         = " << meshesTotal << "\n"
       << " Total number of objects                 = " << bodiesTotal << "\n"

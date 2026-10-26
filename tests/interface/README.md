@@ -34,6 +34,11 @@ cmake --build build-interface-tests --target pe_interface_smoke_serial
 ctest --test-dir build-interface-tests -R pe-interface-serial --output-on-failure
 ```
 
+`pe-interface-serial-cyl-example` runs `setupCylSerial`, the serial version of the
+cylinder example (one sphere in a fixed `InnerCylinder`), and then steps the world
+with gravity added by the test, as the CFD driver would. It checks that the sphere
+comes to rest on the bottom cap, on the axis and without spin.
+
 When PE is configured with `-DPE_USE_CGAL=ON`, the serial test set also includes
 `pe-interface-serial-atc-cgal-distancemap` and
 `pe-interface-serial-span-complex-distancemaps`. The ATC case enables the ATC

@@ -27,8 +27,14 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/util/CheckpointMetadata.h>
+#include <pe/util/logging/InfoSection.h>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
+#if defined(__APPLE__)
+#include <crt_externs.h>
+#endif
 #if HAVE_JSON
 #include <nlohmann/json.hpp>
 #endif
@@ -67,6 +73,7 @@ SimulationConfig::SimulationConfig()
     , checkpoint_path_("checkpoints/")
     , resume_(false)
     , resumeCheckpointFile_("../start.1")
+    , resetAngularVelocityOnResume_(true)
     , resumeExpectedTimeSet_(false)
     , resumeExpectedTime_(0.0)
     , resumeTimeToleranceSteps_(defaultResumeTimeToleranceSteps)
@@ -91,6 +98,7 @@ SimulationConfig::SimulationConfig()
     , domainBoundaryEnabled_(true)
     , domainBoundaryFilePath_("atc_boundary_param_zero.obj")
     , domainBoundaryPosition_(0.000006, -2.25096, 0.08719)
+    , hasDomainBoundaryPosition_(false)
     , domainBoundaryFixed_(true)
     , domainBoundaryVisible_(true)
     , domainBoundaryDistanceMapEnabled_(true)
@@ -244,6 +252,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     if (j.contains("verbose_"))
         config.setVerbose(j["verbose_"].get<bool>());
 
+    if (j.contains("deprecationsAsErrors_"))
+        config.setDeprecationsAsErrors(j["deprecationsAsErrors_"].get<bool>());
+
     // Set VTK visualization flag
     if (j.contains("vtk_"))
         config.setVtk(j["vtk_"].get<bool>());
@@ -267,6 +278,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Set the checkpoint file name/path to load for resume mode
     if (j.contains("resumeCheckpointFile_"))
         config.setResumeCheckpointFile(j["resumeCheckpointFile_"].get<std::string>());
+
+    if (j.contains("resetAngularVelocityOnResume_"))
+        config.setResetAngularVelocityOnResume(j["resetAngularVelocityOnResume_"].get<bool>());
 
     // Set the checkpoint path (assuming the JSON key is a string)
     if (j.contains("checkpoint_path_"))
@@ -623,5 +637,225 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 #endif
 }
 //=================================================================================================
+
+
+
+
+//=================================================================================================
+//
+//  CONFIGURATION FILE
+//
+//=================================================================================================
+
+namespace {
+
+//*************************************************************************************************
+/*!\brief The configuration file set by SimulationConfig::setConfigFile(), empty if none was set.
+ */
+std::string& hostConfigFile() {
+    static std::string fileName;
+    return fileName;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the arguments of the process command line, including the program name.
+ *
+ * Read from the operating system rather than from main(), so it also works when pe is a library
+ * of a program with a Fortran main. Empty on systems other than Linux and macOS.
+ */
+std::vector<std::string> processArguments() {
+    std::vector<std::string> args;
+#if defined(__linux__)
+    std::ifstream cmdline("/proc/self/cmdline", std::ios::binary);
+    std::string arg;
+    while (std::getline(cmdline, arg, '\0'))
+        args.push_back(arg);
+#elif defined(__APPLE__)
+    char** argv = *_NSGetArgv();
+    const int argc = *_NSGetArgc();
+    for (int i = 0; i < argc; ++i)
+        args.push_back(argv[i]);
+#endif
+    return args;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the value of --pe-config on the process command line, or an empty string.
+ *
+ * Both "--pe-config <file>" and "--pe-config=<file>" are accepted; the first occurrence wins.
+ *
+ * \exception std::runtime_error If --pe-config is given without a file name.
+ */
+std::string commandLineConfigFile() {
+    const std::string option("--pe-config");
+    const std::vector<std::string> args(processArguments());
+
+    for (std::size_t i = 1; i < args.size(); ++i) {
+        std::string value;
+        if (args[i] == option) {
+            if (i + 1 < args.size())
+                value = args[i + 1];
+        }
+        else if (args[i].compare(0, option.size() + 1, option + "=") == 0) {
+            value = args[i].substr(option.size() + 1);
+        }
+        else {
+            continue;
+        }
+
+        if (value.empty())
+            throw std::runtime_error("--pe-config is given on the command line without a file name");
+        return value;
+    }
+    return std::string();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Default name of the configuration file (deprecated, see config.defaultFileName).
+ */
+const char* const defaultConfigFile = "example.json";
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Source reported when the default configuration file is used.
+ */
+const char* const defaultConfigSource = "the default";
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Resolves the configuration file and where its name comes from.
+ *
+ * \param source Set to a description of the source of the name.
+ * \return The name of the configuration file.
+ */
+std::string resolveConfigFile(std::string& source) {
+    if (!hostConfigFile().empty()) {
+        source = "the application, SimulationConfig::setConfigFile()";
+        return hostConfigFile();
+    }
+
+    const std::string fromCommandLine(commandLineConfigFile());
+    if (!fromCommandLine.empty()) {
+        source = "the command line option --pe-config";
+        return fromCommandLine;
+    }
+
+    const char* fromEnvironment = std::getenv("PE_CONFIG_FILE");
+    if (fromEnvironment != nullptr && *fromEnvironment != '\0') {
+        source = "the environment variable PE_CONFIG_FILE";
+        return fromEnvironment;
+    }
+
+    source = defaultConfigSource;
+    return defaultConfigFile;
+}
+//*************************************************************************************************
+
+} // namespace
+
+
+//*************************************************************************************************
+/*!\brief Sets the configuration file.
+ *
+ * \param fileName Path of the JSON configuration file, absolute or relative to the working
+ *                 directory.
+ * \return void
+ *
+ * A name set here takes precedence over --pe-config on the command line, the environment variable
+ * PE_CONFIG_FILE and the default. C and Fortran drivers use set_pe_config_file_().
+ *
+ * \exception std::invalid_argument If \a fileName is empty.
+ */
+void SimulationConfig::setConfigFile(const std::string& fileName) {
+    if (fileName.empty())
+        throw std::invalid_argument("SimulationConfig::setConfigFile(): empty file name");
+    hostConfigFile() = fileName;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the name of the configuration file.
+ *
+ * \return The configuration file, from the first of these sources that is given:
+ *         -# SimulationConfig::setConfigFile() (or set_pe_config_file_() from C/Fortran),
+ *         -# --pe-config <file> or --pe-config=<file> on the process command line,
+ *         -# the environment variable PE_CONFIG_FILE,
+ *         -# the default example.json (deprecated).
+ *
+ * \exception std::runtime_error If --pe-config is given without a file name.
+ */
+std::string SimulationConfig::getConfigFile() {
+    std::string source;
+    return resolveConfigFile(source);
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns where getConfigFile() takes the name of the configuration file from.
+ *
+ * \return A description such as "the command line option --pe-config" or "the default".
+ */
+std::string SimulationConfig::getConfigFileSource() {
+    std::string source;
+    resolveConfigFile(source);
+    return source;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Loads the configuration file getConfigFile().
+ *
+ * \param console \a true to also print the file name and its source to std::cout. Pass \a false
+ *                on all but one process (e.g. rank 0), so the line appears once.
+ * \return void
+ *
+ * The file name and its source always go to the pe log. Use this function in setups instead of
+ * loading a fixed file name. If the name is the default example.json, the deprecation
+ * config.defaultFileName is reported (see doc/technical-notes/deprecations.md).
+ *
+ * \exception std::runtime_error If the file does not exist, cannot be read, if pe was built
+ *            without JSON support, or if the default is used and deprecationsAsErrors_ is set.
+ */
+void SimulationConfig::loadConfigFile(bool console) {
+    std::string source;
+    const std::string fileName(resolveConfigFile(source));
+
+    if (!boost::filesystem::is_regular_file(fileName)) {
+        throw std::runtime_error("the configuration file " + fileName + " (from " + source +
+                                 ") was not found in the working directory " +
+                                 boost::filesystem::current_path().string());
+    }
+
+    loadFromFile(fileName);
+
+    const std::string text("PE configuration file: " + fileName + " (from " + source + ")");
+    pe_LOG_INFO_SECTION(log) {
+        log << text << "\n";
+    }
+    if (console)
+        std::cout << text << std::endl;
+
+    if (source == defaultConfigSource &&
+        !reportDeprecated("config.defaultFileName",
+                          "the configuration file is the default example.json. Name it with "
+                          "--pe-config <file> on the command line, the environment variable "
+                          "PE_CONFIG_FILE, or set_pe_config_file_() from the driver.",
+                          console)) {
+        throw std::runtime_error("the default configuration file example.json is deprecated "
+                                 "(deprecationsAsErrors_ is set), see the PE DEPRECATED message");
+    }
+}
+//*************************************************************************************************
 
 } // namespace pe
