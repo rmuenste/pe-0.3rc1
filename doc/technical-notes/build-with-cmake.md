@@ -181,7 +181,15 @@ Configure output shows which source was used, e.g.
 `pe TPL Eigen3: found version 3.4.0 in /usr/share/cmake/eigen3` or
 `pe TPL nlohmann_json: using the cached archive .../nlohmann_json-3.12.0-json.tar.xz`.
 To make pe download Eigen even though Eigen is installed, pass `-DPE_PREFER_EXTERNAL_TPL=OFF`
-or `-DCMAKE_DISABLE_FIND_PACKAGE_Eigen3=ON`.
+or `-DCMAKE_DISABLE_FIND_PACKAGE_Eigen3=ON`. This also works when you reconfigure an existing
+build directory: pe remembers which `<Package>_DIR` values `find_package()` found by itself and
+counts only the others as set by you. A `<Package>_DIR` that you set explicitly takes
+precedence over `PE_PREFER_EXTERNAL_TPL=OFF`. Build directories configured before this was
+added treat an already cached `<Package>_DIR` as set by you; use a fresh build directory there.
+
+The downloaded copies work with every supported CMake version (3.15 or newer). CMake 3.15–3.17
+lacks FetchContent's `SOURCE_SUBDIR`, so there pe populates the sources with
+`FetchContent_Populate()` instead of `FetchContent_MakeAvailable()`; the result is the same.
 
 ### Archive cache
 
@@ -233,13 +241,16 @@ the library:
 
 When pe is added with `add_subdirectory()` or FetchContent (FEAT3 does this, with
 `PE_USE_EIGEN`, `PE_USE_JSON` and `PE_USE_CGAL` set to `OFF`), all of the above still works.
-If the parent already defines `Eigen3::Eigen` or `nlohmann_json::nlohmann_json`, pe uses those
-targets. The targets pe creates for downloaded libraries are global, so the parent can use them
+If the parent already defines `Eigen3::Eigen`, `nlohmann_json::nlohmann_json` or `CGAL::CGAL`,
+pe uses those targets. The targets pe creates for downloaded libraries are global, so the parent can use them
 too. With
 CMake 3.24 or newer, a later `find_package(Eigen3)` or `find_package(nlohmann_json)` in the
 parent is answered with pe's download (FetchContent `OVERRIDE_FIND_PACKAGE`). The FetchContent
 names are the package names (`Eigen3`, `nlohmann_json`, `CGAL`), so if the parent declares one
-of them first, the parent's declaration is used. All of pe's options and functions carry the
+of them first, the parent's declaration is used. pe then neither needs nor downloads its own
+archive (also not with `PE_NO_EXTERNAL_DOWNLOAD=ON`) and does not register its pinned version
+for `find_package()`. An installed package that `find_package()` finds (step 2 above) still
+comes first. All of pe's options and functions carry the
 `PE_`/`pe_` prefix.
 
 ### Moving a pin

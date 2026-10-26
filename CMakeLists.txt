@@ -403,11 +403,14 @@ if(PE_USE_CGAL)
   # header-only library archive of CGAL 5.3.2. Its SHA-256 is the one CGAL published in
   # sha256sum.txt of the v5.3.2 release (uploaded together with the archive on 2022-06-06).
   # CGAL's own CMakeLists is not run; the include directory of the archive is used instead.
+  # A CGAL::CGAL target of a parent project is reused; an installed CGAL is used with or without
+  # that target (without it, through CGAL_INCLUDE_DIRS).
   # There is no copy in pe-third-party yet, so the pin has only the upstream URL.
   pe_get_tpl(
     PACKAGE_NAME  CGAL
     VERSION       5.3.2
     FIND_ANY_VERSION
+    OPTIONAL_TARGET CGAL::CGAL
     FIND_PACKAGE_ARGS HINTS
                   ${CGAL_DIR}                                             # If passed from parent
                   ${CMAKE_BINARY_DIR}/extern/cgal/install/lib/cmake/CGAL  # Default install location from main project
