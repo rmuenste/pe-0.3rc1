@@ -28,13 +28,13 @@
 // Includes
 //*************************************************************************************************
 
-#include <exception>
 #include <iostream>
 #include <string>
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/detection/fine/DistanceMap.h>
 #include <pe/interface/decompose.h>
+#include <pe/interface/setup_config.h>
 
 
 using namespace pe::povray;
@@ -94,12 +94,7 @@ void setupSpan(MPI_Comm ex0) {
     MPI_Abort(ex0, 1);
   };
 
-  try {
-    SimulationConfig::loadConfigFile(myRank == 0);
-  }
-  catch (const std::exception& e) {
-    abortSetup(e.what());
-  }
+  loadConfigFileOnAllRanks(ex0, "setupSpan");
 
   const real simRho( config.getFluidDensity() );
   const real simViscosity( config.getFluidViscosity() );

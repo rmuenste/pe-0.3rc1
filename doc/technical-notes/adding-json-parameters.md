@@ -12,13 +12,20 @@ name. The file is the first of:
    `commf2c_*` setup entry point;
 2. `--pe-config <file>` or `--pe-config=<file>` on the command line of the program. pe reads it
    from `/proc/self/cmdline` (Linux) or `_NSGetArgv()` (macOS), so it also works when pe is a
-   library of a program with a Fortran `main`; the host program must ignore the option;
+   library of a program with a Fortran `main`; the host program must ignore the option. The
+   scan stops at `--`, and a file name starting with `-` needs the `=` form;
 3. the environment variable `PE_CONFIG_FILE` (with Open MPI pass it on with `mpirun -x`);
 4. `example.json`, deprecated (`config.defaultFileName`, see [deprecations.md](deprecations.md)).
 
 Paths are absolute or relative to the working directory. `loadConfigFile()` prints the file and
 where its name came from (`PE configuration file: run1.json (from the command line option
 --pe-config)`) and stops with an error if the file does not exist.
+
+Parallel setups call `loadConfigFileOnAllRanks(comm, "setupName")` from
+[setup_config.h](../../pe/interface/setup_config.h) instead: every process loads the file, and if
+any of them fails, the failing processes (or rank 0, if it failed itself) print their error with
+their rank before the run is aborted. The processes may run in different working directories, so
+a missing file on one rank is reported by that rank.
 
 ## 1) Add storage, defaults, and accessors
 - File: `pe/config/SimulationConfig.h`

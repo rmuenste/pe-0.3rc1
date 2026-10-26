@@ -50,8 +50,8 @@
 //    pe_add_interface_serial_test(<ctest-name>, <case-name>). Gate it with the
 //    required feature option, for example if(PE_USE_CGAL), when the case needs an
 //    optional dependency.
-// 3. Teach main() to map <case-name> to the fixture config that should be
-//    copied to example.json.
+// 3. Teach main() to map <case-name> to the fixture config; selectConfig() passes it to
+//    SimulationConfig::setConfigFile().
 // 4. Implement a single run<CaseName>() or seed<CaseName>() helper that calls
 //    exactly one setup function and performs focused assertions.
 // 5. Dispatch <case-name> to that helper in main(). Do not add a mode that runs
@@ -188,11 +188,12 @@ void copyFixtures(const fs::path& source, const fs::path& destination) {
   }
 }
 
+// Names the fixture config explicitly, so neither an inherited PE_CONFIG_FILE nor a --pe-config
+// argument nor the default example.json can replace it.
 void selectConfig(const fs::path& runDir, const std::string& configName) {
-  const fs::path source = runDir / configName;
-  const fs::path target = runDir / "example.json";
+  const fs::path source = fs::absolute(runDir / configName);
   require(fs::exists(source), "Missing fixture config: " + source.string());
-  fs::copy_file(source, target, overwriteExisting);
+  pe::SimulationConfig::setConfigFile(source.string());
 }
 
 void enterRunDir(const fs::path& runDir) {

@@ -53,9 +53,10 @@ namespace pe {
 //*************************************************************************************************
 /*!\name Deprecation functions */
 //@{
-void setDeprecationsAsErrors( bool asErrors );
-bool deprecationsAsErrors();
-bool reportDeprecated( const std::string& id, const std::string& message, bool console=true );
+PE_PUBLIC void setDeprecationsAsErrors( bool asErrors );
+PE_PUBLIC bool deprecationsAsErrors();
+PE_PUBLIC bool reportDeprecated( const std::string& id, const std::string& message,
+                                 bool console=true );
 //@}
 //*************************************************************************************************
 

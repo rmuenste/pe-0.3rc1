@@ -28,12 +28,12 @@
 // Includes
 //*************************************************************************************************
 
-#include <exception>
 #include <iostream>
 #include <string>
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
+#include <pe/interface/setup_config.h>
 #include <pe/interface/setup_optional_collision_params.h>
 
 
@@ -79,12 +79,7 @@ void setupCreep(MPI_Comm ex0) {
     MPI_Abort(ex0, 1);
   };
 
-  try {
-    SimulationConfig::loadConfigFile( myRank == 0 );
-  }
-  catch( const std::exception& e ) {
-    abortSetup( e.what() );
-  }
+  loadConfigFileOnAllRanks(ex0, "setupCreep");
 
   world = theWorld();
   world->setGravity( 0.0, 0.0, 0.0 );

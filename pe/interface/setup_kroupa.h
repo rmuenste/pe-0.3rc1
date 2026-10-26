@@ -36,6 +36,7 @@
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/decompose.h>
+#include <pe/interface/setup_config.h>
 #include <pe/interface/geometry_utils.h>
 #include <pe/interface/setup_optional_collision_params.h>
 // Provides the seeded lattice generator elTerminalRandomSeeds() that is reused here.
@@ -112,12 +113,7 @@ void setupKroupa(MPI_Comm ex0) {
     MPI_Abort(ex0, 1);
   };
 
-  try {
-    SimulationConfig::loadConfigFile(myRank == 0);
-  }
-  catch (const std::exception& e) {
-    abortSetup(e.what());
-  }
+  loadConfigFileOnAllRanks(ex0, "setupKroupa");
 
   // Push runtime lubrication parameters (model switches, cutoff, hysteresis) into the engine
   applyOptionalLubricationParams(*theCollisionSystem(), config);

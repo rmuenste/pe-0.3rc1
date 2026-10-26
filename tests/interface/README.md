@@ -8,8 +8,9 @@ are normally reached from FeatFloWer. The first runner is serial-only:
 - CTest prefix: `pe-interface-serial-*`
 
 Each CTest case starts a separate process. The runner copies the serial fixtures
-to a case-local run directory under the build tree, renames the selected config
-to `example.json`, changes into that directory, and calls the real serial setup
+to a case-local run directory under the build tree, names the selected config
+with `SimulationConfig::setConfigFile()` (so an inherited `PE_CONFIG_FILE` cannot
+replace it), changes into that directory, and calls the real serial setup
 function.
 
 From a parent FeatFloWer build configured with `USE_PE=ON`,
@@ -149,7 +150,7 @@ singletons, so each scenario needs its own process.
    `tests/interface/CMakeLists.txt`. Wrap it in the relevant feature gate, such
    as `if(PE_USE_CGAL)`, when the case requires an optional dependency.
 3. Update `pe_interface_smoke_serial.cpp` so `main()` maps `<case-name>` to the
-   fixture config copied to `example.json`.
+   fixture config that `selectConfig()` passes to `SimulationConfig::setConfigFile()`.
 4. Implement a focused helper that calls exactly one setup function and checks
    the expected bodies, config flags, files, or roundtrip behavior.
 5. Dispatch `<case-name>` to that helper in `main()`.

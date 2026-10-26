@@ -687,6 +687,9 @@ std::vector<std::string> processArguments() {
 /*!\brief Returns the value of --pe-config on the process command line, or an empty string.
  *
  * Both "--pe-config <file>" and "--pe-config=<file>" are accepted; the first occurrence wins.
+ * The scan stops at "--": the arguments after it are positional arguments of the program. In the
+ * separated form a following argument that starts with '-' is another option, not a file name;
+ * a file name starting with '-' needs the form "--pe-config=<file>".
  *
  * \exception std::runtime_error If --pe-config is given without a file name.
  */
@@ -695,9 +698,12 @@ std::string commandLineConfigFile() {
     const std::vector<std::string> args(processArguments());
 
     for (std::size_t i = 1; i < args.size(); ++i) {
+        if (args[i] == "--")
+            break;
+
         std::string value;
         if (args[i] == option) {
-            if (i + 1 < args.size())
+            if (i + 1 < args.size() && args[i + 1].compare(0, 1, "-") != 0)
                 value = args[i + 1];
         }
         else if (args[i].compare(0, option.size() + 1, option + "=") == 0) {

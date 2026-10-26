@@ -30,13 +30,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <exception>
 #include <iostream>
 #include <string>
 
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/MPITrait.h>
 #include <pe/interface/decompose.h>
+#include <pe/interface/setup_config.h>
 
 
 
@@ -98,12 +98,7 @@ void setupFluidization(MPI_Comm ex0) {
     MPI_Abort(ex0, 1);
   };
 
-  try {
-    SimulationConfig::loadConfigFile(myRank == 0);
-  }
-  catch (const std::exception& e) {
-    abortSetup(e.what());
-  }
+  loadConfigFileOnAllRanks(ex0, "setupFluidization");
 
   const real simViscosity(config.getFluidViscosity());
   const real simRho(config.getFluidDensity());
