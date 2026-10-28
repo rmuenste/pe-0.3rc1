@@ -1,11 +1,27 @@
-#ifndef _PE_SETUP_DKT_H_
-#define _PE_SETUP_DKT_H_
+//=================================================================================================
+/*!\file pe/interface/setup/dkt.h
+ *  \brief Draft-kiss-tumble benchmark (two settling spheres).
+ *
+ *  Entry point: commf2c_dkt_().
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_DKT_H_
+#define _PE_INTERFACE_SETUP_DKT_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <iostream>
 #include <string>
-
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/decompose.h>
+#include <pe/interface/support/decompose.h>
+
+namespace pe {
 
 //*************************************************************************************************
 /*!\brief PE setup for the draft-kiss-tumble benchmark (parallel PE mode).
@@ -27,7 +43,7 @@
  *
  * Every error path aborts the run with a message.
  */
-void setupDraftKissTumbBench(MPI_Comm ex0) {
+inline void setupDraftKissTumbBench(MPI_Comm ex0) {
 
   //===============================================================================================
   // Case constants
@@ -193,4 +209,132 @@ void setupDraftKissTumbBench(MPI_Comm ex0) {
 }
 //*************************************************************************************************
 
-#endif
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief Draft-Kiss-Tumble benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupDraftKissTumbSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+
+  WorldID world = theWorld();
+
+  // Apply lubrication/contact parameters from configuration
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
+
+  // Gravity and fluid properties come from the configuration, never hardcoded
+  world->setGravity(config.getGravity());
+
+  const real simViscosity(config.getFluidViscosity());
+  const real simRho(config.getFluidDensity());
+  const real rhoParticle(config.getParticleDensity());
+  const real sphereRad(config.getBenchRadius());
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  // The PE stepsize must match the CFD deck TimeStep; take it from the config
+  TimeStep::stepsize(config.getStepsize());
+
+  // Materials are registered on BOTH paths and in this fixed order: checkpointed bodies carry a
+  // bare index into the material table (see setupATCSerial), so a resumed run must build the
+  // same table before it reads the checkpoint.
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  // Contact material from config: restitution_/staticFriction_/dynamicFriction_
+  // json keys (defaults 0.0/0.1/0.05 reproduce the former hard-coded values)
+  MaterialID particleMaterial =
+      createMaterial("Bench", rhoParticle, config.getRestitution(),
+                     config.getStaticFriction(), config.getDynamicFriction(),
+                     0.2, 80, 100, 10, 11);
+
+  const bool resume = config.getResume();
+  const std::string xyzPath = config.getXyzFilePath().string();
+  std::vector<Vec3> spherePositions;
+  int idx = 0;
+  int particlesCreated = 0;
+
+  if (resume) {
+    // Segmented-run resume (row d52_v25f_l4_protocol): the driver's dump restores only the
+    // fluid, and re-creating the cloud from the xyz file re-inserts it at rest. The pe
+    // checkpoint written by the driver at its dump instant (pe_write_checkpoint_) carries
+    // positions, orientations, linear AND angular velocities of every body, including the
+    // ground plane (global body), so nothing is created here. Loads on every rank: each CFD
+    // rank runs its own serial pe instance.
+    resumeFromConfiguredCheckpoint(config);
+    for (auto it = world->begin(); it != world->end(); ++it) {
+      if (it->getType() == sphereType) ++particlesCreated;
+    }
+    if (particlesCreated == 0) {
+      throw std::runtime_error("setupDraftKissTumbSerial: resume checkpoint '" +
+                               config.getResumeCheckpointFile() + "' holds no spheres");
+    }
+  } else {
+    // Floor contact plane at z = 0
+    createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+    // Sphere positions are read from the external xyz file
+    spherePositions = readVectorsFromFile(xyzPath);
+
+    if (spherePositions.empty()) {
+      std::cerr << "ERROR: DKT setup could not read any particle positions from '"
+                << xyzPath << "'" << std::endl;
+      throw std::runtime_error("setupDraftKissTumbSerial: no particle positions read from '" +
+                               xyzPath + "'");
+    }
+
+    for (const auto &spherePos : spherePositions) {
+      createSphere(idx++, spherePos, sphereRad, particleMaterial);
+      ++particlesCreated;
+    }
+  }
+
+  if (isRepresentative && resume) {
+    std::cout << "\n--" << "DKT SETUP (RESUMED from pe checkpoint)"
+              << "----------------------------------------------\n"
+              << " Checkpoint                              = " << config.getResumeCheckpointFile() << "\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << "--------------------------------------------------------------------------------\n"
+              << std::endl;
+  } else if (isRepresentative) {
+    std::cout << "\n--" << "DKT SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Particle radius                         = " << sphereRad << "\n"
+              << " Particle density                        = " << rhoParticle << "\n"
+              << " Position file                           = " << xyzPath << "\n";
+    for (std::size_t i = 0; i < spherePositions.size(); ++i) {
+      std::cout << " Sphere " << i << " position                       = "
+                << spherePositions[i] << "\n";
+    }
+    std::cout << " Total number of particles               = " << particlesCreated << "\n"
+              << "--------------------------------------------------------------------------------\n"
+              << std::endl;
+  }
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_DKT_H_

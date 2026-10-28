@@ -28,7 +28,7 @@
 #include <pe/core/rigidbody/TriangleMeshTypes.h>
 #include <pe/engine.h>
 #include <pe/vtk/Writer.h>
-#include <pe/interface/decompose.h>
+#include <pe/interface/support/decompose.h>
 #endif
 
 namespace pe {

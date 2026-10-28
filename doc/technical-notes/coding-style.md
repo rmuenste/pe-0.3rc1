@@ -274,7 +274,7 @@ The legacy code is C++98 era; the project now builds as C++17 (`CMAKE_CXX_STANDA
 - Make classes non-copyable by deriving privately from `NonCopyable`.
 - In files written in the legacy style, keep using `typedef` for member types. C++11/17
   features (`if constexpr`, `std::void_t`, `auto` for iterator types, `nullptr`) are fine in
-  new code where they make it clearer; `pe/interface/el_optional_api.h` is the established
+  new code where they make it clearer; `pe/interface/support/el_optional_api.h` is the established
   pattern for detecting optional collision-system APIs.
 
 ## Code that deviates from the canonical style
@@ -291,15 +291,15 @@ Google/LLVM-like style:
 | Template heads | `template< typename T >` | `template <typename T>` / `template<class T>` |
 | Entity framing | `//****` frames + `/*!\brief` | plain `//` or `//!` comments, few banners |
 | Include guards | `_PE_DIR_FILE_H_` | `PE_INTERFACE_..._H`, `_FC2_..._HPP_`, `_PE_SETUP_ATC_H_` |
-| File names | `CamelCase.h` | `snake_case.h` (`setup_atc.h`, `el_optional_api.h`) |
+| File names | `CamelCase.h` | `snake_case.h` (`setup/atc.h`, `support/el_optional_api.h`) |
 | Namespace close | `} // namespace pe` | `}  // namespace pe` |
 
 Where it lives, by the same indentation/parenthesis measure:
 
 | Location | Files in deviating style |
 |---|---|
-| `pe/interface/` | 22 of 29 |
-| `src/interface/` | 5 of 7 |
+| `pe/interface/` | nearly all: the case setups under `setup/` and the helpers under `support/` |
+| `src/interface/` | 5 of 8 |
 | `tests/` | 14 of 35 |
 | `src/core/` | `detection/fine/DistanceMap.cpp`, `domaindecomp/TriMeshDopBoundary.cpp` |
 | `pe/config/` | `SimulationConfig.h` |

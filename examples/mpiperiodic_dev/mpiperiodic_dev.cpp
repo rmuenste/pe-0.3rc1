@@ -19,7 +19,7 @@
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
 #include <pe/util/Checkpointer.h>
-#include <pe/interface/decompose.h>
+#include <pe/interface/support/decompose.h>
 #include <sstream>
 #include <random>
 #include <algorithm>

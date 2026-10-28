@@ -1,6 +1,21 @@
-#ifndef _PE_SETUP_EL_TERMINAL_VELOCITY_H_
-#define _PE_SETUP_EL_TERMINAL_VELOCITY_H_
+//=================================================================================================
+/*!\file pe/interface/setup/el_terminal_velocity.h
+ *  \brief Euler-Lagrange terminal-velocity column (parallel mode only).
+ *
+ *  Entry point: commf2c_el_terminal_velocity_(); there is no serial variant.
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_EL_TERMINAL_VELOCITY_H_
+#define _PE_INTERFACE_SETUP_EL_TERMINAL_VELOCITY_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -11,11 +26,12 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/decompose.h>
-#include <pe/interface/geometry_utils.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/decompose.h>
+#include <pe/interface/support/geometry_utils.h>
+#include <pe/interface/support/optional_collision_params.h>
+
+namespace pe {
 
 namespace {
 
@@ -196,7 +212,7 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  * All configuration checks run before any body is created, and every error path aborts the
  * run with a message.
  */
-void setupELTerminalVelocity(MPI_Comm ex0,
+inline void setupELTerminalVelocity(MPI_Comm ex0,
                              pe::real xmin, pe::real xmax,
                              pe::real ymin, pe::real ymax,
                              pe::real zmin, pe::real zmax) {
@@ -524,4 +540,9 @@ void setupELTerminalVelocity(MPI_Comm ex0,
 }
 //*************************************************************************************************
 
-#endif
+}  // namespace pe
+#endif  // HAVE_MPI
+
+// No serial setup: the column needs the domain decomposition of the parallel mode.
+
+#endif  // _PE_INTERFACE_SETUP_EL_TERMINAL_VELOCITY_H_

@@ -350,8 +350,8 @@ JSON file ──loadFromFile──▶ SimulationConfig (pe/config, parsing + sto
   in `pe/core/lubrication/Params.h`, defined in `src/core/lubrication/Params.cpp`
   — or in the interface layer if we want `pe/config` → `pe/core` dependency
   direction kept one-way) copies `SimulationConfig` values into `Params` and
-  into the collision system. Every setup function (`setup_kroupa.h`,
-  `sim_setup_serial.h`, examples) calls it once after `loadFromFile`.
+  into the collision system. Every setup function (`setup/kroupa.h`,
+  the serial setups in `pe/interface/setup/`, examples) calls it once after `loadFromFile`.
 - The solver snapshots `Params` into a `ModelConfig` **once per timestep**, so
   the per-contact loop reads a local struct, not singletons.
 
@@ -526,7 +526,7 @@ install matplotlib`; the system Python is PEP-668-managed).
 
 ### Level 2 — bulk rheology (the paper's headline result)
 
-Shear cell as in the paper: moving upper wall (`setup_kroupa.h` already
+Shear cell as in the paper: moving upper wall (`setup/kroupa.h` already
 targets this class of experiment), periodic lateral boundaries, `N ≈ O(10³)`
 monodisperse spheres, high shear rate.
 

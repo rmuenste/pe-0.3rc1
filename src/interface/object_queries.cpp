@@ -1,7 +1,7 @@
 #include "coupling_body_access.h"
 #include <pe/interface/object_queries.h>
-#include <pe/interface/el_hydro_compat.h>
-#include <pe/interface/el_optional_api.h>
+#include <pe/interface/support/el_hydro_compat.h>
+#include <pe/interface/support/el_optional_api.h>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
@@ -998,7 +998,7 @@ bool isPlaneType(int idx) {
  * \param idx The id of the local particle
  */
 // Called from the extern-C wrapper isTypeEllipsoid() in
-// pe/interface/c_interface_queries.h
+// src/interface/cfd_queries.cpp
 bool isEllipsoidType(int idx) {
 
   WorldID world = theWorld();
@@ -1191,7 +1191,7 @@ double getObjRadius(int idx) {
  * \param axis Output: unit vector, world frame
  */
 // Called from the extern-C wrapper getParticleOrientation() in
-// pe/interface/c_interface_queries.h
+// src/interface/cfd_queries.cpp
 void getObjOrientation(int idx, double axis[3]) {
 
   WorldID world = theWorld();

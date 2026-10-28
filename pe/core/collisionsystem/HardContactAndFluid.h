@@ -181,7 +181,7 @@ public:
    static constexpr bool hasSurfaceVelocity = true;
 
    //! Opt-in marker: this pipeline invokes the shared lubrication stage, so it honors
-   //! lubricationEnabled_ (see pe/interface/setup_optional_collision_params.h).
+   //! lubricationEnabled_ (see pe/interface/support/optional_collision_params.h).
    static constexpr bool hasLubricationStage = true;
 
    //! Diagnostics of the most recent lubrication-stage invocation (zeros while the
@@ -1910,7 +1910,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
       maximumPenetration_ = 0;
       // Hard contacts only: lubrication pre-contacts carry a positive gap and are not
       // contacts in any sense the CFD layer means. getNumberOfContacts() is read by
-      // FeatFloWer through pe/interface/c_interface_queries.h, so reporting them would
+      // FeatFloWer through src/interface/cfd_queries.cpp, so reporting them would
       // silently inflate the count the moment lubrication is switched on. Identical to
       // the previous value whenever lubrication is off.
       numContacts_ = numContactsMaskedHard;
@@ -2207,7 +2207,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
          }
 
          // Diagnostic only: report bodies the serial interface tooling has flagged as stuck
-         // (isStuck_ is set in pe/interface/sim_setup_serial_features.h). Changes no state.
+         // (isStuck_ is set in pe/interface/support/serial_step_features.h). Changes no state.
          if( body->isStuck_ ) {
             pe_LOG_INFO_SECTION( log ) {
                log << "STUCK PARTICLE in resolveContacts: Particle (ID=" << body->getSystemID() << ")\n"

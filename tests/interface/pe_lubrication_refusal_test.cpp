@@ -22,7 +22,7 @@
 #include <pe/core.h>
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/lubrication/Params.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/optional_collision_params.h>
 
 #include <cstdlib>
 #include <iostream>

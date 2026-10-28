@@ -7,7 +7,7 @@
 
 #include <pe/engine.h>
 #include <pe/support.h>
-#include <pe/interface/decompose.h>
+#include <pe/interface/support/decompose.h>
 #include <iostream>
 
 #if HAVE_MPI

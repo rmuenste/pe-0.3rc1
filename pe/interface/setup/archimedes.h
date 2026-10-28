@@ -1,17 +1,33 @@
-#ifndef _PE_SETUP_ARCHIMEDES_H_
-#define _PE_SETUP_ARCHIMEDES_H_
+//=================================================================================================
+/*!\file pe/interface/setup/archimedes.h
+ *  \brief Archimedes buoyancy case.
+ *
+ *  Entry point: commf2c_archimedes_().
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_ARCHIMEDES_H_
+#define _PE_INTERFACE_SETUP_ARCHIMEDES_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
-
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/decompose.h>
-#include <pe/interface/geometry_utils.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/decompose.h>
+#include <pe/interface/support/geometry_utils.h>
+#include <pe/interface/support/optional_collision_params.h>
+
+namespace pe {
 
 using namespace pe::povray;
 
@@ -115,7 +131,7 @@ inline bool loadArchimedesHalfSpaces(const std::string &filename, int axis, bool
  *
  * Every error path aborts the run with a message.
  */
-void setupArchimedes(MPI_Comm ex0)
+inline void setupArchimedes(MPI_Comm ex0)
 {
    //===================================================================================
    // Case constants
@@ -379,4 +395,39 @@ void setupArchimedes(MPI_Comm ex0)
 }
 //*************************************************************************************************
 
-#endif
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief Archimedes benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupArchimedesSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
+
+  WorldID world = theWorld();
+
+  // Archimedes buoyancy test
+  world->setGravity(0.0, 0.0, -9.81);
+  world->setDamping(1.0);
+
+  // Fluid properties
+  real simViscosity(1.0e-3);
+  real simRho(1000.0);
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+
+  TimeStep::stepsize(0.001);
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_ARCHIMEDES_H_

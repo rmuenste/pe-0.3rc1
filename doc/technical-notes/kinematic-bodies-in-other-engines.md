@@ -17,7 +17,7 @@ for GNU compilers. Without it (Clang, AppleClang, Intel):
 - `setLinearVel` and `setAngularVel` silently ignored fixed bodies;
 - `isActive()` returned false for them.
 
-So the conveyor belt, the shaker and the Couette walls of `setup_el_terminal_velocity.h` stood
+So the conveyor belt, the shaker and the Couette walls of `setup/el_terminal_velocity.h` stood
 still under Clang, and nothing reported it. The table tennis demo worked around it with a
 dynamic bat of about a tonne whose pose and velocity were overwritten every step (now a fixed
 bat driven by `setTargetPose`, see item 6 below). The contact

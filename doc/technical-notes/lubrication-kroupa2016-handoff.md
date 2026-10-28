@@ -27,7 +27,7 @@ Code map:
 | Contact emission + blend weights + relative cutoff | `pe/core/detection/fine/MaxContacts.h` (`PE_LUBRICATION_CONTACTS` branches) |
 | AABB inflation (switchable) | `SphereBase::calcBoundingBox`, `src/core/rigidbody/PlaneBase.cpp`, via `lubrication::aabbPadding()` |
 | JSON parameters | `pe/config/SimulationConfig.h` + `src/config/SimulationConfig.cpp` (`lubrication*_` keys) |
-| Config→engine wiring (single point) | `applyOptionalLubricationParams()` in `pe/interface/setup_optional_collision_params.h` |
+| Config→engine wiring (single point) | `applyOptionalLubricationParams()` in `pe/interface/support/optional_collision_params.h` |
 | Tests + plot script | `tests/interface/pe_lubrication_*.cpp`, `tests/interface/plot_two_sphere_approach.py` |
 | Level-2 skeleton | `examples/shear_cell_kroupa/` (+ `evaluate_viscosity.py`) |
 
@@ -80,7 +80,7 @@ Build + run: see "Running the Level 0–2 tests" in the design note. In short:
   η_L ≈ 2×10⁻⁴ Pa·s ≈ 0.2·η_f via the lubrication-stress virial — plausible
   order vs the paper; NOT yet a converged result.
 - MPI+HCL and non-EL builds **compile** (portability fixes in
-  `pe/interface/el_hydro_compat.h` + optional shims); no MPI run-level test yet.
+  `pe/interface/support/el_hydro_compat.h` + optional shims); no MPI run-level test yet.
 
 ## 3. Open points (priority order)
 
@@ -105,7 +105,7 @@ Build + run: see "Running the Level 0–2 tests" in the design note. In short:
    benchmarks; (c) CFD-resolved bounce to calibrate the mesh clamp
    (`lubricationMeshClampFactor_`; `lubrication::setMeshDx()` is WIRED:
    the CFD layer pushes its reduced global h_min through the extern-C
-   entry `set_lubrication_mesh_dx` (`pe/interface/c_interface_queries.h`)
+   entry `set_lubrication_mesh_dx` (`src/interface/cfd_queries.cpp`)
    from FeatFloWer's ComputeCFL, setup-function-agnostic and identical on
    every rank; arming prints a one-time `PE_LUB_MESHDX` line, and a
    configured clamp with no pushed dx warns loudly at the first stage
@@ -118,6 +118,6 @@ Build + run: see "Running the Level 0–2 tests" in the design note. In short:
    gate (the bounce test already records e(St) CSV for that day).
 
 Smaller loose ends: `applyOptionalLubricationParams()` is wired in all serial
-setups and `setup_kroupa.h` only — other MPI setups need the same one-liner;
+setups and `setup/kroupa.h` only — other MPI setups need the same one-liner;
 `examples/basic_lubrication` still calls the deprecated no-op stubs
 (`setLubrication/setSlipLength/setMinEps`) and could be modernized.

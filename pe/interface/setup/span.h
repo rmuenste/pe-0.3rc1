@@ -1,12 +1,28 @@
-#ifndef _PE_SETUP_SPAN_H_
-#define _PE_SETUP_SPAN_H_
+//=================================================================================================
+/*!\file pe/interface/setup/span.h
+ *  \brief Span (chip) FSI benchmark: one triangle mesh in a channel.
+ *
+ *  Entry point: commf2c_fsi_(). setupSpanSerial() is an alias of setupFSIBenchSerial().
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_SPAN_H_
+#define _PE_INTERFACE_SETUP_SPAN_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <iostream>
 #include <string>
-
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/detection/fine/DistanceMap.h>
-#include <pe/interface/decompose.h>
+#include <pe/interface/support/decompose.h>
+
+namespace pe {
 
 using namespace pe::povray;
 
@@ -26,7 +42,7 @@ using namespace pe::povray;
  *
  * Every error path aborts the run with a message.
  */
-void setupSpan(MPI_Comm ex0) {
+inline void setupSpan(MPI_Comm ex0) {
 
   //===============================================================================================
   // Case constants
@@ -207,4 +223,156 @@ void setupSpan(MPI_Comm ex0) {
 }
 //*************************************************************************************************
 
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief FSI benchmark setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupFSIBenchSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+  WorldID world = theWorld();
+  // Apply lubrication/contact parameters from configuration
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
+
+  //==============================================================================================
+  // Simulation Input Parameters 
+  //==============================================================================================
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
+
+  // Default fluid properties
+  real slipLength(0.75);
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  // CRITICAL: Enable automatic force reset after each simulation step
+  // This prevents force accumulation when using substepping
+  world->setAutoForceReset(true);
+
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
+                                               false);
+  }
+
+  // Activate checkpointer if configured
+  if (isRepresentative && config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         effectiveCheckpointSpacing(config),
+                         0, config.getTimesteps());
+  }
+
+  // Serial mode: no MPI, no domain decomposition
+  // The entire simulation domain is owned by this process
+  // Domain boundaries are handled by the CFD code
+  // Create ground plane (global, owned by this domain)
+  //
+  //
+  //
+  // Setup of the ground plane
+  int idx = 0;
+  PlaneID plane = createPlane( idx++, 0.0, 0.0, 1.0, -0.0, granite );
+  // +y
+  createPlane( idx++, 0.0, 1.0, 0.0,  0.0, granite );
+  // -y
+  createPlane( idx++, 0.0,-1.0, 0.0,  -0.02, granite );
+
+  //==============================================================================================
+  // Bench Configuration
+  //==============================================================================================
+  real radBench = config.getBenchRadius();
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position = config.getBenchStartPosition();
+  std::string fileName = std::string("span_cm.obj");
+
+  // Set default timestep
+  TimeStep::stepsize(config.getStepsize());
+  MaterialID chipMat = createMaterial("chip"    , rhoParticle , 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+
+  Vec3 chipPos = position;
+  TriangleMeshID chip = createTriangleMesh(++idx, chipPos, fileName, chipMat, false, true);
+
+#ifdef PE_USE_CGAL
+  // Enable DistanceMap acceleration for the chip
+  chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
+  const bool distanceMapEnabled = chip->hasDistanceMap();
+  const DistanceMap* dm = distanceMapEnabled ? chip->getDistanceMap() : nullptr;
+  if (!distanceMapEnabled && isRepresentative) {
+    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
+  }
+#else
+  const bool distanceMapEnabled = false;
+  std::cout << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
 #endif
+
+  if (isRepresentative) {
+    std::cout << "\n--" << "SIMULATION SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Triangle mesh file                      = " << fileName << "\n"
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
+              << " Distance map enabled                    = " << (distanceMapEnabled ? "yes" : "no") << "\n";
+
+#ifdef PE_USE_CGAL
+    if (distanceMapEnabled && dm) {
+      std::cout << " Distance map grid size                  = "
+                << dm->getNx() << " x " << dm->getNy() << " x " << dm->getNz() << "\n"
+                << " Distance map origin                     = ("
+                << dm->getOrigin()[0] << ", "
+                << dm->getOrigin()[1] << ", "
+                << dm->getOrigin()[2] << ")\n"
+                << " Distance map spacing                    = " << dm->getSpacing() << "\n";
+    }
+#endif
+
+    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+
+}
+
+/**
+ * @brief Span setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupSpanSerial(int cfd_rank) {
+  setupFSIBenchSerial(cfd_rank);
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_SPAN_H_

@@ -178,7 +178,7 @@ Important behavior:
 
 ## Interface-Level Decomposition Functions
 
-`pe/interface/decompose.h` provides high-level setup functions used in examples and setups:
+`pe/interface/support/decompose.h` provides high-level setup functions used in examples and setups:
 
 1. `decomposeDomain(...)` (non-periodic)
 2. `decomposePeriodic3D(...)` (periodic XYZ)

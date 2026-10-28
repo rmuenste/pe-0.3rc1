@@ -42,7 +42,7 @@
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
 #include <pe/util/Checkpointer.h>
-#include <pe/interface/decompose.h>
+#include <pe/interface/support/decompose.h>
 #include <random>
 #include <algorithm>
 #include <examples/common/SolverConstraint.h>
@@ -169,7 +169,7 @@ int main( int argc, char** argv )
    // The Checkpointer
    path                 checkpoint_path( "checkpoints/" );            // The path where to store the checkpointing data
    // NOTE: Checkpointer's constructors are private; activateCheckpointer() is the supported
-   // way to obtain one (see pe/util/Checkpointer.h and the pe/interface/setup_*.h callers).
+   // way to obtain one (see pe/util/Checkpointer.h and the pe/interface/setup/*.h callers).
    // This example used to construct it directly, which stopped compiling when the class was
    // streamlined -- masked until now by the compile-time solver constraint above.
    CheckpointerID checkpointer = activateCheckpointer( checkpoint_path, visspacing, 0, timesteps );

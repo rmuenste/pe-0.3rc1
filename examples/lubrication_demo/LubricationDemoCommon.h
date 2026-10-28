@@ -10,7 +10,7 @@
 #include <pe/core/Configuration.h>
 #include <pe/core/lubrication/Params.h>
 #include <pe/core/Types.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/optional_collision_params.h>
 
 namespace pe::examples::lubrication {
 
@@ -39,7 +39,7 @@ struct DemoConfig {
     only produces meaningful numbers under a stage-capable one, and there are two:
     HardContactAndFluid and HardContactSemiImplicitTimesteppingSolvers, both of which
     declare hasLubricationStage. pe::HasLubricationStage is the library's single source of
-    truth for that (pe/interface/setup_optional_collision_params.h).
+    truth for that (pe/interface/support/optional_collision_params.h).
 
     This used to be a static_assert demanding type-identity with HardContactAndFluid, which
     was both stricter than the requirement (it rejected the equally stage-capable
