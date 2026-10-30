@@ -206,8 +206,10 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  *     processes >= 3 on that axis and the MPI PE build (PE_SERIAL_MODE has no
  *     periodic connectivity),
  *   - adds NO obstacle cylinder and NO boundary walls (the particle stays in the interior for
- *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow). The
- *     optional plane-Couette z-walls (zWallsEnabled_) are the only exception.
+ *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow). The two
+ *     opt-in exceptions are the plane-Couette z-walls (zWallsEnabled_) and the closed
+ *     container (boxWallsEnabled_: six fixed global planes on the CFD box, refused together
+ *     with any periodic axis or the z-walls).
  *
  * All configuration checks run before any body is created, and every error path aborts the
  * run with a message.
