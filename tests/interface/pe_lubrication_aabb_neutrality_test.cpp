@@ -31,7 +31,7 @@
 #include <pe/core/Thresholds.h>
 #include <pe/core/lubrication/Params.h>
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/optional_collision_params.h>
 
 #include <cmath>
 #include <cstdio>

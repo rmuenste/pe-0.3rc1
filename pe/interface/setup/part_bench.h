@@ -1,12 +1,28 @@
-#ifndef _PE_SETUP_PART_BENCH_H_
-#define _PE_SETUP_PART_BENCH_H_
+//=================================================================================================
+/*!\file pe/interface/setup/part_bench.h
+ *  \brief Single-particle sedimentation benchmark (the sed-bench / ten Cate deck).
+ *
+ *  Entry point: commf2c_() in src/interface/cfd_entry_points.cpp.
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_PART_BENCH_H_
+#define _PE_INTERFACE_SETUP_PART_BENCH_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <iostream>
 #include <string>
-
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/decompose.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/decompose.h>
+#include <pe/interface/support/optional_collision_params.h>
+
+namespace pe {
 
 //*************************************************************************************************
 /*!\brief PE setup for the single-particle sedimentation benchmark (parallel PE mode).
@@ -33,7 +49,7 @@
  *
  * Every error path aborts the run with a message.
  */
-void setupParticleBench(MPI_Comm ex0) {
+inline void setupParticleBench(MPI_Comm ex0) {
 
   //===============================================================================================
   // Case constants
@@ -207,4 +223,119 @@ void setupParticleBench(MPI_Comm ex0) {
 }
 //*************************************************************************************************
 
-#endif
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief Serial mode simulation setup
+ *
+ * In serial PE mode, each CFD domain runs its own independent serial PE instance.
+ * No MPI domain decomposition or shadow copies are needed - all particles are local.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupParticleBenchSerial(int cfd_rank) {
+
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+
+  WorldID world = theWorld();
+  // Apply lubrication/contact parameters from configuration
+  CollisionSystemID cs = theCollisionSystem();
+  const bool isRepresentative = (config.getCfdRank() == 1);
+  const bool resume = config.getResume();
+  applyOptionalLubricationParams(*cs, config);
+
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
+
+  // Default fluid properties
+  real slipLength(0.75);
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  // Serial mode: no MPI, no domain decomposition
+  // The entire simulation domain is owned by this process
+  // Domain boundaries are handled by the CFD code
+
+  int idx = 0;
+  //==============================================================================================
+  // Bench Configuration
+  //==============================================================================================
+  real radBench = config.getBenchRadius();
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-0.0, -0.0, 0.1275);
+  if (config.getBenchUseConfigStart())
+    position = config.getBenchStartPosition();
+
+  int particlesCreated = 0;
+
+  // Set default timestep
+  TimeStep::stepsize(0.001);
+
+  // Registered on both paths and in a fixed order: checkpointed bodies reference materials by
+  // bare table index, so registering them only on the fresh path leaves the resumed bodies
+  // pointing past the end of the table.
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  MaterialID myMaterial = createMaterial("Bench", rhoParticle, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  if (resume) {
+    // Resume must load on every rank in PE serial mode, because each CFD rank runs
+    // its own PE instance and later queries local particle storage.
+    resumeFromConfiguredCheckpoint(config);
+    particlesCreated = static_cast<int>(theCollisionSystem()->getBodyStorage().size());
+  } else {
+    // Create static benchmark scene only for fresh starts.
+    createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+    SphereID sphere(nullptr);
+    sphere = createSphere(idx, position, radBench, myMaterial, true);
+    sphere->setLinearVel(config.getInitialParticleVelocity());
+    ++idx;
+    particlesCreated++;
+  }
+
+  // Activate periodic checkpoint writing on representative rank only.
+  // Resume loading above is done on all ranks via a temporary reader.
+  if (isRepresentative && config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         effectiveCheckpointSpacing(config),
+                         0, config.getTimesteps());
+  }
+
+  // Note: Particles will be added by FeatFloWer via the interface functions
+  // This setup just initializes the PE world for this domain
+  if (isRepresentative) {
+    std::cout << "\n--" << "Particle Sedimentation SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Total number of particles               = " << particlesCreated << "\n"
+              << " Particle radius                         = " << radBench << "\n"
+              << " Particle radius2                        = " << config.getBenchRadius() << "\n"
+              << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_PART_BENCH_H_

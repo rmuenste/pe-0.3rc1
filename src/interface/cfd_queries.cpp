@@ -1,12 +1,25 @@
+//=================================================================================================
+/*!\file src/interface/cfd_queries.cpp
+ *  \brief The C query and get/set functions FeatFloWer binds to (prototypes in
+ *         pe/interface/cfd_queries.h). Thin extern "C" wrappers over the C++ query API of
+ *         pe/interface/object_queries.h and over the engine singletons.
+ */
+//=================================================================================================
 
+#include <pe/interface/cfd_queries.h>
 #include <pe/config/SimulationConfig.h>
 #include <pe/core/CollisionSystem.h>
 #include <pe/core/lubrication/Params.h>
-#include <pe/interface/el_optional_api.h>
+#include <pe/interface/support/el_optional_api.h>
 
 #include <iostream>
 #include <type_traits>
 #include <utility>
+
+
+//=================================================================================================
+//  Engine, lubrication and Euler-Lagrange state queries
+//=================================================================================================
 
 // Bound to Fortran function check_rem_id(fbmid, id) in
 // source/src_particles/dem_query.f90 line 226
@@ -201,7 +214,7 @@ extern "C" int getNumRemParticles() {
  *
  * Single source of truth for the Euler-Lagrange feedback: the Fortran side
  * reproduces PE's sub-cycled semi-implicit drag (n_sub steps of dt/n_sub on the
- * frozen hydro state, see sim_setup.cpp) to spread the drag impulse PE actually
+ * frozen hydro state, see cfd_stepping.cpp) to spread the drag impulse PE actually
  * applies. Exporting n_sub here keeps the two sides from drifting apart.
  */
 // Bound to Fortran function getElSubsteps() in source/src_particles/dem_query.f90
@@ -424,5 +437,181 @@ extern "C" void exportOwnedDistanceMaps() {
 // source/src_particles/dem_query.f90 (to be added)
 extern "C" void debugDistanceMapBBoxes() {
   debugDistanceMapBoundingBoxes();
+}
+//=================================================================================================
+
+
+//=================================================================================================
+//  Point containment queries (FBM alpha field)
+//=================================================================================================
+
+//=================================================================================================
+/*
+ *!\brief The function returns true if the point is inside the object else false
+ * \param idx The index of the object to check against
+ * \param pos The coordinates of the point
+ */
+// Bound to Fortran function pointInsideObject(idx, pos) in
+// source/src_particles/dem_query.f90 line 204
+extern "C" bool pointInsideObject(int idx, double pos[3]) {
+  int i = idx;
+  return isInsideObject(i, pos);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief The function returns true if the point is inside the remote object else false
+ * \param idx The index of the remote object to check against
+ * \param pos The coordinates of the point
+ */
+// Bound to Fortran function pointInsideRemObject(idx, pos) in
+// source/src_particles/dem_query.f90 line 215
+extern "C" bool pointInsideRemObject(int idx, double pos[3]) {
+  return isInsideRemObject(idx, pos);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief The function returns true if the point is inside the object else false
+ * \param vidx The index of the in the cfd grid
+ * \param idx The index of the object to check against
+ * \param pos The coordinates of the point
+ *
+ * Uses original O(N) linear search by default. Enable USE_ACCELERATED_POINT_QUERY=ON
+ * to use HashGrid-based spatial hashing acceleration (requires validation).
+ */
+extern "C" bool checkAllParticles(int vidx, int *inpr, double pos[3], short int bytes[8]) {
+#if !defined(USE_ACCELERATED_POINT_QUERY) || USE_ACCELERATED_POINT_QUERY
+  return pointInsideParticlesAccelerated(vidx, inpr, pos, bytes);
+#else
+  return pointInsideParticles(vidx, inpr, pos, bytes);
+#endif
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief The function returns true if the point is inside the object else false
+ * \param vidx The index of the in the cfd grid
+ * \param idx The index of the object to check against
+ * \param pos The coordinates of the point
+ *
+ * Uses original O(N) linear search by default. Enable USE_ACCELERATED_POINT_QUERY=ON
+ * to use HashGrid-based spatial hashing acceleration (requires validation).
+ */
+extern "C" bool verifyAllParticles(int vidx, int *inpr, double pos[3], short int bytes[8]) {
+  return pointInsideParticles(vidx, inpr, pos, bytes);
+}
+//=================================================================================================
+
+//=================================================================================================
+/*
+ *!\brief Explicit accelerated point query (always uses HashGrid optimization)
+ * \param vidx The index of the in the cfd grid
+ * \param inpr Output: particle index if inside, 0 otherwise
+ * \param pos The coordinates of the point
+ * \param bytes Output: 8-byte system ID array
+ */
+extern "C" bool checkAllParticlesAccelerated(int vidx, int *inpr, double pos[3], short int bytes[8]) {
+  return pointInsideParticlesAccelerated(vidx, inpr, pos, bytes);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Synchronize the forces acting on the remote particles
+ */
+extern "C"  
+// Bound to Fortran function rem_particles_index_map(idxMap) in
+// source/src_particles/dem_query.f90 line 234
+void rem_particles_index_map(int *idxMap) {
+  getRemoteParticlesIndexMap(idxMap);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Synchronize the forces acting on the remote particles
+ */
+extern "C"  
+// Bound to Fortran function particles_index_map(idxMap) in
+// source/src_particles/dem_query.f90 line 241
+void particles_index_map(int *idxMap) {
+  getParticlesIndexMap(idxMap);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+//  Particle state get/set and force synchronization
+//=================================================================================================
+
+//=================================================================================================
+/*
+ *!\brief Synchronize the forces acting on the remote particles
+ */
+extern "C" void sync_forces_() {
+  synchronizeForces();
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Returns a copy of the object main parameters. The function is callable from Fortran
+ * \param idx The system id
+ * \param particle The particle structure
+ */
+// Bound to Fortran function getParticle2(idx, particle) in
+// source/src_particles/dem_query.f90 line 80
+extern "C" void getParticle2(int idx, particleData_t *particle) {
+  getPartStructByIdx(idx, particle);
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Sets values of the fortran struct to the c++ class. The function is callable from Fortran
+ * \param particle The particle structure
+ */
+// Bound to Fortran function setParticle2(particle) in
+// source/src_particles/dem_query.f90 line 92
+extern "C" void setParticle2(particleData_t *particle) {
+  setPartStruct(particle); 
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Sets values of the fortran struct to the c++ class. The function is callable from Fortran
+ * \param particle The particle structure
+ */
+// Bound to Fortran function setRemoteParticle2(particle) in
+// source/src_particles/dem_query.f90 line 130
+extern "C" void setRemoteParticle2(particleData_t *particle) {
+  setRemPartStruct(particle); 
+}
+//=================================================================================================
+
+
+//=================================================================================================
+/*
+ *!\brief Returns a copy of the object main parameters. The function is callable from Fortran
+ * \param idx The system id
+ * \param particle The particle structure
+ */
+// Bound to Fortran function getRemoteParticle2(idx, particle) in
+// source/src_particles/dem_query.f90 line 118
+extern "C" void getRemoteParticle2(int idx, particleData_t *particle) {
+  getRemPartStructByIdx(idx, particle);
 }
 //=================================================================================================

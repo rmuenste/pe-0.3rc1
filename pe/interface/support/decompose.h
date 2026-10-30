@@ -89,7 +89,7 @@ namespace pe {
  * \param py Total number of processes in Y direction
  * \param pz Total number of processes in Z direction
  */
-void decomposeDomainNonuniformX(int center[],
+inline void decomposeDomainNonuniformX(int center[],
                                 const std::vector<real>& xBounds,
                                 real by, real bz,
                                 real dy, real dz,
@@ -403,7 +403,7 @@ void decomposeDomainNonuniformX(int center[],
  *       functions, providing universal coverage for all axis configurations.
  * \note Requires MPI support and proper MPI Cartesian communicator setup.
  */
-void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, real dz, int px, int py, int pz) {
+inline void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, real dz, int px, int py, int pz) {
 
   int west     [] = { center[0]-1, center[1]  , center[2] };
   int east     [] = { center[0]+1, center[1]  , center[2] };
@@ -741,7 +741,7 @@ void decomposeDomain(int center[], real bx, real by, real bz, real dx, real dy, 
  * \note Requires MPI support and proper MPI Cartesian communicator setup.
  * \note Use this function for simulations requiring periodic boundary conditions in all directions.
  */
-void decomposePeriodic3D(int center[], 
+inline void decomposePeriodic3D(int center[], 
                          real bx, real by, real bz, 
                          real dx, real dy, real dz, 
                          real lx, real ly, real lz, 
@@ -1121,7 +1121,7 @@ void decomposePeriodic3D(int center[],
  * \note Requires MPI support and proper MPI Cartesian communicator setup.
  * \note Use this function for simulations requiring periodic boundaries only in XY plane.
  */
-void decomposePeriodicXY3D(int center[], 
+inline void decomposePeriodicXY3D(int center[], 
                            real bx, real by, real bz, 
                            real dx, real dy, real dz, 
                            real lx, real ly, real lz, 
@@ -1482,7 +1482,7 @@ void decomposePeriodicXY3D(int center[],
  * \note Requires MPI support and pre-computed HalfSpace boundary definitions.
  * \note The HalfSpace vectors must be properly sized and ordered for the given process grid.
  */
-void decomposeDomain2DArchimedes(int center[], MPI_Comm cartcomm, 
+inline void decomposeDomain2DArchimedes(int center[], MPI_Comm cartcomm, 
                                 const std::vector<HalfSpace>& halfSpaces,
                                 const std::vector<HalfSpace>& halfSpacesY,
                                 int px, int py, int pz) {
@@ -1793,7 +1793,7 @@ void decomposeDomain2DArchimedes(int center[], MPI_Comm cartcomm,
  *
  * \note Requires MPI support and proper MPI Cartesian communicator setup.
  */
-void decomposePeriodicX3D(int center[], 
+inline void decomposePeriodicX3D(int center[], 
                           real bx, real by, real bz, 
                           real dx, real dy, real dz, 
                           real lx, real ly, real lz, 
@@ -2149,7 +2149,7 @@ void decomposePeriodicX3D(int center[],
  * \note Requires pz >= 3 for distinct bottom/top neighbor ranks (pz == 2 would connect the
  *       same rank twice, pz == 1 would self-connect); callers must enforce this.
  */
-void decomposePeriodicZ3D(int center[],
+inline void decomposePeriodicZ3D(int center[],
                           real bx, real by, real bz,
                           real dx, real dy, real dz,
                           real lx, real ly, real lz,

@@ -1,15 +1,53 @@
-#include <pe/interface/c2f_interface.h>
-#include <pe/interface/object_queries.h>
+//=================================================================================================
+/*!\file src/interface/cfd_entry_points.cpp
+ *  \brief The commf2c_* entry points FeatFloWer calls to set up a coupled PE simulation.
+ *
+ *  One block per case. Each block holds the parallel-mode implementation (HAVE_MPI: the
+ *  Fortran communicators are converted and the setupXxx(MPI_Comm) of the case runs on the CFD
+ *  worker ranks) and the serial-mode implementation (PE_SERIAL_MODE, no MPI in pe: every CFD
+ *  rank runs setupXxxSerial(cfd_rank) on its own PE instance). The case setups live in
+ *  pe/interface/setup/<case>.h; the prototypes are in pe/interface/cfd_entry_points.h.
+ *
+ *  The parallel-mode blocks apply the lubrication configuration centrally after the setup
+ *  (D2.2): the serial setups apply it internally, but most parallel setups never did, so
+ *  lubricationEnabled_ was a silent no-op in parallel mode. Applied post-setup (json is loaded
+ *  by then); idempotent, and it refuses loudly on a solver without the lubrication stage.
+ */
+//=================================================================================================
 
-// Interface headers are always needed (both parallel and serial PE modes)
-#include <pe/interface/c_interface_queries.h>
-#include <pe/interface/c_interface_particle_fbm.h>
-#include <pe/interface/c_interface_particle_getset.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/cfd_entry_points.h>
+#include <pe/interface/support/optional_collision_params.h>
+#include <pe/config/SimulationConfig.h>
+#include <pe/core.h>
 
+#include <cstdio>
+#include <cstdlib>
+
+#include <pe/interface/setup/part_bench.h>
+#include <pe/interface/setup/fluidization.h>
+#include <pe/interface/setup/dcav.h>
+#include <pe/interface/setup/cyl.h>
+#include <pe/interface/setup/general_init.h>
+#include <pe/interface/setup/span.h>
+#include <pe/interface/setup/kroupa.h>
+#include <pe/interface/setup/creep.h>
+#include <pe/interface/setup/dns_drag.h>
+#include <pe/interface/setup/el_frozen_trace.h>
+#include <pe/interface/setup/el_terminal_velocity.h>
+#include <pe/interface/setup/archimedes.h>
+#include <pe/interface/setup/dkt.h>
+#include <pe/interface/setup/lubrication_lab.h>
+#include <pe/interface/setup/drill.h>
+#include <pe/interface/setup/atc.h>
+#include <pe/interface/setup/rotation.h>
+#include <pe/interface/setup/span_complex.h>
+#include <pe/interface/setup/hashgrid_test.h>
+
+
+//=================================================================================================
+//  Single-particle sedimentation benchmark  (pe/interface/setup/part_bench.h)
+//=================================================================================================
 #if HAVE_MPI
-#include <pe/interface/sim_setup.h>
-
 //=================================================================================================
 /*
  *!\brief The function triggers the simulation setup and sets up the MPI communicators
@@ -34,7 +72,7 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
     if (remRank != 0) {
       CcommEx0 = MPI_Comm_f2c(*FcommEx0); // Convert Fortran->C communicator
       //printf( "%d> C) Hello world from process %d of %d\n", remRank, rank, size );
-      setupParticleBench(CcommEx0);
+      pe::setupParticleBench(CcommEx0);
       // Central lubrication-config application (D2.2): the serial setups apply this
       // internally, but most parallel setups never did, so lubricationEnabled_ was a
       // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -43,7 +81,18 @@ extern "C" void commf2c_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
     } 
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Initialize PE world for this domain
+  // Pass CFD rank for unique log filenames (pe<rank>.log)
+  pe::setupParticleBenchSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
+//=================================================================================================
+//  Fluidization column  (pe/interface/setup/fluidization.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -61,7 +110,7 @@ extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *
     }
     if (remRank != 0) {
       CcommEx0 = MPI_Comm_f2c(*FcommEx0);
-      setupFluidization(CcommEx0);
+      pe::setupFluidization(CcommEx0);
       // Central lubrication-config application (D2.2): the serial setups apply this
       // internally, but most parallel setups never did, so lubricationEnabled_ was a
       // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -70,8 +119,27 @@ extern "C" void commf2c_fluidization_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *
     }
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_fluidization_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Fluidization setup
+  pe::setupFluidizationSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
+//=================================================================================================
+//  Fluidization column, short-range repulsion (serial mode only)  (pe/interface/setup/fluidization.h)
+//=================================================================================================
+#if !HAVE_MPI
+extern "C" void commf2c_fluidization_srr_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Fluidization with Short-Range Repulsion solver
+  pe::setupFluidizationSRRSerial(*remoteRank);
+}
+#endif  // !HAVE_MPI (serial mode only)
 
+//=================================================================================================
+//  DCAV  (pe/interface/setup/dcav.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -92,8 +160,17 @@ extern "C" void commf2c_dcav_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
   exit(1);
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_dcav_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: DCAV setup
+  pe::setupDCAVSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Cylinder  (pe/interface/setup/cyl.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
@@ -114,7 +191,7 @@ extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupCyl(CcommEx0);
+    pe::setupCyl(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -123,8 +200,17 @@ extern "C" void commf2c_cyl_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
   } 
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_cyl_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Cylinder setup
+  pe::setupCylSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Minimal bootstrap  (pe/interface/setup/general_init.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
@@ -147,7 +233,7 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
     // Minimal bootstrap: wires the PE communicator to the CFD worker comm
     // (Ex0) so passive PE use (queries, synchronizeForces) is safe; creates
     // no world content.
-    setupGeneralInit(CcommEx0);
+    pe::setupGeneralInit(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -156,8 +242,17 @@ extern "C" void commf2c_init_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRa
   }
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_init_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Generic initialization
+  pe::setupGeneralInitSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Span (chip) FSI benchmark  (pe/interface/setup/span.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
@@ -177,7 +272,7 @@ extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupSpan(CcommEx0);
+    pe::setupSpan(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -186,8 +281,17 @@ extern "C" void commf2c_fsi_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
   } 
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_fsi_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: FSI benchmark setup
+  pe::setupFSIBenchSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Kroupa lubrication column  (pe/interface/setup/kroupa.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
@@ -207,7 +311,7 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupKroupa(CcommEx0);
+    pe::setupKroupa(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -216,8 +320,17 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
   } 
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_kroupa_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Kroupa setup
+  pe::setupKroupaSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Creep flow  (pe/interface/setup/creep.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
@@ -237,7 +350,7 @@ extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupCreep(CcommEx0);
+    pe::setupCreep(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -246,8 +359,17 @@ extern "C" void commf2c_creep_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
   } 
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_creep_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Creep flow setup
+  pe::setupCreepSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  DNS drag  (pe/interface/setup/dns_drag.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_dns_drag_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -266,7 +388,17 @@ extern "C" void commf2c_dns_drag_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remo
   exit(1);
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_dns_drag_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: DNS drag benchmark setup
+  pe::setupDNSDragSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
+//=================================================================================================
+//  Frozen-field Euler-Lagrange trace  (pe/interface/setup/el_frozen_trace.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
                                          double *xmin, double *xmax,
@@ -290,7 +422,7 @@ extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
       return;
     }
 
-    setupELFrozenTrace(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+    pe::setupELFrozenTrace(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -299,8 +431,20 @@ extern "C" void commf2c_el_frozen_trace_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
   }
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_el_frozen_trace_(int *Fcomm, int *FcommEx0, int *remoteRank,
+                                         double *xmin, double *xmax,
+                                         double *ymin, double *ymax,
+                                         double *zmin, double *zmax) {
+  // Serial PE mode: frozen-field general initialization only
+  pe::setupELFrozenTraceSerial(*remoteRank, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Euler-Lagrange terminal velocity (parallel mode only)  (pe/interface/setup/el_terminal_velocity.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
                                               double *xmin, double *xmax,
@@ -324,7 +468,7 @@ extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx
       return;
     }
 
-    setupELTerminalVelocity(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
+    pe::setupELTerminalVelocity(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -333,8 +477,12 @@ extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx
   }
 }
 //=================================================================================================
+#endif  // HAVE_MPI (no serial variant)
 
-
+//=================================================================================================
+//  Archimedes buoyancy  (pe/interface/setup/archimedes.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {   
@@ -354,7 +502,7 @@ extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *re
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupArchimedes(CcommEx0);
+    pe::setupArchimedes(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -363,8 +511,17 @@ extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *re
   } 
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Archimedes buoyancy setup
+  pe::setupArchimedesSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Draft-kiss-tumble benchmark  (pe/interface/setup/dkt.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -385,7 +542,7 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupDraftKissTumbBench(CcommEx0);
+    pe::setupDraftKissTumbBench(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -394,8 +551,17 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
   }
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Draft-Kiss-Tumble setup
+  pe::setupDraftKissTumbSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Lubrication lab  (pe/interface/setup/lubrication_lab.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 // NOTE: setupLubricationLab() and setupDrill() parallel implementations are WIP
 // Only serial mode (PE_SERIAL_MODE) is currently supported for these simulations
@@ -420,8 +586,17 @@ extern "C" void commf2c_lubrication_lab_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, in
   exit(1);
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_lubrication_lab_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Lubrication Lab setup
+  pe::setupLubricationLabSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Drill  (pe/interface/setup/drill.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_drill_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -442,8 +617,17 @@ extern "C" void commf2c_drill_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteR
   exit(1);
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_drill_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Drill setup
+  pe::setupDrillSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  ATC  (pe/interface/setup/atc.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -463,7 +647,7 @@ extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    setupATC(CcommEx0);
+    pe::setupATC(CcommEx0);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -472,8 +656,17 @@ extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
   }
 }
 //=================================================================================================
+#else
+extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: ATC setup
+  pe::setupATCSerial(*remoteRank);
+}
+#endif  // HAVE_MPI
 
-
+//=================================================================================================
+//  Rotation  (pe/interface/setup/rotation.h)
+//=================================================================================================
+#if HAVE_MPI
 //=================================================================================================
 extern "C" void commf2c_rotation_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
 {
@@ -494,117 +687,29 @@ extern "C" void commf2c_rotation_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remo
   exit(1);
 }
 //=================================================================================================
-
-
-#endif
-
-#ifdef PE_SERIAL_MODE
-#include <pe/interface/sim_setup_serial.h>
-
-//=================================================================================================
-// Serial PE Mode: Setup function implementations
-//=================================================================================================
-// In serial PE mode, each CFD domain runs an independent serial PE instance.
-// These functions initialize the PE world for the current domain without MPI.
-//=================================================================================================
-
-extern "C" void commf2c_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Initialize PE world for this domain
-  // Pass CFD rank for unique log filenames (pe<rank>.log)
-  pe::setupParticleBenchSerial(*remoteRank);
-}
-
-extern "C" void commf2c_fluidization_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Fluidization setup
-  pe::setupFluidizationSerial(*remoteRank);
-}
-
-extern "C" void commf2c_fluidization_srr_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Fluidization with Short-Range Repulsion solver
-  pe::setupFluidizationSRRSerial(*remoteRank);
-}
-
-extern "C" void commf2c_dcav_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: DCAV setup
-  pe::setupDCAVSerial(*remoteRank);
-}
-
-extern "C" void commf2c_cyl_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Cylinder setup
-  pe::setupCylSerial(*remoteRank);
-}
-
-extern "C" void commf2c_init_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Generic initialization
-  pe::setupGeneralInitSerial(*remoteRank);
-}
-
-extern "C" void commf2c_fsi_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: FSI benchmark setup
-  pe::setupFSIBenchSerial(*remoteRank);
-}
-
-extern "C" void commf2c_kroupa_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Kroupa setup
-  pe::setupKroupaSerial(*remoteRank);
-}
-
-extern "C" void commf2c_creep_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Creep flow setup
-  pe::setupCreepSerial(*remoteRank);
-}
-
-extern "C" void commf2c_dns_drag_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: DNS drag benchmark setup
-  pe::setupDNSDragSerial(*remoteRank);
-}
-
-extern "C" void commf2c_el_frozen_trace_(int *Fcomm, int *FcommEx0, int *remoteRank,
-                                         double *xmin, double *xmax,
-                                         double *ymin, double *ymax,
-                                         double *zmin, double *zmax) {
-  // Serial PE mode: frozen-field general initialization only
-  pe::setupELFrozenTraceSerial(*remoteRank, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
-}
-
-extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Archimedes buoyancy setup
-  pe::setupArchimedesSerial(*remoteRank);
-}
-
-extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Draft-Kiss-Tumble setup
-  pe::setupDraftKissTumbSerial(*remoteRank);
-}
-
-extern "C" void commf2c_lubrication_lab_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Lubrication Lab setup
-  pe::setupLubricationLabSerial(*remoteRank);
-}
-
-extern "C" void commf2c_drill_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Drill setup
-  pe::setupDrillSerial(*remoteRank);
-}
-
-extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: ATC setup
-  pe::setupATCSerial(*remoteRank);
-}
-
-extern "C" void commf2c_span_complex_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Span complex setup
-  pe::setupSpanComplexSerial(*remoteRank);
-}
-
+#else
 extern "C" void commf2c_rotation_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: Rotation setup
   pe::setupRotationSerial(*remoteRank);
 }
+#endif  // HAVE_MPI
 
+//=================================================================================================
+//  Span complex (serial mode only)  (pe/interface/setup/span_complex.h)
+//=================================================================================================
+#if !HAVE_MPI
+extern "C" void commf2c_span_complex_(int *Fcomm, int *FcommEx0, int *remoteRank) {
+  // Serial PE mode: Span complex setup
+  pe::setupSpanComplexSerial(*remoteRank);
+}
+#endif  // !HAVE_MPI (serial mode only)
+
+//=================================================================================================
+//  HashGrid test (serial mode only)  (pe/interface/setup/hashgrid_test.h)
+//=================================================================================================
+#if !HAVE_MPI
 extern "C" void commf2c_hashgrid_test_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   // Serial PE mode: HashGrid test setup
   pe::setupHashGridTest(*remoteRank);
 }
-
-#endif  // PE_SERIAL_MODE
+#endif  // !HAVE_MPI (serial mode only)

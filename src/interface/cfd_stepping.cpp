@@ -1,3 +1,13 @@
+//=================================================================================================
+/*!\file src/interface/cfd_stepping.cpp
+ *  \brief Time stepping of a coupled PE simulation and the globals the parallel setups
+ *         publish into. Parallel mode (HAVE_MPI): stepSimulation(), stepELFrozenTrace() and
+ *         the interface globals (world, mpisystem, ...). Serial mode: thin wrappers over
+ *         pe/interface/support/serial_stepping.h. The extern "C" step_* entry points of
+ *         both modes are declared in pe/interface/cfd_entry_points.h.
+ */
+//=================================================================================================
+
 #include <map>
 #include <iomanip>
 #include <cstdint>
@@ -5,7 +15,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 #include <pe/util/Checkpointer.h>
-#include <pe/interface/el_optional_api.h>
+#include <pe/interface/support/el_optional_api.h>
 #include <pe/core/MPISystem.h>
 #include <pe/core/MPISystemID.h>
 #include <pe/core/domaindecomp/DomainDecomposition.h>
@@ -15,7 +25,7 @@
 #include <pe/core/domaindecomp/Process.h>
 #include <pe/core/domaindecomp/RectilinearGrid.h>
 #include <pe/engine.h>
-#include <pe/interface/el_hydro_compat.h>
+#include <pe/interface/support/el_hydro_compat.h>
 #include <pe/support.h>
 
 #if HAVE_JSON
@@ -27,7 +37,8 @@ using boost::filesystem::path;
 
 using namespace pe;
 #if HAVE_MPI
-#include <pe/interface/sim_setup.h>
+#include <pe/interface/cfd_entry_points.h>
+#include <pe/interface/setup/parallel_common.h>
 
 #ifdef HAVE_CGAL
 //=================================================================================================
@@ -35,7 +46,7 @@ using namespace pe;
 //    INTERFACE CGAL DELAUNAY
 //
 //=================================================================================================
-#include <pe/interface/compute_delaunay.h>
+#include <pe/interface/support/compute_delaunay.h>
 void outputDelaunay(int timeStep);
 //=================================================================================================
 //
@@ -286,19 +297,8 @@ void loadSimulationConfig(const std::string &fileName) {
 } // namespace pe
 
 
-#include <pe/interface/setup_part_bench.h>
-#include <pe/interface/setup_fluidization.h>
-#include <pe/interface/setup_cyl.h>
-#include <pe/interface/setup_dkt.h>
-#include <pe/interface/setup_kroupa.h>
-#include <pe/interface/setup_creep.h>
-#include <pe/interface/setup_archimedes.h>
-#include <pe/interface/setup_span.h>
-#include <pe/interface/setup_drill.h>
-#include <pe/interface/setup_atc.h>
-#include <pe/interface/setup_el_frozen_trace.h>
-#include <pe/interface/setup_el_terminal_velocity.h>
-#include <pe/interface/setup_general_init.h>
+// The parallel case setups (pe/interface/setup/<case>.h) are included by the entry-point
+// unit src/interface/cfd_entry_points.cpp; this unit owns the globals they publish into.
 
 namespace {
 
@@ -459,16 +459,14 @@ void stepELFrozenTrace() {
 //=================================================================================================
 //
 
-#endif
-
 //=================================================================================================
 //
 //    SERIAL PE MODE IMPLEMENTATIONS
 //
 //=================================================================================================
-#ifdef PE_SERIAL_MODE
+#else  // !HAVE_MPI: serial PE mode (PE_SERIAL_MODE)
 
-#include <pe/interface/sim_setup_serial.h>
+#include <pe/interface/support/serial_stepping.h>
 
 //=================================================================================================
 // C Wrapper for stepSimulationSerial - used when PE_SERIAL_MODE is defined
@@ -502,4 +500,4 @@ extern "C" void step_el_frozen_trace_() {
 }
 //=================================================================================================
 
-#endif  // PE_SERIAL_MODE
+#endif  // HAVE_MPI

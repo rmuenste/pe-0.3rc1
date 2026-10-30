@@ -3,7 +3,7 @@
  *  \file atc_example.cpp
  *  \brief Standalone ATC (Annular Tube Configuration) example for the PE physics engine
  *
- *  This example demonstrates the ATC simulation workflow from pe/interface/sim_setup_serial.h
+ *  This example demonstrates the ATC simulation workflow from pe/interface/setup/atc.h
  *  in a standalone context (without the FeatFloWer CFD solver). It performs the following:
  *
  *  1. Loads simulation parameters from a JSON configuration file (example.json)
@@ -64,7 +64,7 @@
 #include <pe/core/Materials.h>
 #include <pe/config/SimulationConfig.h>
 #include <pe/util/logging/Logger.h>
-#include <pe/interface/geometry_utils.h>
+#include <pe/interface/support/geometry_utils.h>
 #include <pe/util/timing/WcTimer.h>
 
 using namespace pe;
@@ -181,7 +181,7 @@ inline CenterlinePosition calculateCenterlinePosition(
 /*!\brief Main function for the ATC example.
  *
  * This example mirrors the setupATCSerial() + stepSimulationSerial() workflow from
- * pe/interface/sim_setup_serial.h. It demonstrates how the PE physics engine is configured
+ * pe/interface/setup/atc.h. It demonstrates how the PE physics engine is configured
  * and run for the Annular Tube Configuration scenario.
  *
  * \param argc Number of command line arguments.

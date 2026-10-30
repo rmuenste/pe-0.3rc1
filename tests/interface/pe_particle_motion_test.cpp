@@ -7,7 +7,7 @@
  *  Config contract (pe/config/SimulationConfig.h, src/config/SimulationConfig.cpp):
  *    - setParticleMotion / json particleMotion_ accept exactly fixed, rotationOnly,
  *      translationOnly, free; any other value -> std::invalid_argument naming the key.
- *  Setup guard (pe/interface/sim_setup_serial_features.h):
+ *  Setup guard (pe/interface/support/serial_step_features.h):
  *    - angularDofMask_ under free -> accepted (mask honoured);
  *    - angularDofMask_ under translationOnly -> std::invalid_argument naming BOTH
  *      "angularDofMask_" and "translationOnly";
@@ -28,7 +28,7 @@
 
 #include <pe/core.h>
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/sim_setup_serial_features.h>
+#include <pe/interface/support/serial_step_features.h>
 
 #include <boost/filesystem.hpp>
 

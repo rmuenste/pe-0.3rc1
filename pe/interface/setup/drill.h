@@ -1,5 +1,23 @@
+//=================================================================================================
+/*!\file pe/interface/setup/drill.h
+ *  \brief Drill case: rotating tool mesh and workpiece.
+ *
+ *  Entry point: commf2c_drill_(). The parallel variant aborts; setupDrill() below is an
+ *  unwired draft kept for the planned parallel case.
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_DRILL_H_
+#define _PE_INTERFACE_SETUP_DRILL_H_
 
-#include <pe/interface/decompose.h>
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
+#include <pe/interface/support/decompose.h>
 #include <pe/config/SimulationConfig.h>
 #include <random>
 #include <algorithm>
@@ -10,11 +28,14 @@
 #include <pe/core/detection/fine/DistanceMap.h>
 #include <pe/vtk/UtilityWriters.h>
 
+namespace pe {
+
 using namespace pe::povray;
+
 //=================================================================================================
 
 // Helper function for coordinate transformation debug test
-void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint, const std::string& description) {
+inline void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint, const std::string& description) {
     std::cout << "\n=== " << description << " ===" << std::endl;
     
     // Print chip position
@@ -62,12 +83,12 @@ void testChipPointContainment(const TriangleMeshID& chip, const Vec3& testPoint,
 //
 // This is a work-in-progress draft that is kept for the planned parallel drill case. It is
 // currently not reachable: the parallel entry point commf2c_drill_() in
-// src/interface/c2f_interface.cpp is a stub that aborts and refers to PE_SERIAL_MODE.
+// src/interface/cfd_entry_points.cpp is a stub that aborts and refers to PE_SERIAL_MODE.
 // Known gaps of the draft: hardcoded geometry and densities, an embedded DistanceMap
 // coordinate debug test, and a setup summary with leftover values from other cases.
 // The body is unverified; do not wire it to the entry point without reviewing it first.
 //=================================================================================================
-void setupDrill(MPI_Comm ex0) {
+inline void setupDrill(MPI_Comm ex0) {
 
   // Loud runtime notice in case this draft gets called before it is finished.
   {
@@ -453,3 +474,172 @@ void setupDrill(MPI_Comm ex0) {
    
 
 }
+
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief Drill application setup for serial mode
+ *
+ * Setup for drill simulation with rotating drill mesh and workpiece.
+ * Based on FSI benchmark setup with additional drill mesh.
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupDrillSerial(int cfd_rank) {
+  // Set custom rank for PE logger BEFORE any logging occurs
+  // This ensures each CFD domain gets a unique log file: pe<cfd_rank>.log
+  pe::logging::Logger::setCustomRank(cfd_rank);
+
+  // Load configuration from JSON file
+  SimulationConfig::loadFromFile("example.json");
+
+  auto &config = SimulationConfig::getInstance();
+  config.setCfdRank(cfd_rank);
+  const bool isRepresentative = (config.getCfdRank() == 1);
+  WorldID world = theWorld();
+  // Apply lubrication/contact parameters from configuration
+  CollisionSystemID cs = theCollisionSystem();
+  applyOptionalLubricationParams(*cs, config);
+
+  //==============================================================================================
+  // Simulation Input Parameters
+  //==============================================================================================
+  // Set gravity from configuration
+  world->setGravity( config.getGravity() );
+
+  // Configuration from config singleton
+  real simViscosity( config.getFluidViscosity() );
+  real simRho( config.getFluidDensity() );
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+  world->setDamping(1.0);
+
+  // CRITICAL: Enable automatic force reset after each simulation step
+  // This prevents force accumulation when using substepping
+  world->setAutoForceReset(true);
+
+  //==============================================================================================
+  // Visualization Configuration
+  //==============================================================================================
+  if (isRepresentative && config.getVtk()) {
+      // Adjust VTK output spacing for substepping
+      // With substepping, world->simulationStep() is called substeps times per main timestep
+      // To maintain the same VTK output frequency, multiply spacing by substeps
+      unsigned int effectiveVisspacing = config.getVisspacing() * config.getSubsteps();
+      vtk::WriterID vtk = vtk::activateWriter( "./paraview", effectiveVisspacing, 0,
+                                               config.getTimesteps() * config.getSubsteps(),
+                                               false);
+  }
+
+  // Activate checkpointer if configured
+  if (isRepresentative && config.getUseCheckpointer()) {
+    activateCheckpointer(config.getCheckpointPath(),
+                         effectiveCheckpointSpacing(config),
+                         0, config.getTimesteps());
+  }
+
+  // Serial mode: no MPI, no domain decomposition
+  // The entire simulation domain is owned by this process
+  // Domain boundaries are handled by the CFD code
+  // Create ground plane (global, owned by this domain)
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  createPlane(777, 0.0, 0.0, 1.0, 0, gr, true);
+
+  int idx = 0;
+  //==============================================================================================
+  // Workpiece Configuration
+  //==============================================================================================
+  real rhoParticle( config.getParticleDensity() );
+  Vec3 position(-0.0, -0.0, 0.1275);
+  std::string fileName = std::string("span2_scaled.obj");
+
+  // Set default timestep
+  TimeStep::stepsize(config.getStepsize());
+  MaterialID chipMat = createMaterial("chip", rhoParticle, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);
+
+  Vec3 chipPos = position;  // Keep hardcoded - no config function available
+  TriangleMeshID chip = createTriangleMesh(++idx, chipPos, fileName, chipMat, false, true);
+
+#ifdef PE_USE_CGAL
+  // Enable DistanceMap acceleration for the chip (workpiece)
+  chip->enableDistanceMapAcceleration(64, 3);  // spacing, resolution, tolerance
+  const bool chipDistanceMapEnabled = chip->hasDistanceMap();
+  const DistanceMap* chipDM = chipDistanceMapEnabled ? chip->getDistanceMap() : nullptr;
+  if (!chipDistanceMapEnabled && isRepresentative) {
+    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for chip" << std::endl;
+  }
+#else
+  const bool chipDistanceMapEnabled = false;
+#endif
+
+  //==============================================================================================
+  // Drill Configuration
+  //==============================================================================================
+  std::string drillFileName = std::string("tool_scaled.obj");
+  Vec3 drillPos(0.0, 0.0, 0.0);  // Position drill above workpiece
+  MaterialID drillMat = createMaterial("drill", 7800.0, 0.01, 0.05, 0.05, 0.2, 80, 100, 10, 11);  // Steel density
+
+  // Create drill as global rigid body
+  TriangleMeshID drill = createTriangleMesh(++idx, drillPos, drillFileName, drillMat, false, true);
+  drill->setFixed(true);
+
+#ifdef PE_USE_CGAL
+  // Enable DistanceMap acceleration for the drill
+  drill->enableDistanceMapAcceleration(64, 3);
+  const bool drillDistanceMapEnabled = drill->hasDistanceMap();
+  const DistanceMap* drillDM = drillDistanceMapEnabled ? drill->getDistanceMap() : nullptr;
+  if (!drillDistanceMapEnabled && isRepresentative) {
+    std::cerr << "WARNING: DistanceMap acceleration failed to initialize for drill" << std::endl;
+  }
+#else
+  const bool drillDistanceMapEnabled = false;
+#endif
+
+  if (isRepresentative) {
+    std::cout << "\n--" << "DRILL SIMULATION SETUP"
+              << "--------------------------------------------------------------\n"
+              << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
+              << " Fluid viscosity                         = " << simViscosity << "\n"
+              << " Fluid density                           = " << simRho << "\n"
+              << " Gravity                                 = " << world->getGravity() << "\n"
+              << " Workpiece mesh file                     = " << fileName << "\n"
+              << " Drill mesh file                         = " << drillFileName << "\n"
+              << " VTK output                              = " << (config.getVtk() ? "enabled" : "disabled") << "\n"
+              << " Workpiece distance map enabled          = " << (chipDistanceMapEnabled ? "yes" : "no") << "\n"
+              << " Drill distance map enabled              = " << (drillDistanceMapEnabled ? "yes" : "no") << "\n";
+
+#ifdef PE_USE_CGAL
+    if (chipDistanceMapEnabled && chipDM) {
+      std::cout << " Workpiece distance map grid size        = "
+                << chipDM->getNx() << " x " << chipDM->getNy() << " x " << chipDM->getNz() << "\n"
+                << " Workpiece distance map origin           = ("
+                << chipDM->getOrigin()[0] << ", "
+                << chipDM->getOrigin()[1] << ", "
+                << chipDM->getOrigin()[2] << ")\n"
+                << " Workpiece distance map spacing          = " << chipDM->getSpacing() << "\n";
+    }
+    if (drillDistanceMapEnabled && drillDM) {
+      std::cout << " Drill distance map grid size            = "
+                << drillDM->getNx() << " x " << drillDM->getNy() << " x " << drillDM->getNz() << "\n"
+                << " Drill distance map origin               = ("
+                << drillDM->getOrigin()[0] << ", "
+                << drillDM->getOrigin()[1] << ", "
+                << drillDM->getOrigin()[2] << ")\n"
+                << " Drill distance map spacing              = " << drillDM->getSpacing() << "\n";
+    }
+#endif
+
+    std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+  }
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_DRILL_H_

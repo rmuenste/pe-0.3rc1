@@ -18,7 +18,7 @@ PE can be driven from an external CFD solver in two different ways. They use
 |---|---|---|
 | Build flag | `PE_USE_MPI=ON` (`HAVE_MPI=1`) | `PE_USE_MPI=OFF` (`HAVE_MPI=0`) + `PE_SERIAL_MODE` |
 | Domain decomposition in PE | Yes — bodies are distributed across MPI processes | No — every PE instance holds **all** bodies |
-| Setup functions | `setupXxx(MPI_Comm)` in `pe/interface/sim_setup.h` (e.g. [setup_el_terminal_velocity.h](../../pe/interface/setup_el_terminal_velocity.h)) | `setupXxxSerial(int cfd_rank)` in [sim_setup_serial.h](../../pe/interface/sim_setup_serial.h) |
+| Setup functions | `setupXxx(MPI_Comm)` under `#if HAVE_MPI` in `pe/interface/setup/<case>.h` (e.g. [el_terminal_velocity.h](../../pe/interface/setup/el_terminal_velocity.h)) | `setupXxxSerial(int cfd_rank)` below the `#if HAVE_MPI` block in the same `pe/interface/setup/<case>.h` (compiled in every build) (e.g. [dkt.h](../../pe/interface/setup/dkt.h)) |
 | Body ownership | A body is owned by one process; remote copies are synchronized via PE's MPI layer | No ownership concept; each instance simulates everything |
 
 ### What `PE_SERIAL_MODE` is, and why it exists
@@ -38,11 +38,28 @@ moved to normal (parallel) mode with much higher confidence that any remaining
 issues are in the decomposition/synchronization layer rather than in the body
 setup or contact handling itself.
 
+## Layout of `pe/interface/`
+
+| Where | What | Who includes it |
+|---|---|---|
+| `pe/interface/cfd_entry_points.h`, `cfd_queries.h`, `object_queries.h`, `fbm_gate_probe.h`, `frozen_field_trace.h` | The ABI: every `extern "C"` symbol FeatFloWer binds to, plus the C++ query API behind it | `src/interface/*.cpp`, tests |
+| `pe/interface/setup/<case>.h` | One coupled case per file: the parallel `setupXxx(MPI_Comm)` under `#if HAVE_MPI`, the serial `setupXxxSerial(int)` unconditionally (every build, so the smoke test can use it); `parallel_common.h` / `serial_common.h` are the preludes they are written against | `src/interface/cfd_entry_points.cpp`, the smoke test |
+| `pe/interface/support/` | Helpers shared by the setups: `optional_collision_params.h` (config appliers), `el_optional_api.h` / `el_hydro_compat.h` (solver-detecting shims), `geometry_utils.h`, `serial_step_features.h`, `serial_stepping.h`, `decompose.h` (domain decompositions, also used by the MPI examples) | setups, stepping, examples, tests |
+| `src/interface/cfd_entry_points.cpp` | The `commf2c_*` dispatch, both modes | - |
+| `src/interface/cfd_queries.cpp` | The C query/get-set wrappers | - |
+| `src/interface/cfd_stepping.cpp` | `step_simulation_()` and friends; parallel stepping and the interface globals | - |
+| `src/interface/object_queries.cpp`, `fbm_gate_probe.cpp`, `frozen_field_trace.cpp` | The C++ implementations behind the ABI | - |
+
+Nothing on the CFD side includes a pe header: FeatFloWer binds to the C symbols at link time
+and copies `pe/interface/example.json` into two application build directories. Moving files
+inside `pe/interface/` therefore never touches the CFD build as long as the symbols stay.
+
 ## The `commf2c_*` Fortran/C entry-point convention
 
 The CFD solver calls into PE through `extern "C"` functions named
-`commf2c_<case>_`. These live in [src/interface/c2f_interface.cpp](../../src/interface/c2f_interface.cpp)
-and the file defines **each case twice**, guarded by build mode:
+`commf2c_<case>_`. These live in [src/interface/cfd_entry_points.cpp](../../src/interface/cfd_entry_points.cpp)
+and the file holds **one block per case** with both modes, selected by `HAVE_MPI`
+(`PE_SERIAL_MODE` builds pe without MPI, so the `#else` branch is the serial mode):
 
 ```cpp
 #if HAVE_MPI                       // ── normal (parallel) mode ──────────────
@@ -50,16 +67,17 @@ extern "C" void commf2c_kroupa_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remote
 {
   // converts the Fortran communicator and calls the parallel setup:
   MPI_Comm CcommEx0 = MPI_Comm_f2c(*FcommEx0);
-  setupKroupa(CcommEx0);
+  pe::setupKroupa(CcommEx0);
 }
-#endif
-
-#ifdef PE_SERIAL_MODE              // ── serial mode ─────────────────────────
+#else                              // ── serial mode ─────────────────────────
 extern "C" void commf2c_kroupa_(int *Fcomm, int *FcommEx0, int *remoteRank) {
   pe::setupKroupaSerial(*remoteRank); // calls the serial setup
 }
 #endif
 ```
+
+The prototypes of all entry points, in both signatures, are in
+[pe/interface/cfd_entry_points.h](../../pe/interface/cfd_entry_points.h).
 
 Key points when adding a case:
 
@@ -75,7 +93,7 @@ Key points when adding a case:
   halves so the CFD side links in either build. A stub must **abort with a
   clear message**, never return silently with an empty world.
 - **ATC is a placeholder in parallel mode.** `commf2c_atc_` still forwards to
-  `setupATC`, but [setup_atc.h](../../pe/interface/setup_atc.h) currently
+  `setupATC`, but [setup/atc.h](../../pe/interface/setup/atc.h) currently
   aborts with a "not functional at the moment" message until the parallel
   setup is implemented. The serial `setupATCSerial` is functional.
 
@@ -90,7 +108,7 @@ fail with undefined references to the wrappers.
 
 The remedy is that such applications call `commf2c_init_`, which forwards to
 `setupGeneralInit` in
-[setup_general_init.h](../../pe/interface/setup_general_init.h). It does two
+[setup/general_init.h](../../pe/interface/setup/general_init.h). It does two
 things and nothing else:
 
 1. **Link anchor** — the call guarantees the PE interface gets linked.
@@ -145,8 +163,8 @@ if (isRepresentative) {
 ```
 
 This idiom is pervasive: `const bool isRepresentative = (config.getCfdRank() == 1);`
-appears in every serial setup function in
-[sim_setup_serial.h](../../pe/interface/sim_setup_serial.h), with dozens of
+appears in every serial setup function under
+[pe/interface/setup/](../../pe/interface/setup/), with dozens of
 guarded statements. When you write a new setup function, follow it for **all**
 output and persistence.
 
@@ -157,7 +175,7 @@ across ~10 setup functions. This is a bit smelly — the "which rank is
 representative" policy is scattered rather than expressed in one place. A
 `SimulationConfig::isRepresentative()` helper would centralize it and remove the
 repeated literal. Until that refactor exists, keep using `== 1` so new code
-stays consistent with the rest of the file, but be aware it is a candidate for
+stays consistent with the other setups, but be aware it is a candidate for
 cleanup.
 
 ## Force synchronization (why serial-per-rank still gives correct forces)
@@ -222,7 +240,7 @@ inline void applyOptionalLubricationParams(CS& cs, const SimulationConfig& confi
 
 The live implementation is `applyOptionalLubricationParams` /
 `HasLubricationParamSetters` in
-[sim_setup_serial.h](../../pe/interface/sim_setup_serial.h).
+[support/optional_collision_params.h](../../pe/interface/support/optional_collision_params.h).
 
 ### Why not a two-overload SFINAE pair
 
@@ -255,35 +273,43 @@ breaks the tie deterministically in favor of the SFINAE overload.
 
 ## Writing a new interface setup function
 
-To add a new serial coupled case `xyz`:
+To add a new coupled case `xyz`:
 
-1. **Serial setup** — add `inline void setupXyzSerial(int cfd_rank)` in
-   [sim_setup_serial.h](../../pe/interface/sim_setup_serial.h). Inside:
-   - `pe::logging::Logger::setCustomRank(cfd_rank);`
-   - load config, then `config.setCfdRank(cfd_rank);` and derive
-     `isRepresentative`.
-   - configure `theWorld()` / `theCollisionSystem()`, create materials and
-     bodies (every instance creates **all** bodies).
-   - guard every `std::cout`, VTK writer, and checkpointer with
-     `isRepresentative`.
-   - See `setupSpanComplexSerial` (added alongside the SpanComplex smoke test)
-     as a clean, current worked example: it builds the tool/chip/workpiece
-     meshes, enables DistanceMap acceleration, and prints a representative-only
-     setup summary.
-2. **Entry point** — add `commf2c_xyz_` in **both** guarded halves of
-   [c2f_interface.cpp](../../src/interface/c2f_interface.cpp): a real parallel
-   implementation (or an explicit "serial only" stub) under `#if HAVE_MPI`, and
-   the `pe::setupXyzSerial(*remoteRank)` forwarder under `#ifdef PE_SERIAL_MODE`.
-   For a real parallel setup, use
-   [setup_el_terminal_velocity.h](../../pe/interface/setup_el_terminal_velocity.h)
-   as the reference: it reads its parameters from the configuration, validates
-   the process layout, calls the shared `decompose*` functions from
-   [decompose.h](../../pe/interface/decompose.h), and aborts with a message on
-   every error path. Most older `setup_*.h` files predate these conventions
-   (hardcoded geometry, silent `return` on errors) and are not good templates.
+1. **Case header** — create `pe/interface/setup/xyz.h` from the pattern of
+   [dkt.h](../../pe/interface/setup/dkt.h): an include guard, the parallel half
+   inside `#if HAVE_MPI` / `#endif`, the serial half below it without a guard. Both
+   halves live in `namespace pe` and both functions are `inline` (the smoke test
+   includes the serial ones, in every build).
+   - Serial half: include `setup/serial_common.h` and add
+     `inline void setupXyzSerial(int cfd_rank)`. Inside:
+     `pe::logging::Logger::setCustomRank(cfd_rank);`; load the config, then
+     `config.setCfdRank(cfd_rank);` and derive `isRepresentative`; configure
+     `theWorld()` / `theCollisionSystem()`, create materials and bodies (every
+     instance creates **all** bodies); guard every `std::cout`, VTK writer and
+     checkpointer with `isRepresentative`. `setupSpanComplexSerial` in
+     [span_complex.h](../../pe/interface/setup/span_complex.h) is a clean, current
+     worked example; the resumable setups (`dkt.h`, `dns_drag.h`, `atc.h`) show the
+     checkpoint-resume helpers of `serial_common.h`.
+   - Parallel half (`#if HAVE_MPI`): include `setup/parallel_common.h` (and
+     `support/decompose.h` for the decompositions) and add
+     `inline void setupXyz(MPI_Comm ex0)`, or leave a comment that the case is
+     serial-only. For a real parallel setup use
+     [el_terminal_velocity.h](../../pe/interface/setup/el_terminal_velocity.h)
+     as the reference: it reads its parameters from the configuration, validates
+     the process layout, calls the shared `decompose*` functions and aborts with a
+     message on every error path. Most older parallel setups predate these
+     conventions (hardcoded geometry, silent `return` on errors) and are not good
+     templates. The parallel setups publish the engine singletons into the
+     interface globals `world` and `mpisystem` declared in `parallel_common.h`.
+2. **Entry point** — declare `commf2c_xyz_` in both halves of
+   [cfd_entry_points.h](../../pe/interface/cfd_entry_points.h) and add one block to
+   [cfd_entry_points.cpp](../../src/interface/cfd_entry_points.cpp): the parallel
+   implementation (or an explicit "serial only" stub that aborts) under
+   `#if HAVE_MPI`, and the `pe::setupXyzSerial(*remoteRank)` forwarder under
+   `#else`. Include the new case header there.
 3. **Smoke test** (recommended) — add a case to
    [tests/interface/pe_interface_smoke_serial.cpp](../../tests/interface/pe_interface_smoke_serial.cpp)
-   and register it in `tests/interface/CMakeLists.txt`. See
+   (include the case header) and register it in `tests/interface/CMakeLists.txt`. See
    [tests/interface/README.md](../../tests/interface/README.md).
 
 ## Related notes

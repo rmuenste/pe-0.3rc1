@@ -1,6 +1,6 @@
 //=================================================================================================
 /*!
- *  \file pe/interface/el_optional_api.h
+ *  \file pe/interface/support/el_optional_api.h
  *  \brief Compile-time detection of the optional Euler-Lagrange / SRR collision-system API
  *
  *  The CFD coupling interface is compiled once against whatever constraint solver
@@ -14,7 +14,7 @@
  *
  *  Referring to them unconditionally makes the interface library fail to build for every
  *  other solver (e.g. response::HardContactAndFluid). The detectors below follow the same
- *  pattern already used for HasLubricationParamSetters in pe/interface/sim_setup_serial.h:
+ *  pattern already used for HasLubricationParamSetters in pe/interface/support/optional_collision_params.h:
  *  a std::void_t detector plus a single `if constexpr` dispatch function. A single
  *  `if constexpr` function is used deliberately rather than a two-overload SFINAE pair,
  *  because two overloads with identical parameter lists are ambiguous whenever both

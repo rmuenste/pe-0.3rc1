@@ -99,14 +99,14 @@ accumulators, `resetElLubricationVirial`) and the per-body hydro-state API
 (`setEulerLagrangeHydroState`, `setEulerLagrangeRefVelocity`,
 `hasEulerLagrangeHydroState`) exist **only** on `HardContactEulerLagrange`.
 
-Call them through the guards in `pe/interface/el_optional_api.h` — `std::void_t` detectors
+Call them through the guards in `pe/interface/support/el_optional_api.h` — `std::void_t` detectors
 plus `if constexpr` dispatch — rather than directly, so the interface still builds for
 other solvers. Fallbacks there are well defined: diagnostics report zero, the predicate
 reports false, setters and resets are no-ops.
 
 Two things make this easy to get wrong:
 
-- Large parts of `src/interface/sim_setup.cpp` sit inside `#if HAVE_MPI`, which serial-mode
+- Large parts of `src/interface/cfd_stepping.cpp` sit inside `#if HAVE_MPI`, which serial-mode
   builds never compile. A tree that builds clean in `PE_SERIAL_MODE` can still fail in a
   parallel build.
 - The build uses `-Wfatal-errors`, so each translation unit reports only its **first**

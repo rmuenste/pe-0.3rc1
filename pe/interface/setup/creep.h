@@ -1,12 +1,28 @@
-#ifndef _PE_SETUP_CREEP_H_
-#define _PE_SETUP_CREEP_H_
+//=================================================================================================
+/*!\file pe/interface/setup/creep.h
+ *  \brief Creep-flow case.
+ *
+ *  Entry point: commf2c_creep_().
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_CREEP_H_
+#define _PE_INTERFACE_SETUP_CREEP_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <cstdlib>
 #include <iostream>
-
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/decompose.h>
-#include <pe/interface/setup_optional_collision_params.h>
+#include <pe/interface/support/decompose.h>
+#include <pe/interface/support/optional_collision_params.h>
+
+namespace pe {
 
 using namespace pe::povray;
 
@@ -17,7 +33,7 @@ using namespace pe::povray;
 // gravity-free fluid. The domain is a fixed, non-periodic box that is decomposed
 // rectilinearly according to processesX_/Y_/Z_ of the configuration.
 //=================================================================================================
-void setupCreep(MPI_Comm ex0) {
+inline void setupCreep(MPI_Comm ex0) {
   auto& config = SimulationConfig::getInstance();
 
   world = theWorld();
@@ -160,4 +176,37 @@ void setupCreep(MPI_Comm ex0) {
   MPI_Barrier(cartcomm);
 }
 
-#endif
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief Creep flow setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupCreepSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
+
+  WorldID world = theWorld();
+
+  world->setGravity(0.0, 0.0, 0.0);  // Often negligible in creep flow
+  world->setDamping(1.0);
+
+  real simViscosity(1.0);
+  real simRho(1.0);
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+
+  TimeStep::stepsize(0.001);
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_CREEP_H_

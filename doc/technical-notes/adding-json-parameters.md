@@ -20,7 +20,7 @@ This guide shows how to make a simulation parameter configurable via the JSON fi
   - JSON parsing requires builds with `HAVE_JSON` enabled; otherwise the loader is a no-op.
 
 ## 3) Apply the parameter in setup (if needed)
-- If the parameter affects runtime behavior, apply it after loading the config in your setup routine (e.g., `pe/interface/sim_setup_serial.h`):
+- If the parameter affects runtime behavior, apply it after loading the config in your setup routine (e.g., the serial half of `pe/interface/setup/<case>.h`):
   ```cpp
   auto& config = SimulationConfig::getInstance();
   // after SimulationConfig::loadFromFile(...)

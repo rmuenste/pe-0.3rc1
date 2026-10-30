@@ -60,7 +60,10 @@
 #include <pe/config/SimulationConfig.h>
 #include <pe/core.h>
 #include <pe/core/BodyBinaryWriter.h>
-#include <pe/interface/sim_setup_serial.h>
+#include <pe/interface/setup/atc.h>
+#include <pe/interface/setup/fluidization.h>
+#include <pe/interface/setup/span_complex.h>
+#include <pe/interface/support/serial_stepping.h>
 
 #include <boost/filesystem.hpp>
 #include <boost/version.hpp>

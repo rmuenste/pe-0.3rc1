@@ -57,7 +57,7 @@ PE is a physics engine for rigid body dynamics simulation with the following mai
 - `pe/irrlicht`: Irrlicht-based real-time visualization (deprecated, not actively maintained)
 
 ### External Integration
-- `pe/interface`: C/C++ interface for integration with other software (e.g. the FeatFloWer CFD solver).
+- `pe/interface`: C/C++ interface for integration with other software (e.g. the FeatFloWer CFD solver). Three tiers: the ABI headers directly in `pe/interface/` (`cfd_entry_points.h`, `cfd_queries.h`, `object_queries.h`, `fbm_gate_probe.h`, `frozen_field_trace.h`), one coupled case per file in `pe/interface/setup/` (parallel and serial variant side by side), and shared helpers in `pe/interface/support/`. Implementations in `src/interface/` (`cfd_entry_points.cpp`, `cfd_queries.cpp`, `cfd_stepping.cpp`, `object_queries.cpp`, ...).
 - PE can be driven from a CFD solver in two distinct ways with separate interface functions: normal parallel/domain-decomposition mode, and `PE_SERIAL_MODE` (each CFD rank runs its own full serial PE instance, used mainly for debugging/bring-up). For the `PE_SERIAL_MODE` concept, the `commf2c_*` Fortran/C entry-point convention, the representative-rank I/O pattern, force synchronization, and how to add a new interface setup function, see `doc/technical-notes/pe-interface-serial-mode.md`.
 
 ## Repo Structure
@@ -85,7 +85,7 @@ This repo is organized like a C++ physics engine with public API headers, implem
 - `pe/math/`: Vectors, matrices, constraints, expressions, solvers, sparse math, and type traits.
 - `pe/util/`: General utilities: logging, timing, threading, singleton/policy helpers, and traits.
 - `pe/config/`: Compile-time configuration headers.
-- `pe/interface/`: C/C++ integration interface.
+- `pe/interface/`: C/C++ integration interface: ABI headers, `setup/<case>.h` and `support/` helpers (see the serial-mode note for the layout table).
 -  `pe/vtk/`, `pe/irrlicht/`, `pe/povray/`, `pe/opendx/`: Visualization/export integrations.
 - `pe/support/`, `pe/system/`: Support and system-level helpers.
 

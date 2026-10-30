@@ -7,7 +7,7 @@
  *    - absent            -> (1,1,1), hasAngularDofMask() == false
  *    - [0,1,0]           -> (0,1,0), hasAngularDofMask() == true
  *    - [0,1], [0,0.5,1], [2,1,1], non-array -> std::invalid_argument naming the key
- *  Setup guard (pe/interface/sim_setup_serial_features.h, called from setupDNSDragSerial):
+ *  Setup guard (pe/interface/support/serial_step_features.h, called from setupDNSDragSerial):
  *    - key present and particleMotion_ = "fixed" -> std::invalid_argument
  *      "angularDofMask_ requires particleMotion_ = rotationOnly or free"
  *    - key present and rotationOnly (or free), or key absent under any motion -> accepted
@@ -21,7 +21,7 @@
 //=================================================================================================
 
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/sim_setup_serial_features.h>
+#include <pe/interface/support/serial_step_features.h>
 
 #include <boost/filesystem.hpp>
 

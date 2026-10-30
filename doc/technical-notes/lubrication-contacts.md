@@ -119,8 +119,8 @@ silent no-op.
 ## Runtime Parameters (JSON via SimulationConfig)
 All model parameters are runtime input, parsed by `SimulationConfig::loadFromFile` and
 pushed into the engine by `pe::applyOptionalLubricationParams()`
-(`pe/interface/setup_optional_collision_params.h`), which every serial setup and
-`setup_kroupa.h` call after `loadFromFile`. Other MPI setups still need the same
+(`pe/interface/support/optional_collision_params.h`), which every serial setup and
+`setup/kroupa.h` call after `loadFromFile`. Other MPI setups still need the same
 one-liner. Programmatic access: `pe::lubrication::` setters (`pe/core/lubrication/Params.h`).
 
 | JSON key | Default | Meaning |

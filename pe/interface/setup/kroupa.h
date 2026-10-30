@@ -1,20 +1,38 @@
-#ifndef _PE_SETUP_KROUPA_H_
-#define _PE_SETUP_KROUPA_H_
+//=================================================================================================
+/*!\file pe/interface/setup/kroupa.h
+ *  \brief Kroupa 2016 lubrication column.
+ *
+ *  Entry point: commf2c_kroupa_().
+ *
+ *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
+ *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
+ *  instance): the setupXxxSerial(int cfd_rank) variant, written against setup/serial_common.h
+ *  and compiled in every build so the smoke test can use it. See
+ *  doc/technical-notes/pe-interface-serial-mode.md.
+ */
+//=================================================================================================
+#ifndef _PE_INTERFACE_SETUP_KROUPA_H_
+#define _PE_INTERFACE_SETUP_KROUPA_H_
 
+#if HAVE_MPI
+#include <pe/interface/setup/parallel_common.h>
 #include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
-
 #include <pe/config/SimulationConfig.h>
-#include <pe/interface/decompose.h>
-#include <pe/interface/geometry_utils.h>
-#include <pe/interface/setup_optional_collision_params.h>
-// Provides the seeded lattice generator elTerminalRandomSeeds() that is reused here.
-// TODO: move the seeding helpers into a shared header so this include is not needed.
-#include <pe/interface/setup_el_terminal_velocity.h>
+#include <pe/interface/support/decompose.h>
+#include <pe/interface/support/geometry_utils.h>
+#include <pe/interface/support/optional_collision_params.h>
+#include <pe/interface/setup/el_terminal_velocity.h>
+
+namespace pe {
 
 using namespace pe::povray;
+
+// Provides the seeded lattice generator elTerminalRandomSeeds() that is reused here.
+// TODO: move the seeding helpers into a shared header so this include is not needed.
+
 
 //*************************************************************************************************
 /*!\brief PE setup for the Kroupa shear-cell case (parallel PE mode).
@@ -46,7 +64,7 @@ using namespace pe::povray;
  *
  * Every error path aborts the run with a message.
  */
-void setupKroupa(MPI_Comm ex0) {
+inline void setupKroupa(MPI_Comm ex0) {
 
   //===============================================================================================
   // Case constants
@@ -318,4 +336,37 @@ void setupKroupa(MPI_Comm ex0) {
 }
 //*************************************************************************************************
 
-#endif
+}  // namespace pe
+#endif  // HAVE_MPI
+
+#include <pe/interface/setup/serial_common.h>
+
+namespace pe {
+
+/**
+ * @brief Kroupa setup for serial mode
+ *
+ * @param cfd_rank The MPI rank from the CFD domain (used for unique log filenames)
+ */
+inline void setupKroupaSerial(int cfd_rank) {
+  pe::logging::Logger::setCustomRank(cfd_rank);
+  SimulationConfig::getInstance().setCfdRank(cfd_rank);
+
+  WorldID world = theWorld();
+
+  world->setGravity(0.0, 0.0, -9.81);
+  world->setDamping(1.0);
+
+  real simViscosity(1.0);
+  real simRho(1.0);
+
+  world->setLiquidSolid(true);
+  world->setLiquidDensity(simRho);
+  world->setViscosity(simViscosity);
+
+  TimeStep::stepsize(0.001);
+}
+
+}  // namespace pe
+
+#endif  // _PE_INTERFACE_SETUP_KROUPA_H_
