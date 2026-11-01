@@ -206,8 +206,10 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  *     processes >= 3 on that axis and the MPI PE build (PE_SERIAL_MODE has no
  *     periodic connectivity),
  *   - adds NO obstacle cylinder and NO boundary walls (the particle stays in the interior for
- *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow). The
- *     optional plane-Couette z-walls (zWallsEnabled_) are the only exception.
+ *     a settling test; the enclosed-box pressure is handled CFD-side via NoOutflow). The two
+ *     opt-in exceptions are the plane-Couette z-walls (zWallsEnabled_) and the closed
+ *     container (boxWallsEnabled_: six fixed global planes on the CFD box, refused together
+ *     with any periodic axis or the z-walls).
  *
  * All configuration checks run before any body is created, and every error path aborts the
  * run with a message.
@@ -471,6 +473,38 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
                 << "u_x(bottom z=" << zmin << ") = " << config.getZWallVelocityBottom()
                 << ", u_x(top z=" << zmax << ") = " << config.getZWallVelocityTop()
                 << ".\n";
+    }
+  }
+
+  // Closed container (wall-bounded settling column, D3.2 twin): six fixed
+  // global planes on the CFD domain box so point particles cannot leave the
+  // fluid domain through a no-slip wall. Global planes exist on every rank
+  // and are never shadow-copied; velocity zero, geometry invariant.
+  if (config.getBoxWallsEnabled()) {
+    if (periodicX || periodicY || periodicZ || config.getZWallsEnabled()) {
+      pe_EXCLUSIVE_SECTION(0) {
+        std::cerr << "EL terminal-velocity setup: boxWallsEnabled_ requires "
+                  << "periodicX_/Y_/Z_ = false and zWallsEnabled_ = false.\n";
+      }
+      MPI_Abort(ex0, 1);
+    }
+    MaterialID boxMaterial = createMaterial("el_tv_boxwall", real(1.0),
+                                            config.getRestitution(),
+                                            config.getStaticFriction(),
+                                            config.getDynamicFriction(),
+                                            0.2, 80, 100, 10, 11);
+    pe_GLOBAL_SECTION {
+      createPlane(12020,  1.0, 0.0, 0.0,  xmin, boxMaterial, true);
+      createPlane(12021, -1.0, 0.0, 0.0, -xmax, boxMaterial, true);
+      createPlane(12022,  0.0, 1.0, 0.0,  ymin, boxMaterial, true);
+      createPlane(12023,  0.0,-1.0, 0.0, -ymax, boxMaterial, true);
+      createPlane(12024,  0.0, 0.0, 1.0,  zmin, boxMaterial, true);
+      createPlane(12025,  0.0, 0.0,-1.0, -zmax, boxMaterial, true);
+    }
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: box walls enabled on x=["
+                << xmin << "," << xmax << "] y=[" << ymin << "," << ymax
+                << "] z=[" << zmin << "," << zmax << "] (six fixed planes).\n";
     }
   }
 

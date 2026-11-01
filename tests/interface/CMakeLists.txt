@@ -111,6 +111,21 @@ set_tests_properties(pe-angular-dof-mask-config PROPERTIES
   LABELS "unit;serial;interface"
 )
 
+# Contract test for the optional boxWallsEnabled_ deck key of the EL terminal-velocity setup:
+# absent -> false, true/false read, a later deck without the key keeps the value. Config singleton
+# only, no world/MPI; writes decks into ./_box_walls_config_test/.
+add_executable(pe_box_walls_config_test
+  pe_box_walls_config_test.cpp
+)
+target_link_libraries(pe_box_walls_config_test PRIVATE pe_static)
+add_test(
+  NAME pe-box-walls-config
+  COMMAND pe_box_walls_config_test
+)
+set_tests_properties(pe-box-walls-config PROPERTIES
+  LABELS "unit;serial;interface"
+)
+
 # Contract + body-level test for the two D6.4 particleMotion_ modes. Config: the four values
 # fixed / rotationOnly / translationOnly / free parse (setter and json), an unknown value throws
 # std::invalid_argument; angularDofMask_ is accepted under free and refused under

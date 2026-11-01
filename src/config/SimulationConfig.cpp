@@ -132,6 +132,7 @@ SimulationConfig::SimulationConfig()
     , lubricationAabbInflation_(true)
     , lubricationCutoff_(0.0)
     , lubricationSlipLength_(0.0)
+    , boxWallsEnabled_(false)
     , zWallsEnabled_(false)
     , zWallVelocityTop_(0.0)
     , zWallVelocityBottom_(0.0)
@@ -547,6 +548,9 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
         config.setLubricationSlipLength(j["lubricationSlipLength_"].get<real>());
 
     // Plane-Couette z-walls (global planes with tangential x-velocity)
+    // Closed container: six fixed global planes on the CFD domain box
+    if (j.contains("boxWallsEnabled_"))
+        config.setBoxWallsEnabled(j["boxWallsEnabled_"].get<bool>());
     if (j.contains("zWallsEnabled_"))
         config.setZWallsEnabled(j["zWallsEnabled_"].get<bool>());
     if (j.contains("zWallVelocityTop_"))
