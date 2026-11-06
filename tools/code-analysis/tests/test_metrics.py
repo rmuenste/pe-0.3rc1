@@ -40,7 +40,7 @@ class MetricsTests(unittest.TestCase):
     def test_offset_locations_without_line_numbers(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "single.cpp"
-            code = "int f(int a) { if(a) return 1; return 0; }\\n"
+            code = "int f(int a) { if(a) return 1; return 0; }\n"
             path.write_text(code)
             node = {"kind": "TranslationUnitDecl", "inner": [
                 {"kind": "FunctionDecl", "name": "f",
