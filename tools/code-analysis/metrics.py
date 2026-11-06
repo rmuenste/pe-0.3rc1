@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Experimental per-function metric inventory from Clang JSON AST dumps."""
 import argparse
+import bisect
 import json
 import pathlib
 import shlex
@@ -35,11 +36,16 @@ def decision_count(node):
     return count
 
 
-def span(node):
+def span(node, newline_offsets=None):
     begin = node.get("range", {}).get("begin", {})
     end = node.get("range", {}).get("end", {})
     start = begin.get("expansionLoc", begin).get("line")
     stop = end.get("expansionLoc", end).get("line")
+    if newline_offsets is not None:
+        if not isinstance(start, int) and isinstance(begin.get("offset"), int):
+            start = bisect.bisect_left(newline_offsets, begin["offset"]) + 1
+        if not isinstance(stop, int) and isinstance(end.get("offset"), int):
+            stop = bisect.bisect_left(newline_offsets, end["offset"]) + 1
     if not isinstance(start, int) or not isinstance(stop, int) or stop < start:
         return None
     return start, stop
@@ -58,13 +64,15 @@ def same_file(node, source):
 def extract_functions(ast, source):
     results = []
     source = pathlib.Path(source).resolve()
+    data = source.read_bytes()
+    newline_offsets = [i for i, value in enumerate(data) if value == 10]
     def visit(node):
         if not isinstance(node, dict):
             return
         if node.get("kind") in FUNCTION_KINDS and same_file(node, source):
             body = next((child for child in node.get("inner", [])
                          if child.get("kind") in ("CompoundStmt", "CXXTryStmt")), None)
-            loc = span(node)
+            loc = span(node, newline_offsets)
             if body is not None and loc is not None:
                 begin, end = loc
                 decisions = decision_count(body)
