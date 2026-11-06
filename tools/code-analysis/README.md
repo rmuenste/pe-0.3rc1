@@ -11,30 +11,32 @@ or reformat legacy files. Keep reports under `build/` (ignored by Git).
 - Python >= 3.9
 - Optional: Clang C++ compiler for AST-based function metrics (required for metrics)
 
-PE's existing `CMakePresets.json` already exports `compile_commands.json`.
-No production CMake changes are needed.
+PE's `CMakePresets.json` exports `compile_commands.json` in every preset.
 
 ## Configuration
 
 From the repository root:
 
 ```sh
-cmake --preset serial
-cmake --build --preset build-serial -j2
+cmake --preset clang-serial
+cmake --build --preset build-clang-serial -j4
 ```
 
-This generates `build/presets/serial/compile_commands.json`. If you have a
-working compiler/dependency environment but cannot use the preset, configure
-an equivalent standalone build with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
-For clang AST analysis, **configure the build with clang++ as C++ compiler**
-(e.g. on a fresh build directory with `-DCMAKE_CXX_COMPILER=clang++`).
+This keeps the analysis build apart from any GCC build, and generates
+`build/presets/clang-serial/compile_commands.json`. Configuring is enough for the
+analysis itself; building additionally confirms that PE compiles with Clang.
 Reusing a GCC compilation database with clang may fail on GCC-only flags.
+
+The `clang-mpi` preset does the same for MPI, in `build/presets/clang-mpi`. Analyze
+it separately: its results differ from serial. It cannot fully build with Clang yet,
+because `pe/interface/setup/creep.h` and `part_bench.h` pass a `shared_ptr` through a
+variadic function; `cfd_entry_points.cpp` is reported as failed until that is fixed.
 
 ## clang-tidy diagnostics
 
 ```sh
 python3 tools/code-analysis/run_tidy.py \
-  --build build/presets/serial \
+  --build build/presets/clang-serial \
   --output build/code-analysis/tidy-serial.json
 ```
 
@@ -44,13 +46,20 @@ stdout/stderr with each file's exit code. A nonzero clang-tidy exit code may
 also be caused by a compile/configuration error and must not be interpreted
 automatically as a code defect. clang-tidy warnings alone do not generally
 produce a nonzero exit code without warnings-as-errors. Summaries therefore
-must not imply that zero failed files means zero warnings.
+must not imply that zero failed files means zero warnings. A timed-out file has
+`timed_out: true` and no diagnostics at all, because clang-tidy prints at exit.
+
+PE compiles most sources for three library variants that differ in
+`pe_CONSTRAINT_SOLVER`. clang-tidy would analyze a file once per compile command,
+so the runner analyzes only the first command (the `pe_static` variant) and records
+the number of commands it skipped. `--all-variants` analyzes all of them; this takes
+longer and reports the deduplicated union.
 
 ## Experimental AST metrics
 
 ```sh
 python3 tools/code-analysis/metrics.py \
-  --build build/presets/serial \
+  --build build/presets/clang-serial \
   --prefix src/interface/ \
   --limit 2 \
   --output build/code-analysis/metrics-pilot.json
@@ -69,11 +78,21 @@ macros, and exception handling require further validation. The output field
 is deliberately called `cyclomatic_approx`. The pilot should be checked
 against manually evaluated functions before use in a repository-wide report.
 
-AST JSON can be large for template-heavy PE files. Start with `--limit 1`
-or `--limit 2`; the runner enforces timeout and maximum AST output size,
-and records errors instead of silently omitting files. It stores full AST
-temporarily, not in Git. Default scope excludes header-only definitions that
-are not explicitly identified as originating in the TU main file.
+AST JSON is large: a typical PE translation unit dumps about 3.5 GB, nearly all of
+it from headers. The runner reads the dump as a stream and parses only top-level
+declarations that contain a main-file location, so it needs no temporary AST file and
+far less memory than the dump size. `--max-ast-mb` limits one such declaration, not
+the dump; exceeding it, the timeout, a Clang error or an unexpected JSON layout
+is recorded per file instead of silently omitting the file. The splitter relies on
+Clang's two-space pretty-printing and reports `json_error` if that layout changes.
+
+**Scope.** Only definitions that start in the TU's main file are reported, so functions
+and templates defined in `pe/` headers are not covered by running over `src/`. Compiler-
+generated (implicit) members are excluded. A template is reported once, as written.
+Code disabled by the preprocessor is invisible: `frozen_field_trace.cpp` has one
+function in a serial build, because the rest needs MPI and CGAL. Decisions from macro
+expansions count towards the function using the macro, and lambda bodies are not
+counted towards any enclosing function.
 
 ## Future work
 

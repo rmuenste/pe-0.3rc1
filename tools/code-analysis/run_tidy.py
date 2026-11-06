@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 
@@ -27,6 +28,24 @@ def load_sources(database, root, prefixes):
         if source.is_file():
             found[relative] = source
     return sorted(found.items())
+
+
+def write_first_variant_database(database, sources, directory):
+    """Write a database holding each source's first compile command; return all command counts.
+
+    clang-tidy analyzes a file once per compile command, and PE compiles most sources for
+    several library variants. The first command is the one metrics.py analyzes as well.
+    """
+    wanted = {source for _, source in sources}
+    first, counts = {}, {}
+    for item in json.loads(pathlib.Path(database).read_text(encoding="utf-8")):
+        source = (pathlib.Path(item["directory"]) / item["file"]).resolve()
+        if source in wanted:
+            first.setdefault(source, item)
+            counts[source] = counts.get(source, 0) + 1
+    output = pathlib.Path(directory) / "compile_commands.json"
+    output.write_text(json.dumps(list(first.values())), encoding="utf-8")
+    return counts
 
 
 def run_one(item, tidy, build, config, timeout):
@@ -54,6 +73,9 @@ def main():
     parser.add_argument("--config", type=pathlib.Path, default=pathlib.Path(__file__).with_name(".clang-tidy"))
     parser.add_argument("--prefix", action="append", default=None,
                         help="source prefix relative to root (repeatable; default src/)")
+    parser.add_argument("--all-variants", action="store_true",
+                        help="analyze every compile command of a file (slower, deduplicated "
+                             "union) instead of only the first")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=180, help="per-file timeout in seconds")
     args = parser.parse_args()
@@ -72,12 +94,25 @@ def main():
     sources = load_sources(database, root, args.prefix or ["src/"])
     if not sources:
         parser.error("no eligible translation units in compilation database")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        results = list(pool.map(lambda item: run_one(item, tidy, build, config, args.timeout), sources))
+    with tempfile.TemporaryDirectory() as filtered:
+        counts = None
+        database_dir = build
+        if not args.all_variants:
+            counts = write_first_variant_database(database, sources, filtered)
+            database_dir = pathlib.Path(filtered)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            results = list(pool.map(lambda item: run_one(item, tidy, database_dir, config, args.timeout), sources))
+    commands_skipped = 0
+    if counts is not None:
+        commands_skipped = sum(counts.values()) - len(counts)
+        for (_, source), item in zip(sources, results):
+            item["compile_commands_in_database"] = counts[source]
     # Keep raw diagnostics: clang-tidy text output is not a stable machine interface.
     result = {"schema_version": 1, "tool": "clang-tidy",
               "generated_utc": datetime.now(timezone.utc).isoformat(),
               "root": str(root), "build": str(build), "config": str(config),
+              "all_variants": args.all_variants,
+              "compile_commands_skipped": commands_skipped,
               "files_total": len(results),
               "files_failed": sum(r["exit_code"] != 0 for r in results),
               "files_timed_out": sum(r["timed_out"] for r in results),
