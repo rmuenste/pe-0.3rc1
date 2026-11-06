@@ -37,6 +37,23 @@ class MetricsTests(unittest.TestCase):
             self.assertEqual(result[0]["cyclomatic_approx"], 2)
             self.assertEqual(result[0]["lines"], 1)
 
+    def test_offset_locations_without_line_numbers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "single.cpp"
+            code = "int f(int a) { if(a) return 1; return 0; }\\n"
+            path.write_text(code)
+            node = {"kind": "TranslationUnitDecl", "inner": [
+                {"kind": "FunctionDecl", "name": "f",
+                 "loc": {"file": str(path), "line": 1},
+                 "range": {"begin": {"offset": 0}, "end": {"offset": 42}},
+                 "inner": [{"kind": "CompoundStmt", "inner": [
+                     {"kind": "IfStmt", "inner": []}
+                 ]}]}
+            ]}
+            result = extract_functions(node, path)
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["cyclomatic_approx"], 2)
+
     def test_command(self):
         entry = {"arguments": ["c++", "-Iinclude", "-O2", "-MD", "-MF",
                                "a.d", "-c", "src/a.cpp", "-o", "a.o"]}
