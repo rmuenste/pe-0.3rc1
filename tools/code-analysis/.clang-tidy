@@ -2,5 +2,5 @@
 # Include explicit checks; avoid modernize-* and style rules on legacy PE code.
 Checks: '-*,bugprone-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,performance-*'
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(?!.*(/_deps/|/thirdparty/|/build/)).*'
+HeaderFilterRegex: '.*/(pe|src)/.*'
 FormatStyle: none
