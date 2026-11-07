@@ -813,3 +813,27 @@ if(PE_USE_MPI AND MPI_FOUND)
     )
   endforeach()
 endif()
+
+# Contract test of the parallel-mode DKT / walled-column setup (pe/interface/setup/dkt.h):
+# two ranks, a 1 x 1 x 2 cut of the campaign column handed in as the CFD domain, spheres from
+# the xyz file. Checks that the parallel half builds the serial half's world: every sphere once,
+# on the rank of its slab, serial materials and order, the ground plane as the only plane, deck
+# values in the world. The setup's refusals end in MPI_Abort and are not exercised here.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_dkt_parallel_setup_mpi pe_dkt_parallel_setup_mpi.cpp)
+  target_link_libraries(pe_dkt_parallel_setup_mpi PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+  add_test(
+    NAME pe-dkt-parallel-setup-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_dkt_parallel_setup_mpi>
+      ${MPIEXEC_POSTFLAGS}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  )
+  set_tests_properties(pe-dkt-parallel-setup-mpi PROPERTIES
+    LABELS "integration;mpi;interface"
+    PROCESSORS 2
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+  )
+endif()
