@@ -67,7 +67,22 @@ python3 tools/code-analysis/metrics.py \
 
 This uses `clang++ -Xclang -ast-dump=json -fsyntax-only` with the actual
 compilation command, counts control-flow decision nodes, and records source
-spans. The initial algorithm is intentionally simple:
+spans. `--limit` defaults to 2 translation units; `--limit 0` analyzes all of them.
+For a full run over `src/`, omit `--prefix`:
+
+```sh
+python3 tools/code-analysis/metrics.py \
+  --build build/presets/clang-serial \
+  --limit 0 \
+  --output build/code-analysis/metrics-full-serial.json
+```
+
+Only the configure step is needed. On a desktop machine the full serial run took about
+21 minutes for 178 files, with a peak of about 4.6 GB of memory. `src/core/BodyReader.cpp`
+contains a single top-level declaration of about 101 MB, close to the `--max-ast-mb`
+default of 100; raise it (e.g. `--max-ast-mb 150`) if that file reports `ast_too_large`.
+
+The initial algorithm is intentionally simple:
 
 `cyclomatic_approx = 1 + if + loops + (case/default excluding default) +
 catch + ternary + logical &&/||`
