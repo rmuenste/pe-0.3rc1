@@ -109,6 +109,11 @@ function in a serial build, because the rest needs MPI and CGAL. Decisions from 
 expansions count towards the function using the macro, and lambda bodies are not
 counted towards any enclosing function.
 
+## Visualization
+
+`codecharta.sh` turns a metrics report into a CodeCharta map and serves it locally
+with Docker; it needs neither Clang nor a PE build. See `CODECHARTA.md`.
+
 ## Future work
 
 - Confirm parsing on serial, MPI, and CGAL builds separately
