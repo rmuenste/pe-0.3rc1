@@ -523,11 +523,14 @@ extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank) 
 //=================================================================================================
 #if HAVE_MPI
 //=================================================================================================
-extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank)
+extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
+                             double *xmin, double *xmax,
+                             double *ymin, double *ymax,
+                             double *zmin, double *zmax)
 {
-  // force 4.0 multiplier take it out
-  // force only in z considered
-  // matching between fbmId and particleId
+  // The CFD side passes the global extents of its mesh (the settling column); the PE
+  // decomposition covers exactly that box, so that it coincides with the Cartesian CFD
+  // partition (pe/interface/setup/dkt.h).
   int remRank = *remoteRank;
 
   if(remRank != 0) {
@@ -542,7 +545,7 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
       printf( "%d> C)Error converting fortran communicator\n", rank);
        return;
     }
-    pe::setupDraftKissTumbBench(CcommEx0);
+    pe::setupDraftKissTumbBench(CcommEx0, *xmin, *xmax, *ymin, *ymax, *zmin, *zmax);
     // Central lubrication-config application (D2.2): the serial setups apply this
     // internally, but most parallel setups never did, so lubricationEnabled_ was a
     // silent no-op in parallel mode. Applied post-setup (json is loaded by then);
@@ -552,8 +555,13 @@ extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRan
 }
 //=================================================================================================
 #else
-extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank) {
-  // Serial PE mode: Draft-Kiss-Tumble setup
+extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank,
+                             double *xmin, double *xmax,
+                             double *ymin, double *ymax,
+                             double *zmin, double *zmax) {
+  // Serial PE mode: every CFD rank holds the full world, the domain extents are not needed
+  (void)Fcomm; (void)FcommEx0;
+  (void)xmin; (void)xmax; (void)ymin; (void)ymax; (void)zmin; (void)zmax;
   pe::setupDraftKissTumbSerial(*remoteRank);
 }
 #endif  // HAVE_MPI

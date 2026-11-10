@@ -85,6 +85,19 @@ Key points when adding a case:
   `MPI_Fint*` communicators and calls the parallel `setupXxx(MPI_Comm)`; the
   serial half (`#ifdef PE_SERIAL_MODE`) takes plain `int*` and calls
   `setupXxxSerial(*remoteRank)`.
+- **An entry point may carry CFD-side data the parallel setup needs.** The EL
+  entry points (`commf2c_el_frozen_trace_`, `commf2c_el_terminal_velocity_`) and
+  `commf2c_dkt_` take the global extents of the CFD mesh (`xmin..zmax`, six
+  `double*` after `remoteRank`) because the parallel setup decomposes exactly that
+  box into the `processesX_/Y_/Z_` grid of the json config, and that grid must be
+  the Cartesian partition the CFD mesh was cut with (the pe_partpy `axis_uniform`
+  strategy produces it). The serial half takes the same arguments and ignores them,
+  so the Fortran call is identical in both builds. `setupDraftKissTumbBench` in
+  [setup/dkt.h](../../pe/interface/setup/dkt.h) is the worked example: it builds the
+  serial half's world (ground plane at z = 0, spheres from `xyzFilePath_`, the same
+  materials in the same order) and refuses, with a message, a process grid that does
+  not match the communicator, a column that does not start at z = 0, `resume_`, and a
+  sphere that no subdomain would own.
 - **A case may be serial-only.** Several parallel-half entry points are
   deliberately *stubbed* — they print an error telling the user to rebuild with
   `PE_SERIAL_MODE` (e.g. `commf2c_rotation_`, `commf2c_drill_`,
