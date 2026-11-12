@@ -210,6 +210,9 @@ std::vector<pe::Vec3> elTerminalRandomSeeds(pe::real xmin, pe::real xmax,
  *     opt-in exceptions are the plane-Couette z-walls (zWallsEnabled_) and the closed
  *     container (boxWallsEnabled_: six fixed global planes on the CFD box, refused together
  *     with any periodic axis or the z-walls).
+ *     A cylindrical container (cylinderWallEnabled_ + cylinderWallRadius_: one fixed global inner
+ *     cylinder along z, refused with boxWallsEnabled_ or x/y periodicity) closes the hull of a
+ *     pipe mesh for a packed bed; combine it with zWallsEnabled_ for the floor and the lid.
  *
  * All configuration checks run before any body is created, and every error path aborts the
  * run with a message.
@@ -505,6 +508,39 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
       std::cout << "EL terminal-velocity setup: box walls enabled on x=["
                 << xmin << "," << xmax << "] y=[" << ymin << "," << ymax
                 << "] z=[" << zmin << "," << zmax << "] (six fixed planes).\n";
+    }
+  }
+
+  // Cylindrical container (packed bed in a column, CFDEM ErgunTestMPI twin): one fixed global
+  // inner cylinder along z on the CFD hull radius, so that a bed under gravity cannot leave the
+  // fluid domain through the hull, which is a CFD boundary only. Combine with zWallsEnabled_
+  // (velocity 0) for the floor and the lid. Centre from seedCylinderCenter_; the cylinder spans
+  // the CFD z-extent. Global bodies exist on every rank and are never shadow-copied.
+  if (config.getCylinderWallEnabled()) {
+    if (config.getBoxWallsEnabled() || periodicX || periodicY)
+      abortSetup("cylinderWallEnabled_ excludes boxWallsEnabled_ and periodicX_/periodicY_.");
+    if (config.getSeedCylinderAxis() != "z")
+      abortSetup("cylinderWallEnabled_: only the z axis is implemented (seedCylinderAxis_).");
+    if (!(config.getCylinderWallRadius() > real(0)))
+      abortSetup("cylinderWallEnabled_ requires a positive cylinderWallRadius_.");
+    MaterialID cylMaterial = createMaterial("el_tv_cylwall", real(1.0),
+                                            config.getRestitution(),
+                                            config.getStaticFriction(),
+                                            config.getDynamicFriction(),
+                                            0.2, 80, 100, 10, 11);
+    const Vec3 cylCenter = config.getSeedCylinderCenter();
+    pe_GLOBAL_SECTION {
+      // pe cylinders are created along x; rotate by 90 degrees about y to align with z
+      InnerCylinderID cyl = createInnerCylinder(12030,
+          Vec3(cylCenter[0], cylCenter[1], real(0.5)*(zmin + zmax)),
+          config.getCylinderWallRadius(), zmax - zmin, cylMaterial);
+      cyl->rotate(0.0, M_PI/2.0, 0.0);
+      cyl->setFixed(true);
+    }
+    pe_EXCLUSIVE_SECTION(0) {
+      std::cout << "EL terminal-velocity setup: cylinder wall enabled, R = "
+                << config.getCylinderWallRadius() << ", axis z through ("
+                << cylCenter[0] << "," << cylCenter[1] << "), z=[" << zmin << "," << zmax << "].\n";
     }
   }
 

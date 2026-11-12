@@ -813,3 +813,18 @@ if(PE_USE_MPI AND MPI_FOUND)
     )
   endforeach()
 endif()
+
+# Contract test for the optional cylinderWallEnabled_ / cylinderWallRadius_ deck keys of the EL
+# terminal-velocity setup (fixed inner cylinder as the particle-side container wall): defaults,
+# explicit values, a later deck without the keys keeps the values. Config singleton only.
+add_executable(pe_cylinder_wall_config_test
+  pe_cylinder_wall_config_test.cpp
+)
+target_link_libraries(pe_cylinder_wall_config_test PRIVATE pe_static)
+add_test(
+  NAME pe-cylinder-wall-config
+  COMMAND pe_cylinder_wall_config_test
+)
+set_tests_properties(pe-cylinder-wall-config PROPERTIES
+  LABELS "unit;serial;interface"
+)

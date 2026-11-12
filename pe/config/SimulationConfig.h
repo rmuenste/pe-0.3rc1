@@ -376,6 +376,10 @@ public:
     void setLubricationSlipLength(real value) { lubricationSlipLength_ = value; }
     bool getBoxWallsEnabled() const { return boxWallsEnabled_; }
     void setBoxWallsEnabled(bool value) { boxWallsEnabled_ = value; }
+    bool getCylinderWallEnabled() const { return cylinderWallEnabled_; }
+    void setCylinderWallEnabled(bool value) { cylinderWallEnabled_ = value; }
+    real getCylinderWallRadius() const { return cylinderWallRadius_; }
+    void setCylinderWallRadius(real value) { cylinderWallRadius_ = value; }
     bool getZWallsEnabled() const { return zWallsEnabled_; }
     void setZWallsEnabled(bool value) { zWallsEnabled_ = value; }
     real getZWallVelocityTop() const { return zWallVelocityTop_; }
@@ -537,6 +541,8 @@ private:
     real lubricationCutoff_;     //!< Surface-gap trigger distance for lubrication pairs (EL solver)
     real lubricationSlipLength_; //!< Slip length h_c of the Vinogradova f* correction
     bool boxWallsEnabled_;       //!< Create six fixed global planes on the domain box (closed container) in the EL setup
+    bool cylinderWallEnabled_;   //!< Create a fixed global inner cylinder (z axis, centre seedCylinderCenter_) as the particle-side container wall in the EL setup
+    real cylinderWallRadius_;    //!< Radius of that cylinder (must be positive when enabled)
     bool zWallsEnabled_;         //!< Create global z-planes (Couette walls) in the EL setup
     real zWallVelocityTop_;      //!< x-velocity of the top wall (z = zmax)
     real zWallVelocityBottom_;   //!< x-velocity of the bottom wall (z = zmin)
