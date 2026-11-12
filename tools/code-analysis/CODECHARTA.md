@@ -1,7 +1,8 @@
 # Viewing metrics in CodeCharta
 
 [CodeCharta](https://codecharta.com) (MaibornWolff, BSD-3) shows code as a 3D city.
-Here each **function** is a building and each source file a district of its functions:
+Here each **function** is a building and each source file or header a district of its
+functions:
 
 | Visual | Metric |
 |---|---|
@@ -10,7 +11,8 @@ Here each **function** is a building and each source file a district of its func
 
 Folders also carry the sum of a `functions` column, i.e. their function count. All
 values come from `metrics.py` and keep its limits (see `README.md`): they are
-approximations, and only definitions in `src/` files are covered.
+approximations. Definitions in `src/` files and in the `pe/` and `src/` headers they
+include are covered; the map shows them under `src/` and `pe/`.
 
 ## Requirements
 
@@ -95,9 +97,13 @@ ssh -L 9000:127.0.0.1:9000 buildhost
 `to_codecharta.py` prints these on stderr instead of dropping them silently:
 
 - files whose analysis failed (`timeout`, `ast_too_large`, `clang_error`, `json_error`);
-- files without measured functions. In a serial build these are `Settings.cpp`,
+- source files without measured functions. In a serial build these are `Settings.cpp`,
   `SimSettings.cpp`, `TimeStep.cpp` and `Random.cpp` (static data only),
-  `RectilinearGrid.cpp` (needs MPI) and `delaunay_output.cpp` (needs CGAL).
+  `RectilinearGrid.cpp` (needs MPI) and `delaunay_output.cpp` (needs CGAL);
+- the number of headers without function definitions (declarations only).
+
+Headers that no analyzed `.cpp` file includes are not in the map at all; the report
+lists them in `headers_not_analyzed`.
 
 ## Path format
 

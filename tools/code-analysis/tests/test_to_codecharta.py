@@ -22,6 +22,8 @@ REPORT = {"files": [
     {"file": "src/a/Empty.cpp", "status": "ok", "functions": []},
     {"file": "src/b/B.cpp", "status": "timeout", "functions": []},
     {"file": "src/b/C.cpp", "status": "ok", "functions": [function("g", 5)]},
+    {"file": "pe/b/D.h", "kind": "header", "status": "ok", "functions": [function("h", 7)]},
+    {"file": "pe/b/Fwd.h", "kind": "header", "status": "ok", "functions": []},
 ]}
 
 
@@ -40,7 +42,9 @@ class ToCodeChartaTests(unittest.TestCase):
         out, skipped = rows(REPORT)
         self.assertEqual(skipped["failed"], ["src/b/B.cpp (timeout)"])
         self.assertEqual(skipped["empty"], ["src/a/Empty.cpp"])
-        self.assertEqual(len(out), 4)
+        self.assertEqual(skipped["empty_headers"], ["pe/b/Fwd.h"])
+        self.assertEqual(len(out), 5)
+        self.assertIn("pe/b/D.h/h@7", [r["path"] for r in out])
 
     def test_prefix_filter(self):
         out, skipped = rows(REPORT, ["src/b/"])
@@ -59,6 +63,7 @@ class ToCodeChartaTests(unittest.TestCase):
         self.assertEqual(first, {"path": "src/a/A.cpp/f@10", "cyclomatic_approx": "4",
                                  "lines": "3", "decision_nodes": "3", "functions": "1"})
         self.assertIn("analysis failed: src/b/B.cpp (timeout)", err.getvalue())
+        self.assertIn("no functions: 1 headers", err.getvalue())
 
     def test_duplicate_paths_fail(self):
         report = {"files": [{"file": "x.cpp", "status": "ok",

@@ -7,7 +7,8 @@ The line suffix keeps overloads apart. A `/` in a function name (e.g. `operator/
 would split the path, so it is replaced by `∕` (U+2215).
 
 Files whose analysis failed, and files with no measured functions, have no leaves and
-would vanish from the map; they are listed on stderr instead.
+would vanish from the map; they are listed on stderr instead. Headers without function
+definitions are common (declarations, forwarding headers), so only their number is.
 """
 
 import argparse
@@ -26,8 +27,8 @@ def function_path(file, function):
 
 
 def rows(report, prefixes=None):
-    """Return (CSV rows, {"failed": [...], "empty": [...]}) for the selected files."""
-    skipped = {"failed": [], "empty": []}
+    """Return (CSV rows, {"failed": [...], "empty": [...], "empty_headers": [...]})."""
+    skipped = {"failed": [], "empty": [], "empty_headers": []}
     out = []
     for entry in report["files"]:
         file = entry["file"]
@@ -37,7 +38,8 @@ def rows(report, prefixes=None):
             skipped["failed"].append(f"{file} ({entry['status']})")
             continue
         if not entry["functions"]:
-            skipped["empty"].append(file)
+            empty = "empty_headers" if entry.get("kind") == "header" else "empty"
+            skipped[empty].append(file)
             continue
         for function in entry["functions"]:
             out.append({
@@ -77,6 +79,9 @@ def main(argv=None):
         print(f"not shown, analysis failed: {file}", file=sys.stderr)
     for file in skipped["empty"]:
         print(f"not shown, no functions: {file}", file=sys.stderr)
+    if skipped["empty_headers"]:
+        print(f"not shown, no functions: {len(skipped['empty_headers'])} headers",
+              file=sys.stderr)
     return 0
 
 
