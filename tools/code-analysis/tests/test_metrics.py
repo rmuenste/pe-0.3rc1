@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from metrics import (AstDeclTooLarge, analyze_one, clang_command, decision_count,
-                     extract_functions, parse_ast_stream)
+                     extract_functions, parse_ast_stream, prune_instantiations)
 from run_tidy import load_sources, write_first_variant_database
 
 
@@ -161,7 +161,7 @@ class LocationTrackingTests(unittest.TestCase):
 
     def test_stream_parses_only_main_file_declarations(self):
         stream = io.BytesIO(dump_tu(self.decls()))
-        functions, stats = parse_ast_stream(stream, self.main)
+        functions, _, stats = parse_ast_stream(stream, self.main)
         self.assertEqual([item["name"] for item in functions], ["m1", "m2"])
         self.assertEqual(stats["decls_total"], 4)
         self.assertEqual(stats["decls_parsed"], 2)
@@ -170,7 +170,7 @@ class LocationTrackingTests(unittest.TestCase):
         decls = self.decls()
         expected = extract_functions({"kind": "TranslationUnitDecl", "inner": self.decls()},
                                      self.main)
-        functions, _ = parse_ast_stream(io.BytesIO(dump_tu(decls)), self.main)
+        functions, _, _ = parse_ast_stream(io.BytesIO(dump_tu(decls)), self.main)
         self.assertEqual(functions, expected)
 
     def test_stream_reports_truncated_dump(self):
@@ -182,13 +182,92 @@ class LocationTrackingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_ast_stream(io.BytesIO(b'{"kind": "TranslationUnitDecl"}'), self.main)
 
-    def test_stream_size_limit_applies_to_main_file_only(self):
+    def test_stream_size_limit_applies_to_collected_files_only(self):
         stream = io.BytesIO(dump_tu(self.decls()[:2]))
-        functions, stats = parse_ast_stream(stream, self.main, max_decl_bytes=1)
+        functions, _, stats = parse_ast_stream(stream, self.main, max_decl_bytes=1)
         self.assertEqual(functions, [])
         self.assertEqual(stats["decls_parsed"], 0)
         with self.assertRaises(AstDeclTooLarge):
             parse_ast_stream(io.BytesIO(dump_tu(self.decls())), self.main, max_decl_bytes=1)
+
+
+class HeaderScopeTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = pathlib.Path(tmp.name).resolve()
+        (self.root / "pe").mkdir()
+        self.main = self.root / "main.cpp"
+        self.main.write_text("int m1() {}\nint m2() {}\n")
+        self.header = self.root / "pe" / "header.h"
+        self.header.write_text(("x" * 9 + "\n") * 100)  # line n starts at offset 10 (n - 1)
+        self.other = self.root / "other.h"
+
+    def stream(self):
+        return io.BytesIO(dump_tu([
+            function_node("h1", {"offset": 900, "file": str(self.header), "line": 91},
+                          {"offset": 900}, {"offset": 910}, decisions=1),
+            function_node("x", {"offset": 5, "file": str(self.other), "line": 1},
+                          {"offset": 5}, {"offset": 8}),
+            # No "file": still other.h, which is not collected.
+            function_node("y", {"offset": 950, "line": 96}, {"offset": 950}, {"offset": 960}),
+            function_node("m1", {"offset": 0, "file": str(self.main), "line": 1},
+                          {"offset": 0}, {"offset": 10}),
+            # No "file" after the main file: back in the header only if printed.
+            function_node("h2", {"offset": 950, "file": str(self.header), "line": 96},
+                          {"offset": 950}, {"offset": 960}, decisions=2),
+        ]))
+
+    def test_headers_under_prefix_are_collected(self):
+        functions, headers, stats = parse_ast_stream(
+            self.stream(), self.main, root=self.root, header_prefixes=("pe/",))
+        self.assertEqual([item["name"] for item in functions], ["m1"])
+        self.assertEqual(list(headers), [self.header])
+        self.assertEqual([(item["name"], item["line_start"], item["cyclomatic_approx"])
+                          for item in headers[self.header]], [("h1", 91, 2), ("h2", 96, 3)])
+        # x is parsed as well: it could have started in the header printed before it.
+        self.assertEqual(stats["decls_parsed"], 4)
+
+    def test_without_prefixes_only_the_main_file_is_collected(self):
+        functions, headers, _ = parse_ast_stream(self.stream(), self.main, root=self.root)
+        self.assertEqual([item["name"] for item in functions], ["m1"])
+        self.assertEqual(headers, {})
+
+    def test_excluded_headers_are_skipped(self):
+        functions, headers, stats = parse_ast_stream(
+            self.stream(), self.main, root=self.root, header_prefixes=("pe/",),
+            exclude={self.header})
+        self.assertEqual([item["name"] for item in functions], ["m1"])
+        self.assertEqual(headers, {})
+        self.assertEqual(stats["decls_parsed"], 2)  # m1, and h2 after the main file
+
+
+def template_dump(children, file="/x/a.h"):
+    decl = {"id": "0x1", "kind": "ClassTemplateDecl",
+            "loc": {"offset": 1, "file": file, "line": 1}, "inner": children}
+    return dump_tu([{"id": "0x0", "kind": "NamespaceDecl", "inner": [decl]}])
+
+
+class PruneTests(unittest.TestCase):
+    def test_class_template_instantiations_become_placeholders(self):
+        pattern = {"id": "0x2", "kind": "CXXRecordDecl", "name": "Box"}
+        instance = {"id": "0x3", "kind": "ClassTemplateSpecializationDecl",
+                    "loc": {"offset": 7, "file": "/x/b.h", "line": 2},
+                    "inner": [{"id": "0x4", "kind": "CXXMethodDecl"}]}
+        tu = json.loads(prune_instantiations(template_dump([pattern, instance])))
+        children = tu["inner"][0]["inner"][0]["inner"]
+        self.assertEqual(children, [pattern, {"file": "/x/b.h"}])
+
+    def test_function_template_keeps_the_first_function(self):
+        functions = [{"id": f"0x{i}", "kind": "FunctionDecl", "name": "f"} for i in range(3)]
+        param = {"id": "0x9", "kind": "TemplateTypeParmDecl"}
+        decl = {"id": "0x1", "kind": "FunctionTemplateDecl", "inner": [param] + functions}
+        tu = json.loads(prune_instantiations(dump_tu([decl])))
+        self.assertEqual(tu["inner"][0]["inner"], [param, functions[0], {}, {}])
+
+    def test_text_without_templates_is_unchanged(self):
+        data = dump_tu([{"id": "0x1", "kind": "FunctionDecl", "name": "f"}])
+        self.assertEqual(prune_instantiations(data), data)
 
 
 @unittest.skipUnless(shutil.which("clang++"), "clang++ is not installed")
@@ -198,6 +277,7 @@ class ClangIntegrationTests(unittest.TestCase):
     HEADER = """\
 inline int headerOne(int a) { if(a) return 1; return 0; }
 inline int headerTwo(int a) { if(a) return 1; return 0; }
+template <typename T> struct Wrapped { T twice(T a) { return a > 0 ? a + a : a; } };
 """
     SOURCE = """\
 #include "fixture.h"
@@ -254,6 +334,15 @@ int useTemplate() { return templated<int>(1) + static_cast<int>(templated<long>(
 
 struct Implicit { ~Implicit() = default; int member(int a) const { return a ? 1 : 0; } };
 Implicit implicitInstance;
+
+template <typename T> struct Holder { int out(T a); };
+template <typename T> int Holder<T>::out(T a) {
+   if constexpr(sizeof(T) > 100) {
+      if(a) return 1;
+   }
+   return 0;
+}
+int useHolder() { return Holder<int>().out(1) + Wrapped<int>().twice(2); }
 """
 
     def setUp(self):
@@ -274,6 +363,19 @@ Implicit implicitInstance;
         self.assertNotIn("headerOne", self.by_name)
         self.assertNotIn("headerTwo", self.by_name)
 
+    def test_headers_are_collected_with_a_prefix(self):
+        directory = self.source.parent
+        entry = {"directory": str(directory),
+                 "arguments": ["clang++", "-std=c++17", "-c", str(self.source)]}
+        result = analyze_one(entry, "fixture.cpp", self.source, shutil.which("clang++"),
+                             60, 1 << 20, root=directory, header_prefixes=["fixture.h"])
+        self.assertEqual(result["status"], "ok", result.get("error"))
+        self.assertEqual(result["functions"], self.result["functions"])
+        header = result["headers"][directory / "fixture.h"]
+        self.assertEqual([(item["name"], item["line_start"], item["cyclomatic_approx"])
+                          for item in header],
+                         [("headerOne", 1, 2), ("headerTwo", 2, 2), ("twice", 3, 2)])
+
     def test_hand_counted_complexity(self):
         expected = {
             "straight": 1,    # no decisions
@@ -286,6 +388,7 @@ Implicit implicitInstance;
             "discarded": 3,   # as written; the instantiation drops the inner if
             "useTemplate": 1,
             "member": 2,      # ternary
+            "out": 3,         # as written, although its instantiation precedes it
         }
         actual = {name: self.by_name[name]["cyclomatic_approx"] for name in expected}
         self.assertEqual(actual, expected)
