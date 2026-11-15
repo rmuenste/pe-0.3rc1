@@ -47,7 +47,10 @@ extern "C" void commf2c_el_terminal_velocity_(MPI_Fint *Fcomm, MPI_Fint *FcommEx
                                               double *ymin, double *ymax,
                                               double *zmin, double *zmax);
 extern "C" void commf2c_archimedes_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
-extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
+extern "C" void commf2c_dkt_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank,
+                              double *xmin, double *xmax,
+                              double *ymin, double *ymax,
+                              double *zmin, double *zmax);
 extern "C" void commf2c_lubrication_lab_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
 extern "C" void commf2c_drill_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
 extern "C" void commf2c_atc_(MPI_Fint *Fcomm, MPI_Fint *FcommEx0, int *remoteRank);
@@ -73,7 +76,10 @@ extern "C" void commf2c_el_frozen_trace_(int *Fcomm, int *FcommEx0, int *remoteR
                                          double *ymin, double *ymax,
                                          double *zmin, double *zmax);
 extern "C" void commf2c_archimedes_(int *Fcomm, int *FcommEx0, int *remoteRank);
-extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank);
+extern "C" void commf2c_dkt_(int *Fcomm, int *FcommEx0, int *remoteRank,
+                              double *xmin, double *xmax,
+                              double *ymin, double *ymax,
+                              double *zmin, double *zmax);
 extern "C" void commf2c_lubrication_lab_(int *Fcomm, int *FcommEx0, int *remoteRank);
 extern "C" void commf2c_drill_(int *Fcomm, int *FcommEx0, int *remoteRank);
 extern "C" void commf2c_atc_(int *Fcomm, int *FcommEx0, int *remoteRank);

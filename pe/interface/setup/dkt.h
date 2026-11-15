@@ -1,8 +1,10 @@
 //=================================================================================================
 /*!\file pe/interface/setup/dkt.h
- *  \brief Draft-kiss-tumble benchmark (two settling spheres).
+ *  \brief Draft-kiss-tumble benchmark and walled settling column (spheres from an xyz file).
  *
- *  Entry point: commf2c_dkt_().
+ *  Entry point: commf2c_dkt_(). Both halves build the same world: a ground plane at z = 0 and
+ *  the spheres of xyzFilePath_; the parallel half additionally decomposes the CFD column it is
+ *  handed into the processesX_/Y_/Z_ grid.
  *
  *  Parallel PE mode (HAVE_MPI builds only): the setupXxx(MPI_Comm) variant, written against
  *  setup/parallel_common.h. Serial PE mode (PE_SERIAL_MODE, every CFD rank runs its own PE
@@ -16,64 +18,61 @@
 
 #if HAVE_MPI
 #include <pe/interface/setup/parallel_common.h>
+#include <cmath>
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <vector>
 #include <pe/config/SimulationConfig.h>
 #include <pe/interface/support/decompose.h>
+#include <pe/interface/support/geometry_utils.h>
 
 namespace pe {
 
 //*************************************************************************************************
-/*!\brief PE setup for the draft-kiss-tumble benchmark (parallel PE mode).
+/*!\brief PE setup for the draft-kiss-tumble and walled-column cases (parallel PE mode).
  *
  * \param ex0 The CFD worker communicator (excludes the CFD master rank 0).
+ * \param xmin Global minimum of the CFD mesh in x (the column), passed by the CFD side.
+ * \param xmax Global maximum of the CFD mesh in x.
+ * \param ymin Global minimum of the CFD mesh in y.
+ * \param ymax Global maximum of the CFD mesh in y.
+ * \param zmin Global minimum of the CFD mesh in z; must be 0, see below.
+ * \param zmax Global maximum of the CFD mesh in z.
  *
- * Reached from Fortran through commf2c_dkt_(). Two equal spheres are released one above the
- * other, slightly offset in x, in a 2 x 2 x 8 column. The column has a ground plane at
- * z = 0 and four side walls at x = 0, x = 2, y = 0 and y = 2; it is open at the top.
+ * Reached from Fortran through commf2c_dkt_(). Builds the same world as
+ * setupDraftKissTumbSerial(), so that the two PE modes solve one case: the ground plane at
+ * z = 0 with the "ground" material, and the spheres listed in xyzFilePath_ (the DKT pair, the
+ * D3.2 settling clouds) with the "Bench" material whose density, restitution and friction come
+ * from the json config, as do gravity, the fluid properties and the step size. The materials are
+ * registered in the serial order ("ground", then "Bench"). There are no side walls on the PE side
+ * in either mode: the CFD mesh boundary confines the fluid, and the spheres never reach it.
  *
- * Read from example.json: gravity, fluid density and viscosity, particle density and radius
- * (benchRadius_), the process layout (processesX_/Y_/Z_), the step size, and the VTK switch
- * and spacing.
+ * Parallel-mode specifics: the column [xmin,xmax] x [ymin,ymax] x [zmin,zmax] is decomposed into
+ * the processesX_ x processesY_ x processesZ_ rectilinear grid of the json config, whose product
+ * must equal the size of ex0; the CFD mesh partition must be the same Cartesian cut (see
+ * doc/technical-notes/pe-interface-serial-mode.md). Each sphere is created once, on the rank whose
+ * subdomain owns its start position, with its index in the xyz file as user id (the serial
+ * numbering). Sphere system IDs are what the CFD side prints.
  *
- * Fixed in this file: the column size and the two sphere start positions.
- *
- * Sphere user IDs are numbered per process and are therefore not unique across processes.
- * Use the system ID (getSystemID()) wherever a globally unique ID is needed.
- *
- * Every error path aborts the run with a message.
+ * Refused with a message and MPI_Abort: a process grid that does not match ex0, a degenerate box,
+ * zmin != 0 (both halves put the ground plane at z = 0), resume_ = true (no pe checkpoint is
+ * written in parallel PE mode), an xyz file without positions, a sphere start position outside
+ * the box (it would never be created), and a created-sphere count that differs from the file.
  */
-inline void setupDraftKissTumbBench(MPI_Comm ex0) {
+inline void setupDraftKissTumbBench(MPI_Comm ex0,
+                                    real xmin, real xmax,
+                                    real ymin, real ymax,
+                                    real zmin, real zmax) {
 
   //===============================================================================================
-  // Case constants
-  //===============================================================================================
-  const real LX( 2.0 );                       // Column size, origin at (0,0,0)
-  const real LY( 2.0 );
-  const real LZ( 8.0 );
-
-  const Vec3 spherePositions[] = { Vec3( 0.99, 1.0, 6.9 ),    // Leading (lower) sphere
-                                   Vec3( 1.0,  1.0, 7.2 ) };  // Trailing (upper) sphere
-
-  //===============================================================================================
-  // Configuration, world and fluid properties
+  // Configuration, world and fluid properties (as in the serial half)
   //===============================================================================================
   auto& config = SimulationConfig::getInstance();
   world = theWorld();
 
   loadSimulationConfig("example.json");
 
-  world->setGravity( config.getGravity() );
-  world->setLiquidSolid(true);
-  world->setLiquidDensity( config.getFluidDensity() );
-  world->setViscosity( config.getFluidViscosity() );
-  world->setDamping( 1.0 );
-
-  TimeStep::stepsize( config.getStepsize() );
-
-  //===============================================================================================
-  // MPI system and validation
-  //===============================================================================================
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
 
@@ -88,18 +87,49 @@ inline void setupDraftKissTumbBench(MPI_Comm ex0) {
     MPI_Abort(ex0, 1);
   };
 
+  world->setGravity( config.getGravity() );
+  world->setLiquidSolid(true);
+  world->setLiquidDensity( config.getFluidDensity() );
+  world->setViscosity( config.getFluidViscosity() );
+  world->setDamping( 1.0 );
+
+  // The PE stepsize must match the CFD deck TimeStep; take it from the config
+  TimeStep::stepsize( config.getStepsize() );
+
+  const real sphereRad = config.getBenchRadius();
+  if( sphereRad <= real(0) ) {
+    abortSetup("benchRadius_ must be positive.");
+  }
+
+  if( config.getResume() ) {
+    abortSetup("resume_ = true, but no pe checkpoint is written in parallel PE mode "
+               "(SimPar@PeCheckpointOnDump is refused there); run the segment from scratch "
+               "or use the serial-mode build.");
+  }
+
+  //===============================================================================================
+  // Process grid and column box
+  //===============================================================================================
   const int px = config.getProcessesX();
   const int py = config.getProcessesY();
   const int pz = config.getProcessesZ();
 
+  if( px < 1 || py < 1 || pz < 1 ) {
+    abortSetup("processesX_/Y_/Z_ must all be at least 1.");
+  }
   if( px*py*pz != mpisystem->getSize() ) {
     abortSetup("invalid number of MPI processes: " + std::to_string(mpisystem->getSize()) +
                " != " + std::to_string(px*py*pz) + " (processesX_*Y_*Z_).");
   }
 
-  const real radBench = config.getBenchRadius();
-  if( radBench <= real(0) ) {
-    abortSetup("benchRadius_ must be positive.");
+  if( !(xmax > xmin) || !(ymax > ymin) || !(zmax > zmin) ) {
+    abortSetup("degenerate CFD domain extents passed by the CFD side.");
+  }
+  // Both halves create the ground plane at z = 0 (setupDraftKissTumbSerial hard-codes it); a
+  // column that starts elsewhere would put the floor inside or below the fluid.
+  if( std::abs(zmin) > real(1e-12) * std::max(real(1), std::abs(zmax)) ) {
+    abortSetup("the CFD domain starts at z = " + std::to_string(zmin) +
+               ", but the ground plane of this case is at z = 0 in both PE modes.");
   }
 
   //===============================================================================================
@@ -120,52 +150,57 @@ inline void setupDraftKissTumbBench(MPI_Comm ex0) {
   int center[3];
   MPI_Cart_coords(cartcomm, mpisystem->getRank(), 3, center);
 
-  pe_EXCLUSIVE_SECTION(0) {
-    std::cout << "> 3D communicator created" << std::endl;
-    std::cout << (Vec3(dims[0], dims[1], dims[2])) << std::endl;
-    std::cout << "3D coordinates were created" << std::endl;
-    std::cout << (Vec3(center[0], center[1], center[2])) << std::endl;
-  }
+  const real dx( (xmax - xmin) / px );
+  const real dy( (ymax - ymin) / py );
+  const real dz( (zmax - zmin) / pz );
 
-  // The decomposition covers exactly the column between the walls for any process layout.
-  // (The subdomain size in x and y used to be fixed to 2.0, which matched the walls only
-  // for processesX_ = processesY_ = 1; for that layout nothing has changed.)
-  const real dx( LX / px );
-  const real dy( LY / py );
-  const real dz( LZ / pz );
-
-  decomposeDomain(center, 0.0, 0.0, 0.0, dx, dy, dz, px, py, pz);
+  decomposeDomain(center, xmin, ymin, zmin, dx, dy, dz, px, py, pz);
 
   // Checking the process setup
   theMPISystem()->checkProcesses();
 
   //===============================================================================================
-  // Ground plane, side walls and the two spheres
+  // Materials, ground plane and spheres (values and order as in the serial half)
   //===============================================================================================
-  // TODO: materials may be identified by their index elsewhere (e.g. checkpoints). Keep the
-  //       creation order ("ground" first, then "Bench") until index-based use is ruled out.
-  MaterialID gr = createMaterial("ground", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  // Materials are registered in this fixed order: checkpointed bodies carry a bare index into
+  // the material table (see setupATCSerial).
+  MaterialID gr = createMaterial("ground", 1.0, 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+
+  // Contact material from config: restitution_/staticFriction_/dynamicFriction_
+  // json keys (defaults 0.0/0.1/0.05 reproduce the former hard-coded values)
+  MaterialID particleMaterial =
+      createMaterial("Bench", config.getParticleDensity(), config.getRestitution(),
+                     config.getStaticFriction(), config.getDynamicFriction(),
+                     0.2, 80, 100, 10, 11);
+
   pe_GLOBAL_SECTION
   {
-     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );   // ground plane
-
-     createPlane( 1778,+1.0, 0.0, 0.0, 0,   granite, false );     // wall at x = 0
-     createPlane( 1779,-1.0, 0.0, 0.0,-LX,  granite, false );     // wall at x = LX
-     createPlane( 1780, 0.0, 1.0, 0.0, 0,   granite, false );     // wall at y = 0
-     createPlane( 1781, 0.0,-1.0, 0.0,-LY,  granite, false );     // wall at y = LY
+     g_ground = createPlane( 777, 0.0, 0.0, 1.0, 0, gr, true );   // floor contact plane at z = 0
   }
 
-  MaterialID myMaterial = createMaterial("Bench", config.getParticleDensity(), 0.0, 0.1, 0.05, 0.2, 80, 100, 10, 11);
+  // Sphere positions are read from the external xyz file, on every rank
+  const std::string xyzPath = config.getXyzFilePath().string();
+  const std::vector<Vec3> spherePositions = readVectorsFromFile(xyzPath);
 
-  // User IDs are numbered per process (see the function documentation)
-  int idx = 0;
-  for( const Vec3& position : spherePositions ) {
-    if (world->ownsPoint( position )) {
-      SphereID sphere = createSphere(idx, position, radBench, myMaterial, true);
-      std::cout << "[Creating particle] at: " << position << " in domain: " << myRank << std::endl;
-      std::cout << "[particle mass]: " << sphere->getMass()  << std::endl;
-      std::cout << "[particle volume]: " << real(4.0)/real(3.0) * M_PI * radBench * radBench * radBench << std::endl;
-      ++idx;
+  if( spherePositions.empty() ) {
+    abortSetup("could not read any particle positions from '" + xyzPath + "'.");
+  }
+
+  int localCreated = 0;
+  for( std::size_t i = 0; i < spherePositions.size(); ++i ) {
+    const Vec3& position = spherePositions[i];
+    if( position[0] < xmin || position[0] > xmax ||
+        position[1] < ymin || position[1] > ymax ||
+        position[2] < zmin || position[2] > zmax ) {
+      std::ostringstream msg;
+      msg << "sphere " << i << " of '" << xyzPath << "' starts at " << position
+          << ", outside the CFD domain [" << xmin << "," << xmax << "] x [" << ymin << "," << ymax
+          << "] x [" << zmin << "," << zmax << "]; no rank would own it.";
+      abortSetup(msg.str());
+    }
+    if( world->ownsPoint( position ) ) {
+      createSphere( static_cast<id_t>(i), position, sphereRad, particleMaterial );
+      ++localCreated;
     }
   }
 
@@ -178,29 +213,44 @@ inline void setupDraftKissTumbBench(MPI_Comm ex0) {
   }
 
   //===============================================================================================
-  // Setup summary
+  // Setup summary and consistency check
   //===============================================================================================
-  unsigned long particlesLocal = static_cast<unsigned long>(idx);
+  unsigned long particlesLocal = static_cast<unsigned long>(localCreated);
   unsigned long bodiesLocal    = static_cast<unsigned long>( theCollisionSystem()->getBodyStorage().size() );
   unsigned long particlesTotal ( 0 );
-  unsigned long primitivesTotal( 0 );
+  unsigned long bodiesTotal    ( 0 );
   MPI_Reduce( &particlesLocal, &particlesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
-  MPI_Reduce( &bodiesLocal, &primitivesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
+  MPI_Reduce( &bodiesLocal, &bodiesTotal, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, cartcomm );
 
   pe_EXCLUSIVE_SECTION( 0 ) {
-    std::cout << "\n--" << "DRAFT-KISS-TUMBLE SETUP"
-      << "--------------------------------------------------------------\n"
-      << " Total number of MPI processes           = " << px * py * pz << "\n"
+    std::cout << "\n--" << "DKT SETUP (parallel PE mode)"
+      << "----------------------------------------------------\n"
+      << " Total number of MPI processes           = " << px * py * pz
+      << " (" << px << " x " << py << " x " << pz << ")\n"
+      << " CFD domain                              = [" << xmin << "," << xmax << "] x ["
+      << ymin << "," << ymax << "] x [" << zmin << "," << zmax << "]\n"
+      << " Subdomain size                          = " << Vec3(dx, dy, dz) << "\n"
       << " Simulation stepsize dt                  = " << TimeStep::size() << "\n"
-      << " Column size                             = " << Vec3(LX, LY, LZ) << "\n"
-      << " Particle radius                         = " << radBench << "\n"
-      << " Total number of particles               = " << particlesTotal << "\n"
-      << " Total number of objects                 = " << primitivesTotal << "\n" << std::endl;
-     std::cout << "--------------------------------------------------------------------------------\n" << std::endl;
+      << " Fluid viscosity                         = " << config.getFluidViscosity() << "\n"
+      << " Fluid density                           = " << config.getFluidDensity() << "\n"
+      << " Gravity                                 = " << world->getGravity() << "\n"
+      << " Particle radius                         = " << sphereRad << "\n"
+      << " Particle density                        = " << config.getParticleDensity() << "\n"
+      << " Position file                           = " << xyzPath << "\n";
+    for( std::size_t i = 0; i < spherePositions.size(); ++i ) {
+      std::cout << " Sphere " << i << " position                       = "
+                << spherePositions[i] << "\n";
+    }
+    std::cout << " Total number of particles               = " << particlesTotal << "\n"
+      << " Total number of bodies (incl. plane)    = " << bodiesTotal << "\n"
+      << "--------------------------------------------------------------------------------\n"
+      << std::endl;
 
-    if( particlesTotal != 2 ) {
-      std::cerr << "\nERROR in setupDraftKissTumbBench: expected 2 spheres, created "
-                << particlesTotal << ".\n" << std::endl;
+    if( particlesTotal != spherePositions.size() ) {
+      std::cerr << "\nERROR in setupDraftKissTumbBench: '" << xyzPath << "' lists "
+                << spherePositions.size() << " spheres, but " << particlesTotal
+                << " were created (every start position must be owned by exactly one subdomain).\n"
+                << std::endl;
       MPI_Abort(cartcomm, 1);
     }
   }
