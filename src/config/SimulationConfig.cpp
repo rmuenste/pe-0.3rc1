@@ -133,6 +133,8 @@ SimulationConfig::SimulationConfig()
     , lubricationCutoff_(0.0)
     , lubricationSlipLength_(0.0)
     , boxWallsEnabled_(false)
+    , cylinderWallEnabled_(false)
+    , cylinderWallRadius_(-1.0)
     , zWallsEnabled_(false)
     , zWallVelocityTop_(0.0)
     , zWallVelocityBottom_(0.0)
@@ -551,6 +553,10 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Closed container: six fixed global planes on the CFD domain box
     if (j.contains("boxWallsEnabled_"))
         config.setBoxWallsEnabled(j["boxWallsEnabled_"].get<bool>());
+    if (j.contains("cylinderWallEnabled_"))
+        config.setCylinderWallEnabled(j["cylinderWallEnabled_"].get<bool>());
+    if (j.contains("cylinderWallRadius_"))
+        config.setCylinderWallRadius(j["cylinderWallRadius_"].get<real>());
     if (j.contains("zWallsEnabled_"))
         config.setZWallsEnabled(j["zWallsEnabled_"].get<bool>());
     if (j.contains("zWallVelocityTop_"))
