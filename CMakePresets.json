@@ -66,6 +66,28 @@
             "cacheVariables": {
                 "PE_USE_CGAL": "ON"
             }
+        },
+        {
+            "name": "clang-serial",
+            "displayName": "Clang Serial Release",
+            "description": "Serial Release build with Clang, for code analysis",
+            "inherits": "serial",
+            "binaryDir": "${sourceDir}/build/presets/clang-serial",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "clang-mpi",
+            "displayName": "Clang MPI Release",
+            "description": "MPI Release build with Clang, for code analysis",
+            "inherits": "mpi",
+            "binaryDir": "${sourceDir}/build/presets/clang-mpi",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
         }
     ],
     "buildPresets": [
@@ -91,6 +113,18 @@
             "name": "build-cgal",
             "displayName": "Build CGAL Release",
             "configurePreset": "cgal",
+            "jobs": 2
+        },
+        {
+            "name": "build-clang-serial",
+            "displayName": "Build Clang Serial Release",
+            "configurePreset": "clang-serial",
+            "jobs": 2
+        },
+        {
+            "name": "build-clang-mpi",
+            "displayName": "Build Clang MPI Release",
+            "configurePreset": "clang-mpi",
             "jobs": 2
         }
     ],

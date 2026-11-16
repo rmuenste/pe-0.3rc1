@@ -1,0 +1,6 @@
+# Conservative baseline: warnings only, no automatic fixes.
+# Include explicit checks; avoid modernize-* and style rules on legacy PE code.
+Checks: '-*,bugprone-*,clang-analyzer-core.*,clang-analyzer-cplusplus.*,performance-*'
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*/(pe|src)/.*'
+FormatStyle: none
