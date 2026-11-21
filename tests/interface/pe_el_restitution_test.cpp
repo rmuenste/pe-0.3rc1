@@ -42,7 +42,10 @@
  *       contacts create no kinetic energy beyond the work of the hydro forces and the bed moves
  *       less than 1 % of r; the number of contacts that arm (micro-bounce) is printed, not
  *       asserted;
- *    8. a finite-mass global body is refused while the switch is on (std::runtime_error).
+ *    8. a finite-mass global body is refused while the switch is on (std::runtime_error), also
+ *       one unfixed after its registration; a global body fixed and destroyed, or removed by
+ *       World::clear(), does not refuse (or crash) the next step (the refusal reads the live
+ *       body storage).
  *
  *  Under a configured solver other than HardContactEulerLagrange the test returns 77 (skipped).
  *  Against the EL solver without the switch (origin/master 6003b00) it fails: cases 0-4 and 6
@@ -59,6 +62,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -76,6 +80,9 @@ template< typename T > struct HasRestitution< T, std::void_t< decltype( std::dec
 static const bool kHasSwitch = HasRestitution<CollisionSystemType>::value;
 
 //! Switches the restitution of the configured collision system (no-op without the switch).
+template< typename T, typename = void > struct HasStopRule : std::false_type {};
+template< typename T > struct HasStopRule< T, std::void_t< decltype( std::declval<T&>().setRestitutionCheckInterval( size_t(1) ) ) > > : std::true_type {};
+
 template< typename Handle > void applySwitches( Handle& cs, bool restitution, bool split, bool postPass = true )
 {
    typedef typename std::remove_reference<decltype( *cs )>::type CS;
@@ -85,6 +92,11 @@ template< typename Handle > void applySwitches( Handle& cs, bool restitution, bo
       cs->setRestitutionPostPass( postPass );
       cs->setRestitutionIterations( 4 );
       cs->setRestitutionThreshold( real(0) );
+      if constexpr ( HasStopRule<CS>::value ) {   // the regression setting of the stop rule
+         cs->setRestitutionMaxIterations( 100 );
+         cs->setRestitutionCheckInterval( 1 );
+         cs->setRestitutionTolerance( real(0), real(1e-9) );
+      }
    }
    else { (void)restitution; (void)postPass; }
 }
@@ -666,22 +678,61 @@ static void caseDragPile( CollisionSystemID cs )
 // 8. Refusal: a finite-mass global body
 //=================================================================================================
 
+static bool stepRefused( WorldID world, std::string& message )
+{
+   try { world->simulationStep( real(1e-4) ); }
+   catch( const std::runtime_error& ex ) { message = ex.what(); return true; }
+   return false;
+}
+
 static void caseGlobalMobileRefused( CollisionSystemID cs )
 {
-   applySwitches( cs, true, false );
    WorldID world = theWorld();
+   const MaterialID m( material( real(1000), real(0.9), real(0) ) );
+   std::string message;
+
+   // (a) a mobile global body: refused
+   applySwitches( cs, true, false );
    world->clear();
    world->setGravity( 0, 0, 0 );
-   const MaterialID m( material( real(1000), real(0.9), real(0) ) );
-   pe_GLOBAL_SECTION {
-      createSphere( 1, Vec3( 0, 0, 0 ), kR, m );   // global and mobile
-   }
-   bool refused( false );
-   std::string message;
-   try { world->simulationStep( real(1e-4) ); }
-   catch( const std::runtime_error& ex ) { refused = true; message = ex.what(); }
-   std::printf( "mobile global body with restitution on: %s%s\n", refused ? "refused: " : "NOT refused", message.c_str() );
-   expect( refused && message.find( "global" ) != std::string::npos, "a finite-mass global body is refused while restitution is on" );
+   pe_GLOBAL_SECTION { createSphere( 1, Vec3( 0, 0, 0 ), kR, m ); }
+   const bool a( stepRefused( world, message ) );
+   std::printf( "mobile global body with restitution on: %s%s\n", a ? "refused: " : "NOT refused", message.c_str() );
+   expect( a && message.find( "global" ) != std::string::npos, "a finite-mass global body is refused while restitution is on" );
+
+   // (b) registered mobile, then fixed and destroyed: the next step neither reads it nor refuses
+   world->clear();
+   SphereID g( nullptr );
+   pe_GLOBAL_SECTION { g = createSphere( 2, Vec3( 0, 0, 0 ), kR, m ); }
+   g->setFixed( true );
+   destroy( g );
+   createSphere( 3, Vec3( real(0.1), 0, 0 ), kR, m );
+   message.clear();
+   const bool b( stepRefused( world, message ) );
+   std::printf( "global body fixed and destroyed, then a step: %s %s\n", b ? "refused:" : "not refused", message.c_str() );
+   expect( !b, "a destroyed global body does not refuse (or crash) the next step" );
+
+   // (c) clear and repopulate: a step with ordinary bodies is not refused
+   world->clear();
+   pe_GLOBAL_SECTION { createSphere( 4, Vec3( 0, 0, 0 ), kR, m ); }
+   world->clear();
+   createSphere( 5, Vec3( 0, 0, 0 ), kR, m );
+   message.clear();
+   const bool c( stepRefused( world, message ) );
+   std::printf( "clear and repopulate, then a step: %s %s\n", c ? "refused:" : "not refused", message.c_str() );
+   expect( !c, "after clear() a world without global bodies is not refused" );
+
+   // (d) fixed, then unfixed again: refused (the live storage, not the registry, decides)
+   world->clear();
+   SphereID f( nullptr );
+   pe_GLOBAL_SECTION { f = createSphere( 7, Vec3( 0, 0, 0 ), kR, m ); }
+   f->setFixed( true );
+   f->setFixed( false );
+   message.clear();
+   const bool d( stepRefused( world, message ) );
+   std::printf( "global body unfixed after registration: %s%s\n", d ? "refused: " : "NOT refused", message.c_str() );
+   expect( d, "a global body unfixed after its registration is refused" );
+
    applySwitches( cs, false, false );
    world->clear();
 }

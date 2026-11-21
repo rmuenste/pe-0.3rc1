@@ -12,6 +12,9 @@
  *    pair 2   spheres 2, 3, the same configuration inside rank 0
  *    chain 1  sphere 4 into the touching pair 5-6; the 5-6 contact straddles the cut
  *    chain 2  spheres 7, 8-9, the same configuration inside rank 0
+ *    chain 3  spheres 10, 11-12 with the A-B contact midpoint on rank 0 and the B-C midpoint on
+ *             rank 1: the two rows are treated on different ranks (chain 1 has an empty treater
+ *             rank: rank 0 treats both of its rows)
  *
  *  Checked (on rank 0, from positions and velocities reduced from the owners every step):
  *    - pair 1 ends with the velocities of pair 2 to rounding (1e-14 relative);
@@ -25,8 +28,9 @@
  *    - momentum of each pair and chain conserved (1e-12);
  *    - the support contact of each chain never closes (normal velocity >= -1e-9 u after every
  *      step);
- *    - chain 1 against chain 2 within 1e-6 u: not bitwise, because Gauss-Seidel updates inside a
- *      process are seen at once and those from the other process only at the synchronisation;
+ *    - chains 1 and 3 against chain 2 within 1e-6 u (regression stop rule): not bitwise, because
+ *      Gauss-Seidel updates inside a process are seen at once and those from the other process
+ *      only at the synchronisation; the A-B separation speed after the impact step is e u;
  *    - a finite-mass global sphere is refused on both ranks while restitution is on.
  *
  *  Under a configured solver other than HardContactEulerLagrange the test returns 77 (skipped).
@@ -56,7 +60,7 @@ void writeFile( const std::string& name, const std::string& body )
    out << body;
 }
 
-const int N = 10;
+const int N = 13;
 const bool kIsEulerLagrange = pe::HasElHydroStateQuery<pe::RigidBody>::value;
 
 //! Positions (x) and velocities (x) of all spheres by user id, reduced from the owners.
@@ -96,35 +100,49 @@ int run( CS& cs, int rank )
    const size_t shadows = cs.getBodyShadowCopyStorage().size();
    std::printf( "rank %d: %zu shadow copies\n", rank, shadows );
    check( rank != 0 || shadows == 2, "rank 0 holds the shadow copies of spheres 1 and 6" );
+   check( rank != 1 || shadows == 1, "rank 1 holds the shadow copy of sphere 11 (chain 3)" );
 
    pe::WorldID world = pe::theWorld();
    for( pe::World::Iterator it = world->begin(); it != world->end(); ++it ) {
       pe::BodyID b = *it;
       if( b->getType() != pe::sphereType || b->isRemote() ) continue;
       const int id = static_cast<int>( b->getID() );
-      const double vx = ( id == 0 || id == 2 || id == 4 || id == 7 ) ? u : ( id == 1 || id == 3 ) ? -u : 0.0;
+      const double vx = ( id == 0 || id == 2 || id == 4 || id == 7 || id == 10 ) ? u : ( id == 1 || id == 3 ) ? -u : 0.0;
       b->setLinearVel( pe::Vec3( vx, 0, 0 ) );
    }
    world->synchronize();
 
    double x[N], v[N], m[N], owner[N];
    gather( x, v, m, owner, rank );
-   const double p0[4] = { m[0] * v[0] + m[1] * v[1], m[2] * v[2] + m[3] * v[3],
-                          m[4] * v[4] + m[5] * v[5] + m[6] * v[6], m[7] * v[7] + m[8] * v[8] + m[9] * v[9] };
+   const double p0[5] = { m[0] * v[0] + m[1] * v[1], m[2] * v[2] + m[3] * v[3],
+                          m[4] * v[4] + m[5] * v[5] + m[6] * v[6], m[7] * v[7] + m[8] * v[8] + m[9] * v[9],
+                          m[10] * v[10] + m[11] * v[11] + m[12] * v[12] };
    // Pairs impact in step 6 with the post-pass stopped at its minimum of four sweeps (tolerance 1:
    // the relaxation recurrence below applies to exactly n = 4); the chains impact in step 16 with
    // the default tolerance (sweeps until converged).
-   const pe::real defaultTolerance = cs.getRestitutionTolerance();
-   cs.setRestitutionTolerance( 1.0 );
-   double worstSupport = 0.0;
+   cs.setRestitutionIterations( 4 );
+   cs.setRestitutionMaxIterations( 4 );          // pairs: exactly four sweeps
+   double worstSupport = 0.0, separation[3] = { 0, 0, 0 }, midAB3 = 0, midBC3 = 0;
    size_t pairSweeps = 0, chainSweeps = 0;
    for( int i = 0; i < 40; ++i ) {
-      if( i == 10 ) cs.setRestitutionTolerance( defaultTolerance );
+      if( i == 10 ) {                            // chains: the regression setting
+         cs.setRestitutionMaxIterations( 100 );
+         cs.setRestitutionCheckInterval( 1 );
+         cs.setRestitutionTolerance( 0.0, 1e-9 );
+      }
+      const double vA[3] = { v[4], v[7], v[10] };
+      const double xs[3] = { x[10], x[11], x[12] };
       world->simulationStep( dt );
       if( i < 10 ) pairSweeps = std::max( pairSweeps, cs.getRestitutionPassStats().sweeps );
       else chainSweeps = std::max( chainSweeps, cs.getRestitutionPassStats().sweeps );
       gather( x, v, m, owner, rank );
-      worstSupport = std::min( worstSupport, std::min( v[6] - v[5], v[9] - v[8] ) );
+      worstSupport = std::min( worstSupport, std::min( std::min( v[6] - v[5], v[9] - v[8] ), v[12] - v[11] ) );
+      const int ida[3] = { 4, 7, 10 };
+      for( int c = 0; c < 3; ++c )
+         if( separation[c] == 0 && v[ida[c]] != vA[c] ) {
+            separation[c] = v[ida[c] + 1] - v[ida[c]];     // A-B separation speed after the impact step
+            if( c == 2 ) { midAB3 = 0.5 * ( xs[0] + xs[1] ); midBC3 = 0.5 * ( xs[1] + xs[2] ); }
+         }
    }
 
    if( rank == 0 ) {
@@ -139,19 +157,30 @@ int run( CS& cs, int rank )
       std::printf( "chains: %zu sweeps at the impact step (converged to the default tolerance)\n", chainSweeps );
       std::printf( "chain 1 (support across the cut): v = %.12f %.12f %.12f\n", v[4], v[5], v[6] );
       std::printf( "chain 2 (inside rank 0):           v = %.12f %.12f %.12f\n", v[7], v[8], v[9] );
-      std::printf( "chain 1 - chain 2: %.3e %.3e %.3e; most closing support contact over the run %.3e\n",
-                   v[4] - v[7], v[5] - v[8], v[6] - v[9], worstSupport );
+      std::printf( "chain 3 (A-B on rank 0, B-C on rank 1): v = %.12f %.12f %.12f; contact midpoints at the impact %.4f / %.4f\n",
+                   v[10], v[11], v[12], midAB3, midBC3 );
+      std::printf( "chain 1 - chain 2: %.3e %.3e %.3e; chain 3 - chain 2: %.3e %.3e %.3e; most closing support contact over the run %.3e\n",
+                   v[4] - v[7], v[5] - v[8], v[6] - v[9], v[10] - v[7], v[11] - v[8], v[12] - v[9], worstSupport );
+      std::printf( "A-B separation speed after the impact step / (e u): chain 1 %.9f, chain 2 %.9f, chain 3 %.9f\n",
+                   separation[0] / ( e * u ), separation[1] / ( e * u ), separation[2] / ( e * u ) );
       check( owner[0] == 0 && owner[1] == 1 && owner[2] == 0 && owner[3] == 0, "pair 1 straddles the cut, pair 2 is inside rank 0" );
       check( owner[5] == 0 && owner[6] == 1 && owner[8] == 0 && owner[9] == 0, "chain 1's support contact straddles the cut, chain 2 is inside rank 0" );
       check( std::fabs( v[0] - v[2] ) <= 1e-14 * u && std::fabs( v[1] - v[3] ) <= 1e-14 * u,
              "the impact across the process boundary gives the result inside one domain" );
       check( pairSweeps == 4 && std::fabs( rel1 - predicted ) <= 1e-10, "relaxation recurrence: v_rel' = -( e - (1 - alpha)^4 ( e - g_0 ) ) v_rel after 4 sweeps" );
-      const double p1[4] = { m[0] * v[0] + m[1] * v[1], m[2] * v[2] + m[3] * v[3],
-                             m[4] * v[4] + m[5] * v[5] + m[6] * v[6], m[7] * v[7] + m[8] * v[8] + m[9] * v[9] };
-      for( int k = 0; k < 4; ++k ) check( std::fabs( p1[k] - p0[k] ) <= 1e-12 * m[0] * u, "momentum of each pair and chain conserved" );
+      const double p1[5] = { m[0] * v[0] + m[1] * v[1], m[2] * v[2] + m[3] * v[3],
+                             m[4] * v[4] + m[5] * v[5] + m[6] * v[6], m[7] * v[7] + m[8] * v[8] + m[9] * v[9],
+                             m[10] * v[10] + m[11] * v[11] + m[12] * v[12] };
+      for( int k = 0; k < 5; ++k ) check( std::fabs( p1[k] - p0[k] ) <= 1e-12 * m[0] * u, "momentum of each pair and chain conserved" );
       check( worstSupport >= -1e-9 * u, "the support contact of a chain never closes" );
       check( std::fabs( v[4] - v[7] ) <= 1e-6 * u && std::fabs( v[5] - v[8] ) <= 1e-6 * u && std::fabs( v[6] - v[9] ) <= 1e-6 * u,
              "chain across the cut against the chain inside one domain within 1e-6 u" );
+      check( owner[10] == 0 && owner[11] == 0 && owner[12] == 1, "chain 3: A and B on rank 0, C on rank 1" );
+      check( midAB3 < 0.0 && midBC3 > 0.0, "chain 3: the A-B row is treated on rank 0, the B-C row on rank 1" );
+      check( std::fabs( v[10] - v[7] ) <= 1e-6 * u && std::fabs( v[11] - v[8] ) <= 1e-6 * u && std::fabs( v[12] - v[9] ) <= 1e-6 * u,
+             "chain with its rows on two ranks against the chain inside one domain within 1e-6 u" );
+      for( int c = 0; c < 3; ++c )
+         check( std::fabs( separation[c] - e * u ) <= 1e-6 * u, "A-B separation speed e u after the impact step (Newton, support inelastic)" );
    }
 
    // A finite-mass global body: refused on every rank while restitution is on.
@@ -227,14 +256,17 @@ int main( int argc, char** argv )
          "}\n" );
       const double xa1 = -0.015, xa2 = -0.07;
       const double xb1 = -0.012, xb2 = -0.062;   // chains: first sphere of the touching pair
+      const double xb3 = -0.002;                 // chain 3: B just left of the cut, B-C midpoint at +0.008
       char xyz[2048];
       std::snprintf( xyz, sizeof( xyz ),
          "%.17g 0.0 0.0\n%.17g 0.0 0.0\n%.17g 0.03 0.0\n%.17g 0.03 0.0\n"
          "%.17g 0.0 0.03\n%.17g 0.0 0.03\n%.17g 0.0 0.03\n"
-         "%.17g 0.03 0.03\n%.17g 0.03 0.03\n%.17g 0.03 0.03\n",
+         "%.17g 0.03 0.03\n%.17g 0.03 0.03\n%.17g 0.03 0.03\n"
+         "%.17g -0.03 0.03\n%.17g -0.03 0.03\n%.17g -0.03 0.03\n",
          xa1, xa1 + 2.0 * r + gap2, xa2, xa2 + 2.0 * r + gap2,
          xb1 - 2.0 * r - gap1, xb1, xb1 + 2.0 * r,
-         xb2 - 2.0 * r - gap1, xb2, xb2 + 2.0 * r );
+         xb2 - 2.0 * r - gap1, xb2, xb2 + 2.0 * r,
+         xb3 - 2.0 * r - gap1, xb3, xb3 + 2.0 * r );
       writeFile( "particles.xyz", xyz );
    }
    MPI_Barrier( MPI_COMM_WORLD );

@@ -267,9 +267,17 @@ public:
    inline void            setRestitutionPostPass( bool enable );
    inline bool            getRestitutionPostPass() const { return useRestitutionPostPass_; }
    inline void            setRestitutionIterations( size_t n );
-   inline size_t          getRestitutionIterations() const { return restitutionIterations_; }
-   inline void            setRestitutionTolerance( real tol ) { pe_INTERNAL_ASSERT( tol > 0, "Restitution tolerance must be positive." ); restitutionTolerance_ = tol; }
-   inline real            getRestitutionTolerance() const { return restitutionTolerance_; }
+   inline size_t          getRestitutionIterations() const { return restitutionStopRule_.minSweeps; }
+   //! Post-pass budget (RestitutionStopRule): maximum sweeps (>= 1, default 24).
+   inline void            setRestitutionMaxIterations( size_t n ) { pe_INTERNAL_ASSERT( n >= 1, "The restitution post-pass budget must be >= 1." ); restitutionStopRule_.maxSweeps = n; }
+   inline size_t          getRestitutionMaxIterations() const { return restitutionStopRule_.maxSweeps; }
+   //! Sweeps between two stop tests of the post-pass (>= 1, default 4).
+   inline void            setRestitutionCheckInterval( size_t n ) { pe_INTERNAL_ASSERT( n >= 1, "The restitution check interval must be >= 1." ); restitutionStopRule_.checkInterval = n; }
+   inline size_t          getRestitutionCheckInterval() const { return restitutionStopRule_.checkInterval; }
+   //! Stop tolerance of the post-pass: absolute (velocity units, >= 0, default 1e-4) plus relative to the local impact scale (>= 0, default 1e-3).
+   inline void            setRestitutionTolerance( real abs, real rel ) { pe_INTERNAL_ASSERT( abs >= 0 && rel >= 0, "Restitution tolerances must be non-negative." ); restitutionStopRule_.absTolerance = abs; restitutionStopRule_.relTolerance = rel; }
+   inline real            getRestitutionAbsTolerance() const { return restitutionStopRule_.absTolerance; }
+   inline real            getRestitutionRelTolerance() const { return restitutionStopRule_.relTolerance; }
    inline const RestitutionPassStats& getRestitutionPassStats() const { return restitutionPassStats_; }
    inline void            setMinEps( real /*minEps*/ ) {}
    inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
@@ -373,8 +381,8 @@ private:
    bool useRestitution_;      //!< Newton restitution: an impacting contact bounces at e * (pre-step normal approach) instead of stopping (setRestitution()).
    real restitutionThreshold_; //!< Impacts slower than this (and slower than 2 |dv_free|) are treated as inelastic (no micro-bounces at rest).
    bool useRestitutionPostPass_;  //!< Restitution as the capped post-pass after the inelastic solve (default) instead of a Newton target inside it.
-   size_t restitutionIterations_; //!< Minimum number of Gauss-Seidel sweeps of the restitution post-pass (default 4).
-   real restitutionTolerance_; //!< Post-pass stops when a sweep changes no normal velocity by more than this times the largest impact speed (default 1e-9).
+   RestitutionStopRule restitutionStopRule_;  //!< Minimum and maximum sweeps, check interval and tolerances of the post-pass (collective).
+   RestitutionPassWork restitutionWork_;      //!< Per-row state of the post-pass of the current step.
    RestitutionPassStats restitutionPassStats_;  //!< Diagnostics of the last step's post-pass (process-local).
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
@@ -459,8 +467,7 @@ private:
    friend class World;
    friend class MPISystem;
    // The capped restitution post-pass sweep (RestitutionPostPass.h) works on the contact arrays.
-   template< typename CS > friend real restitutionPostPassSweep( CS& s, real dtinv );
-   template< typename CS > friend void restitutionPostPass( CS& s, real dtinv );
+   friend struct RestitutionPass;
    template< typename Geometry >
    friend void defineLocalDomain( const Geometry& geometry );
    // Attachables register directly instead of the detour via a manager and thus need friend access to the attachable storage.
@@ -518,8 +525,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , useRestitution_   ( false )  // OFF by default: the solver stays inelastic and bit-identical to the solver before the switch
    , restitutionThreshold_ ( 0 )
    , useRestitutionPostPass_ ( true )   // capped post-pass by default, as in HardContactSemiImplicitTimesteppingSolvers
-   , restitutionIterations_ ( 4 )
-   , restitutionTolerance_ ( 1e-9 )
+   , restitutionStopRule_ ()
+   , restitutionWork_ ()
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
@@ -1516,7 +1523,7 @@ template< template<typename> class CD                           // Type of the c
 inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::setRestitutionIterations( size_t n )
 {
    pe_INTERNAL_ASSERT( n >= 1, "The restitution post-pass needs at least one sweep." );
-   restitutionIterations_ = n;
+   restitutionStopRule_.minSweeps = n;
 }
 //*************************************************************************************************
 
@@ -2308,6 +2315,7 @@ template< template<typename> class CD                           // Type of the c
 void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveContacts( const Contacts& contacts, real dt )
 {
    const real dtinv( real(1) / dt );
+   restitutionPassStats_ = RestitutionPassStats();   // diagnostics of this step (no arithmetic)
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -2747,9 +2755,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
    // contacts. Same synchronisation as the velocity solve; the sweep count is a solver setting
    // and therefore the same on every process. As in HCSITS, between the velocity solve and the
    // split-impulse position solve.
-   restitutionPassStats_ = RestitutionPassStats();
    if( useRestitution_ && useRestitutionPostPass_ )
-      restitutionPostPass( *this, dtinv );
+      RestitutionPass::run( *this, dtinv );
 
    // Split impulse: the position solve. Normal-only, non-negative pseudo impulses on separate
    // pseudo velocities, with the same iteration count and the same synchronisation as the
@@ -3065,11 +3072,14 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::armResti
       const real vn( restitutionPreStepNormalVelocity( body1_[j], body2_[j], r1_[j], r2_[j], n_[j] ) );
       const real threshold( std::max( restitutionThreshold_, real( 2 ) * std::max( freeVelocityIncrement( body1_[j] ),
                                                                                     freeVelocityIncrement( body2_[j] ) ) ) );
-      if( vn < -threshold ) {
+      if( restitutionCountCandidate( restitutionPassStats_, vn, threshold ) ) {
          if( useRestitutionPostPass_ )
             impactSpeed_[j] = -e * vn;
-         else
-            dist_[j] = restitutionInSolveDistance( dist_[j], e, vn, freeNormalVelocity( j ), dt );
+         else {
+            const real dist( dist_[j] );
+            dist_[j] = restitutionInSolveDistance( dist, e, vn, freeNormalVelocity( j ), dt );
+            if( dist_[j] != dist ) ++restitutionPassStats_.inSolveTargets;
+         }
       }
    }
 }
@@ -3101,15 +3111,7 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::refuseUnsupportedRestitution() const
 {
-   for( typename std::set<BodyID,LessSystemID>::const_iterator it = globalNonfixedBodies_.begin(); it != globalNonfixedBodies_.end(); ++it ) {
-      if( (*it)->isFixed() ) continue;
-      std::ostringstream msg;
-      msg << "HardContactEulerLagrange: restitution (setRestitution(), json restitutionEnabled_) is not supported "
-          << "together with a finite-mass global body (system id " << (*it)->getSystemID() << ", user id "
-          << (*it)->getID() << "): the synchronisation of non-fixed global bodies would apply the post-pass "
-          << "corrections more than once. Fix the body (setFixed( true )) or switch restitution off.";
-      throw std::runtime_error( msg.str() );
-   }
+   RestitutionPass::refuseMobileGlobal( *this, "HardContactEulerLagrange" );
 }
 //*************************************************************************************************
 

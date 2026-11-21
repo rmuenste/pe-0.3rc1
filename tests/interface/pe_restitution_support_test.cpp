@@ -23,7 +23,15 @@
  *       impulse any more, so the x momentum of the two spheres is conserved (1e-12): an unloaded
  *       contact keeps no tangential impulse;
  *    4. a positive gap below the contact threshold (5e-9 m) with an approach that does not close
- *       it within the step (1e-5 m/s, dt 2.5e-5 s): no impulse with either scheme.
+ *       it within the step (1e-5 m/s, dt 2.5e-5 s): no impulse with either scheme;
+ *    5. a remote impact leaves a disconnected preloaded support network (a sphere squeezed between
+ *       the floor and a fixed lid with opposing push-out targets, a resting pile) bit for bit
+ *       unchanged, also the floor impulse (EL);
+ *    6. an orthogonal impact on a loaded, sticking floor contact: the floor friction still acts
+ *       in the pass (the floor contact point does not slip after the impact step);
+ *    7. in-solve with a positive gap and a body force: a braking force that keeps the gap open gives
+ *       no impulse, an accelerating force that closes it gives the Newton target (the decision uses
+ *       the free motion after the body caching, also in HCSITS).
  *
  *  Against 1d030e7 (the EL port before review round 1) cases 1-4 fail: the resting contacts are
  *  skipped by every sweep (1, 2), the old tangential impulse survives an unloading (3), the
@@ -32,6 +40,7 @@
 //=================================================================================================
 
 #include <pe/core.h>
+#include <pe/interface/support/el_optional_api.h>
 
 #include <algorithm>
 #include <cmath>
@@ -50,6 +59,22 @@ template< typename T, typename = void > struct HasRestitution : std::false_type 
 template< typename T > struct HasRestitution< T, std::void_t< decltype( std::declval<T&>().setRestitution( true ) ),
                                                               decltype( std::declval<T&>().setRestitutionPostPass( true ) ) > > : std::true_type {};
 
+template< typename T, typename = void > struct HasStopRule : std::false_type {};
+template< typename T > struct HasStopRule< T, std::void_t< decltype( std::declval<T&>().setRestitutionCheckInterval( size_t(1) ) ) > > : std::true_type {};
+
+//! The regression setting of the stop rule: up to 100 sweeps, tested after every sweep, relative
+//! tolerance 1e-9 (the build before the stop rule became configurable always ran that way).
+template< typename Handle > void strictStopRule( Handle& cs )
+{
+   typedef typename std::remove_reference<decltype( *cs )>::type CS;
+   if constexpr ( HasStopRule<CS>::value ) {
+      cs->setRestitutionMaxIterations( 100 );
+      cs->setRestitutionCheckInterval( 1 );
+      cs->setRestitutionTolerance( real(0), real(1e-9) );
+   }
+   else (void)cs;
+}
+
 template< typename Handle > void applySwitches( Handle& cs, bool restitution, bool split, bool postPass = true )
 {
    typedef typename std::remove_reference<decltype( *cs )>::type CS;
@@ -60,6 +85,7 @@ template< typename Handle > void applySwitches( Handle& cs, bool restitution, bo
       cs->setRestitutionIterations( 4 );
       cs->setRestitutionThreshold( real(0) );
       cs->setErrorReductionParameter( real(0.7) );
+      strictStopRule( cs );
    }
    else { (void)cs; (void)restitution; (void)split; (void)postPass; }
 }
@@ -287,6 +313,147 @@ static void casePositiveGap( CollisionSystemID cs )
    }
 }
 
+//=================================================================================================
+// 5. A remote impact leaves a disconnected preloaded support network untouched
+//=================================================================================================
+
+struct SupportState { std::vector<Vec3> x, v, w; real wall[2][3]; };
+
+//! A sphere squeezed between the floor plane and a fixed box above it (overlapping both by 1e-5 m:
+//! opposing push-out targets the compression solve cannot both meet) and a resting pile on the
+//! floor (global plane), gravity as a force, Baumgarte; with or without a pair of small spheres
+//! impacting head-on 0.5 m away (floating, no force). Returns the state of the support network and
+//! the accumulated floor impulse (EL solver; zero for HCSITS).
+static SupportState runSupportNetwork( CollisionSystemID cs, bool remoteImpact )
+{
+   applySwitches( cs, true, false );
+   WorldID world = freshWorld();
+   elResetLubricationVirial( *cs );
+   const real g( 9.81 ), dt( 2.5e-5 ), overlap( 1e-5 );
+   const MaterialID m( material( real(1000), real(0.9), real(0.15) ) );
+   pe_GLOBAL_SECTION { createPlane( 1, 0, 0, 1, 0, m ); }
+   const real xs( 0.2 ), boxH( 0.01 );
+   BoxID lid = createBox( 2, Vec3( xs, 0, real(2) * kR - overlap + real(0.5) * boxH ), Vec3( real(0.03), real(0.03), boxH ), m );
+   lid->setFixed( true );
+   std::vector<SphereID> net;
+   net.push_back( createSphere( 10, Vec3( xs, 0, kR - real(0.5) * overlap ), kR, m ) );   // squeezed
+   for( int ix = 0; ix < 2; ++ix ) for( int iy = 0; iy < 2; ++iy )
+      net.push_back( createSphere( 11 + 2 * ix + iy, Vec3( ( ix - real(0.5) ) * real(2) * kR, ( iy - real(0.5) ) * real(2) * kR, kR ), kR, m ) );
+   net.push_back( createSphere( 15, Vec3( 0, 0, kR + std::sqrt( real(2) ) * kR ), kR, m ) );
+   SphereID a( nullptr ), b( nullptr );
+   if( remoteImpact ) {
+      const real u( 0.5 ), rr( real(0.25) * kR ), gap( 2 * u * dt * real(5.9) );
+      a = createSphere( 20, Vec3( real(0.5) - rr - real(0.5) * gap, 0, real(0.05) ), rr, m );
+      b = createSphere( 21, Vec3( real(0.5) + rr + real(0.5) * gap, 0, real(0.05) ), rr, m );
+      a->setLinearVel( Vec3( u, 0, 0 ) ); b->setLinearVel( Vec3( -u, 0, 0 ) );
+   }
+   for( int i = 0; i < 20; ++i ) {
+      for( SphereID sp : net ) sp->addForce( Vec3( 0, 0, -sp->getMass() * g ) );
+      world->simulationStep( dt );
+   }
+   SupportState st;
+   for( SphereID sp : net ) { st.x.push_back( sp->getPosition() ); st.v.push_back( sp->getLinearVel() ); st.w.push_back( sp->getAngularVel() ); }
+   elWallContactImpulse( *cs, 0, st.wall[0] );
+   elWallContactImpulse( *cs, 1, st.wall[1] );
+   if( remoteImpact ) {
+      std::printf( "remote pair after the impact: v = %.6f %.6f\n", static_cast<double>( a->getLinearVel()[0] ), static_cast<double>( b->getLinearVel()[0] ) );
+      expect( a->getLinearVel()[0] < -real(0.4) && b->getLinearVel()[0] > real(0.4), "remote impact: the remote pair bounces (the pass runs)" );
+   }
+   return st;
+}
+
+static void caseRemoteImpact( CollisionSystemID cs )
+{
+   const SupportState quiet( runSupportNetwork( cs, false ) );
+   const SupportState hit( runSupportNetwork( cs, true ) );
+   bool same( true );
+   real worst( 0 );
+   for( size_t k = 0; k < quiet.v.size(); ++k )
+      for( int c = 0; c < 3; ++c ) {
+         same = same && quiet.x[k][c] == hit.x[k][c] && quiet.v[k][c] == hit.v[k][c] && quiet.w[k][c] == hit.w[k][c];
+         worst = std::max( worst, std::fabs( quiet.v[k][c] - hit.v[k][c] ) );
+      }
+   bool wallSame( true );
+   for( int w = 0; w < 2; ++w ) for( int c = 0; c < 3; ++c ) wallSame = wallSame && quiet.wall[w][c] == hit.wall[w][c];
+   std::printf( "remote impact: support network %s (largest velocity difference %.3e), floor impulse %.12e / %.12e (without / with the impact)\n",
+                same ? "bitwise unchanged" : "CHANGED", static_cast<double>( worst ),
+                static_cast<double>( quiet.wall[0][2] ), static_cast<double>( hit.wall[0][2] ) );
+   expect( same, "remote impact: the disconnected support network is bit for bit the network without the impact" );
+   expect( wallSame, "remote impact: the floor impulse is bit for bit the one without the impact" );
+}
+
+//=================================================================================================
+// 6. Orthogonal impact on a loaded, sticking floor contact
+//=================================================================================================
+
+//! A small sphere hits a large one, pressed onto a frictional floor (pair mu = 0.5), horizontally
+//! at the height of its centre: the floor row keeps its normal load (d = 0 in the pass), but the
+//! rebound changes its slip. The floor friction must still act in the pass: with ample friction
+//! the floor contact point of the large sphere does not slip after the impact step.
+static void caseOrthogonalImpact( CollisionSystemID cs )
+{
+   applySwitches( cs, true, true );
+   WorldID world = freshWorld();
+   const real u( 1 ), dt( 1e-4 ), rB( 0.03 ), rA( kR ), gEff( 2000 );
+   const MaterialID m( material( real(1000), real(0.9), real(0.25) ) );
+   createPlane( 1, 0, 0, 1, 0, m );
+   SphereID B = createSphere( 2, Vec3( 0, 0, rB ), rB, m );
+   SphereID A = createSphere( 3, Vec3( -( rA + rB ) - u * dt * real(5.9), 0, rB ), rA, m );
+   const Vec3 FB( 0, 0, -B->getMass() * gEff );
+   for( int i = 0; i < 20; ++i ) { B->addForce( FB ); world->simulationStep( dt ); }   // B loaded on the floor
+   A->setLinearVel( Vec3( u, 0, 0 ) );
+   bool found( false );
+   for( int i = 0; i < 40 && !found; ++i ) {
+      const real vA0( A->getLinearVel()[0] );
+      B->addForce( FB );
+      world->simulationStep( dt );
+      if( A->getLinearVel()[0] == vA0 ) continue;
+      found = true;
+      const real slip( B->getLinearVel()[0] - B->getAngularVel()[1] * rB );   // floor contact point, along x
+      std::printf( "orthogonal impact on a loaded floor contact: A %.6f, B v_x %.6e omega_y %.6e, floor slip %.3e\n",
+                   static_cast<double>( A->getLinearVel()[0] ), static_cast<double>( B->getLinearVel()[0] ),
+                   static_cast<double>( B->getAngularVel()[1] ), static_cast<double>( slip ) );
+      expect( A->getLinearVel()[0] < -real(0.5) * u, "orthogonal impact: A rebounds" );
+      expect( std::fabs( slip ) <= real(1e-6) * u, "orthogonal impact: the loaded floor contact still sticks after the pass" );
+   }
+   expect( found, "orthogonal impact: an impact happened" );
+}
+
+//=================================================================================================
+// 7. In-solve: the gap decision uses the free motion of the step (forces included)
+//=================================================================================================
+
+static void casePositiveGapForces( CollisionSystemID cs )
+{
+   // gap 9e-9 m (below the contact threshold 1e-8), dt 2.5e-5 s. The approach speeds stay above the
+   // EL resting bound 2 |dv_free| so that both solvers arm the contact.
+   const real dt( 2.5e-5 ), gap( 9e-9 );
+   for( int accelerate = 0; accelerate < 2; ++accelerate ) {
+      applySwitches( cs, true, false, false );   // in-solve
+      WorldID world = freshWorld();
+      const MaterialID m( material( real(1000), real(0.9), real(0) ) );
+      SphereID a = createSphere( 1, Vec3( -kR - real(0.5) * gap, 0, 0 ), kR, m );
+      SphereID b = createSphere( 2, Vec3(  kR + real(0.5) * gap, 0, 0 ), kR, m );
+      // braking: pre-step 2 x 2e-4 m/s closes the gap in the step (1e-8 m), a force of -1.5e-4 per
+      // body leaves 2 x 5e-5 m/s (2.5e-9 m, the gap stays open); accelerating: pre-step 2 x 1.5e-4
+      // (7.5e-9 m, open), a force of +1e-4 per body gives 2 x 2.5e-4 (1.25e-8 m, closes)
+      const real w( accelerate ? real(1.5e-4) : real(2e-4) ), dv( accelerate ? real(1e-4) : -real(1.5e-4) );
+      a->setLinearVel( Vec3(  w, 0, 0 ) );
+      b->setLinearVel( Vec3( -w, 0, 0 ) );
+      a->addForce( Vec3(  a->getMass() * dv / dt, 0, 0 ) );
+      b->addForce( Vec3( -b->getMass() * dv / dt, 0, 0 ) );
+      world->simulationStep( dt );
+      const real rel( b->getLinearVel()[0] - a->getLinearVel()[0] );   // > 0: separating
+      std::printf( "in-solve, positive gap, %s force: v after %.9e %.9e, relative %.6e\n", accelerate ? "accelerating" : "braking     ",
+                   static_cast<double>( a->getLinearVel()[0] ), static_cast<double>( b->getLinearVel()[0] ), static_cast<double>( rel ) );
+      if( accelerate )
+         expect( rel > real(0), "in-solve: a gap the forced motion closes in the step bounces (Newton target)" );
+      else
+         expect( std::fabs( a->getLinearVel()[0] - ( w + dv ) ) < real(1e-15) && std::fabs( b->getLinearVel()[0] + ( w + dv ) ) < real(1e-15),
+                 "in-solve: a gap the braked motion leaves open gives no impulse (free velocity kept)" );
+   }
+}
+
 int main()
 {
    if( !HasRestitution<CollisionSystemType>::value ) {
@@ -301,6 +468,9 @@ int main()
    caseDropOnPile( cs );
    caseUnloading( cs );
    casePositiveGap( cs );
+   caseRemoteImpact( cs );
+   caseOrthogonalImpact( cs );
+   casePositiveGapForces( cs );
    applySwitches( cs, false, false );
    if( failures == 0 ) std::printf( "pe_restitution_support_test: all checks passed\n" );
    else std::printf( "pe_restitution_support_test: %d check(s) failed\n", failures );

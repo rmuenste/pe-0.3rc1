@@ -247,9 +247,17 @@ public:
    inline void            setRestitutionPostPass( bool enable );
    inline bool            getRestitutionPostPass() const { return useRestitutionPostPass_; }
    inline void            setRestitutionIterations( size_t n );
-   inline size_t          getRestitutionIterations() const { return restitutionIterations_; }
-   inline void            setRestitutionTolerance( real tol ) { pe_INTERNAL_ASSERT( tol > 0, "Restitution tolerance must be positive." ); restitutionTolerance_ = tol; }
-   inline real            getRestitutionTolerance() const { return restitutionTolerance_; }
+   inline size_t          getRestitutionIterations() const { return restitutionStopRule_.minSweeps; }
+   //! Post-pass budget (RestitutionStopRule): maximum sweeps (>= 1, default 24).
+   inline void            setRestitutionMaxIterations( size_t n ) { pe_INTERNAL_ASSERT( n >= 1, "The restitution post-pass budget must be >= 1." ); restitutionStopRule_.maxSweeps = n; }
+   inline size_t          getRestitutionMaxIterations() const { return restitutionStopRule_.maxSweeps; }
+   //! Sweeps between two stop tests of the post-pass (>= 1, default 4).
+   inline void            setRestitutionCheckInterval( size_t n ) { pe_INTERNAL_ASSERT( n >= 1, "The restitution check interval must be >= 1." ); restitutionStopRule_.checkInterval = n; }
+   inline size_t          getRestitutionCheckInterval() const { return restitutionStopRule_.checkInterval; }
+   //! Stop tolerance of the post-pass: absolute (velocity units, >= 0, default 1e-4) plus relative to the local impact scale (>= 0, default 1e-3).
+   inline void            setRestitutionTolerance( real abs, real rel ) { pe_INTERNAL_ASSERT( abs >= 0 && rel >= 0, "Restitution tolerances must be non-negative." ); restitutionStopRule_.absTolerance = abs; restitutionStopRule_.relTolerance = rel; }
+   inline real            getRestitutionAbsTolerance() const { return restitutionStopRule_.absTolerance; }
+   inline real            getRestitutionRelTolerance() const { return restitutionStopRule_.relTolerance; }
    inline const RestitutionPassStats& getRestitutionPassStats() const { return restitutionPassStats_; }
    inline void            setMinEps( real /*minEps*/ ) {}
    inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
@@ -322,6 +330,12 @@ private:
    inline void clearContacts();
           bool checkUpdateFlags();
    inline real getCharacteristicLength( ConstBodyID body ) const;
+   inline real freeNormalVelocity( size_t j ) const
+   {
+      const size_t i1( body1_[j]->index_ ), i2( body2_[j]->index_ );
+      const Vec3 gdot( ( v_[i1] + dv_[i1] ) - ( v_[i2] + dv_[i2] ) + ( w_[i1] + dw_[i1] ) % r1_[j] - ( w_[i2] + dw_[i2] ) % r2_[j] );
+      return trans( n_[j] ) * gdot;   // relative normal velocity of contact j from the cached velocities
+   }
    inline Vec3 pseudoVelocity( size_t j ) const        { return useSplitImpulse_ ? vp_[j] + dvp_[j] : Vec3(); }
    inline Vec3 pseudoAngularVelocity( size_t j ) const { return useSplitImpulse_ ? wp_[j] + dwp_[j] : Vec3(); }
    //@}
@@ -347,8 +361,8 @@ private:
    bool useRestitution_;      //!< Newton restitution: an impacting contact's normal target is -e * (pre-step normal velocity) instead of 0.
    real restitutionThreshold_; //!< Impacts slower than this (and slower than 2 |g| dt) are treated as inelastic (no micro-bounces at rest).
    bool useRestitutionPostPass_;  //!< Restitution as a capped post-pass after the inelastic solve (Box3D scheme, default) instead of a Newton target inside it.
-   size_t restitutionIterations_; //!< Minimum number of Gauss-Seidel sweeps of the restitution post-pass (default 4).
-   real restitutionTolerance_; //!< Post-pass stops when a sweep changes no normal velocity by more than this times the largest impact speed (default 1e-9).
+   RestitutionStopRule restitutionStopRule_;  //!< Minimum and maximum sweeps, check interval and tolerances of the post-pass (collective).
+   RestitutionPassWork restitutionWork_;      //!< Per-row state of the post-pass of the current step.
    RestitutionPassStats restitutionPassStats_;  //!< Diagnostics of the last step's post-pass.
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
@@ -429,8 +443,7 @@ private:
    friend class World;
    friend class MPISystem;
    // The capped restitution post-pass sweep (RestitutionPostPass.h) works on the contact arrays.
-   template< typename CS > friend real restitutionPostPassSweep( CS& s, real dtinv );
-   template< typename CS > friend void restitutionPostPass( CS& s, real dtinv );
+   friend struct RestitutionPass;
    template< typename Geometry >
    friend void defineLocalDomain( const Geometry& geometry );
    // Attachables register directly instead of the detour via a manager and thus need friend access to the attachable storage.
@@ -488,8 +501,8 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , useRestitution_   ( false )  // OFF by default: the solver stays inelastic unless asked
    , restitutionThreshold_ ( 0 )
    , useRestitutionPostPass_ ( true )   // capped post-pass by default; setRestitutionPostPass( false ) restores the in-solve Newton target
-   , restitutionIterations_ ( 4 )
-   , restitutionTolerance_ ( 1e-9 )
+   , restitutionStopRule_ ()
+   , restitutionWork_ ()
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
@@ -1175,7 +1188,7 @@ template< template<typename> class CD                           // Type of the c
 inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::setRestitutionIterations( size_t n )
 {
    pe_INTERNAL_ASSERT( n >= 1, "The restitution post-pass needs at least one sweep." );
-   restitutionIterations_ = n;
+   restitutionStopRule_.minSweeps = n;
 }
 //*************************************************************************************************
 
@@ -1835,6 +1848,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    //}
    pe_USER_ASSERT( !requireSync_, "Simulation requires synchronization before continuing." );
 
+   // Restitution: refused with a finite-mass global body (RestitutionPass::refuseMobileGlobal()).
+   if( useRestitution_ )
+      RestitutionPass::refuseMobileGlobal( *this, "HardContactSemiImplicitTimesteppingSolvers" );
+
    pe_PROFILING_SECTION {
 #if HAVE_MPI
       pe_MPI_SECTION {
@@ -1911,6 +1928,7 @@ template< template<typename> class CD                           // Type of the c
 void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::resolveContacts( const Contacts& contacts, real dt )
 {
    const real dtinv( real(1) / dt );
+   restitutionPassStats_ = RestitutionPassStats();   // diagnostics of this step (no arithmetic)
 
    pe_LOG_DEBUG_SECTION( log ) {
       log << "   Resolving the " << contacts.size() << " contact(s)"
@@ -2173,11 +2191,10 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
                const real vn( restitutionPreStepNormalVelocity( b1, b2, r1_[j], r2_[j], n_[j] ) );
                const real threshold( std::max( restitutionThreshold_, real( 2 ) * Settings::gravity().length() * dt ) );
                cor_[j] = e;
-               if( vn < -threshold ) {
-                  if( useRestitutionPostPass_ )
-                     impactSpeed_[j] = -e * vn;
-                  else
-                     dist_[j] = restitutionInSolveDistance( dist_[j], e, vn, vn, dt );
+               if( restitutionCountCandidate( restitutionPassStats_, vn, threshold ) ) {
+                  // post-pass: the separation speed owed; in-solve: vn (< 0) kept until the body
+                  // caching has the free velocity that decides a positive gap (see below)
+                  impactSpeed_[j] = useRestitutionPostPass_ ? -e * vn : vn;
                }
             }
          }
@@ -2287,6 +2304,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
 #endif
    }
 
+   // In-solve restitution: the Newton target of a candidate, decided now that the cached velocities
+   // carry the step's gravity and forces (a positive gap the free motion leaves open is kept,
+   // restitutionInSolveDistance()); the contact caching stored its pre-step vn in impactSpeed_.
+   if( useRestitution_ && !useRestitutionPostPass_ ) {
+      for( size_t j = 0; j < impactSpeed_.size(); ++j ) {
+         if( !( impactSpeed_[j] < real( 0 ) ) ) continue;
+         const real dist( dist_[j] );
+         dist_[j] = restitutionInSolveDistance( dist, cor_[j], impactSpeed_[j], freeNormalVelocity( j ), dt );
+         if( dist_[j] != dist ) ++restitutionPassStats_.inSolveTargets;
+         impactSpeed_[j] = real( 0 );
+      }
+   }
+
    // Iterate relaxation a constant number of times
    for( size_t it = 0; it < maxIterations_; ++it ) {
       //pe_LOG_WARNING_SECTION( log ) {
@@ -2349,9 +2379,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    // compression impulses; a fixed number of sweeps now adds the capped bounce to the armed
    // contacts. Same synchronisation as the velocity solve; the sweep count is a solver setting
    // and therefore the same on every process.
-   restitutionPassStats_ = RestitutionPassStats();
    if( useRestitution_ && useRestitutionPostPass_ )
-      restitutionPostPass( *this, dtinv );
+      RestitutionPass::run( *this, dtinv );
 
    // Split impulse: the position solve. Normal-only, non-negative pseudo impulses on separate
    // pseudo velocities, with the same iteration count and the same synchronisation as the
@@ -4240,10 +4269,17 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
       for( BodyIterator body = bodystorageShadowCopies_.begin(); body != bodystorageShadowCopies_.end(); ++body, ++i ) {
          pe_INTERNAL_ASSERT( body->index_ == i, "Invalid body index." );
 
-         if( dv_[i] == Vec3() && dw_[i] == Vec3() ) {
-            // If we did not apply any corrections do not send anything.
+         // If we did not apply any corrections do not send anything. With restitution on the test is
+         // exact (componentwise == 0): Vec3::operator== is approximate (|a-b| < 1e-8) and would drop
+         // the small one-sided corrections of the post-pass convergence tail while the owner folds
+         // its own unconditionally (momentum leak; the EL solver tests exactly for the same reason).
+         // With restitution off the original test stays, bit for bit.
+         const bool noCorrection( useRestitution_
+            ? ( dv_[i][0] == real(0) && dv_[i][1] == real(0) && dv_[i][2] == real(0) &&
+                dw_[i][0] == real(0) && dw_[i][1] == real(0) && dw_[i][2] == real(0) )
+            : ( dv_[i] == Vec3() && dw_[i] == Vec3() ) );
+         if( noCorrection )
             continue;
-         }
 
          ProcessID process( body->getOwnerHandle() );
          Process::SendBuff& buffer( process->getSendBuffer() );
