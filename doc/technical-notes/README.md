@@ -38,6 +38,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 - [ffd-solver.md](ffd-solver.md): Fast-Frictional Dynamics solver wiring and solver math notes.
 - [relaxation-models.md](relaxation-models.md): Analysis of hard-contact relaxation models and material parameter effects.
 - [new-collision-system-implementation-guide.md](new-collision-system-implementation-guide.md): Checklist for adding and wiring a new `CollisionSystem` specialization.
+- [el-restitution.md](el-restitution.md): Restitution in `HardContactEulerLagrange` (json `restitutionEnabled_` & co., the `EL_CONTACT_PARAMS` echo): the capped post-pass shared with the semi-implicit solver (`RestitutionPostPass.h`), what the implicit drag, the sub-stepping, `relaxationParam_`, process boundaries and the resting threshold mean for the impact law, limits, tests.
 - [euler-lagrange-solver-conventions.md](euler-lagrange-solver-conventions.md): Conventions for `HardContactEulerLagrange` (unresolved Euler–Lagrange coupling) versus `HardContactAndFluid` (particle-resolved coupling), their opposite gravity/buoyancy ownership, and how to call solver-specific interface APIs safely.
 
 ## Lubrication and Short-Range Forces

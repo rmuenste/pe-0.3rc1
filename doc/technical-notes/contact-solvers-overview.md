@@ -58,6 +58,10 @@ Strengths:
   positional terms dropped for the impacting step and no cap. `tools/impact_lab/` plays both
   schemes back side by side on the multi-contact impacts (flat and spinning box, wedge, chain,
   pile) and shows the pass's cap and clamp counters (`getRestitutionPassStats()`).
+  `HardContactEulerLagrange.h` has the same switch (json `restitutionEnabled_` & co.): the sweep
+  is shared (`pe/core/collisionsystem/RestitutionPostPass.h`), the resting threshold is
+  `max( setRestitutionThreshold(), 2 |dv_free| )` because the driver owns gravity there; see
+  [el-restitution.md](el-restitution.md).
 
 Limitations:
 
