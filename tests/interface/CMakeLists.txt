@@ -678,6 +678,41 @@ set_tests_properties(pe-hcsits-restitution PROPERTIES
   TIMEOUT 120
 )
 
+# Restitution of the Euler-Lagrange solver (HardContactEulerLagrange::setRestitution(), port of
+# the HCSITS switch above; shared post-pass in pe/core/collisionsystem/RestitutionPostPass.h):
+# head-on impacts (Newton law, momentum, energy e^2, equal and unequal masses), drop on the floor
+# (apex ratio e^2, rest), the impact law with the EL drag active, oblique impact with friction, a
+# resting pile in a box (stays at rest; switch off bitwise reproducible), simultaneous contacts.
+# Linked against the default library (the EL solver); 77 = another configured solver (skipped).
+add_executable(pe_el_restitution_test
+  pe_el_restitution_test.cpp
+)
+target_link_libraries(pe_el_restitution_test PRIVATE pe_static)
+add_test(
+  NAME pe-el-restitution
+  COMMAND pe_el_restitution_test
+)
+set_tests_properties(pe-el-restitution PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  SKIP_RETURN_CODE 77
+  TIMEOUT 120
+)
+
+# Json contract of restitutionEnabled_ / restitutionThreshold_ / restitutionScheme_ /
+# restitutionIterations_, the applier (applyOptionalRestitutionParams) and the EL_CONTACT_PARAMS
+# start-up echo line (pe/interface/support/contact_params_echo.h). Config singleton, no stepping.
+add_executable(pe_el_restitution_config_test
+  pe_el_restitution_config_test.cpp
+)
+target_link_libraries(pe_el_restitution_config_test PRIVATE pe_static)
+add_test(
+  NAME pe-el-restitution-config
+  COMMAND pe_el_restitution_config_test
+)
+set_tests_properties(pe-el-restitution-config PROPERTIES
+  LABELS "unit;serial;interface"
+)
+
 # Static against dynamic coefficient of friction (Contact.cpp): a sliding contact must take the
 # dynamic coefficient, a resting one the static coefficient. Box sliding on a plane, box resting
 # on and sliding down an incline whose slope lies between the two coefficients, box on a fixed box.
@@ -833,6 +868,31 @@ if(PE_USE_MPI AND MPI_FOUND)
   )
   set_tests_properties(pe-dkt-parallel-setup-mpi PROPERTIES
     LABELS "integration;mpi;interface"
+    PROCESSORS 2
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+  )
+endif()
+
+# Restitution of the EL solver across a process boundary: two ranks, the EL terminal-velocity
+# setup with restitutionEnabled_ from the deck, a pair straddling the cut against the same pair
+# inside one domain (same result to rounding), Newton law within the relaxation deficit. Own
+# working directory (the test writes example.json, as the DKT setup test does in its own).
+# EL solver only (the default pe_CONSTRAINT_SOLVER).
+if(PE_USE_MPI AND MPI_FOUND AND (NOT PE_CONSTRAINT_SOLVER OR PE_CONSTRAINT_SOLVER MATCHES "HardContactEulerLagrange"))
+  add_executable(pe_el_restitution_mpi pe_el_restitution_mpi.cpp)
+  target_link_libraries(pe_el_restitution_mpi PRIVATE pe_static MPI::MPI_CXX)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_mpi)
+  add_test(
+    NAME pe-el-restitution-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_el_restitution_mpi>
+      ${MPIEXEC_POSTFLAGS}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_mpi
+  )
+  set_tests_properties(pe-el-restitution-mpi PROPERTIES
+    LABELS "integration;mpi;rigidbody;interface"
     PROCESSORS 2
     ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
   )
