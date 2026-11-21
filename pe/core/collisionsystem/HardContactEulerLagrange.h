@@ -349,6 +349,7 @@ private:
    inline Vec3 pseudoVelocity( size_t j ) const        { return useSplitImpulse_ ? vp_[j] + dvp_[j] : Vec3(); }
    inline Vec3 pseudoAngularVelocity( size_t j ) const { return useSplitImpulse_ ? wp_[j] + dwp_[j] : Vec3(); }
    inline real freeVelocityIncrement( ConstBodyID body ) const;
+   inline real freeNormalVelocity( size_t j ) const;
    //@}
    //**********************************************************************************************
 
@@ -1572,6 +1573,30 @@ inline real CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::f
 }
 //*************************************************************************************************
 
+
+//*************************************************************************************************
+/*!\brief Normal relative velocity of contact j from the cached velocities (no contact impulse yet).
+ *
+ * \param j The contact index.
+ * \return n . ( v1 - v2 + w1 x r1 - w2 x r2 ) with v = v_ + dv_, w = w_ + dw_, evaluated after the
+ *         body caching: the velocity the step gives the contact without contacts (in-solve target,
+ *         restitutionInSolveDistance()).
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::freeNormalVelocity( size_t j ) const
+{
+   const size_t i1( body1_[j]->index_ ), i2( body2_[j]->index_ );
+   const Vec3 gdot( ( v_[i1] + dv_[i1] ) - ( v_[i2] + dv_[i2] ) + ( w_[i1] + dw_[i1] ) % r1_[j] - ( w_[i2] + dw_[i2] ) % r2_[j] );
+   return trans( n_[j] ) * gdot;
+}
+//*************************************************************************************************
 
 
 
@@ -3044,7 +3069,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::armResti
          if( useRestitutionPostPass_ )
             impactSpeed_[j] = -e * vn;
          else
-            dist_[j] = e * vn * dt;
+            dist_[j] = restitutionInSolveDistance( dist_[j], e, vn, freeNormalVelocity( j ), dt );
       }
    }
 }

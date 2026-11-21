@@ -2177,7 +2177,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
                   if( useRestitutionPostPass_ )
                      impactSpeed_[j] = -e * vn;
                   else
-                     dist_[j] = e * vn * dt;
+                     dist_[j] = restitutionInSolveDistance( dist_[j], e, vn, vn, dt );
                }
             }
          }

@@ -105,6 +105,31 @@ inline real restitutionPreStepNormalVelocity( BodyID b1, BodyID b2, const Vec3& 
 
 
 //*************************************************************************************************
+/*!\brief Target distance of an armed contact for the in-solve Newton target.
+ * \ingroup collision_system
+ *
+ * \param dist The contact's target distance as the compression solve has it (dist_: the gap of a
+ *        separated contact, erp times the overlap of a penetrating one, 0 with split impulse).
+ * \param e The pair's coefficient of restitution.
+ * \param vn The pre-step normal velocity (< 0, the contact is armed).
+ * \param vnClose The normal velocity that decides whether the step closes a positive gap: the
+ *        free-flight velocity of the step where the solver has it (EL solver), else vn (HCSITS,
+ *        which arms before it adds gravity to its cached velocities).
+ * \param dt The time step size.
+ * \return e vn dt (the relaxation then aims at -e vn), or dist unchanged when the contact has a
+ *         positive gap that the free motion of this step does not close (fine detection accepts
+ *         gaps below contactThreshold, and such a contact must not bounce before it touches).
+ */
+inline real restitutionInSolveDistance( real dist, real e, real vn, real vnClose, real dt )
+{
+   if( dist > real( 0 ) && dist + vnClose * dt > real( 0 ) )
+      return dist;
+   return e * vn * dt;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief One Gauss-Seidel sweep of the capped restitution post-pass (setRestitutionPostPass()).
  * \ingroup collision_system
  *

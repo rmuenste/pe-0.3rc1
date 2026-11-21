@@ -262,6 +262,31 @@ static void caseUnloading( CollisionSystemID cs )
    expect( lifted > 0, "unloading: at least one pressing force at which the rebound lifts the large sphere" );
 }
 
+//=================================================================================================
+// 4. Positive gap below the contact threshold
+//=================================================================================================
+
+static void casePositiveGap( CollisionSystemID cs )
+{
+   const real dt( 2.5e-5 ), w( 0.5e-5 ), gap( 5e-9 );
+   for( int postPass = 0; postPass < 2; ++postPass ) {
+      applySwitches( cs, true, false, postPass == 1 );
+      WorldID world = freshWorld();
+      const MaterialID m( material( real(1000), real(0.9), real(0) ) );
+      SphereID a = createSphere( 1, Vec3( -kR - real(0.5) * gap, 0, 0 ), kR, m );
+      SphereID b = createSphere( 2, Vec3(  kR + real(0.5) * gap, 0, 0 ), kR, m );
+      a->setLinearVel( Vec3(  w, 0, 0 ) );
+      b->setLinearVel( Vec3( -w, 0, 0 ) );
+      world->simulationStep( dt );
+      const real gapAfter( b->getPosition()[0] - a->getPosition()[0] - real(2) * kR );
+      std::printf( "positive gap 5e-9 m, %s: v after %.6e %.6e (before %.1e %.1e), gap after %.3e\n",
+                   postPass ? "post-pass" : "in-solve ", static_cast<double>( a->getLinearVel()[0] ), static_cast<double>( b->getLinearVel()[0] ),
+                   static_cast<double>( w ), static_cast<double>( -w ), static_cast<double>( gapAfter ) );
+      expect( a->getLinearVel()[0] == w && b->getLinearVel()[0] == -w,
+              std::string( "positive gap (" ) + ( postPass ? "post-pass" : "in-solve" ) + "): a gap the step does not close gives no impulse" );
+   }
+}
+
 int main()
 {
    if( !HasRestitution<CollisionSystemType>::value ) {
@@ -275,6 +300,7 @@ int main()
    }
    caseDropOnPile( cs );
    caseUnloading( cs );
+   casePositiveGap( cs );
    applySwitches( cs, false, false );
    if( failures == 0 ) std::printf( "pe_restitution_support_test: all checks passed\n" );
    else std::printf( "pe_restitution_support_test: %d check(s) failed\n", failures );
