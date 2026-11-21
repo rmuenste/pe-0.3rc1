@@ -311,6 +311,8 @@ private:
    //@{
    void synchronize();
    void synchronizeVelocities();
+   //! Rebuilds globalNonfixedBodies_ from the live body storage (fixation changes after add()).
+   void refreshGlobalNonfixedBodies();
    //@}
    //**********************************************************************************************
 
@@ -1719,12 +1721,13 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 {
    pe_INTERNAL_ASSERT( !body->isRemote(), "Trying to remove remote body from central body storage." );
 
-   // Keep track of global non-fixed bodies.
-   if( body->isGlobal() && !body->isFixed() ) {
+   // Keep track of global non-fixed bodies. Erased whatever the current fixedness: a body
+   // registered mobile and fixed later must not stay in the set after it is destroyed.
+   if( body->isGlobal() ) {
       bool found( globalNonfixedBodies_.erase( body ) > 0 );
 
       UNUSED( found );
-      pe_INTERNAL_ASSERT( found, "Removing global non-fixed body which has not been registered." );
+      pe_INTERNAL_ASSERT( found || body->isFixed(), "Removing global non-fixed body which has not been registered." );
    }
 
    if( !body->isGlobal() && !body->isRemote() && body->sizeProcesses() != 0 ) {
@@ -1767,12 +1770,13 @@ inline typename CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTim
 {
    pe_INTERNAL_ASSERT( !body->isRemote(), "Trying to remove remote body from central body storage." );
 
-   // Keep track of global non-fixed bodies.
-   if( body->isGlobal() && !body->isFixed() ) {
+   // Keep track of global non-fixed bodies. Erased whatever the current fixedness: a body
+   // registered mobile and fixed later must not stay in the set after it is destroyed.
+   if( body->isGlobal() ) {
       bool found( globalNonfixedBodies_.erase( *body ) > 0 );
 
       UNUSED( found );
-      pe_INTERNAL_ASSERT( found, "Removing global non-fixed body which has not been registered." );
+      pe_INTERNAL_ASSERT( found || body->isFixed(), "Removing global non-fixed body which has not been registered." );
    }
 
    if( !body->isGlobal() && !body->isRemote() && body->sizeProcesses() != 0 ) {
@@ -1847,6 +1851,13 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    //   log << "New timestep!\n";
    //}
    pe_USER_ASSERT( !requireSync_, "Simulation requires synchronization before continuing." );
+
+   // The reductions of non-fixed global bodies follow the live fixedness (bodies fixed or unfixed
+   // after add()); the same set as before for every setup without such a change.
+#if HAVE_MPI
+   if( MPISettings::size() > 1 )
+      refreshGlobalNonfixedBodies();
+#endif
 
    // Restitution: refused with a finite-mass global body (RestitutionPass::refuseMobileGlobal()).
    if( useRestitution_ )
@@ -4530,6 +4541,8 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
   if ( MPISettings::size() <= 1 )
     return;
 
+  refreshGlobalNonfixedBodies();
+
   MPI_Comm cartComm = MPISettings::comm();
 
   pe_PROFILING_SECTION {
@@ -4690,6 +4703,35 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 //=================================================================================================
 
 //*************************************************************************************************
+/*!\brief Rebuilds the set of global non-fixed bodies from the live body storage.
+ *
+ * \return void
+ *
+ * add() registers a global body by its fixedness at that time; setFixed() does not notify the
+ * collision system. The reductions of synchronizeVelocities() and synchronizeForces() therefore
+ * use the set rebuilt here at the start of every step (and of every force synchronisation), so a
+ * body fixed or unfixed after add() is reduced exactly when it is mobile. Global bodies exist on
+ * every process with the same fixedness, so the set (ordered by system id) is the same everywhere.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::refreshGlobalNonfixedBodies()
+{
+   globalNonfixedBodies_.clear();
+   for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body )
+      if( body->isGlobal() && !body->isFixed() )
+         globalNonfixedBodies_.insert( *body );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Clears the collision system.
  *
  * \return void
@@ -4705,6 +4747,7 @@ template< template<typename> class CD                           // Type of the c
 inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::clear()
 {
    detector_.clear();
+   globalNonfixedBodies_.clear();   // the bodies are deleted below
 
    for( BodyIterator body = bodystorage_.begin(); body != bodystorage_.end(); ++body )
       delete *body;
