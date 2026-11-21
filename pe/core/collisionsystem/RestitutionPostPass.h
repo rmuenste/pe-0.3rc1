@@ -297,25 +297,34 @@ inline void restitutionGlobalMax( real* x, int n )
  *    normal impulse, the booked restitution impulse and the final normal velocity). The step
  *    counter counts the calls of RestitutionPass::run().
  *
- * The root process reads the variables at the first call of RestitutionPass::run() and
- * broadcasts them on the PE communicator, so a variable set on the root process only is enough
- * and every process takes the same collective branches. A debug aid, not a diagnostic stream.
+ * The root process reads the variables at the first call of RestitutionPass::run() on a PE
+ * communicator and broadcasts them on it, so a variable set on the root process only is enough
+ * and every process takes the same collective branches. The settings and both counters (steps,
+ * passes) belong to one communicator lifetime: when a new communicator is installed
+ * (MPISettings::comm() / MPISystem::setComm(), MPISettings::commGeneration() changes) they are
+ * reset and read again collectively on the new communicator at its first run(). A debug aid, not
+ * a diagnostic stream.
  */
 struct RestitutionTrace
 {
    long   first, count;  //!< PE_RESTITUTION_TRACE range (first < 0: off).
    real   pairSpeed;     //!< PE_RESTITUTION_PAIRS (< 0: off).
-   size_t step;          //!< Calls of RestitutionPass::run().
+   size_t step;          //!< Calls of RestitutionPass::run() on this communicator.
+   size_t pass;          //!< Passes that ran (not skipped) on this communicator.
    bool   parsed;
-   RestitutionTrace() : first( -1 ), count( 0 ), pairSpeed( -1 ), step( 0 ), parsed( false ) {}
+   size_t generation;    //!< MPISettings::commGeneration() the settings were read for.
+   RestitutionTrace() : first( -1 ), count( 0 ), pairSpeed( -1 ), step( 0 ), pass( 0 ), parsed( false ), generation( 0 ) {}
 
    static RestitutionTrace& instance() { static RestitutionTrace t; return t; }
 
-   //! Collective at the first call (every process calls it at the start of every run()).
+   //! Collective at the first call on a communicator (every process calls it at the start of
+   //! every run()): a new communicator resets the settings and the counters.
    void parse()
    {
-      if( parsed ) return;
-      parsed = true;
+      const size_t gen( MPISettings::commGeneration() );
+      if( parsed && gen == generation ) return;
+      parsed = true; generation = gen;
+      first = -1; count = 0; pairSpeed = real( -1 ); step = 0; pass = 0;
       double v[3] = { -1, 0, -1 };
       if( MPISettings::rank() == MPISettings::root() ) {
          const char* env( std::getenv( "PE_RESTITUTION_TRACE" ) );
@@ -623,7 +632,6 @@ template< typename CS >
 template< typename CS >
    static void restitutionPostPass( CS& s, real dtinv )
 {
-   static size_t passCounter( 0 );   // debug trace only: counts the passes that run, the same on every process
 
    RestitutionPassStats& stats( s.restitutionPassStats_ );
    RestitutionPassWork& wk( s.restitutionWork_ );
@@ -666,7 +674,7 @@ template< typename CS >
    stats.supportClosingBefore = closingBefore;
    if( !( impactMax > real( 0 ) ) ) { stats.stop = 1; stats.supportClosingAfter = closingBefore; return; }
    stats.impactMax = impactMax;
-   const size_t pass( passCounter++ );
+   const size_t pass( RestitutionTrace::instance().pass++ );   // debug trace only, the same on every process
 
    // 2. the same body scale on the owner and every shadow copy, then the row scales
    s.exchangeRestitutionBodyScales( wk.bodyScale );

@@ -1012,16 +1012,29 @@ if(PE_USE_MPI AND MPI_FOUND)
     set_tests_properties(pe-restitution-scale-mpi${variant_name} PROPERTIES
       LABELS "integration;mpi;rigidbody" PROCESSORS 2 SKIP_RETURN_CODE 77
       ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    add_executable(pe_restitution_trace_comm${variant}_mpi pe_restitution_trace_comm_mpi.cpp)
+    target_link_libraries(pe_restitution_trace_comm${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
+    add_test(NAME pe-restitution-trace-comm-mpi${variant_name}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+              $<TARGET_FILE:pe_restitution_trace_comm${variant}_mpi> ${MPIEXEC_POSTFLAGS})
+    set_tests_properties(pe-restitution-trace-comm-mpi${variant_name} PROPERTIES
+      LABELS "integration;mpi;rigidbody" PROCESSORS 2 SKIP_RETURN_CODE 77 TIMEOUT 60
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
     add_executable(pe_global_registry${variant}_mpi pe_global_registry_mpi.cpp)
     target_link_libraries(pe_global_registry${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
-    foreach(mode fixdestroy clear unfix)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/global_registry${variant})
+    foreach(mode fixdestroy clear fixstepunfix fixstepunfix-iter unfixref unfix)
       add_test(NAME pe-global-registry-mpi${variant_name}-${mode}
         COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
-                $<TARGET_FILE:pe_global_registry${variant}_mpi> ${MPIEXEC_POSTFLAGS} ${mode})
+                $<TARGET_FILE:pe_global_registry${variant}_mpi> ${MPIEXEC_POSTFLAGS} ${mode}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/global_registry${variant})
       set_tests_properties(pe-global-registry-mpi${variant_name}-${mode} PROPERTIES
         LABELS "integration;mpi;rigidbody" PROCESSORS 2 TIMEOUT 120
         ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
     endforeach()
+    # the registered-fixed scenario compares against a reference written by a separate process
+    set_tests_properties(pe-global-registry-mpi${variant_name}-unfixref PROPERTIES FIXTURES_SETUP global_registry_ref${variant})
+    set_tests_properties(pe-global-registry-mpi${variant_name}-unfix PROPERTIES FIXTURES_REQUIRED global_registry_ref${variant})
   endforeach()
 endif()
 
