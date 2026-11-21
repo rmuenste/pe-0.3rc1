@@ -88,6 +88,21 @@ EL_RESTITUTION_STATS pe_step= 1233 cfd_step= 1234 scheme= post-pass candidates= 
   `impulse_fallback` (support impulse of demoted rows), all unrelaxed. With the Poisson ceiling on
   every booking `impulse_final <= impulse_gross` and every booked row satisfies
   `lambda_R <= e lambda_C`.
+- Exact meaning of the convergence fields (review round 4):
+  - `substeps_capped`: sub-steps in which at least one affected row still violated the tolerance
+    at the final allowed stop test (a pass converging on its last allowed sweep counts as
+    converged). This is not the Poisson cap: a Newton visit cut by `e lambda_C` is `newton_shortfall`.
+  - `residual` and `tangential_residual`: maxima over sub-steps and processes of the projected
+    admissible increments at the LAST stop test (normal: after the unilateral bound and the cap,
+    so a cap-limited impact can have zero normal residual and a large Newton shortfall).
+  - `residual_rel`: the normal component only, rows with a zero impact scale omitted.
+  - `violations_last_test`: rows outside the tolerance at the last stop test, summed over
+    processes and sub-steps.
+  - `sweeps_mean_active`: mean over the sub-steps whose pass ran (skipped passes excluded).
+  - `delivered`: positive final bookings; `separating`: rows armed at the classification that
+    end with a positive normal velocity.
+  - `support_closing_after`: the initially supporting population only (armed and demoted rows
+    excluded).
 - `substeps_converged / _capped / _skipped` are the stop reasons of the sub-steps;
   `sweeps_mean_active` is the mean sweep count over the sub-steps whose pass ran (skipped
   sub-steps excluded), `sweeps_max` the largest; `violations_last_test` the rows outside the
@@ -197,8 +212,8 @@ bounds the free relative normal increment of two spheres in this sub-step, but n
 over from the previous sub-step (contact residual, overlap correction, a change of the drag at a
 CFD update), and for non-spheres it omits the angular free increment at the contact point. A bed
 exactly at rest cannot arm (pile test: switch on = switch off, bitwise). A settling bed under EL
-drag does arm: in the disordered-bed test (section 7, case 7) 31-147 contacts arm per 400
-sub-steps (micro-bounce), without creating kinetic energy beyond the hydro work, with a drift of
+drag does arm: in the disordered-bed test (section 7, case 7) 36-157 candidates and 24-40 armed
+rows (each delivering a rebound) per 400 sub-steps (micro-bounce; round-4 counters), without creating kinetic energy beyond the hydro work, with a drift of
 3-6e-5 m (0.3-0.6 % of r) against 2-5e-5 m with the switch off. Rule I would use instead (not
 implemented, awaiting the owner): arm only if `vn < -max( threshold, 2 |dv_free,now|,
 2 |dv_free,previous sub-step|, v_rest )` with `v_rest` a deck velocity below which pairs are
@@ -226,7 +241,9 @@ with `T = e |vn|` and `g_0` the velocity after the compression solve (in the two
 Baumgarte push-out `0.07 |v_rel|`): after 4 sweeps `-0.899917 |v_rel|`, the logged value. A binding
 Poisson ceiling or neighbouring contacts change the recurrence; within a process Gauss–Seidel
 updates are seen at once, from other processes only at the synchronisation, so results across
-decompositions agree to the convergence tolerance, not bitwise (two-rank chain: 1e-14 here). The
+decompositions agree to the convergence tolerance, not bitwise (two-rank test, strict rule: the
+chain whose support row crosses the cut differs from the chain inside one domain by 1e-14 m/s, the
+split-treater chain by up to 3.09e-10 m/s). The
 pass now continues to the tolerance, which removes the deficit. `contactVirial_` and
 `wallContactImpulse_` sum `p_` after the pass and contain the restitution impulse with the same
 unrelaxed convention as the compression impulse (the known `1/alpha` defect of these sums is
@@ -276,6 +293,21 @@ mobile global sphere on two ranks (momentum, both replicas). Until then the comb
   budget is counted in `substeps_capped`; its residual is in the log line.
 - After a bounce with Baumgarte an overlap left from the impact step can add push-out in the next
   step; the post-pass removes the push-out only in the impact step.
+- **Baumgarte-driven chatter of caged particles in a fixed bed** (stated limitation, review round
+  4). In the settled case-11 bed at 0.04 m/s (R_static_r3on, binary 2f06b232-pee0a4c69, 400 fluid
+  steps, v_rest 0.01 m/s) the switch books 19 rebounds on 12 pairs, 8 of them on one particle
+  (4424) in a cage of 4-5 neighbours: it stays in contact (overlap 1-2.4e-7 m), the Baumgarte
+  push-out of the overlap separates it at 4-9 mm/s (about erp * overlap / dt) and the cage pushes
+  it back at 5-13 mm/s, occasionally above v_rest. The bulk effect is small but not zero: mean
+  floor force / weight over the 40 audits 0.887953 with the switch on, 0.888121 off; dp* 0.2010
+  both. The arming rule is kept (pre-step approach above v_rest and positive compression); a
+  pair-history veto or a v_rest tuned to this particle is not added. If the position correction
+  must contribute zero arming velocity, the split-impulse mode keeps the push-out out of the
+  physical velocity; that is a protocol change, not qualified here.
+- **Budget.** The library default maximum stays 24 sweeps. The case-11 fluidised bed needs 48:
+  with 24, 46 % of the sub-steps of steps 1000-2000 end capped (eps_bed 0.52072 against 0.52160
+  at 48 and 0.52159 at 96, dp* 0.97445 / 0.97402 / 0.97422; 0.562 / 0.567 / 0.580 s per CFD step;
+  one realisation each, R_q3_max24/48/96). 48 is unqualified for other workloads.
 - Not covered by tests: non-spherical bodies under the EL solver, the inner-cylinder wall,
   lubrication with restitution, the in-solve scheme beyond single impacts and the positive gap,
   `runFrozenFieldTrace` (compiled only with MPI and CGAL, not built here), a periodic seam (left to
@@ -328,7 +360,7 @@ assertion failed.
 
 | Finding | Change | Test | Before (45c9268) |
 |---|---|---|---|
-| 1 global-body registry (P0, pre-existing) | `globalNonfixedBodies_` rebuilt from the live storage at every multi-process step and force synchronisation, `remove()` erases whatever the fixedness, `clear()` empties it; both EL and HCSITS (HardContactAndFluid and DEMSolver untouched) | `pe-global-registry-mpi[-plain]-{fixdestroy,clear,unfix}` (two ranks, restitution off) | runtime for `unfix` (both solvers abort with MPI_ERR_TRUNCATE: the ranks' collectives go out of step); `fixdestroy` and `clear` pass before and after (the stale entry did not change the trajectory here) |
+| 1 global-body registry (P0, pre-existing) | `globalNonfixedBodies_` rebuilt from the live storage at every multi-process step and force synchronisation, `remove()` erases whatever the fixedness, `clear()` empties it; both EL and HCSITS (HardContactAndFluid and DEMSolver untouched) | `pe-global-registry-mpi[-plain]-{fixdestroy,clear,unfix}` (two ranks, restitution off) | the round-3 `unfix` fixture did NOT register its sphere fixed (`createSphere()` adds it mobile; it was fixed and unfixed afterwards without a refresh in between), so it tested no fixed-at-registration membership; it aborted on 45c9268 in both solvers with MPI_ERR_TRUNCATE in an MPI_Allreduce on rank 1. Suspected, not established: the old `clear()` between the two halves of that fixture kept a pointer to the deleted mobile global in the ordered set, the next insertion compared through freed storage, and rank-dependent address reuse left different set sizes, hence different counts in the 6 x globals allreduce (the log has no call-site trace or per-rank count). `fixdestroy` and `clear` pass before and after. Round 4 replaces the fixture (section 6d) |
 | 2 tangential stop (P1) | tangential residual = tangential contact-point velocity change through the contact response, part of the per-row stop decision | `pe-restitution-pass-unit` case 4 | runtime: converged after 1 sweep with tangential residual 0.129 (tolerance 1e-3), wall contact left slipping at 0.45 m/s |
 | 3 skip certificate (P1) | a row stays affected once visited (same predicate in sweep and residual) | `pe-restitution-pass-unit` cases 1, 2 | runtime: impulse kept (5e-2) at g0; friction not re-projected (-0.5) |
 | 4 Poisson ceiling on every booking (P1) | armed rows with lambda_C = 0 demoted to support rows; fallback impulse tallied separately; `separating` count | `pe-restitution-pass-unit` case 3 | runtime: lambda_R 0.05 / 0.1 with lambda_C = 0 |
@@ -336,18 +368,39 @@ assertion failed.
 | 6 trace (P2) | trace variables read on the root and broadcast once; `violations_rank_max` label; violations summed in the stats | - | - |
 | 7 records (P2) | this table; rest test with a two-sided rebound band, a drift bound and the speed sampled per sub-step; chain rebound assertion an inelastic chain cannot pass; MPI rule wording; HCSITS and EL setter documentation; preset log header with HEAD and dirty state | `pe-el-restitution-rest`, `pe-restitution-support[-plain]` | test tightenings, pass on 45c9268 too |
 
+## 6d. Review round 4: what changed
+
+Before evidence on 10aaf83 (job 164913, and job 164914 for the assertion-enabled build); every
+test compiled there.
+
+| Finding | Change | Test | Before (10aaf83) |
+|---|---|---|---|
+| 1 registry removal (P0) | erasure idempotent in the four removal overloads (EL, HCSITS; no membership assertion: the set is a cache rebuilt at every multi-process step) | `pe-global-registry-mpi[-plain]-fixstepunfix[-iter]`: fix on every rank, step, unfix, destroy through `destroy( BodyID )` and `World::destroy( Iterator )`; run in an assertion-enabled build (`registry_debug.sbatch`: the mpi preset configured with `CMAKE_BUILD_TYPE=Debug` into `build/presets/mpi-debug`, no NDEBUG, so `pe_INTERNAL_ASSERT` is active; only the two registry targets and the library built) | runtime in the Debug build: all four abort (`remove: Assertion 'found || body->isFixed()' failed`, HardContactEulerLagrange.h:2172 / HardContactSemiImplicitTimesteppingSolvers.h:1785); the Release presets cannot see it |
+| 2 full withdrawal (P1) | decided in the projection (`restitutionRowIncrement()` returns `release` when the unilateral bound selects `d = -lambda`): the sweep removes the stored impulse vector exactly (`p_ = 0`, both bodies lose exactly the old impulse), clears the booking and demotes an armed row on that visit; every state decision of the pass reads a scalar normal-impulse ledger (`RestitutionPassWork::lambda`), not `n . p_` | `pe-restitution-pass-unit` case 6 (oblique normal (1,1,0)/sqrt(2): unload, then a closing reload) and case 7 (unload on the last sweep) | runtime: case 6 left `n . p_ = 1.57e-16` and booked 0.9 of restitution on the reload; case 7 counted 0 demotions |
+| 3 trace per communicator (P1) | settings and both counters (steps, passes) reset and read again collectively when a new PE communicator is installed (`MPISettings::commGeneration()`, incremented by `MPISettings::comm()` / `setComm()`) | `pe-restitution-trace-comm-mpi[-plain]`: rank 0 runs restitution steps on MPI_COMM_SELF, then both ranks on MPI_COMM_WORLD | runtime: both hang (ctest timeout 60 s) |
+| 4 `unfix` fixture (P2) | the sphere is registered while FIXED (taken out of the world, fixed, added again), then unfixed; the reference runs in a separate process (mode `unfixref`, file); a force on the global sphere from rank 0 only must reach both replicas through `synchronizeForces()` | `pe-global-registry-mpi[-plain]-unfixref` / `-unfix` | none: passes on 10aaf83 (the round-3 rebuild already repairs it) |
+| 5 records (P2) | figures above (34 / 60 sweeps; 1e-14 vs 3.09e-10 m/s); drag-pile test prints candidates / armed rows / delivered and fails to compile without them; rest test drift = largest excursion from the window start, sampled every sub-step | `pe-el-restitution`, `pe-el-restitution-rest` | test changes, pass on 10aaf83 too |
+
+Other places that derive a state from `n . p_`: the classification (`lambda0 = n . p_`, the
+inelastic solve's own result; it decides loaded / free and armed, and initialises the ledger) and
+the pair trace print (diagnostic only). The Newton test (`lambda_C > 0`), the ceiling, the
+friction disc and the release now read the ledger. The scalar ledger and `n . p_` differ by
+roundoff (1e-16 relative for oblique normals); `p_` itself is still what the wall-impulse and
+virial sums read after the pass.
+
 ## 7. Tests
 
 | Test (label) | What | Result (gcc 13.2, Release) |
 |---|---|---|
-| `pe-el-restitution` (unit, serial, rigidbody) | 0 defaults; 1 head-on pairs e = 0.9/0.5/0, mass ratios; 2 drop (apex e^2); 3 drop with EL drag; 4 oblique with friction; 5 resting pile (on = off bitwise); 6 chain and corner; 7 disordered bed under EL drag with forcing steps; 8 mobile global body refused | pass; case 7: impacting contacts 122 / 31 / 147 (Baumgarte) and 138 / 36 / 46 (split) in the three phases, energy created by contacts 0, drift <= 6.1e-5 m |
+| `pe-el-restitution` (unit, serial, rigidbody) | 0 defaults; 1 head-on pairs e = 0.9/0.5/0, mass ratios; 2 drop (apex e^2); 3 drop with EL drag; 4 oblique with friction; 5 resting pile (on = off bitwise); 6 chain and corner; 7 disordered bed under EL drag with forcing steps; 8 mobile global body refused | pass; case 7 (round 4, current counters): candidates 122 / 36 / 157, armed rows and delivered rebounds 24 / 36 / 33 (Baumgarte), candidates 143 / 40 / 99, armed rows and delivered 24 / 40 / 35 (split) in the three phases, energy created by contacts 0, drift <= 6.0e-5 m (the round-1 figures 122 / 31 / 147 and 138 / 36 / 46 at 1d030e7 counted "impacting" contacts, a counter removed in round 2; from round 2 to round 3 the test printed 0 for it) |
 | `pe-restitution-support` / `-plain` (EL / HCSITS) | 3- and 5-chain into touching spheres (split, Baumgarte), drop on a resting pile, frictional unloading, positive gap (both schemes) | pass: most closing support contact -1.5e-10 (5-chain), largest closing pile contact 5.6e-9 at impact 1.18 m/s, x momentum conserved when the floor unloads, no impulse across the gap |
 | `pe-el-restitution-config` / `-fluid` | json contract per deck, validation together, integer check, applier (refusal under HardContactAndFluid), echo lines | pass |
 | `pe-el-restitution-setup[-fluid]-frozen/-dnsdrag` | serial frozen trace and DNS drag refuse `restitutionEnabled_ = true` before creating a body (EL and HardContactAndFluid) | pass |
-| `pe-restitution-pass-unit` (unit, serial) | mock collision system: release at g0, slip re-projection, unload-reload ceiling, tangential stop, wall scale | pass |
+| `pe-restitution-pass-unit` (unit, serial) | mock collision system: release at g0, slip re-projection, unload-reload ceiling, tangential stop, wall scale, oblique unload + reload, last-sweep unload | pass |
 | `pe-restitution-scale-mpi[-plain]` (integration, mpi, 2 ranks) | one-treater vs split chain, production rule: support scale e u in both, both converge, velocities within the tolerance | pass: sweeps 8 / 12 |
-| `pe-global-registry-mpi[-plain]-*` (integration, mpi, 2 ranks) | registry through fix + destroy, clear + repopulate, registered fixed then unfixed (bitwise against references) | pass |
-| `pe-el-restitution-mpi` (integration, mpi, 2 ranks) | pair and coupled chain across the cut against inside one domain; recurrence after 4 sweeps; support contact never closes; mobile global body refused on both ranks | pass: pair bitwise, -0.899917 = prediction, chains 1e-14 apart, 60 sweeps at the chains' impact step (strict rule) |
+| `pe-global-registry-mpi[-plain]-*` (integration, mpi, 2 ranks) | registry through fix + destroy, clear + repopulate, fix / step / unfix / destroy (both APIs, also assertion-enabled), registered fixed then unfixed with a force check (bitwise against references) | pass |
+| `pe-restitution-trace-comm-mpi[-plain]` (integration, mpi, 2 ranks) | trace settings per communicator lifetime (subgroup, then common communicator) | pass |
+| `pe-el-restitution-mpi` (integration, mpi, 2 ranks) | pair and coupled chain across the cut against inside one domain; recurrence after 4 sweeps; support contact never closes; mobile global body refused on both ranks | pass: pair bitwise, -0.899917 = prediction, chain 1 (support row across the cut) - chain 2 (inside rank 0) 1e-14 m/s, chain 3 (split treaters) - chain 2 up to 3.09e-10 m/s; 34 sweeps at the chains' impact step with the strict rule (60 on 45c9268) |
 | `pe-kinematic-body`, `pe-surface-velocity` | detect the semi-implicit solver by type | pass |
 
 Against 1d030e7 (before review round 1) the new cases fail: support contacts close at 0.45 u
