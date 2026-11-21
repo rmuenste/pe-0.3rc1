@@ -37,6 +37,7 @@
 #include <pe/core/batches/Generators.h>
 #include <pe/core/CollisionSystemID.h>
 #include <pe/core/collisionsystem/MPICommunication.h>
+#include <pe/core/collisionsystem/RestitutionPostPass.h>
 #include <pe/core/Configuration.h>
 #include <pe/core/contact/Contact.h>
 #include <pe/core/contact/ContactVector.h>
@@ -102,25 +103,6 @@ namespace pe {
 //  CLASS DEFINITION
 //
 //=================================================================================================
-
-//*************************************************************************************************
-/*!\brief Diagnostics of the restitution post-pass of the last resolveContacts() call.
- * \ingroup collision_system
- *
- * Filled only while setRestitution() and setRestitutionPostPass() are on; all zero otherwise.
- * Counts are summed over the sweeps of one time step.
- */
-struct RestitutionPassStats
-{
-   size_t armed;             //!< Armed contact visits (contacts asked to bounce, summed over the sweeps).
-   size_t capped;            //!< Visits where the Poisson cap e * lambda_c cut the increment.
-   size_t clamped;           //!< Visits where the accumulated restitution impulse was clamped at zero.
-   real   clampedImpulse;    //!< Impulse the clamp removed from the restitution bookkeeping (moved to the compression part).
-   real   restitutionImpulse;//!< Total restitution impulse delivered by the pass.
-   RestitutionPassStats() : armed( 0 ), capped( 0 ), clamped( 0 ), clampedImpulse( 0 ), restitutionImpulse( 0 ) {}
-};
-//*************************************************************************************************
-
 
 //*************************************************************************************************
 /*!\brief Specialization of the collision system for the hard contact solvers.
@@ -444,6 +426,8 @@ private:
    /*! \cond PE_INTERNAL */
    friend class World;
    friend class MPISystem;
+   // The capped restitution post-pass sweep (RestitutionPostPass.h) works on the contact arrays.
+   template< typename CS > friend real restitutionPostPassSweep( CS& s, real dtinv );
    template< typename Geometry >
    friend void defineLocalDomain( const Geometry& geometry );
    // Attachables register directly instead of the detour via a manager and thus need friend access to the attachable storage.
@@ -2175,9 +2159,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
          if( useRestitution_ ) {
             const real e( c->getRestitution() );
             if( e > real( 0 ) ) {
-               const Vec3 gdotPre( b1->getLinearVel() - b2->getLinearVel()
-                                   + b1->getAngularVel() % r1_[j] - b2->getAngularVel() % r2_[j] );
-               const real vn( trans( n_[j] ) * gdotPre );
+               const real vn( restitutionPreStepNormalVelocity( b1, b2, r1_[j], r2_[j], n_[j] ) );
                const real threshold( std::max( restitutionThreshold_, real( 2 ) * Settings::gravity().length() * dt ) );
                cor_[j] = e;
                if( vn < -threshold ) {
@@ -2606,17 +2588,8 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
  * \param dtinv The inverse of the time step size.
  * \return The largest normal impulse increment of the sweep.
  *
- * Visits the contacts whose material pair has a coefficient of restitution \f$ e > 0 \f$ and
- * updates their normal impulse incrementally (the contact's own impulse stays applied, only the
- * increment moves the velocities). For an armed contact (impactSpeed_ > 0 and a positive
- * compression impulse \f$ \lambda_c = \lambda - \lambda_r \f$) the target is the separation
- * speed \f$ e\,|\dot g_n^-| \f$ and the increment is limited to
- * \f$ \Delta\lambda \le \Delta\lambda_{appr} + [\,e\,(\lambda_c + \Delta\lambda_{appr}) - \lambda_r\,]_+ \f$
- * with \f$ \Delta\lambda_{appr} = \min( [-m_{eff}\,\dot g_n]_+, [\Delta\lambda]_+ ) \f$ the part
- * that only stops an approach. Other contacts of the pair keep the inelastic target
- * (-dist_/dt). After a normal change the Coulomb friction of the contact is re-relaxed in the
- * decoupled manner of relaxApproximateInelasticCoulombContactsByDecoupling() against the new
- * total normal impulse, unless the relaxation model is frictionless.
+ * The sweep is restitutionPostPassSweep() of pe/core/collisionsystem/RestitutionPostPass.h, shared
+ * with HardContactEulerLagrange; see there for the update rule.
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
         , typename FD                                           // Type of the fine collision detection algorithm
@@ -2628,91 +2601,7 @@ template< template<typename> class CD                           // Type of the c
                   > class C >                                   // Type of the configuration
 real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::relaxRestitutionPostPass( real dtinv )
 {
-   real delta_max( 0 );
-   const size_t numContactsMasked( p_.size() );
-   const bool withFriction( relaxationModel_ != InelasticFrictionlessContact );
-
-   for( size_t i = 0; i < numContactsMasked; ++i ) {
-      if( cor_[i] <= real( 0 ) )
-         continue;
-
-      const size_t i1( body1_[i]->index_ ), i2( body2_[i]->index_ );
-
-      // Relative contact velocity with every impulse applied, including this contact's own.
-      Vec3 gdot( ( v_[i1] + dv_[i1] ) - ( v_[i2] + dv_[i2] ) + ( w_[i1] + dw_[i1] ) % r1_[i] - ( w_[i2] + dw_[i2] ) % r2_[i] );
-      const real gdot_n( trans( n_[i] ) * gdot );
-
-      const real lambda ( trans( n_[i] ) * p_[i] );          // total normal impulse so far
-      const real lambdaC( lambda - restitutionImpulse_[i] );  // its compression part
-      const bool armed( impactSpeed_[i] > real( 0 ) && lambdaC > real( 0 ) );
-
-      const real target( armed ? impactSpeed_[i] : -dist_[i] * dtinv );
-      real d( diag_n_inv_[i] * ( target - gdot_n ) );
-      d = std::max( lambda + d, real( 0 ) ) - lambda;
-
-      // The part of the increment that only stops an approach is always allowed; the separating
-      // remainder is restitution and is held to e times the compression impulse.
-      const real approach( std::min( std::max( -diag_n_inv_[i] * gdot_n, real( 0 ) ), std::max( d, real( 0 ) ) ) );
-      if( armed ) {
-         ++restitutionPassStats_.armed;
-         const real allowance( cor_[i] * ( lambdaC + approach ) - restitutionImpulse_[i] );
-         const real dCapped( std::min( d, approach + std::max( allowance, real( 0 ) ) ) );
-         if( dCapped < d ) ++restitutionPassStats_.capped;
-         d = dCapped;
-      }
-      // Clamped at zero: a negative increment (the contact already separates faster than its
-      // target, pushed by a neighbour) reduces the compression part once the restitution part is
-      // used up, which keeps the cap e * lambda_c at or below Box3D's bookkeeping. Only contacts
-      // that can arm (impactSpeed_ > 0) need the bookkeeping; the others have no cap.
-      if( impactSpeed_[i] > real( 0 ) ) {
-         const real lambdaR( restitutionImpulse_[i] + d - approach );
-         if( lambdaR < real( 0 ) ) {
-            ++restitutionPassStats_.clamped;
-            restitutionPassStats_.clampedImpulse -= lambdaR;
-         }
-         restitutionImpulse_[i] = std::max( lambdaR, real( 0 ) );
-         restitutionPassStats_.restitutionImpulse += std::max( d - approach, real( 0 ) );
-      }
-
-      if( d == real( 0 ) )
-         continue;
-
-      delta_max = std::max( delta_max, std::abs( d ) );
-      Vec3 dp( n_[i] * d );
-
-      // Friction against the new total normal impulse: sticking increment, projected onto the
-      // Coulomb disc (decoupled from the normal component like the dynamic branch of the
-      // approximate decoupling model).
-      const real lambdaNew( lambda + d );
-      if( withFriction && mu_[i] > real( 0 ) && lambdaNew > real( 0 ) ) {
-         const Vec3 gdot2( gdot + surfaceVel_[i] + ( body1_[i]->getInvMass() + body2_[i]->getInvMass() ) * dp
-                           + ( body1_[i]->getInvInertia() * ( r1_[i] % dp ) ) % r1_[i]
-                           + ( body2_[i]->getInvInertia() * ( r2_[i] % dp ) ) % r2_[i] );
-         Vec2 gdot_to;
-         gdot_to[0] = trans( t_[i] ) * gdot2;
-         gdot_to[1] = trans( o_[i] ) * gdot2;
-         Vec2 pt;
-         pt[0] = trans( t_[i] ) * p_[i];
-         pt[1] = trans( o_[i] ) * p_[i];
-         Vec2 ptNew( pt - ( diag_to_inv_[i] * gdot_to ) );
-         const real flimit( mu_[i] * lambdaNew );
-         const real fsq( ptNew[0] * ptNew[0] + ptNew[1] * ptNew[1] );
-         if( fsq > flimit * flimit ) {
-            const real f( flimit / std::sqrt( fsq ) );
-            ptNew[0] *= f;
-            ptNew[1] *= f;
-         }
-         dp += t_[i] * ( ptNew[0] - pt[0] ) + o_[i] * ( ptNew[1] - pt[1] );
-      }
-
-      p_[i] += dp;
-      dv_[i1] += body1_[i]->getInvMass() * dp;
-      dw_[i1] += body1_[i]->getInvInertia() * ( r1_[i] % dp );
-      dv_[i2] -= body2_[i]->getInvMass() * dp;
-      dw_[i2] -= body2_[i]->getInvInertia() * ( r2_[i] % dp );
-   }
-
-   return delta_max;
+   return restitutionPostPassSweep( *this, dtinv );
 }
 //*************************************************************************************************
 
