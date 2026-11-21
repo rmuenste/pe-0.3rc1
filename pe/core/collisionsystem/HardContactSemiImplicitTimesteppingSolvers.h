@@ -248,6 +248,8 @@ public:
    inline bool            getRestitutionPostPass() const { return useRestitutionPostPass_; }
    inline void            setRestitutionIterations( size_t n );
    inline size_t          getRestitutionIterations() const { return restitutionIterations_; }
+   inline void            setRestitutionTolerance( real tol ) { pe_INTERNAL_ASSERT( tol > 0, "Restitution tolerance must be positive." ); restitutionTolerance_ = tol; }
+   inline real            getRestitutionTolerance() const { return restitutionTolerance_; }
    inline const RestitutionPassStats& getRestitutionPassStats() const { return restitutionPassStats_; }
    inline void            setMinEps( real /*minEps*/ ) {}
    inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
@@ -289,7 +291,6 @@ private:
    void resolveContacts( const Contacts& contacts, real dt );
    real relaxInelasticFrictionlessContacts( real dtinv );
    real relaxPseudoVelocities( real dtinv );
-   real relaxRestitutionPostPass( real dtinv );
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
@@ -346,7 +347,8 @@ private:
    bool useRestitution_;      //!< Newton restitution: an impacting contact's normal target is -e * (pre-step normal velocity) instead of 0.
    real restitutionThreshold_; //!< Impacts slower than this (and slower than 2 |g| dt) are treated as inelastic (no micro-bounces at rest).
    bool useRestitutionPostPass_;  //!< Restitution as a capped post-pass after the inelastic solve (Box3D scheme, default) instead of a Newton target inside it.
-   size_t restitutionIterations_; //!< Number of Gauss-Seidel sweeps of the restitution post-pass (default 4).
+   size_t restitutionIterations_; //!< Minimum number of Gauss-Seidel sweeps of the restitution post-pass (default 4).
+   real restitutionTolerance_; //!< Post-pass stops when a sweep changes no normal velocity by more than this times the largest impact speed (default 1e-9).
    RestitutionPassStats restitutionPassStats_;  //!< Diagnostics of the last step's post-pass.
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
@@ -382,7 +384,7 @@ private:
    std::vector<Vec3> p_;
    std::vector<real> pseudoDist_;   //!< Split impulse: the distance the position solve has to close (erp * penetration, or the allowed approach).
    std::vector<Vec3> pp_;           //!< Split impulse: pseudo impulses of the position solve.
-   std::vector<real> cor_;          //!< Restitution post-pass: coefficient of restitution of the contact (0 = the pass skips it).
+   std::vector<real> cor_;          //!< Restitution post-pass: coefficient of restitution of the contact (0 = never armed).
    std::vector<real> impactSpeed_;  //!< Restitution post-pass: separation speed e |gdot_n^-| asked of an armed contact (0 = not armed).
    std::vector<real> restitutionImpulse_;  //!< Restitution post-pass: accumulated separating (restitution) part of the normal impulse.
 
@@ -428,6 +430,7 @@ private:
    friend class MPISystem;
    // The capped restitution post-pass sweep (RestitutionPostPass.h) works on the contact arrays.
    template< typename CS > friend real restitutionPostPassSweep( CS& s, real dtinv );
+   template< typename CS > friend void restitutionPostPass( CS& s, real dtinv );
    template< typename Geometry >
    friend void defineLocalDomain( const Geometry& geometry );
    // Attachables register directly instead of the detour via a manager and thus need friend access to the attachable storage.
@@ -486,6 +489,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers
    , restitutionThreshold_ ( 0 )
    , useRestitutionPostPass_ ( true )   // capped post-pass by default; setRestitutionPostPass( false ) restores the in-solve Newton target
    , restitutionIterations_ ( 4 )
+   , restitutionTolerance_ ( 1e-9 )
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
@@ -1097,8 +1101,8 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
  *
  * Only relevant while setRestitution() is on. On (the default), the relaxation stays inelastic
  * (positional terms as without restitution) and the bounce is added afterwards by
- * setRestitutionIterations() Gauss-Seidel sweeps over the contacts whose material pair has
- * \f$ e > 0 \f$, the scheme of Box3D's soft step solver. Off, an impacting contact gets the
+ * setRestitutionIterations() Gauss-Seidel sweeps over all contacts, the scheme of Box3D's soft
+ * step solver. Off, an impacting contact gets the
  * Newton law as its target inside the relaxation sweeps instead (see setRestitution()).
  *
  * To restore the original behaviour of the restitution switch (Newton target in the solve, no
@@ -1118,19 +1122,26 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
  *    Newton as target and Poisson as ceiling together rule out the energy gain Newton's law
  *    alone produces when several contacts of one body impact in the same step (a spinning box
  *    landing on two corners, an oblique hit into an acute wedge).
- *  - Other contacts of a bouncing pair are swept with the inelastic target, so a body set
- *    approaching by a neighbour's bounce is stopped.
+ *  - Every other contact is swept with the inelastic target, so a body set approaching by a
+ *    neighbour's bounce is stopped. That includes the contacts with \f$ e = 0 \f$: a touching
+ *    contact born at zero normal speed gets e = 0 from Contact.cpp, and before review round 1 of
+ *    the EL port (pe/core/collisionsystem/RestitutionPostPass.h) the pass skipped them, so a
+ *    rebound could drive a resting neighbour into penetration.
  *  - Unlike Box3D, a contact whose normal impulse changed in the pass also gets its Coulomb
  *    friction re-relaxed (decoupled, bounded by mu times the new total normal impulse) unless
  *    the relaxation model is frictionless, so spin and tangential velocity still exchange over
  *    the full \f$ (1+e) \f$ impulse as in a rigid impact.
  *
- * The sweeps are a fixed count, not iterated to convergence. With four (the default) a box
- * landing flat on its four corners rebounds at \f$ e\,|\dot g_n^-| \f$ with a spurious spin
- * below 0.01 rad/s; with two (Box3D's count) the corners swept first take more of the bounce
- * and the box comes up at 0.95 of that speed with a visible spin. More sweeps cost one
- * synchronizeVelocities() each. Single-contact impacts give the same result as the in-solve
- * Newton target with any count.
+ * The sweeps (restitutionPostPass() of RestitutionPostPass.h, shared with the EL solver) run at
+ * least setRestitutionIterations() times and then until a sweep changes no normal velocity by
+ * more than setRestitutionTolerance() times the largest impact speed, at most
+ * max( setRestitutionIterations(), setMaxIterations() ) times; a step in which no contact asks
+ * for a bounce runs none. Before review round 1 of the EL port the count was fixed: with two
+ * sweeps (Box3D's count) a box landing flat on four corners came up at 0.95 of
+ * \f$ e\,|\dot g_n^-| \f$ with a visible spin, with four at 0.9998 with 0.0024 rad/s, and the
+ * support contacts of a five-sphere chain still closed at 3.7 % of the impact speed. Each sweep
+ * costs one synchronizeVelocities(). Single-contact impacts give the same result as the in-solve
+ * Newton target.
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
         , typename FD                                           // Type of the fine collision detection algorithm
@@ -1148,9 +1159,9 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
 
 
 //*************************************************************************************************
-/*!\brief Sets the number of Gauss-Seidel sweeps of the restitution post-pass.
+/*!\brief Sets the minimum number of Gauss-Seidel sweeps of the restitution post-pass.
  *
- * \param n Number of sweeps (>= 1); default 4.
+ * \param n Minimum number of sweeps (>= 1); default 4. See setRestitutionPostPass() for the stop rule.
  * \return void
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
@@ -2339,12 +2350,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    // contacts. Same synchronisation as the velocity solve; the sweep count is a solver setting
    // and therefore the same on every process.
    restitutionPassStats_ = RestitutionPassStats();
-   if( useRestitution_ && useRestitutionPostPass_ ) {
-      for( size_t it = 0; it < restitutionIterations_; ++it ) {
-         relaxRestitutionPostPass( dtinv );
-         synchronizeVelocities();
-      }
-   }
+   if( useRestitution_ && useRestitutionPostPass_ )
+      restitutionPostPass( *this, dtinv );
 
    // Split impulse: the position solve. Normal-only, non-negative pseudo impulses on separate
    // pseudo velocities, with the same iteration count and the same synchronisation as the
@@ -2578,30 +2585,6 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    }
 
    return delta_max;
-}
-//*************************************************************************************************
-
-
-//*************************************************************************************************
-/*!\brief One Gauss-Seidel sweep of the capped restitution post-pass (setRestitutionPostPass()).
- *
- * \param dtinv The inverse of the time step size.
- * \return The largest normal impulse increment of the sweep.
- *
- * The sweep is restitutionPostPassSweep() of pe/core/collisionsystem/RestitutionPostPass.h, shared
- * with HardContactEulerLagrange; see there for the update rule.
- */
-template< template<typename> class CD                           // Type of the coarse collision detection algorithm
-        , typename FD                                           // Type of the fine collision detection algorithm
-        , template<typename> class BG                           // Type of the batch generation algorithm
-        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
-                  , typename                                    // Template signature of the fine collision detection algorithm
-                  , template<typename> class                    // Template signature of the batch generation algorithm
-                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
-                  > class C >                                   // Type of the configuration
-real CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSolvers> >::relaxRestitutionPostPass( real dtinv )
-{
-   return restitutionPostPassSweep( *this, dtinv );
 }
 //*************************************************************************************************
 

@@ -698,6 +698,26 @@ set_tests_properties(pe-el-restitution PROPERTIES
   TIMEOUT 120
 )
 
+# Restitution post-pass with several contacts per body (support contacts of a chain and of a pile,
+# frictional unloading, a positive gap below the contact threshold), on both solvers that have the
+# switch: the EL solver (default library) and the semi-implicit one (plain variant).
+foreach(variant "" "_plain")
+  if(variant STREQUAL "_plain")
+    set(support_lib pe_static_lubstage_plain)
+  else()
+    set(support_lib pe_static)
+  endif()
+  string(REPLACE "_" "-" variant_name "${variant}")
+  add_executable(pe_restitution_support${variant}_test pe_restitution_support_test.cpp)
+  target_link_libraries(pe_restitution_support${variant}_test PRIVATE ${support_lib})
+  add_test(NAME pe-restitution-support${variant_name} COMMAND pe_restitution_support${variant}_test)
+  set_tests_properties(pe-restitution-support${variant_name} PROPERTIES
+    LABELS "unit;serial;rigidbody"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 120
+  )
+endforeach()
+
 # Json contract of restitutionEnabled_ / restitutionThreshold_ / restitutionScheme_ /
 # restitutionIterations_, the applier (applyOptionalRestitutionParams) and the EL_CONTACT_PARAMS
 # start-up echo line (pe/interface/support/contact_params_echo.h). Config singleton, no stepping.

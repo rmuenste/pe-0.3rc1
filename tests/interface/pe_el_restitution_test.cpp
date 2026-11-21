@@ -435,6 +435,7 @@ static void casePile( CollisionSystemID cs )
    expect( on.vmax < real(2) * kG * dt, "pile: with restitution on every sphere stays below the arming threshold 2 g dt" );
    expect( on.drift < real(1e-6), "pile: with restitution on the pile does not move (drift < 1e-6)" );
    expect( off1.hash == off2.hash, "pile: switch off is bit for bit the same before and after a run with the switch on" );
+   expect( on.hash == off1.hash, "pile: at rest no contact is armed, the run with the switch on is bit for bit the run with it off" );
 }
 
 //=================================================================================================

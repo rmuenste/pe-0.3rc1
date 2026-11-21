@@ -43,6 +43,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <pe/core/MPI.h>
+#include <pe/core/MPISettings.h>
+#include <pe/core/MPITrait.h>
 #include <pe/math/Matrix2x2.h>
 #include <pe/math/Matrix3x3.h>
 #include <pe/math/Vector2.h>
@@ -66,7 +69,11 @@ struct RestitutionPassStats
    size_t clamped;           //!< Visits where the accumulated restitution impulse was clamped at zero.
    real   clampedImpulse;    //!< Impulse the clamp removed from the restitution bookkeeping (moved to the compression part).
    real   restitutionImpulse;//!< Total restitution impulse delivered by the pass.
-   RestitutionPassStats() : armed( 0 ), capped( 0 ), clamped( 0 ), clampedImpulse( 0 ), restitutionImpulse( 0 ) {}
+   size_t impacting;         //!< Contacts asked to bounce at arming (impactSpeed_ > 0), counted once.
+   size_t support;           //!< All other contacts, swept with the inelastic target.
+   size_t sweeps;            //!< Sweeps run in this step (0: no contact asked to bounce on any process).
+   RestitutionPassStats() : armed( 0 ), capped( 0 ), clamped( 0 ), clampedImpulse( 0 ), restitutionImpulse( 0 )
+                          , impacting( 0 ), support( 0 ), sweeps( 0 ) {}
 };
 //*************************************************************************************************
 
@@ -103,22 +110,25 @@ inline real restitutionPreStepNormalVelocity( BodyID b1, BodyID b2, const Vec3& 
  *
  * \param s The collision system whose contacts are swept (HCSITS or the EL solver).
  * \param dtinv The inverse of the time step size.
- * \return The largest normal impulse increment of the sweep.
+ * \return The largest change of a contact's normal velocity in the sweep (|d| times the inverse
+ *         effective mass of the normal row), the convergence measure of restitutionPostPass().
  *
- * Visits the contacts whose material pair has a coefficient of restitution \f$ e > 0 \f$ and
- * updates their normal impulse incrementally (the contact's own impulse stays applied, only the
+ * Visits every contact and updates its normal impulse incrementally (the contact's own impulse stays applied, only the
  * increment moves the velocities). For an armed contact (impactSpeed_ > 0 and a positive
  * compression impulse \f$ \lambda_c = \lambda - \lambda_r \f$) the target is the separation
  * speed \f$ e\,|\dot g_n^-| \f$ and the increment is limited to
  * \f$ \Delta\lambda \le \Delta\lambda_{appr} + [\,e\,(\lambda_c + \Delta\lambda_{appr}) - \lambda_r\,]_+ \f$
  * with \f$ \Delta\lambda_{appr} = \min( [-m_{eff}\,\dot g_n]_+, [\Delta\lambda]_+ ) \f$ the part
- * that only stops an approach. Other contacts of the pair keep the inelastic target
- * (-dist_/dt). After a normal change the Coulomb friction of the contact is re-relaxed in the
+ * that only stops an approach. Every other contact - another contact of a bouncing pair, and a
+ * support contact of any coefficient, including e = 0 (a touching contact born at zero normal
+ * speed) - keeps the inelastic target -dist_/dt with the positional terms of the compression solve,
+ * so a rebound cannot drive the bodies of a resting contact into each other. After a normal change the Coulomb friction of the contact is re-relaxed in the
  * decoupled manner of relaxApproximateInelasticCoulombContactsByDecoupling() against the new
  * total normal impulse, unless the relaxation model is frictionless.
  *
- * Moved here verbatim from HardContactSemiImplicitTimesteppingSolvers::relaxRestitutionPostPass()
- * (which, like the EL solver's relaxRestitutionPostPass(), now forwards to it).
+ * Moved here from HardContactSemiImplicitTimesteppingSolvers::relaxRestitutionPostPass();
+ * restitutionPostPass() calls it. Change against the HCSITS
+ * original (review round 1, P0-1): the original skipped contacts with e = 0 on every sweep.
  */
 template< typename CS >
 real restitutionPostPassSweep( CS& s, real dtinv )
@@ -128,9 +138,9 @@ real restitutionPostPassSweep( CS& s, real dtinv )
    const bool withFriction( s.relaxationModel_ != CS::InelasticFrictionlessContact );
 
    for( size_t i = 0; i < numContactsMasked; ++i ) {
-      if( s.cor_[i] <= real( 0 ) )
-         continue;
-
+      // Every contact is visited, also those with e = 0: a contact born at zero normal speed
+      // (resting, touching) gets e = 0 from Contact.cpp, and a rebound elsewhere must not drive
+      // its bodies into each other. Such contacts keep the inelastic target.
       const size_t i1( s.body1_[i]->index_ ), i2( s.body2_[i]->index_ );
 
       // Relative contact velocity with every impulse applied, including this contact's own.
@@ -172,7 +182,7 @@ real restitutionPostPassSweep( CS& s, real dtinv )
       if( d == real( 0 ) )
          continue;
 
-      delta_max = std::max( delta_max, std::abs( d ) );
+      delta_max = std::max( delta_max, std::abs( d ) / s.diag_n_inv_[i] );
       Vec3 dp( s.n_[i] * d );
 
       // Friction against the new total normal impulse: sticking increment, projected onto the
@@ -210,6 +220,66 @@ real restitutionPostPassSweep( CS& s, real dtinv )
    return delta_max;
 }
 //*************************************************************************************************
+
+//*************************************************************************************************
+/*!\brief Largest value of \a x over all processes (the value itself in a serial run).
+ * \ingroup collision_system
+ */
+inline real restitutionGlobalMax( real x )
+{
+#if HAVE_MPI
+   if( MPISettings::size() > 1 )
+      MPI_Allreduce( MPI_IN_PLACE, &x, 1, MPITrait<real>::getType(), MPI_MAX, MPISettings::comm() );
+#endif
+   return x;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The capped restitution post-pass of one time step (setRestitutionPostPass()).
+ * \ingroup collision_system
+ *
+ * \param s The collision system (HCSITS or the EL solver), after its inelastic velocity solve.
+ * \param dtinv The inverse of the time step size.
+ * \return void
+ *
+ * Counts the impacting (impactSpeed_ > 0) and the support contacts into s.restitutionPassStats_.
+ * If no contact asks for a bounce on any process the pass ends there: no sweep, no
+ * synchronisation, and the step is bit for bit the inelastic step (a bed at rest with the switch
+ * on is the bed with it off). Otherwise it runs restitutionPostPassSweep() + synchronizeVelocities()
+ * at least restitutionIterations_ times and then until the largest normal velocity change of a
+ * sweep, over all processes, is at most restitutionTolerance_ times the largest impact speed, or
+ * until max( restitutionIterations_, maxIterations_ ) sweeps. Gauss-Seidel needs the extra sweeps
+ * when a rebound has to travel through support contacts (a chain or a pile under the impacting
+ * contact): with a fixed four sweeps the support contacts of a five-sphere chain still close at
+ * 3.7 % of the impact speed. Every process computes the same reductions, so all run the same
+ * number of sweeps (and synchronisations).
+ */
+template< typename CS >
+void restitutionPostPass( CS& s, real dtinv )
+{
+   RestitutionPassStats& stats( s.restitutionPassStats_ );
+   real impactMax( 0 );
+   for( size_t i = 0; i < s.impactSpeed_.size() && i < s.p_.size(); ++i ) {
+      if( s.impactSpeed_[i] > real( 0 ) ) { ++stats.impacting; impactMax = std::max( impactMax, s.impactSpeed_[i] ); }
+      else ++stats.support;
+   }
+   impactMax = restitutionGlobalMax( impactMax );
+   if( !( impactMax > real( 0 ) ) )
+      return;
+
+   const size_t minSweeps( s.restitutionIterations_ ), maxSweeps( std::max( s.restitutionIterations_, s.maxIterations_ ) );
+   for( size_t it = 0; it < maxSweeps; ++it ) {
+      const real correction( restitutionPostPassSweep( s, dtinv ) );
+      s.synchronizeVelocities();
+      ++stats.sweeps;
+      if( it + 1 >= minSweeps && restitutionGlobalMax( correction ) <= s.restitutionTolerance_ * impactMax )
+         break;
+   }
+}
+//*************************************************************************************************
+
 
 } // namespace pe
 
