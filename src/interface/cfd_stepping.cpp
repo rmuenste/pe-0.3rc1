@@ -10,6 +10,7 @@
 
 #include <map>
 #include <iomanip>
+#include <sstream>
 #include <cstdint>
 #include <pe/vtk.h>
 #include <boost/filesystem.hpp>
@@ -423,10 +424,31 @@ void stepELFrozenTrace() {
   elResetLubricationVirial(*theCollisionSystem());
 
   TimeStep::stepsize(substepSize);
+  ElRestitutionTally restitutionTally;
+  bool restitutionOn = false;
   for (int istep = 0; istep < substeps; ++istep) {
     world->simulationStep(substepSize);
+    restitutionOn = elAccumulateRestitutionStats(*theCollisionSystem(), restitutionTally);
   }
   TimeStep::stepsize(fullStepSize);
+
+  // Restitution post-pass statistics of this CFD step (only while the switch is on, so an
+  // inelastic run prints nothing new): contacts asked to bounce and support contacts summed over
+  // the sub-steps and the processes, sweeps summed and their maximum over sub-steps and processes.
+  if (restitutionOn) {
+    double sums[5] = {restitutionTally.impacting, restitutionTally.support, restitutionTally.armedVisits,
+                      restitutionTally.sweeps, restitutionTally.restitutionImpulse};   // sums[3]: sweeps over sub-steps and processes
+    double maxSweeps = restitutionTally.maxSweeps;
+    MPI_Allreduce(MPI_IN_PLACE, sums, 5, MPI_DOUBLE, MPI_SUM, cartcomm);
+    MPI_Allreduce(MPI_IN_PLACE, &maxSweeps, 1, MPI_DOUBLE, MPI_MAX, cartcomm);
+    pe_EXCLUSIVE_SECTION(0) {
+      std::ostringstream line;   // own stream: the precision of std::cout stays untouched
+      line << std::setprecision(6) << "EL_RESTITUTION_STATS step= " << timestep
+           << " impacting= " << sums[0] << " support= " << sums[1] << " armed_visits= " << sums[2]
+           << " sweeps_max= " << maxSweeps << " restitution_impulse= " << sums[4];
+      std::cout << line.str() << std::endl;
+    }
+  }
 
   // The semi-implicit hydro state is valid for exactly this PE step (all
   // substeps above consumed the same frozen carrier state). Clear it now so it

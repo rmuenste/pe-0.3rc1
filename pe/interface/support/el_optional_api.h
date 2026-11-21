@@ -31,6 +31,7 @@
 
 #include <pe/core.h>
 #include <pe/math/Vector3.h>
+#include <algorithm>
 #include <type_traits>
 #include <utility>
 
@@ -172,6 +173,49 @@ inline void elResetLubricationVirial(CollisionSystemT& cs) {
     cs.resetElLubricationVirial();
   } else {
     (void)cs;
+  }
+}
+//*************************************************************************************************
+
+//=================================================================================================
+// Restitution post-pass statistics (HardContactEulerLagrange / HCSITS, RestitutionPostPass.h)
+//=================================================================================================
+
+//! Detect the restitution switch and its pass statistics on the collision system.
+template <typename CollisionSystemT, typename = void>
+struct HasRestitutionPassStats : std::false_type {};
+
+template <typename CollisionSystemT>
+struct HasRestitutionPassStats<CollisionSystemT, std::void_t<
+    decltype(std::declval<const CollisionSystemT&>().getRestitution()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionPassStats().impacting)>>
+    : std::true_type {};
+
+//! Process-local sums of the pass statistics over the sub-steps of one CFD step.
+struct ElRestitutionTally {
+  double impacting = 0, support = 0, armedVisits = 0, sweeps = 0, maxSweeps = 0, restitutionImpulse = 0;
+};
+
+//*************************************************************************************************
+/*!\brief Adds the last step's pass statistics to \a tally; returns whether the switch is on.
+ *
+ * False (and nothing added) for a solver without the switch or with the switch off.
+ */
+template <typename CollisionSystemT>
+inline bool elAccumulateRestitutionStats(const CollisionSystemT& cs, ElRestitutionTally& tally) {
+  if constexpr (HasRestitutionPassStats<CollisionSystemT>::value) {
+    if (!cs.getRestitution()) return false;
+    const auto& st = cs.getRestitutionPassStats();
+    tally.impacting += static_cast<double>(st.impacting);
+    tally.support += static_cast<double>(st.support);
+    tally.armedVisits += static_cast<double>(st.armed);
+    tally.sweeps += static_cast<double>(st.sweeps);
+    tally.maxSweeps = std::max(tally.maxSweeps, static_cast<double>(st.sweeps));
+    tally.restitutionImpulse += static_cast<double>(st.restitutionImpulse);
+    return true;
+  } else {
+    (void)cs; (void)tally;
+    return false;
   }
 }
 //*************************************************************************************************
