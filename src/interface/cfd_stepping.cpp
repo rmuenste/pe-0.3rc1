@@ -435,10 +435,15 @@ void stepELFrozenTrace() {
   // Restitution statistics of this CFD step (only while the switch is on, so an inelastic run
   // prints nothing new). Counts summed over the sub-steps and the processes (candidates: approach
   // faster than the threshold; armed: candidates with compression impulse; delivered: armed rows
-  // ending with a restitution impulse; impulse_gross: separating increments, impulse_final: booked
-  // at the end of the passes, both unrelaxed); sub-step stop reasons and sweeps (the same on every
-  // process); velocity measures maxima over sub-steps and processes. pe_step is this counter,
-  // cfd_step = pe_step + 1 the step number the CFD audits print.
+  // ending with a booked restitution impulse; separating: rows armed at the classification that
+  // end separating; demoted: armed rows whose compression impulse was withdrawn (support rows
+  // afterwards); in_solve: in-solve Newton targets installed; impulse_gross: separating increments
+  // booked as restitution, impulse_final: booked at the end of the passes, impulse_fallback:
+  // support impulse of demoted rows, all unrelaxed); sub-step stop reasons, sweeps and
+  // stop-test violations at the last test (the same on every process; sweeps_mean_active is the
+  // mean over the sub-steps whose pass ran, skipped sub-steps excluded); velocity measures maxima
+  // over sub-steps and processes (support_scale_max: largest local impact scale of a support row).
+  // pe_step is this counter, cfd_step = pe_step + 1 the step number the CFD audits print.
   if (restitutionOn) {
     typedef ElRestitutionTally T;
     MPI_Allreduce(MPI_IN_PLACE, restitutionTally.sum, T::numSums, MPI_DOUBLE, MPI_SUM, cartcomm);
@@ -452,15 +457,18 @@ void stepELFrozenTrace() {
            << " candidates= " << restitutionTally.sum[T::candidates]
            << " armed= " << restitutionTally.sum[T::armed]
            << " delivered= " << restitutionTally.sum[T::delivered]
+           << " separating= " << restitutionTally.sum[T::separating]
+           << " demoted= " << restitutionTally.sum[T::demoted]
            << " in_solve= " << restitutionTally.sum[T::inSolve]
            << " support= " << restitutionTally.sum[T::support]
            << " armed_visits= " << restitutionTally.sum[T::armedVisits]
            << " impulse_gross= " << restitutionTally.sum[T::impulseGross]
            << " impulse_final= " << restitutionTally.sum[T::impulseFinal]
+           << " impulse_fallback= " << restitutionTally.sum[T::impulseFallback]
            << " substeps_converged= " << restitutionTally.same[T::converged]
            << " substeps_capped= " << restitutionTally.same[T::capped]
            << " substeps_skipped= " << restitutionTally.same[T::skipped]
-           << " sweeps_mean= " << (passes > 0 ? restitutionTally.same[T::sweeps] / passes : 0.0)
+           << " sweeps_mean_active= " << (passes > 0 ? restitutionTally.same[T::sweeps] / passes : 0.0)
            << " sweeps_max= " << restitutionTally.max[T::sweepsMax]
            << " residual= " << restitutionTally.max[T::residual]
            << " residual_rel= " << restitutionTally.max[T::residualRel]
@@ -470,7 +478,9 @@ void stepELFrozenTrace() {
            << " impact_error= " << restitutionTally.max[T::impactError]
            << " newton_shortfall= " << restitutionTally.max[T::shortfall]
            << " approach_max= " << restitutionTally.max[T::approach]
-           << " resting_approach_max= " << restitutionTally.max[T::restingApproach];
+           << " resting_approach_max= " << restitutionTally.max[T::restingApproach]
+           << " violations_last_test= " << restitutionTally.same[T::violations]
+           << " support_scale_max= " << restitutionTally.max[T::supportScale];
       std::cout << line.str() << std::endl;
     }
   }
