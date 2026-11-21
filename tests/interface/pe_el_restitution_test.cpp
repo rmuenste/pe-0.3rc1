@@ -522,20 +522,27 @@ static void caseSimultaneous( CollisionSystemID cs )
 // 7. Resting pile under active EL drag with step changes of the carrier forcing
 //=================================================================================================
 
-template< typename T, typename = void > struct HasImpactingCount : std::false_type {};
-template< typename T > struct HasImpactingCount< T, std::void_t< decltype( std::declval<const T&>().impacting ) > > : std::true_type {};
+template< typename T, typename = void > struct HasArmingCounters : std::false_type {};
+template< typename T > struct HasArmingCounters< T, std::void_t< decltype( std::declval<const T&>().candidates ),
+   decltype( std::declval<const T&>().armedRows ), decltype( std::declval<const T&>().delivered ) > > : std::true_type {};
 
-//! Contacts asked to bounce in the last step (pass stats; 0 without the switch or the counter).
-template< typename Handle > size_t impactingContacts( Handle& cs )
+//! Arming counters of the last step: candidates (pre-step approach faster than the threshold),
+//! armed rows (candidates with compression impulse) and delivered rebounds (armed rows ending with a
+//! booked restitution impulse). A solver with the switch must have them (compile error otherwise;
+//! the round-1 counter `impacting` no longer exists). Zero without the switch.
+struct ArmingCounts { size_t candidates = 0, armedRows = 0, delivered = 0; };
+template< typename Handle > ArmingCounts armingCounts( Handle& cs )
 {
    typedef typename std::remove_reference<decltype( *cs )>::type CS;
+   ArmingCounts c;
    if constexpr ( HasRestitution<CS>::value ) {
       const auto& st( cs->getRestitutionPassStats() );
       typedef typename std::remove_cv<typename std::remove_reference<decltype( st )>::type>::type Stats;
-      if constexpr ( HasImpactingCount<Stats>::value ) return st.impacting;
-      else { (void)st; return 0; }
+      static_assert( HasArmingCounters<Stats>::value, "RestitutionPassStats lacks candidates / armedRows / delivered" );
+      c.candidates = st.candidates; c.armedRows = st.armedRows; c.delivered = st.delivered;
    }
-   else { (void)cs; return 0; }
+   else { (void)cs; }
+   return c;
 }
 
 //! Armed visits of the post-pass in the last step (0 without the switch).
@@ -546,7 +553,7 @@ template< typename Handle > size_t armedVisits( Handle& cs )
    else { (void)cs; return 0; }
 }
 
-struct DragPileResult { size_t armed[3]; size_t impacting[3]; real created[3]; real drift[3]; real vmax[3]; };
+struct DragPileResult { size_t armed[3]; size_t candidates[3]; size_t armedRows[3]; size_t delivered[3]; real created[3]; real drift[3]; real vmax[3]; };
 
 struct SavedBody { Vec3 x, v, w; };
 
@@ -617,7 +624,7 @@ static DragPileResult runDragPile( CollisionSystemID cs, std::vector<SavedBody>&
    const real tau( 20 * subSteps * dtSub );
    DragPileResult r;
    for( int ph = 0; ph < 3; ++ph ) {
-      r.armed[ph] = 0; r.impacting[ph] = 0; r.created[ph] = 0; r.drift[ph] = 0; r.vmax[ph] = 0;
+      r.armed[ph] = 0; r.candidates[ph] = 0; r.armedRows[ph] = 0; r.delivered[ph] = 0; r.created[ph] = 0; r.drift[ph] = 0; r.vmax[ph] = 0;
       const real uf( ph == 1 ? real(0) : real(0.98) * kG * tau );
       for( int fs = 0; fs < fluidSteps; ++fs ) {
          for( BodyID b : bodies ) {
@@ -630,7 +637,8 @@ static DragPileResult runDragPile( CollisionSystemID cs, std::vector<SavedBody>&
             for( BodyID b : bodies ) { vPre.push_back( b->getLinearVel() ); uref.push_back( refVelocity( b ) ); kePre += kinetic( b ); }
             theWorld()->simulationStep( dtSub );
             r.armed[ph] += armedVisits( cs );
-            r.impacting[ph] += impactingContacts( cs );
+            const ArmingCounts ac( armingCounts( cs ) );
+            r.candidates[ph] += ac.candidates; r.armedRows[ph] += ac.armedRows; r.delivered[ph] += ac.delivered;
             real keAfter( 0 ), work( 0 );
             for( size_t j = 0; j < bodies.size(); ++j ) {
                const Vec3 dvf( refVelocity( bodies[j] ) - uref[j] );
@@ -657,14 +665,15 @@ static void caseDragPile( CollisionSystemID cs )
       const DragPileResult on( runDragPile( cs, saved, true, split == 1 ) );
       for( int ph = 0; ph < 3; ++ph ) {
          const char* name[3] = { "drag cancels 98 % of the weight", "released", "cancelled again" };
-         std::printf( "bed under EL drag (%s), phase %d (%s): switch on: impacting contacts %zu (armed visits %zu), energy created by contacts %.3e m g r, "
-                      "max drift %.3e, max |v| %.3e | switch off: created %.3e m g r, drift %.3e, max |v| %.3e\n",
-                      split ? "split" : "Baumgarte", ph, name[ph], on.impacting[ph], on.armed[ph], static_cast<double>( on.created[ph] / mgr ),
+         std::printf( "bed under EL drag (%s), phase %d (%s): switch on: candidates %zu, armed rows %zu, delivered rebounds %zu (armed visits %zu), "
+                      "energy created by contacts %.3e m g r, max drift %.3e, max |v| %.3e | switch off: created %.3e m g r, drift %.3e, max |v| %.3e\n",
+                      split ? "split" : "Baumgarte", ph, name[ph], on.candidates[ph], on.armedRows[ph], on.delivered[ph], on.armed[ph],
+                      static_cast<double>( on.created[ph] / mgr ),
                       static_cast<double>( on.drift[ph] ), static_cast<double>( on.vmax[ph] ),
                       static_cast<double>( off.created[ph] / mgr ), static_cast<double>( off.drift[ph] ), static_cast<double>( off.vmax[ph] ) );
          // Asserted: the contacts create no kinetic energy beyond the work of the hydro forces
          // (switch on, either correction scheme), and the bed stays put (drift below 1 % of r).
-         // NOT asserted: the number of impacting contacts. The current-step threshold
+         // NOT asserted: the numbers of candidates, armed rows and delivered rebounds. The current-step threshold
          // 2 |dv_free| lets contacts of a settling bed arm (micro-bounce); the counts are printed
          // and discussed in doc/technical-notes/el-restitution.md.
          expect( on.created[ph] <= off.created[ph] + real(1e-12) * mgr,

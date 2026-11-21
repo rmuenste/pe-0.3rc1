@@ -12,8 +12,9 @@
  *    1. a pile of 48 spheres (4 x 4 x 3 on a jittered lattice) in a box of four walls on the floor
  *       with the drag carrying f = 20 %, 50 % and 90 % of the weight (u_f = f g tau): after 0.8 s
  *       of settling, a late window of 0.1 s has ZERO delivered rebounds and no candidate, every
- *       sphere is slower than 1e-3 m/s at every sub-step of the window, and no sphere moves by
- *       more than 5 % of its radius over the window (sustained rest); the largest pre-step
+ *       sphere is slower than 1e-3 m/s at every sub-step of the window, and no sphere is farther
+ *       than 5 % of its radius from its window-start position at any sub-step (sustained rest);
+ *       the largest pre-step
  *       relative normal approach speed at a contact (both windows) is printed for the
  *       calibration of v_rest;
  *    2. single spheres hitting the floor at 0.05, 0.1 and 0.2 m/s under the same drag (f = 50 %):
@@ -49,7 +50,7 @@ static void expect( bool ok, const std::string& what )
 static const real kR( 0.435e-3 ), kRho( 860 ), kG( 9.81 ), kTau( 0.01 ), kDt( 2.5e-5 ), kVRest( 0.01 );
 static const int kSub( 10 );
 
-struct Window { size_t delivered = 0, candidates = 0; real approach = 0, resting = 0, vmax = 0; };
+struct Window { size_t delivered = 0, candidates = 0; real approach = 0, resting = 0, vmax = 0, excursion = 0; const std::vector<Vec3>* x0 = nullptr; };
 
 template< typename Handle > void configure( Handle& cs )
 {
@@ -79,6 +80,8 @@ template< typename Handle > void fluidStep( Handle& cs, const std::vector<BodyID
       w.approach = std::max( w.approach, st.approachMax );
       w.resting = std::max( w.resting, st.restingApproachMax );
       for( BodyID b : bodies ) w.vmax = std::max( w.vmax, b->getLinearVel().length() );   // every sub-step
+      if( w.x0 )   // largest excursion from the window start, every sub-step
+         for( size_t j = 0; j < bodies.size(); ++j ) w.excursion = std::max( w.excursion, ( bodies[j]->getPosition() - ( *w.x0 )[j] ).length() );
    }
 }
 
@@ -126,22 +129,21 @@ template< typename Handle > void run( Handle& cs )
          for( int s = 0; s < 3200; ++s ) fluidStep( cs, bodies, f, settle );
          std::vector<Vec3> x0;
          for( BodyID b : bodies ) x0.push_back( b->getPosition() );
+         late.x0 = &x0;
          for( int s = 0; s < 400; ++s ) fluidStep( cs, bodies, f, late );
-         real drift( 0 ), vEnd( 0 );
-         for( size_t k = 0; k < bodies.size(); ++k ) {
-            drift = std::max( drift, ( bodies[k]->getPosition() - x0[k] ).length() );
-            vEnd = std::max( vEnd, bodies[k]->getLinearVel().length() );
-         }
+         const real drift( late.excursion );   // maximum excursion over every sub-step of the window
+         real vEnd( 0 );
+         for( size_t k = 0; k < bodies.size(); ++k ) vEnd = std::max( vEnd, bodies[k]->getLinearVel().length() );
          std::printf( "pile, drag carries %.0f %% of the weight: settling 0.8 s: delivered %zu, candidates %zu, largest contact approach %.3e "
                       "(armed) / %.3e (below v_rest) m/s, max |v| %.3e | late 0.1 s: delivered %zu, candidates %zu, approach %.3e / %.3e m/s, "
-                      "max |v| %.3e, drift %.3e m, |v| at the end %.3e\n",
+                      "max |v| %.3e, largest excursion %.3e m, |v| at the end %.3e\n",
                       static_cast<double>( 100 * f ), settle.delivered, settle.candidates, static_cast<double>( settle.approach ),
                       static_cast<double>( settle.resting ), static_cast<double>( settle.vmax ), late.delivered, late.candidates,
                       static_cast<double>( late.approach ), static_cast<double>( late.resting ), static_cast<double>( late.vmax ),
                       static_cast<double>( drift ), static_cast<double>( vEnd ) );
          expect( late.delivered == 0 && late.candidates == 0, "pile: no rebound (no candidate) in the late window" );
          expect( late.vmax < real(1e-3), "pile: sustained rest (every sphere slower than 1e-3 m/s at every sub-step of the late window)" );
-         expect( drift < real(0.05) * kR, "pile: sustained rest (no sphere moves by 5 % of its radius over the late window)" );
+         expect( drift < real(0.05) * kR, "pile: sustained rest (no sphere moves away from its window-start position by 5 % of its radius at any sub-step)" );
          if( f == real(0.5) ) {
             // 3. a sphere dropped onto the settled pile
             real top( 0 );
