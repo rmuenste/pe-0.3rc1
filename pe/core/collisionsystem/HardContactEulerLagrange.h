@@ -2114,14 +2114,11 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::r
 {
    pe_INTERNAL_ASSERT( !body->isRemote(), "Trying to remove remote body from central body storage." );
 
-   // Keep track of global non-fixed bodies. Erased whatever the current fixedness: a body
-   // registered mobile and fixed later must not stay in the set after it is destroyed.
-   if( body->isGlobal() ) {
-      bool found( globalNonfixedBodies_.erase( body ) > 0 );
-
-      UNUSED( found );
-      pe_INTERNAL_ASSERT( found || body->isFixed(), "Removing global non-fixed body which has not been registered." );
-   }
+   // Keep track of global non-fixed bodies. Erased whatever the current fixedness and whether or
+   // not the set holds it (idempotent): the set is a cache rebuilt by refreshGlobalNonfixedBodies()
+   // at every multi-process step, so a body fixed or unfixed since then may or may not be in it.
+   if( body->isGlobal() )
+      globalNonfixedBodies_.erase( body );
 
    if( !body->isGlobal() && !body->isRemote() && body->sizeProcesses() != 0 ) {
       // Notify registered processes (intersecting or interacting) of body removal since they possess a shadow copy.
@@ -2163,14 +2160,11 @@ inline typename CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> 
 {
    pe_INTERNAL_ASSERT( !body->isRemote(), "Trying to remove remote body from central body storage." );
 
-   // Keep track of global non-fixed bodies. Erased whatever the current fixedness: a body
-   // registered mobile and fixed later must not stay in the set after it is destroyed.
-   if( body->isGlobal() ) {
-      bool found( globalNonfixedBodies_.erase( *body ) > 0 );
-
-      UNUSED( found );
-      pe_INTERNAL_ASSERT( found || body->isFixed(), "Removing global non-fixed body which has not been registered." );
-   }
+   // Keep track of global non-fixed bodies. Erased whatever the current fixedness and whether or
+   // not the set holds it (idempotent): the set is a cache rebuilt by refreshGlobalNonfixedBodies()
+   // at every multi-process step, so a body fixed or unfixed since then may or may not be in it.
+   if( body->isGlobal() )
+      globalNonfixedBodies_.erase( *body );
 
    if( !body->isGlobal() && !body->isRemote() && body->sizeProcesses() != 0 ) {
       // Notify registered processes (intersecting or interacting) of body removal since they possess a shadow copy.

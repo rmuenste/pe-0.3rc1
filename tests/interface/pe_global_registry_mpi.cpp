@@ -5,17 +5,23 @@
  *         on two ranks (cut at x = 0), restitution OFF (the default path). Review round 3,
  *         finding 1: the set followed the fixedness at add() / remove() time and survived clear().
  *
- *  usage: pe_global_registry_mpi fixdestroy | clear | unfix
- *    fixdestroy  a global sphere G registered mobile, then fixed and destroyed; a local pair keeps
- *                colliding: its trajectory must equal the run without G (a stale set entry was
- *                dereferenced by the velocity synchronisation);
- *    clear       a world with a mobile global sphere is cleared and repopulated with the pair
- *                only: the pair's trajectory must equal the run in a fresh world;
- *    unfix       G created fixed (not registered) and unfixed before the first step, hit by a
- *                local sphere: the trajectory (sphere and both replicas of G) must equal the run
- *                with G created mobile (registered).
- *  The references run where they cannot inherit a stale entry (before the scenario, or after a
- *  scenario that registered nothing). Comparison bitwise. Built against both solvers.
+ *  usage: pe_global_registry_mpi fixdestroy | clear | fixstepunfix | fixstepunfix-iter | unfixref | unfix
+ *    fixdestroy         a global sphere G registered mobile, then fixed and destroyed; a local pair
+ *                       keeps colliding: its trajectory must equal the run without G;
+ *    clear              a world with a mobile global sphere is cleared and repopulated with the pair
+ *                       only: the pair's trajectory must equal the run in a fresh world;
+ *    fixstepunfix[-iter] G fixed on every rank, a step (the rebuilt set omits G), unfixed and
+ *                       destroyed before the next step, through destroy( BodyID ) or
+ *                       World::destroy( Iterator ): no assertion (the assertion-enabled build is
+ *                       the test), the pair's trajectory equals the run without G;
+ *    unfixref / unfix   G REGISTERED WHILE FIXED (taken out of the world, fixed, added again), then
+ *                       unfixed before the first step and hit by a local sphere, against G registered
+ *                       mobile (unfixref, a separate process writing the reference to a file, so the
+ *                       reference never follows the scenario's clear()); a force on G from rank 0
+ *                       only must reach both replicas through synchronizeForces(); the trajectory
+ *                       (sphere and both replicas of G) must be bitwise the reference.
+ *  The in-process references run before their scenario in a fresh world. Comparison bitwise. Built
+ *  against both solvers.
  */
 //=================================================================================================
 
@@ -128,29 +134,100 @@ int runClear()
    return compare( ref, sc, "clear + repopulate, then steps: pair trajectory against a fresh world" );
 }
 
-int runUnfix()
+//! Fix on all ranks -> step (the rebuild omits G) -> unfix -> destroy before the next step,
+//! through destroy( BodyID ) (iter = false) or World::destroy( Iterator ) (iter = true). With
+//! assertions enabled the removal of a body that is mobile but not in the cached set aborted.
+int runFixStepUnfix( bool iter )
+{
+   fresh(); MaterialID m( material() ); pair( m ); theWorld()->synchronize();
+   std::vector<double> ref( steps( 6 ) ), r2( steps( 20 ) ); ref.insert( ref.end(), r2.begin(), r2.end() );
+   fresh(); m = material(); pair( m );
+   SphereID g( nullptr );
+   pe_GLOBAL_SECTION { g = createSphere( 100, Vec3( 0, 0.2, 0 ), R, m ); }
+   theWorld()->synchronize();
+   std::vector<double> sc( steps( 3 ) );
+   g->setFixed( true );                                    // on every rank
+   const std::vector<double> s1( steps( 3 ) );             // the rebuild omits G
+   sc.insert( sc.end(), s1.begin(), s1.end() );
+   g->setFixed( false );
+   if( iter ) {
+      for( World::Iterator it = theWorld()->begin(); it != theWorld()->end(); ++it )
+         if( *it == g ) { theWorld()->destroy( it ); break; }
+   }
+   else destroy( g );
+   std::vector<double> s2( steps( 20 ) ); sc.insert( sc.end(), s2.begin(), s2.end() );
+   for( size_t k = 0; k < 6 * 12; k += 12 ) for( int c = 6; c < 12; ++c ) { ref[k + c] = 0; sc[k + c] = 0; }   // G only in the scenario
+   return compare( ref, sc, iter ? "fix, step, unfix, World::destroy( Iterator ): pair trajectory against the run without the global body"
+                                 : "fix, step, unfix, destroy( BodyID ): pair trajectory against the run without the global body" );
+}
+
+//! Registered-fixed scenario and its reference, in separate processes (modes unfixref, unfix; the
+//! reference trajectory goes through a file so that it never follows the scenario's clear()).
+//! Scenario: G is created (registered mobile), taken out of the world, fixed, added again (so it
+//! is REGISTERED WHILE FIXED), then unfixed before the first step. Reference: G registered mobile.
+//! Both: a force on G from rank 0 only, synchronizeForces() (both replicas must see it), then the
+//! impact of a local sphere and 30 steps.
+std::vector<double> unfixRun( bool registeredFixed, double* force )
 {
    const Vec3 a( -2 * R - U * DT * 3.9, 0.05, 0 );   // touches G after about 4 steps
-   // scenario first: G registered fixed, unfixed before the first step
    fresh(); MaterialID m( material() );
    SphereID g( nullptr );
    pe_GLOBAL_SECTION { g = createSphere( 100, Vec3( 0, 0.05, 0 ), R, m ); }
-   g->setFixed( true );
-   g->setFixed( false );
+   if( registeredFixed ) {
+      theWorld()->remove( g );   // deregistered (mobile)
+      g->setFixed( true );
+      theWorld()->add( g );      // registered while fixed: add() leaves it out of the set
+      g->setFixed( false );
+   }
    if( theWorld()->ownsPoint( a ) ) { SphereID s = createSphere( 1, a, R, m ); s->setLinearVel( Vec3( U, 0, 0 ) ); }
    theWorld()->synchronize();
-   const std::vector<double> sc( steps( 30 ) );
-   // reference: G created mobile
-   fresh(); m = material();
-   pe_GLOBAL_SECTION { createSphere( 100, Vec3( 0, 0.05, 0 ), R, m ); }
-   if( theWorld()->ownsPoint( a ) ) { SphereID s = createSphere( 1, a, R, m ); s->setLinearVel( Vec3( U, 0, 0 ) ); }
-   theWorld()->synchronize();
-   const std::vector<double> ref( steps( 30 ) );
-   const size_t last( ref.size() - 12 );
-   if( rank_ == 0 )
-      std::printf( "unfix: G after the impact, registered mobile: rank 0 %.9f, rank 1 %.9f; registered fixed then unfixed: rank 0 %.9f, rank 1 %.9f\n",
-                   ref[last + 6], ref[last + 9], sc[last + 6], sc[last + 9] );
-   return compare( ref, sc, "registered fixed then unfixed against registered mobile (sphere and both replicas of G)" );
+   if( rank_ == 0 ) g->addForce( Vec3( 0, 0, 1e-3 ) );
+   theCollisionSystem()->synchronizeForces();
+   double f[2] = { 0, 0 }, mine( g->getForce()[2] );
+   MPI_Allgather( &mine, 1, MPI_DOUBLE, f, 1, MPI_DOUBLE, MPI_COMM_WORLD );
+   force[0] = f[0]; force[1] = f[1];
+   return steps( 30 );
+}
+
+int runUnfixRef()
+{
+   double force[2];
+   const std::vector<double> ref( unfixRun( false, force ) );
+   if( rank_ == 0 ) {
+      FILE* fp( std::fopen( "unfix_reference.bin", "wb" ) );
+      if( !fp ) { std::printf( "cannot write unfix_reference.bin\n" ); return 1; }
+      std::fwrite( force, sizeof( double ), 2, fp );
+      std::fwrite( ref.data(), sizeof( double ), ref.size(), fp );
+      std::fclose( fp );
+      std::printf( "unfix reference (G registered mobile): force on G after synchronizeForces() rank 0 %.3e, rank 1 %.3e; %zu values written\n",
+                   force[0], force[1], ref.size() );
+   }
+   return ( force[0] == 1e-3 && force[1] == 1e-3 ) ? 0 : 1;
+}
+
+int runUnfix()
+{
+   double force[2];
+   const std::vector<double> sc( unfixRun( true, force ) );
+   std::vector<double> ref( sc.size() + 2, 0.0 );
+   int ok( 1 );
+   if( rank_ == 0 ) {
+      FILE* fp( std::fopen( "unfix_reference.bin", "rb" ) );
+      ok = fp && std::fread( ref.data(), sizeof( double ), ref.size(), fp ) == ref.size();
+      if( fp ) std::fclose( fp );
+   }
+   MPI_Bcast( &ok, 1, MPI_INT, 0, MPI_COMM_WORLD );
+   if( !ok ) { if( rank_ == 0 ) std::printf( "no reference file (run mode unfixref first)\n" ); return 1; }
+   int bad( 0 );
+   if( rank_ == 0 ) {
+      std::printf( "unfix (G registered fixed, then unfixed): force on G after synchronizeForces() rank 0 %.3e, rank 1 %.3e (reference %.3e, %.3e)\n",
+                   force[0], force[1], ref[0], ref[1] );
+      if( !( force[0] == ref[0] && force[1] == ref[1] ) ) { std::printf( "FAIL: synchronizeForces() reduces the force of the unfixed global body\n" ); bad = 1; }
+   }
+   const std::vector<double> r( ref.begin() + 2, ref.end() );
+   bad |= compare( r, sc, "registered fixed then unfixed against registered mobile (sphere and both replicas of G)" );
+   MPI_Bcast( &bad, 1, MPI_INT, 0, MPI_COMM_WORLD );
+   return bad;
 }
 
 }  // namespace
@@ -161,7 +238,7 @@ int main( int argc, char** argv )
    int size = 0;
    MPI_Comm_rank( MPI_COMM_WORLD, &rank_ );
    MPI_Comm_size( MPI_COMM_WORLD, &size );
-   if( size != 2 || argc < 2 ) { if( rank_ == 0 ) std::cerr << "usage (two ranks): pe_global_registry_mpi fixdestroy | clear | unfix\n"; MPI_Abort( MPI_COMM_WORLD, 2 ); }
+   if( size != 2 || argc < 2 ) { if( rank_ == 0 ) std::cerr << "usage (two ranks): pe_global_registry_mpi fixdestroy | clear | fixstepunfix | fixstepunfix-iter | unfixref | unfix\n"; MPI_Abort( MPI_COMM_WORLD, 2 ); }
    if( rank_ == 0 ) { defineLocalDomain( HalfSpace( Vec3( -1, 0, 0 ), 0 ) ); connect( 1, HalfSpace( Vec3( +1, 0, 0 ), 0 ) ); }
    else             { defineLocalDomain( HalfSpace( Vec3( +1, 0, 0 ), 0 ) ); connect( 0, HalfSpace( Vec3( -1, 0, 0 ), 0 ) ); }
    const std::string mode( argv[1] );
@@ -169,6 +246,9 @@ int main( int argc, char** argv )
    if( mode == "fixdestroy" ) rc = runFixDestroy();
    else if( mode == "clear" ) rc = runClear();
    else if( mode == "unfix" ) rc = runUnfix();
+   else if( mode == "unfixref" ) rc = runUnfixRef();
+   else if( mode == "fixstepunfix" ) rc = runFixStepUnfix( false );
+   else if( mode == "fixstepunfix-iter" ) rc = runFixStepUnfix( true );
    int any = 0;
    MPI_Allreduce( &rc, &any, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD );
    if( rank_ == 0 ) std::printf( "pe_global_registry_mpi %s: %s\n", mode.c_str(), any == 0 ? "all checks passed" : "FAILED" );
