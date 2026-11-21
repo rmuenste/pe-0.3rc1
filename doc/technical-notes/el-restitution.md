@@ -388,6 +388,28 @@ friction disc and the release now read the ledger. The scalar ledger and `n . p_
 roundoff (1e-16 relative for oblique normals); `p_` itself is still what the wall-impulse and
 virial sums read after the pass.
 
+## 6e. Review round 5: what changed
+
+The round-4 ledger change had a defect: the sweep committed `lambda += d` and then called the
+friction helper, which added `d` again, so the Coulomb radius of a visited row was `mu (lambda +
+2 d)`; the residual evaluator used `mu (lambda + d)`, so sweep and stop test evaluated different
+updates. The binary 43e7360e-peb047e41 (run R_q4_max48) carries it; its protocol run was cancelled.
+
+| Finding | Change | Test | Before (b047e41) |
+|---|---|---|---|
+| 1 friction radius (P0) | the post-visit load `lambdaNew = lambda + d` is computed once per visit and passed to `restitutionRowFriction()` (which no longer reads the ledger); the sweep commits the ledger after the projection; the residual passes the same `lambda + d` | `pe-restitution-pass-unit` cases 8, 9 (one visit of a sliding row, mu 0.3: load increase lambda 1, d 0.5 must end on the disc 0.45; partial withdrawal d -0.6 must keep 0.12; the residual right after the visit is zero) and 10 (randomized: 300 sphere pairs, oblique normals, friction, armed and support rows, 8 sweeps of random disturbances; after every sweep the ledger equals n . p to rounding, the tangential impulse is inside mu lambda, lambda_R <= e lambda_C, released rows have p = 0, each pair's momentum is unchanged) | runtime (job 164921): case 8 ended at 0.60 with residual 0.525 right after the visit, case 9 discarded the friction (0) with residual 0.42, case 10 found tangential impulses up to 0.275 outside the disc; now 0.45 / 0.12, residuals 0 / 5e-17, worst disc excess 3e-16 |
+| 2 registry test on other solvers (P1) | the registry test skips (77) in every mode, the reference included, unless the compiled solver is EL or HCSITS (`SKIP_RETURN_CODE 77`) | alternate-solver build (HardContactAndFluid through CMAKE_CXX_FLAGS, job 164922): the six unqualified registry tests report Skipped, the six HCSITS (`-plain`) variants pass | none: no runtime before result (on b047e41 the same build also skips, because the tests come from the worktree; the reviewer's failure is a source-level counterexample) |
+| 3 clamp diagnostic (P2) | the full release counts the clamp from the same provisional booking `lambda_R + d - approach` as a partial withdrawal | - | none (diagnostic only, no test) |
+| 4 trace range (P2) | the range is broadcast as integers (unsigned 64-bit) and tested as `pass >= first && pass - first < count` | - | none (verified by inspection) |
+
+Ledger uses re-read around the update (round 5): `restitutionRowIncrement()` reads the ledger
+before the visit for the Newton test (`lambda_C > 0`), the release decision and the ceiling, which
+is the state they must see; the release path sets the ledger to zero after the decision; the
+demotion branch and the restitution booking use the pre-visit booking plus `d`; the fallback tally
+uses `d`; the friction helper now takes the post-visit load from the caller; the residual and the
+final diagnostics evaluate `restitutionRowIncrement()` and the helper on the unchanged ledger, as a
+visit would.
+
 ## 7. Tests
 
 | Test (label) | What | Result (gcc 13.2, Release) |
