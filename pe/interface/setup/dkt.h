@@ -73,7 +73,7 @@ inline void setupDraftKissTumbBench(MPI_Comm ex0,
   world = theWorld();
 
   loadSimulationConfig("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDraftKissTumbBench");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupDraftKissTumbBench");
 
   mpisystem = theMPISystem();
   mpisystem->setComm(ex0);
@@ -279,7 +279,7 @@ inline void setupDraftKissTumbSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDraftKissTumbSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupDraftKissTumbSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

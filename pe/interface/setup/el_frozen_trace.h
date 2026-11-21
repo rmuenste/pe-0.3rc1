@@ -372,7 +372,7 @@ inline void setupELFrozenTraceSerial(int cfd_rank,
                                      real zmin, real zmax) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupELFrozenTraceSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupELFrozenTraceSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

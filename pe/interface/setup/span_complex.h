@@ -38,7 +38,7 @@ inline size_t estimateDistanceMapMemoryBytes(const DistanceMap& dm) {
 inline void setupSpanComplexSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupSpanComplexSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupSpanComplexSerial");
 
   auto& config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

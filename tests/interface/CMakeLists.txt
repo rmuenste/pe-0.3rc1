@@ -698,8 +698,21 @@ set_tests_properties(pe-el-restitution PROPERTIES
   TIMEOUT 120
 )
 
+# Restitution at the scale of the case-11 bed (0.87 mm spheres, EL drag, v_rest 0.01 m/s, default
+# stop rule): a defluidised pile comes to rest with zero delivered rebounds, impacts in the fluidised
+# range keep their rebound. EL solver (default library); 77 = another configured solver.
+add_executable(pe_el_restitution_rest_test pe_el_restitution_rest_test.cpp)
+target_link_libraries(pe_el_restitution_rest_test PRIVATE pe_static)
+add_test(NAME pe-el-restitution-rest COMMAND pe_el_restitution_rest_test)
+set_tests_properties(pe-el-restitution-rest PROPERTIES
+  LABELS "integration;serial;rigidbody"
+  SKIP_RETURN_CODE 77
+  TIMEOUT 170
+)
+
 # Restitution post-pass with several contacts per body (support contacts of a chain and of a pile,
-# frictional unloading, a positive gap below the contact threshold), on both solvers that have the
+# frictional unloading, a positive gap below the contact threshold, a remote impact, an orthogonal
+# impact on a loaded floor contact) and its stop rule (pe-restitution-stoprule), on both solvers that have the
 # switch: the EL solver (default library) and the semi-implicit one (plain variant).
 foreach(variant "" "_plain")
   if(variant STREQUAL "_plain")
@@ -708,6 +721,14 @@ foreach(variant "" "_plain")
     set(support_lib pe_static)
   endif()
   string(REPLACE "_" "-" variant_name "${variant}")
+  add_executable(pe_restitution_stoprule${variant}_test pe_restitution_stoprule_test.cpp)
+  target_link_libraries(pe_restitution_stoprule${variant}_test PRIVATE ${support_lib})
+  add_test(NAME pe-restitution-stoprule${variant_name} COMMAND pe_restitution_stoprule${variant}_test)
+  set_tests_properties(pe-restitution-stoprule${variant_name} PROPERTIES
+    LABELS "unit;serial;rigidbody"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 120
+  )
   add_executable(pe_restitution_support${variant}_test pe_restitution_support_test.cpp)
   target_link_libraries(pe_restitution_support${variant}_test PRIVATE ${support_lib})
   add_test(NAME pe-restitution-support${variant_name} COMMAND pe_restitution_support${variant}_test)
@@ -742,7 +763,7 @@ if(PE_USE_JSON)
 
     add_executable(pe_el_restitution_setup${variant}_test pe_el_restitution_setup_test.cpp)
     target_link_libraries(pe_el_restitution_setup${variant}_test PRIVATE ${restitution_cfg_lib})
-    foreach(setup frozen dnsdrag)
+    foreach(setup frozen dnsdrag inherit)
       file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_setup${variant}_${setup})
       add_test(NAME pe-el-restitution-setup${variant_name}-${setup}
                COMMAND pe_el_restitution_setup${variant}_test ${setup}
@@ -933,6 +954,28 @@ if(PE_USE_MPI AND MPI_FOUND AND PE_USE_JSON)
   )
   set_tests_properties(pe-el-restitution-mpi PROPERTIES
     LABELS "integration;mpi;rigidbody;interface"
+    PROCESSORS 2
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+  )
+endif()
+
+# Restitution of the semi-implicit solver on two ranks: a pair and a chain with its rows treated on
+# different ranks through the convergence tail of the post-pass (momentum, exact send filter), and
+# the refusal of a mobile global body on both ranks. Plain library variant; 77 = no stop rule.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_hcsits_restitution_mpi pe_hcsits_restitution_mpi.cpp)
+  target_link_libraries(pe_hcsits_restitution_mpi PRIVATE pe_static_lubstage_plain MPI::MPI_CXX)
+  add_test(
+    NAME pe-hcsits-restitution-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_hcsits_restitution_mpi>
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-hcsits-restitution-mpi PROPERTIES
+    LABELS "integration;mpi;rigidbody"
     PROCESSORS 2
     SKIP_RETURN_CODE 77
     ENVIRONMENT "${fbm_query_mpi_oversubscribe}"

@@ -579,7 +579,7 @@ FrozenFieldTraceResult runFrozenFieldTrace(
    std::string localError;
    try {
       SimulationConfig::loadFromFile( "example.json" );
-      rejectRestitutionRequest( SimulationConfig::getInstance(), "runFrozenFieldTrace" );
+      rejectRestitutionRequest( *theCollisionSystem(), SimulationConfig::getInstance(), "runFrozenFieldTrace" );
    }
    catch( const std::exception& error ) {
       localError = error.what();

@@ -31,6 +31,7 @@
 #include <pe/config/Precision.h>
 #include <pe/math/Vector3.h>
 #include <boost/filesystem.hpp>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -45,6 +46,15 @@ namespace pe {
 //=================================================================================================
 
 //*************************************************************************************************
+//! The json stop-rule keys of the restitution post-pass (RestitutionStopRule of
+//! pe/core/collisionsystem/RestitutionPostPass.h): budget, check interval, tolerances.
+struct RestitutionStopKeys {
+    int maxIterations = 24;
+    int checkInterval = 4;
+    real absTolerance = real(1e-4);
+    real relTolerance = real(1e-3);
+};
+
 /*!\brief Simulation configuration class to encapsulate all simulation parameters
  * \ingroup config
  *
@@ -403,13 +413,30 @@ public:
     void setRestitutionScheme(const std::string& value) { validateRestitutionScheme(value); restitutionScheme_ = value; }
     int getRestitutionIterations() const { return restitutionIterations_; }
     void setRestitutionIterations(int value) { validateRestitutionIterations(value); restitutionIterations_ = value; }
+    int getRestitutionMaxIterations() const { return restitutionMaxIterations_; }
+    void setRestitutionMaxIterations(int value) { validateRestitutionCount(value, "restitutionMaxIterations_"); restitutionMaxIterations_ = value; }
+    int getRestitutionCheckInterval() const { return restitutionCheckInterval_; }
+    void setRestitutionCheckInterval(int value) { validateRestitutionCount(value, "restitutionCheckInterval_"); restitutionCheckInterval_ = value; }
+    real getRestitutionAbsTolerance() const { return restitutionAbsTolerance_; }
+    void setRestitutionAbsTolerance(real value) { validateRestitutionTolerance(value, "restitutionAbsTolerance_"); restitutionAbsTolerance_ = value; }
+    real getRestitutionRelTolerance() const { return restitutionRelTolerance_; }
+    void setRestitutionRelTolerance(real value) { validateRestitutionTolerance(value, "restitutionRelTolerance_"); restitutionRelTolerance_ = value; }
     //! All four at once: validated together, then assigned (a refused set changes none of them).
     //! loadFromFile() resolves them per deck from the defaults below, so an absent key never
     //! inherits a value from an earlier deck of the same process.
-    void setRestitutionParams(bool enabled, real threshold, const std::string& scheme, int iterations) {
+    void setRestitutionParams(bool enabled, real threshold, const std::string& scheme, int iterations,
+                              const RestitutionStopKeys& stop = RestitutionStopKeys()) {
         validateRestitutionThreshold(threshold);
         validateRestitutionScheme(scheme);
         validateRestitutionIterations(iterations);
+        validateRestitutionCount(stop.maxIterations, "restitutionMaxIterations_");
+        validateRestitutionCount(stop.checkInterval, "restitutionCheckInterval_");
+        validateRestitutionTolerance(stop.absTolerance, "restitutionAbsTolerance_");
+        validateRestitutionTolerance(stop.relTolerance, "restitutionRelTolerance_");
+        restitutionMaxIterations_ = stop.maxIterations;
+        restitutionCheckInterval_ = stop.checkInterval;
+        restitutionAbsTolerance_ = stop.absTolerance;
+        restitutionRelTolerance_ = stop.relTolerance;
         restitutionEnabled_ = enabled;
         restitutionThreshold_ = threshold;
         restitutionScheme_ = scheme;
@@ -419,6 +446,14 @@ public:
     static constexpr real defaultRestitutionThreshold() { return real(0); }
     static const char* defaultRestitutionScheme() { return "post-pass"; }
     static constexpr int defaultRestitutionIterations() { return 4; }
+    static void validateRestitutionTolerance(real value, const char* key) {
+        if (!(value >= real(0)) || !std::isfinite(value))
+            throw std::invalid_argument(std::string(key) + " must be a finite number >= 0, got " + std::to_string(value));
+    }
+    static void validateRestitutionCount(int value, const char* key) {
+        if (value < 1)
+            throw std::invalid_argument(std::string(key) + " must be >= 1, got " + std::to_string(value));
+    }
     static void validateRestitutionThreshold(real value) {
         if (!(value >= real(0)))
             throw std::invalid_argument("restitutionThreshold_ must be >= 0 (an approach speed in m/s), got " +
@@ -594,6 +629,10 @@ private:
     real restitutionThreshold_;  //!< Impact speed below which contacts stay inelastic (setRestitutionThreshold(); >= 0, default 0)
     std::string restitutionScheme_; //!< "post-pass" (capped post-pass, default) or "in-solve" (Newton target in the solve)
     int restitutionIterations_;  //!< Sweeps of the post-pass (setRestitutionIterations(); >= 1, default 4)
+    int restitutionMaxIterations_; //!< Budget of the post-pass sweeps (>= 1, default 24)
+    int restitutionCheckInterval_; //!< Sweeps between two stop tests (>= 1, default 4)
+    real restitutionAbsTolerance_; //!< Stop tolerance, absolute, velocity units (>= 0, default 1e-4)
+    real restitutionRelTolerance_; //!< Stop tolerance, relative to the local impact scale (>= 0, default 1e-3)
 
     // Serial post-step features
     bool serialEnableEscapeReinsertion_; //!< Enable domain escape handling and reinsertion in serial stepping

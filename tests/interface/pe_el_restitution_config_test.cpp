@@ -5,8 +5,10 @@
  *         restitutionScheme_, restitutionIterations_), its application to the collision system
  *         (applyOptionalRestitutionParams()) and the EL_CONTACT_PARAMS start-up echo line.
  *
- *  Json contract (src/config/SimulationConfig.cpp):
- *    - absent  -> off, 0, "post-pass", 4 (the solver defaults: existing decks unchanged)
+ *  Json contract (src/config/SimulationConfig.cpp), with the stop rule of the post-pass
+ *  (restitutionMaxIterations_, restitutionCheckInterval_, restitutionAbsTolerance_,
+ *  restitutionRelTolerance_) as keys five to eight:
+ *    - absent  -> off, 0, "post-pass", 4, 24, 4, 1e-4, 1e-3 (the solver defaults)
  *    - present -> the values; invalid values (threshold < 0, unknown scheme, iterations < 1) throw
  *      std::invalid_argument and leave the previous value
  *    - a later deck without the keys leaves the previous values (SimulationConfig is a process
@@ -74,12 +76,15 @@ void checkApplierAndEcho(CS& cs, SimulationConfig& config, MaterialID particle, 
   if constexpr (HasRestitutionSwitch<CS>::value) {
     applyOptionalRestitutionParams(cs, config);
     expect(cs.getRestitution() && !cs.getRestitutionPostPass() && cs.getRestitutionIterations() == 6 &&
-           cs.getRestitutionThreshold() == real(0.001), "applier: the solver switch follows the config");
+           cs.getRestitutionThreshold() == real(0.001) && cs.getRestitutionMaxIterations() == 20 &&
+           cs.getRestitutionCheckInterval() == 2 && cs.getRestitutionAbsTolerance() == real(1e-5) &&
+           cs.getRestitutionRelTolerance() == real(1e-6), "applier: the solver switch follows the config");
     const std::string on = elContactParamsLine(cs, particle, walls);
     std::cout << on << "\n";
     expect(on == "EL_CONTACT_PARAMS pair=particle-particle mu_static=0.3 mu_dynamic=0.3 e=0.9"
                  " | pair=particle-wall wall=zwalls mu_static=0.3 mu_dynamic=0.3 e=0.9"
-                 " | restitution=on threshold=0.001 scheme=in-solve iterations=6",
+                 " | restitution=on threshold=0.001 scheme=in-solve iterations=6 max_iterations=20 check_interval=2"
+                 " abs_tolerance=1e-05 rel_tolerance=1e-06",
            "echo line with the switch on: " + on);
 
     // back to the defaults: the deck keys off
@@ -87,13 +92,18 @@ void checkApplierAndEcho(CS& cs, SimulationConfig& config, MaterialID particle, 
     config.setRestitutionThreshold(real(0));
     config.setRestitutionScheme("post-pass");
     config.setRestitutionIterations(4);
+    config.setRestitutionMaxIterations(24);
+    config.setRestitutionCheckInterval(4);
+    config.setRestitutionAbsTolerance(real(1e-4));
+    config.setRestitutionRelTolerance(real(1e-3));
     applyOptionalRestitutionParams(cs, config);
     expect(!cs.getRestitution() && cs.getRestitutionPostPass() && cs.getRestitutionIterations() == 4 &&
            cs.getRestitutionThreshold() == real(0), "applier: defaults restore the solver defaults");
     const std::string off = elContactParamsLine(cs, particle, ContactEchoWalls());
     std::cout << off << "\n";
     expect(off == "EL_CONTACT_PARAMS pair=particle-particle mu_static=0.3 mu_dynamic=0.3 e=0.9"
-                  " | pair=particle-wall wall=none | restitution=off threshold=0 scheme=post-pass iterations=4",
+                  " | pair=particle-wall wall=none | restitution=off threshold=0 scheme=post-pass iterations=4"
+                  " max_iterations=24 check_interval=4 abs_tolerance=0.0001 rel_tolerance=0.001",
            "echo line with the switch off and no walls: " + off);
   } else {
     // A solver without the switch: refused when the deck asks for restitution, unsupported echo
@@ -118,13 +128,21 @@ int main() {
   expect(config.getRestitutionThreshold() == real(0), "pristine threshold is 0");
   expect(config.getRestitutionScheme() == "post-pass", "pristine scheme is post-pass");
   expect(config.getRestitutionIterations() == 4, "pristine iterations is 4");
+  expect(config.getRestitutionMaxIterations() == 24 && config.getRestitutionCheckInterval() == 4 &&
+         config.getRestitutionAbsTolerance() == real(1e-4) && config.getRestitutionRelTolerance() == real(1e-3),
+         "pristine stop rule is max 24, check 4, 1e-4 + 1e-3");
   expect(loadThrows(writeDeck("absent", "{ \"restitution_\": 0.9 }")).empty(), "deck without the keys loads");
   expect(!config.getRestitutionEnabled(), "absent key -> false (restitution_ alone does not switch it on)");
 
   // --- 2. explicit values ---------------------------------------------------------------------
   expect(loadThrows(writeDeck("on", "{ \"restitutionEnabled_\": true, \"restitutionThreshold_\": 0.001,"
-                                    " \"restitutionScheme_\": \"in-solve\", \"restitutionIterations_\": 6 }")).empty(),
+                                    " \"restitutionScheme_\": \"in-solve\", \"restitutionIterations_\": 6,"
+                                    " \"restitutionMaxIterations_\": 20, \"restitutionCheckInterval_\": 2,"
+                                    " \"restitutionAbsTolerance_\": 1e-5, \"restitutionRelTolerance_\": 1e-6 }")).empty(),
          "deck with the keys loads");
+  expect(config.getRestitutionMaxIterations() == 20 && config.getRestitutionCheckInterval() == 2 &&
+         config.getRestitutionAbsTolerance() == real(1e-5) && config.getRestitutionRelTolerance() == real(1e-6),
+         "stop-rule keys read");
   expect(config.getRestitutionEnabled(), "restitutionEnabled_ true read");
   expect(config.getRestitutionThreshold() == real(0.001), "restitutionThreshold_ read");
   expect(config.getRestitutionScheme() == "in-solve", "restitutionScheme_ read");
@@ -134,16 +152,22 @@ int main() {
   // (a deck must never inherit an enabled switch from an earlier deck of the same process).
   expect(loadThrows(writeDeck("absent_again", "{ \"zWallsEnabled_\": true }")).empty(), "a later deck without the keys loads");
   expect(!config.getRestitutionEnabled() && config.getRestitutionThreshold() == real(0) &&
-         config.getRestitutionScheme() == "post-pass" && config.getRestitutionIterations() == 4,
-         "absent keys in a later deck -> off, 0, post-pass, 4 (not the previous deck's values)");
+         config.getRestitutionScheme() == "post-pass" && config.getRestitutionIterations() == 4 &&
+         config.getRestitutionMaxIterations() == 24 && config.getRestitutionCheckInterval() == 4 &&
+         config.getRestitutionAbsTolerance() == real(1e-4) && config.getRestitutionRelTolerance() == real(1e-3),
+         "absent keys in a later deck -> off, 0, post-pass, 4, 24, 4, 1e-4, 1e-3 (not the previous deck's values)");
 
   // --- 3. validation (all four validated together: a refused deck changes none of them) -------
   const std::string onDeck("{ \"restitutionEnabled_\": true, \"restitutionThreshold_\": 0.001,"
-                           " \"restitutionScheme_\": \"in-solve\", \"restitutionIterations_\": 6 }");
+                           " \"restitutionScheme_\": \"in-solve\", \"restitutionIterations_\": 6,"
+                           " \"restitutionMaxIterations_\": 20, \"restitutionCheckInterval_\": 2,"
+                           " \"restitutionAbsTolerance_\": 1e-5, \"restitutionRelTolerance_\": 1e-6 }");
   const auto backToOn = [&]() { return loadThrows(writeDeck("on_again", onDeck)).empty(); };
   const auto stillOn = [&]() {
     return config.getRestitutionEnabled() && config.getRestitutionThreshold() == real(0.001) &&
-           config.getRestitutionScheme() == "in-solve" && config.getRestitutionIterations() == 6;
+           config.getRestitutionScheme() == "in-solve" && config.getRestitutionIterations() == 6 &&
+           config.getRestitutionMaxIterations() == 20 && config.getRestitutionCheckInterval() == 2 &&
+           config.getRestitutionAbsTolerance() == real(1e-5) && config.getRestitutionRelTolerance() == real(1e-6);
   };
   struct Bad { const char* name; const char* body; };
   const Bad bad[] = {
@@ -156,12 +180,20 @@ int main() {
     { "huge_iterations",       "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 18446744073709551615 }" },
     { "negative_iterations",   "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": -3 }" },
     { "string_iterations",     "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": \"4\" }" },
+    { "negative_abs_tolerance","{ \"restitutionEnabled_\": false, \"restitutionAbsTolerance_\": -1e-3 }" },
+    { "negative_rel_tolerance","{ \"restitutionEnabled_\": false, \"restitutionRelTolerance_\": -1e-3 }" },
+    { "string_tolerance",      "{ \"restitutionEnabled_\": false, \"restitutionRelTolerance_\": \"1e-6\" }" },
+    { "zero_check",            "{ \"restitutionEnabled_\": false, \"restitutionCheckInterval_\": 0 }" },
+    { "fractional_check",      "{ \"restitutionEnabled_\": false, \"restitutionCheckInterval_\": 1.5 }" },
+    { "zero_cap",              "{ \"restitutionEnabled_\": false, \"restitutionMaxIterations_\": 0 }" },
+    { "fractional_cap",        "{ \"restitutionEnabled_\": false, \"restitutionMaxIterations_\": 2.5 }" },
+    { "oversized_cap",         "{ \"restitutionEnabled_\": false, \"restitutionMaxIterations_\": 3000000000 }" },
   };
   for (const Bad& b : bad) {
     expect(backToOn(), std::string("reload of the enabled deck before ") + b.name);
     const std::string msg = loadThrows(writeDeck(b.name, b.body));
     expect(!msg.empty(), std::string(b.name) + " throws");
-    expect(stillOn(), std::string(b.name) + ": the refused deck leaves all four values unchanged");
+    expect(stillOn(), std::string(b.name) + ": the refused deck leaves all eight values unchanged");
   }
   expect(loadThrows(writeDeck("max_iterations", "{ \"restitutionIterations_\": 2147483647 }")).empty(), "INT_MAX iterations load");
   expect(config.getRestitutionIterations() == 2147483647, "INT_MAX iterations read");

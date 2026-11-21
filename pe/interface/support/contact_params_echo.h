@@ -5,7 +5,7 @@
 //
 //   EL_CONTACT_PARAMS pair=particle-particle mu_static=0.3 mu_dynamic=0.3 e=0.9
 //     | pair=particle-wall wall=zwalls mu_static=0.3 mu_dynamic=0.3 e=0.9
-//     | restitution=on threshold=0 scheme=post-pass iterations=4
+//     | restitution=on threshold=0 scheme=post-pass iterations=4 max_iterations=24 check_interval=4 abs_tolerance=0.0001 rel_tolerance=0.001
 //
 // (printed as a single line). The pair values are the ones a contact uses: pe COMBINES the
 // material values (Material::getStaticFriction( m1, m2 ) = csf1 + csf2, the restitution a
@@ -51,7 +51,11 @@ inline std::string contactRestitutionEchoValues(const CollisionSystemT& cs) {
     os << " restitution=" << (cs.getRestitution() ? "on" : "off")
        << " threshold=" << cs.getRestitutionThreshold()
        << " scheme=" << (cs.getRestitutionPostPass() ? "post-pass" : "in-solve")
-       << " iterations=" << cs.getRestitutionIterations();
+       << " iterations=" << cs.getRestitutionIterations()
+       << " max_iterations=" << cs.getRestitutionMaxIterations()
+       << " check_interval=" << cs.getRestitutionCheckInterval()
+       << " abs_tolerance=" << cs.getRestitutionAbsTolerance()
+       << " rel_tolerance=" << cs.getRestitutionRelTolerance();
   } else {
     (void)cs;
     os << " restitution=unsupported";

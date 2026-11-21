@@ -34,7 +34,7 @@ inline void setupHashGridTest(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("pe_user_config.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupHashGridTest");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupHashGridTest");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

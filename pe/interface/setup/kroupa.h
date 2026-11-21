@@ -81,7 +81,7 @@ inline void setupKroupa(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupKroupa");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupKroupa");
 
   // Push runtime lubrication parameters (model switches, cutoff, hysteresis) into the engine
   applyOptionalLubricationParams(*theCollisionSystem(), config);

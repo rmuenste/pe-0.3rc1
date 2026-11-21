@@ -69,7 +69,7 @@ inline void setupParticleBench(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupParticleBench");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupParticleBench");
 
   const real simViscosity( config.getFluidViscosity() );
   const real simRho( config.getFluidDensity() );
@@ -247,7 +247,7 @@ inline void setupParticleBenchSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupParticleBenchSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupParticleBenchSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

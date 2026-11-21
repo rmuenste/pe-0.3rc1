@@ -111,7 +111,7 @@ inline void setupDrill(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDrill");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupDrill");
   world->setGravity( config.getGravity() );
 
   real simRho( config.getFluidDensity() );
@@ -499,7 +499,7 @@ inline void setupDrillSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDrillSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupDrillSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

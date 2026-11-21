@@ -67,7 +67,7 @@ inline void setupFluidization(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupFluidization");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFluidization");
 
   const real simViscosity(config.getFluidViscosity());
   const real simRho(config.getFluidDensity());
@@ -279,7 +279,7 @@ namespace pe {
 inline void setupFluidizationSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupFluidizationSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFluidizationSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -459,7 +459,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
 inline void setupFluidizationSRRSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupFluidizationSRRSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFluidizationSRRSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

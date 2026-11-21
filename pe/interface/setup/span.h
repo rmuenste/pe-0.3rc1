@@ -63,7 +63,7 @@ inline void setupSpan(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupSpan");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupSpan");
 
   const real simRho( config.getFluidDensity() );
   const real simViscosity( config.getFluidViscosity() );
@@ -244,7 +244,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
-  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupFSIBenchSerial");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFSIBenchSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
