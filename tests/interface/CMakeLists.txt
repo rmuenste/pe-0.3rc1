@@ -1029,7 +1029,7 @@ if(PE_USE_MPI AND MPI_FOUND)
                 $<TARGET_FILE:pe_global_registry${variant}_mpi> ${MPIEXEC_POSTFLAGS} ${mode}
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/global_registry${variant})
       set_tests_properties(pe-global-registry-mpi${variant_name}-${mode} PROPERTIES
-        LABELS "integration;mpi;rigidbody" PROCESSORS 2 TIMEOUT 120
+        LABELS "integration;mpi;rigidbody" PROCESSORS 2 TIMEOUT 120 SKIP_RETURN_CODE 77
         ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
     endforeach()
     # the registered-fixed scenario compares against a reference written by a separate process

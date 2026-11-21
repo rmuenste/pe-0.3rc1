@@ -34,12 +34,20 @@
 #include <vector>
 
 #include <mpi.h>
+#include <type_traits>
 
 using namespace pe;
 
 namespace {
 
 int rank_ = 0;
+
+// The registry repaired in rounds 3 and 4 is that of the EL solver and HCSITS (both have the
+// restitution switch); other solvers (HardContactAndFluid, DEMSolver) keep the old registry, so the
+// test skips (77) in every mode there, the reference mode included.
+typedef std::remove_reference<decltype( *theCollisionSystem() )>::type CollisionSystemType;
+template< typename T, typename = void > struct IsRepairedSolver : std::false_type {};
+template< typename T > struct IsRepairedSolver< T, std::void_t< decltype( std::declval<T&>().setRestitutionPostPass( true ) ) > > : std::true_type {};
 const double R = 0.01, U = 0.5, DT = 1e-4;
 
 MaterialID material() { return createMaterial( 1000.0, 0.0, 0.0, 0.0, 0.25, 300.0, 1e5, 10.0, 10.0 ); }
@@ -242,6 +250,11 @@ int main( int argc, char** argv )
    if( rank_ == 0 ) { defineLocalDomain( HalfSpace( Vec3( -1, 0, 0 ), 0 ) ); connect( 1, HalfSpace( Vec3( +1, 0, 0 ), 0 ) ); }
    else             { defineLocalDomain( HalfSpace( Vec3( +1, 0, 0 ), 0 ) ); connect( 0, HalfSpace( Vec3( -1, 0, 0 ), 0 ) ); }
    const std::string mode( argv[1] );
+   if( !IsRepairedSolver<CollisionSystemType>::value ) {
+      if( rank_ == 0 ) std::printf( "pe_global_registry_mpi %s: the compiled solver is neither HardContactEulerLagrange nor HCSITS, skipped\n", mode.c_str() );
+      MPI_Finalize();
+      return 77;
+   }
    int rc = 2;
    if( mode == "fixdestroy" ) rc = runFixDestroy();
    else if( mode == "clear" ) rc = runClear();
