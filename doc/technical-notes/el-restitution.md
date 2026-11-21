@@ -18,12 +18,23 @@ changes in the impact law, what review round 1 changed (section 6), the limits, 
 | `restitutionThreshold_` | real >= 0 (m/s), `0` | `setRestitutionThreshold()` |
 | `restitutionScheme_` | `"post-pass"` (default) or `"in-solve"` | `setRestitutionPostPass( scheme == "post-pass" )` |
 | `restitutionIterations_` | json integer in [1, INT_MAX], `4` | `setRestitutionIterations()` (minimum sweeps) |
+| `restitutionMaxIterations_` | json integer in [1, INT_MAX], `24` | `setRestitutionMaxIterations()` (sweep budget) |
+| `restitutionCheckInterval_` | json integer in [1, INT_MAX], `4` | `setRestitutionCheckInterval()` (sweeps between stop tests) |
+| `restitutionAbsTolerance_` | real >= 0 (m/s), `1e-4` | `setRestitutionTolerance( abs, rel )` |
+| `restitutionRelTolerance_` | real >= 0, `1e-3` | `setRestitutionTolerance( abs, rel )` |
 
-The defaults are the HCSITS defaults. Unlike every other key, the four are resolved **per deck**: an
+The stop rule (min 4, max 24, check every 4, `1e-4 m/s + 1e-3` of the local impact scale) is
+the review-round-2 proposal; regression tests use a strict setting (max 100, check every sweep,
+`0 + 1e-9`). The values are collective configuration: every process must load the same deck (the
+decisions are global maxima, but each process compares its rows with its own tolerance).
+`restitutionThreshold_` is the single rest velocity `v_rest`: approaches slower than
+`max( v_rest, 2 |dv_free| )` stay inelastic.
+
+The first four defaults are the HCSITS defaults. Unlike every other key, the eight are resolved **per deck**: an
 absent key means its default, never the value an earlier deck of the same process left in the
 `SimulationConfig` singleton. They are read and validated together and assigned only if all are
-valid (`SimulationConfig::setRestitutionParams()`); `restitutionIterations_` must be a json
-integer (1.9, 4.0, "4", 0, -3, 3000000000 are refused, not converted). The other keys keep the
+valid (`SimulationConfig::setRestitutionParams()`); the sweep counts must be json
+integers (1.9, 4.0, "4", 0, -3, 3000000000 are refused, not converted). The other keys keep the
 overlay semantics they had (a later deck without a key keeps the earlier value); some callers
 rely on that, e.g. the resume expectation the driver sets before the setup reads the deck.
 `restitution_`, `staticFriction_`, `dynamicFriction_` stay the material values.
@@ -45,7 +56,7 @@ The terminal-velocity setup prints one line on the root process after the walls 
 (`pe/interface/support/contact_params_echo.h`):
 
 ```
-EL_CONTACT_PARAMS pair=particle-particle mu_static=0.3 mu_dynamic=0.3 e=0.9 | pair=particle-wall wall=zwalls mu_static=0.3 mu_dynamic=0.3 e=0.9 | restitution=on threshold=0 scheme=post-pass iterations=4
+EL_CONTACT_PARAMS pair=particle-particle mu_static=0.3 mu_dynamic=0.3 e=0.9 | pair=particle-wall wall=zwalls mu_static=0.3 mu_dynamic=0.3 e=0.9 | restitution=on threshold=0.01 scheme=post-pass iterations=4 max_iterations=24 check_interval=4 abs_tolerance=0.0001 rel_tolerance=0.001
 ```
 
 The pair values are the values a contact uses. `Material::getStaticFriction( m1, m2 )` is the SUM
@@ -58,15 +69,30 @@ or `wall=none`. `restitution=off` means every contact is inelastic; `e=` is then
 bounce would use. `threshold=` is the user value; the solver adds its resting bound (section 3).
 
 While the switch is on, the EL stepping (`stepELFrozenTrace()`, `src/interface/cfd_stepping.cpp`)
-prints once per CFD step, on the root process:
+prints once per CFD step, on the root process (one line):
 
 ```
-EL_RESTITUTION_STATS step= 1234 impacting= 17 support= 140323 armed_visits= 102 sweeps_max= 23 restitution_impulse= 3.1e-07
+EL_RESTITUTION_STATS pe_step= 1233 cfd_step= 1234 scheme= post-pass candidates= 17 armed= 15 delivered= 14 in_solve= 0 support= 140323 armed_visits= 120 impulse_gross= 3.1e-07 impulse_final= 3e-07 substeps_converged= 9 substeps_capped= 0 substeps_skipped= 1 sweeps_mean= 8 sweeps_max= 12 residual= 8e-05 residual_rel= 4e-04 tangential_residual= 1e-05 support_closing_before= 2e-05 support_closing_after= 3e-05 impact_error= 9e-05 newton_shortfall= 0 approach_max= 0.12 resting_approach_max= 0.0098
 ```
 
-`impacting` = contacts asked to bounce, `support` = all other contacts, both summed over the
-sub-steps of the CFD step and over the processes; `armed_visits` = armed contact visits summed
-over the sweeps; `sweeps_max` = the largest number of post-pass sweeps of a sub-step.
+- `pe_step` is the PE call counter (from 0), `cfd_step = pe_step + 1` the step number the CFD
+  audits print; `scheme` is post-pass or in-solve.
+- Counts are summed over the 10 sub-steps and over the processes: `candidates` (pre-step approach
+  faster than the threshold), `armed` (candidates with compression impulse after the inelastic
+  solve: the rows that may bounce), `delivered` (armed rows ending the pass with a restitution
+  impulse: rebounds delivered), `in_solve` (in-solve targets set), `support` (all other rows),
+  `armed_visits` (summed over sweeps); `impulse_gross` (separating increments) and
+  `impulse_final` (booked at the end of the passes), both unrelaxed.
+- `substeps_converged / _capped / _skipped` and `sweeps_mean / _max` are the stop reasons and
+  sweep counts of the sub-steps (the same on every process).
+- The velocity measures are maxima over sub-steps and processes, in m/s: `residual` (projected
+  normal residual on the synchronised velocities at the last stop test) and `residual_rel` (the
+  same relative to the row's local impact scale), `tangential_residual`, `support_closing_before`
+  and `_after` (largest closing beyond the allowed approach `-dist/dt` of a support row after the
+  inelastic solve and after the pass), `impact_error` (armed rows the cap does not limit) and
+  `newton_shortfall` (armed rows the cap limits), `approach_max` (largest pre-step approach of a
+  candidate) and `resting_approach_max` (largest approach left inelastic by the threshold, the
+  number to calibrate `v_rest` against).
 
 ## 2. Impact law and scheme
 
@@ -74,23 +100,28 @@ over the sweeps; `sweeps_max` = the largest number of post-pass sweeps of a sub-
   velocity `vn = n · (v1 - v2 + w1 × r1 - w2 × r2)` approaches faster than the threshold
   (`vn < -threshold`). The pre-step velocity is the velocity stored in the bodies at the start of
   the (sub)step, the Moreau–Jean choice (`restitutionPreStepNormalVelocity()`).
-- **Capped post-pass** (default). The velocity solve stays inelastic. `restitutionPostPass()` then
-  sweeps ALL contacts (`restitutionPostPassSweep()`), each sweep followed by
-  `synchronizeVelocities()`:
-  - an armed contact is driven towards the separation speed `e |vn|` (Newton target), its separating
-    impulse held to `e` times the compression impulse `lambda_c` of the inelastic solve (Poisson
-    ceiling); the part of an increment that only stops an approach is always allowed;
-  - every other contact, including the touching contacts with `e = 0`, keeps the inelastic target
-    (normal velocity `>= -dist_/dt`, the positional terms of the compression solve), so a rebound
-    cannot drive a resting neighbour into penetration;
-  - after a normal change the Coulomb friction is re-relaxed against the new total normal impulse
-    (friction bound `mu (1 + e) lambda_c`); a contact unloaded to zero normal impulse loses its
-    tangential impulse with it;
-  - the pass runs no sweep when no contact asks for a bounce on any process (the step is then bit
-    for bit the inelastic step), else at least `restitutionIterations_` sweeps and then until a
-    sweep changes no normal velocity by more than `setRestitutionTolerance()` (1e-9) times the
-    largest impact speed (global maximum), at most `max( restitutionIterations_, maxIterations_ )`
-    (100) sweeps.
+- **Capped post-pass** (default). The velocity solve stays inelastic. `RestitutionPass` then
+  classifies the rows from the synchronised post-compression velocities and sweeps them
+  (`restitutionPostPassSweep()`, each sweep followed by `synchronizeVelocities()`):
+  - an **armed** row (a candidate with positive compression impulse) is driven towards the
+    separation speed `e |vn|` (Newton target), its separating impulse held to `e` times its
+    compression impulse (Poisson ceiling); the part of an increment that only stops an approach is
+    always allowed; only armed rows book restitution impulse;
+  - every **support** row (all others, any `e`, also a candidate without compression) has a
+    unilateral target relative to the post-compression state: `g0` (its normal velocity after the
+    inelastic solve) if loaded, `min( g0, -dist/dt )` if free. An undisturbed support network is
+    therefore an exact fixed point: a support row whose relative velocity is still bitwise the
+    post-compression one is skipped (no impulse, no friction change), so a remote impact changes
+    neither its velocities nor its wall loads, and the pass never repairs positions (that stays in
+    the compression or split-impulse position solve); only closing introduced by a rebound is
+    removed;
+  - every visited row gets its Coulomb friction re-relaxed against the new total normal impulse,
+    also when the normal increment is zero (a rebound can change the slip of a loaded row without
+    changing its load); a row unloaded to zero normal impulse loses its tangential impulse;
+  - the pass starts only if a row is armed on some process (else the step is bit for bit the
+    inelastic step), runs at least `minSweeps` and then, every `checkInterval` sweeps, tests the
+    projected normal residual of every affected row on the synchronised velocities against
+    `absTolerance + relTolerance * s` (`s` the row's local impact scale), at most `maxSweeps`.
 - **In-solve Newton target** (`"in-solve"`). The armed contact's target distance becomes
   `dist_ = e vn dt`, unless the contact has a positive gap that the free normal motion of the step
   does not close (`restitutionInSolveDistance()`); then the gap is kept. No cap: several
@@ -110,13 +141,14 @@ with `v_n,free` the normal velocity the step gives without the contact (section 
 
 | Part | HCSITS | HardContactEulerLagrange |
 |---|---|---|
-| `RestitutionPassStats`, the sweep `restitutionPostPassSweep()`, the step loop `restitutionPostPass()` (skip, minimum, tolerance, cap, reductions), `restitutionInSolveDistance()`, `restitutionPreStepNormalVelocity()` | `RestitutionPostPass.h` | the same functions |
+| `RestitutionStopRule`, `RestitutionPassStats`, `RestitutionPassWork`, `RestitutionPass` (classification, sweep, residuals, stop rule, diagnostics, refusal of mobile global bodies), `restitutionInSolveDistance()`, `restitutionPreStepNormalVelocity()`, `restitutionCountCandidate()` | `RestitutionPostPass.h` | the same |
 | Arming threshold | `max( threshold, 2 |g| dt )`, contact caching | `max( threshold, 2 max |dv_free| )`, `armRestitution()` after the body caching |
-| In-solve gap test velocity | pre-step `vn` (HCSITS arms before it adds gravity) | free normal velocity `freeNormalVelocity()` |
-| Refusal of a mobile global body | none | `refuseUnsupportedRestitution()` |
+| In-solve gap test velocity | free normal velocity after the body caching (`freeNormalVelocity()`) | the same |
+| Refusal of a mobile global body | `RestitutionPass::refuseMobileGlobal()` in `simulationStep()` | the same, via `refuseUnsupportedRestitution()` |
+| Shadow-correction send filter | exact zero test while the switch is on (approximate `== Vec3()` off) | exact always |
 
-Both solvers declare the two function templates friends; they work on the members documented at
-the top of `RestitutionPostPass.h`.
+Both solvers declare `friend struct RestitutionPass;` and keep the members documented at the top of
+`RestitutionPostPass.h`.
 
 ## 3. What the Euler–Lagrange coupling changes
 
@@ -151,8 +183,13 @@ sub-steps (micro-bounce), without creating kinetic energy beyond the hydro work,
 implemented, awaiting the owner): arm only if `vn < -max( threshold, 2 |dv_free,now|,
 2 |dv_free,previous sub-step|, v_rest )` with `v_rest` a deck velocity below which pairs are
 inelastic (granular practice: a fraction of `sqrt(g d)`), so that both a forcing change and the
-residual approach of a settling bed stay inelastic. Meanwhile `restitutionThreshold_` is that
-`v_rest`. With EL lubrication on, the lubrication fold enters `v_` before the arming (counted in
+residual approach of a settling bed stay inelastic. Review round 2 decided against a second key:
+`restitutionThreshold_` is that `v_rest`. At the case-11 scale (0.87 mm, 10 sub-steps of 2.5e-5 s,
+`pe-el-restitution-rest`) `v_rest = 0.01 m/s` gives a pile under drag carrying 20-90 % of the
+weight zero candidates in a late 0.1 s window after 0.8 s of settling, while floor impacts at
+0.05-0.2 m/s keep their rebound (ratio 0.900); during settling the largest approach left inelastic
+is 0.0091-0.0100 m/s (`resting_approach_max`), so the bound is what keeps the settling bed
+inelastic. With EL lubrication on, the lubrication fold enters `v_` before the arming (counted in
 `dv_free` and `lambda_c`, not in the Newton target).
 
 **`relaxationParam_` (alpha = 0.9).** In a multi-process run every `synchronizeVelocities()` folds
@@ -184,7 +221,9 @@ sweep count are global (`restitutionGlobalMax()`), so every process calls
 **Fixed and global bodies** (z-walls, box walls, the inner cylinder) have infinite mass and
 `dv_free = 0`; their prescribed velocity enters `vn`; local–global contacts are treated on the
 sphere owner. A **finite-mass (non-fixed) global body is refused** while the switch is on
-(`refuseUnsupportedRestitution()`, std::runtime_error at the next step on every process).
+(`RestitutionPass::refuseMobileGlobal()`, both solvers, std::runtime_error at the next step on
+every process). The test reads the live body storage, so a body fixed and destroyed, a cleared and
+repopulated world, or a body unfixed after it was added are all decided by the state at the step.
 
 ## 4. Follow-up (not fixed here): synchronisation of non-fixed global bodies
 
@@ -206,12 +245,11 @@ mobile global sphere on two ranks (momentum, both replicas). Until then the comb
   has `e = 0`: a pair born touching does not bounce in the step it is born; the post-pass keeps it
   inelastic (support contact). In a chain of touching spheres the support contacts therefore act
   inelastically (3-chain: `B` and `C` leave together at `(1+e) u / 3`).
-- The post-pass cost grows with the number of sweeps the rebounds need to converge through the
-  support network (up to 100 per sub-step, each with one synchronisation; logged as `sweeps_max`).
+- The post-pass cost grows with the number of sweeps (4-24 per sub-step with the default rule, each
+  with one synchronisation; logged as `sweeps_mean` / `sweeps_max`). A sub-step that exhausts the
+  budget is counted in `substeps_capped`; its residual is in the log line.
 - After a bounce with Baumgarte an overlap left from the impact step can add push-out in the next
   step; the post-pass removes the push-out only in the impact step.
-- In-solve with a positive gap in HCSITS: the closing test uses the pre-step velocity (gravity is
-  added after the arming), so a gap that only gravity closes bounces one step later.
 - Not covered by tests: non-spherical bodies under the EL solver, the inner-cylinder wall,
   lubrication with restitution, the in-solve scheme beyond single impacts and the positive gap,
   `runFrozenFieldTrace` (compiled only with MPI and CGAL, not built here), a periodic seam (left to
@@ -235,6 +273,22 @@ mobile global sphere on two ranks (momentum, both replicas). Until then the comb
 | P2-8 / P2-9 | threshold claim qualified (section 3), recurrence stated and asserted | - |
 
 HCSITS with restitution OFF is unchanged (the pass is not entered).
+
+## 6b. Review round 2: what changed
+
+| Finding | Change | Test (fails on 97563ed) |
+|---|---|---|
+| 3 support rows (P1) | support targets relative to the post-compression state; undisturbed rows skipped (exact fixed point); pass only with an armed row; no positional repair in the pass | `pe-restitution-support` case 5 (squeezed sphere + pile + remote impact: bitwise unchanged, floor impulse identical) |
+| 4 friction / stop on synchronised state (P1) | friction re-relaxed on every affected row, also at zero normal increment; stop test on the synchronised velocities, projected residual in m/s | `pe-restitution-support` case 6 (orthogonal impact, loaded sticking floor) |
+| stop rule and budget | four keys, defaults min 4 / max 24 / every 4 / 1e-4 m/s + 1e-3; global decisions; per-deck resolution, echo | `pe-restitution-stoprule[-plain]`, `pe-el-restitution-config` |
+| 9 statistics (P2) | candidates / armed / delivered, gross / final impulse, scheme, sub-steps converged / capped / skipped, residuals, `pe_step` + `cfd_step`; only armed rows book restitution | `pe-restitution-stoprule` case 3 (candidate without compression books nothing) |
+| resting bed | `v_rest` = `restitutionThreshold_` only | `pe-el-restitution-rest` |
+| 1 refusal (P0) | from the live body storage | `pe-el-restitution` refusal cases b-d |
+| 2 / 8 HCSITS under MPI (P0 / P1) | shared refusal; exact-zero send filter with restitution on (off: unchanged) | `pe-hcsits-restitution-mpi` |
+| 5 inherited switch (P1) | `rejectRestitutionRequest()` applies the (disabled) deck settings | `pe-el-restitution-setup[-fluid]-inherit` |
+| 6 HCSITS gap decision (P1) | in-solve gap decision after the body caching (free velocity) | `pe-restitution-support-plain` case 7 |
+| 7 two-rank chain (P1) | contact midpoints on opposite sides of the cut, treating rank asserted, separation speed asserted | `pe-el-restitution-mpi` |
+| 10 wording (P2) | tools: "minimum sweeps", fixed-count mode; applier diagnostic names the EL solver | - |
 
 ## 7. Tests
 
