@@ -141,6 +141,10 @@ SimulationConfig::SimulationConfig()
     , restitution_(0.0)
     , staticFriction_(0.1)
     , dynamicFriction_(0.05)
+    , restitutionEnabled_(false)
+    , restitutionThreshold_(0.0)
+    , restitutionScheme_("post-pass")
+    , restitutionIterations_(4)
     , serialEnableEscapeReinsertion_(false)
     , serialEnableStuckDiagnostics_(false)
     , serialReinsertionSafetyMargin_(0.02)
@@ -572,6 +576,16 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("dynamicFriction_"))
         config.setDynamicFriction(j["dynamicFriction_"].get<real>());
+
+    // Restitution switch of the contact solver (the setters validate and throw on invalid values)
+    if (j.contains("restitutionEnabled_"))
+        config.setRestitutionEnabled(j["restitutionEnabled_"].get<bool>());
+    if (j.contains("restitutionThreshold_"))
+        config.setRestitutionThreshold(j["restitutionThreshold_"].get<real>());
+    if (j.contains("restitutionScheme_"))
+        config.setRestitutionScheme(j["restitutionScheme_"].get<std::string>());
+    if (j.contains("restitutionIterations_"))
+        config.setRestitutionIterations(j["restitutionIterations_"].get<int>());
 
     if (j.contains("serialEnableEscapeReinsertion_"))
         config.setSerialEnableEscapeReinsertion(j["serialEnableEscapeReinsertion_"].get<bool>());

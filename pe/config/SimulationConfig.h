@@ -31,6 +31,7 @@
 #include <pe/config/Precision.h>
 #include <pe/math/Vector3.h>
 #include <boost/filesystem.hpp>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -392,6 +393,30 @@ public:
     void setStaticFriction(real value) { staticFriction_ = value; }
     real getDynamicFriction() const { return dynamicFriction_; }
     void setDynamicFriction(real value) { dynamicFriction_ = value; }
+    // Restitution switch of the hard-contact solver (restitution_ above stays the material value;
+    // the EL setups apply these with applyOptionalRestitutionParams()). Defaults = solver defaults.
+    bool getRestitutionEnabled() const { return restitutionEnabled_; }
+    void setRestitutionEnabled(bool value) { restitutionEnabled_ = value; }
+    real getRestitutionThreshold() const { return restitutionThreshold_; }
+    void setRestitutionThreshold(real value) {
+        if (!(value >= real(0)))
+            throw std::invalid_argument("restitutionThreshold_ must be >= 0 (an approach speed in m/s), got " +
+                                        std::to_string(value));
+        restitutionThreshold_ = value;
+    }
+    const std::string& getRestitutionScheme() const { return restitutionScheme_; }
+    void setRestitutionScheme(const std::string& value) {
+        if (value != "post-pass" && value != "in-solve")
+            throw std::invalid_argument("Unknown restitutionScheme_: " + value +
+                                        " (expected \"post-pass\" or \"in-solve\")");
+        restitutionScheme_ = value;
+    }
+    int getRestitutionIterations() const { return restitutionIterations_; }
+    void setRestitutionIterations(int value) {
+        if (value < 1)
+            throw std::invalid_argument("restitutionIterations_ must be >= 1, got " + std::to_string(value));
+        restitutionIterations_ = value;
+    }
     //@}
     //**************************************************************************************
 
@@ -549,6 +574,10 @@ private:
     real restitution_;           //!< Contact material restitution coefficient
     real staticFriction_;        //!< Contact material static friction coefficient
     real dynamicFriction_;       //!< Contact material dynamic friction coefficient
+    bool restitutionEnabled_;    //!< Restitution switch of the contact solver (setRestitution(); false = inelastic, the solver default)
+    real restitutionThreshold_;  //!< Impact speed below which contacts stay inelastic (setRestitutionThreshold(); >= 0, default 0)
+    std::string restitutionScheme_; //!< "post-pass" (capped post-pass, default) or "in-solve" (Newton target in the solve)
+    int restitutionIterations_;  //!< Sweeps of the post-pass (setRestitutionIterations(); >= 1, default 4)
 
     // Serial post-step features
     bool serialEnableEscapeReinsertion_; //!< Enable domain escape handling and reinsertion in serial stepping
