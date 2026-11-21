@@ -37,6 +37,7 @@
 #include <pe/core/batches/Generators.h>
 #include <pe/core/CollisionSystemID.h>
 #include <pe/core/collisionsystem/MPICommunication.h>
+#include <pe/core/collisionsystem/RestitutionPostPass.h>
 #include <pe/core/Configuration.h>
 #include <pe/core/contact/Contact.h>
 #include <pe/core/contact/ContactVector.h>
@@ -257,6 +258,15 @@ public:
    inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
    inline void            setSplitImpulse( bool enable );
    inline bool            getSplitImpulse() const { return useSplitImpulse_; }
+   inline void            setRestitution( bool enable );
+   inline bool            getRestitution() const { return useRestitution_; }
+   inline void            setRestitutionThreshold( real vn );
+   inline real            getRestitutionThreshold() const { return restitutionThreshold_; }
+   inline void            setRestitutionPostPass( bool enable );
+   inline bool            getRestitutionPostPass() const { return useRestitutionPostPass_; }
+   inline void            setRestitutionIterations( size_t n );
+   inline size_t          getRestitutionIterations() const { return restitutionIterations_; }
+   inline const RestitutionPassStats& getRestitutionPassStats() const { return restitutionPassStats_; }
    inline void            setMinEps( real /*minEps*/ ) {}
    inline void            setNumSubcycles( size_t /*nSubcycles*/ ) {}
    //@}
@@ -297,6 +307,8 @@ private:
    void resolveContacts( const Contacts& contacts, real dt );
    real relaxInelasticFrictionlessContacts( real dtinv );
    real relaxPseudoVelocities( real dtinv );
+   void armRestitution( real dt );
+   real relaxRestitutionPostPass( real dtinv );
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
@@ -332,6 +344,7 @@ private:
    inline real getCharacteristicLength( ConstBodyID body ) const;
    inline Vec3 pseudoVelocity( size_t j ) const        { return useSplitImpulse_ ? vp_[j] + dvp_[j] : Vec3(); }
    inline Vec3 pseudoAngularVelocity( size_t j ) const { return useSplitImpulse_ ? wp_[j] + dwp_[j] : Vec3(); }
+   inline real freeVelocityIncrement( ConstBodyID body ) const;
    //@}
    //**********************************************************************************************
 
@@ -352,6 +365,11 @@ private:
    real erp_;                 //!< The error reduction parameter (0 <= erp_ <= 1).
    bool useAdaptiveBaumgarteCapping_;  //!< Enable adaptive velocity capping to prevent explosions
    bool useSplitImpulse_;     //!< Split impulse: penetration is removed by pseudo velocities that move the positions but are not kept as body velocity.
+   bool useRestitution_;      //!< Newton restitution: an impacting contact bounces at e * (pre-step normal approach) instead of stopping (setRestitution()).
+   real restitutionThreshold_; //!< Impacts slower than this (and slower than 2 |dv_free|) are treated as inelastic (no micro-bounces at rest).
+   bool useRestitutionPostPass_;  //!< Restitution as the capped post-pass after the inelastic solve (default) instead of a Newton target inside it.
+   size_t restitutionIterations_; //!< Number of Gauss-Seidel sweeps of the restitution post-pass (default 4).
+   RestitutionPassStats restitutionPassStats_;  //!< Diagnostics of the last step's post-pass (process-local).
    real correctionAggressiveness_;     //!< Controls correction rate when adaptive capping enabled (default: 50)
    size_t maxIterations_;     //!< Maximum number of iterations.
    size_t iteration_;
@@ -390,6 +408,9 @@ private:
    std::vector<Vec3> p_;
    std::vector<real> pseudoDist_;   //!< Split impulse: the distance the position solve has to close (erp * penetration, or the allowed approach).
    std::vector<Vec3> pp_;           //!< Split impulse: pseudo impulses of the position solve.
+   std::vector<real> cor_;          //!< Restitution: coefficient of restitution of the contact (0 = the post-pass skips it). Sized only while setRestitution() is on.
+   std::vector<real> impactSpeed_;  //!< Restitution post-pass: separation speed e |gdot_n^-| asked of an armed contact (0 = not armed).
+   std::vector<real> restitutionImpulse_;  //!< Restitution post-pass: accumulated separating (restitution) part of the normal impulse.
 
    //**********************************************************************************************
    /*! \cond PE_INTERNAL */
@@ -431,6 +452,8 @@ private:
    /*! \cond PE_INTERNAL */
    friend class World;
    friend class MPISystem;
+   // The capped restitution post-pass sweep (RestitutionPostPass.h) works on the contact arrays.
+   template< typename CS > friend real restitutionPostPassSweep( CS& s, real dtinv );
    template< typename Geometry >
    friend void defineLocalDomain( const Geometry& geometry );
    // Attachables register directly instead of the detour via a manager and thus need friend access to the attachable storage.
@@ -485,6 +508,10 @@ CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::CollisionSyst
    , erp_              ( 0.7 )
    , useAdaptiveBaumgarteCapping_  ( false )  // OFF by default - opt-in feature
    , useSplitImpulse_  ( false )  // OFF by default: trajectories of existing runs stay unchanged
+   , useRestitution_   ( false )  // OFF by default: the solver stays inelastic and bit-identical to the solver before the switch
+   , restitutionThreshold_ ( 0 )
+   , useRestitutionPostPass_ ( true )   // capped post-pass by default, as in HardContactSemiImplicitTimesteppingSolvers
+   , restitutionIterations_ ( 4 )
    , correctionAggressiveness_     ( 50.0 )
    , maxIterations_    ( 100 )
    , iteration_        ( 0 )
@@ -1339,6 +1366,144 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::s
 
 
 //*************************************************************************************************
+/*!\brief Enables or disables Newton restitution at impacting contacts.
+ *
+ * \param enable True to bounce impacting contacts with the material's coefficient of restitution.
+ * \return void
+ *
+ * Port of HardContactSemiImplicitTimesteppingSolvers::setRestitution() (HCSITS). Off (the
+ * default) every contact is inelastic and the solver is bit for bit the solver without the switch:
+ * no restitution array is sized, no extra sweep runs, no extra MPI message is sent. On, a contact
+ * whose pre-step normal relative velocity \f$ \dot g_n^- \f$ approaches faster than the threshold
+ * (setRestitutionThreshold()) bounces with the Newton impact law
+ * \f$ \dot g_n^+ \geq -e \, \dot g_n^- \f$, \a e the pairwise coefficient of restitution
+ * (Material::getRestitution( m1, m2 ), carried by the contact). The schemes are those of HCSITS
+ * (setRestitutionPostPass()): the capped post-pass (default; the sweep is
+ * restitutionPostPassSweep() of RestitutionPostPass.h, shared with HCSITS) or the in-solve Newton
+ * target (dist_ = e vn dt, as in HCSITS).
+ *
+ * What the Euler-Lagrange coupling changes (doc/technical-notes/el-restitution.md):
+ *
+ *  - Pre-impact velocity. The CFD driver's hydrodynamic increment (drag treated implicitly,
+ *    gravity, buoyancy, pressure: elSemiImplicitVelocity()) is folded into the cached velocity
+ *    before the contact solve, as gravity is in HCSITS. \f$ \dot g_n^- \f$ is the velocity
+ *    stored in the bodies at the start of the (sub)step (restitutionPreStepNormalVelocity()), the
+ *    Moreau-Jean choice of HCSITS; the inelastic solve then stops the post-hydro approach, so the
+ *    compression impulse is \f$ \lambda_c = m_{eff}\,|\dot g_n^{free}| \f$ (plus the positional
+ *    terms) and the Poisson cap \f$ \lambda_r \le e\,\lambda_c \f$ of the post-pass bounds the
+ *    rebound by \f$ e\,|\dot g_n^{free}| \f$: a single impact leaves at
+ *    \f$ e \min( |\dot g_n^-|, |\dot g_n^{free}| ) \f$, both equal to O(dt / tau_p).
+ *  - Resting threshold. The EL solver does not apply gravity (Settings::gravity() is zero in the
+ *    EL decks), so the HCSITS bound 2 |g| dt is replaced per contact by twice the larger
+ *    free-flight velocity increment |dv_free| of the two bodies in this step (the hydro increment
+ *    of a hydro body, F dt / m of a body driven by forces, 0 for a fixed body), which is 2 |g| dt
+ *    for a body under gravity alone. The arming therefore runs after the body caching
+ *    (armRestitution()).
+ *  - relaxationParam_. In a multi-process run every synchronizeVelocities() folds the corrections
+ *    with relaxationParam_ (0.9). The post-pass impulses are folded like the PGS impulses, so
+ *    p_ keeps the same convention (the applied impulse is relaxationParam_ * p_, Newton's third law
+ *    holds across ranks); each sweep re-targets on the folded velocity, so four sweeps deliver
+ *    1 - 0.1^4 of the bounce. The diagnostics accumulated from p_ (contactVirial_,
+ *    wallContactImpulse_) therefore contain the restitution impulse with the same unrelaxed
+ *    convention as the compression impulse.
+ *  - Process boundaries. Each contact is armed and swept on the one process that treats it
+ *    (contact filtering of resolveContacts()); the pre-step velocity of a shadow copy is its
+ *    owner's (synchronize()), the corrections reach the owner as for the PGS. The sweep count is
+ *    a solver setting, so every process runs the same number of synchronizeVelocities().
+ *
+ * The switch must have the same value on every process.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::setRestitution( bool enable )
+{
+   useRestitution_ = enable;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the impact velocity below which restitution is not applied.
+ *
+ * \param vn Normal approach speed threshold (>= 0).
+ * \return void
+ *
+ * The effective threshold of a contact is max( vn, 2 max( |dv_free,1|, |dv_free,2| ) ) with
+ * dv_free the velocity a body gains in this step from everything but contacts (see
+ * setRestitution()); the default 0 therefore already excludes resting contacts, as
+ * max( vn, 2 |g| dt ) does in HardContactSemiImplicitTimesteppingSolvers::setRestitutionThreshold().
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::setRestitutionThreshold( real vn )
+{
+   pe_INTERNAL_ASSERT( vn >= 0, "Restitution threshold must be non-negative." );
+   restitutionThreshold_ = vn;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Selects the capped restitution post-pass instead of the Newton target in the solve.
+ *
+ * \param enable True (default) to bounce in a separate pass after the inelastic solve.
+ * \return void
+ *
+ * As HardContactSemiImplicitTimesteppingSolvers::setRestitutionPostPass(), which documents the
+ * pass. Only relevant while setRestitution() is on. Off, an impacting contact gets the Newton law
+ * as its target inside the relaxation sweeps (no cap: several simultaneous impacts of one body
+ * can gain energy, see tests/interface/pe_hcsits_restitution_test.cpp case 7).
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::setRestitutionPostPass( bool enable )
+{
+   useRestitutionPostPass_ = enable;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the number of Gauss-Seidel sweeps of the restitution post-pass.
+ *
+ * \param n Number of sweeps (>= 1); default 4. Each sweep costs one synchronizeVelocities().
+ * \return void
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::setRestitutionIterations( size_t n )
+{
+   pe_INTERNAL_ASSERT( n >= 1, "The restitution post-pass needs at least one sweep." );
+   restitutionIterations_ = n;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Returns the characteristic length of a rigid body.
  *
  * \param body The body to compute the characteristic length for.
@@ -1359,6 +1524,34 @@ inline real CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::g
    real extentY = aabb[4] - aabb[1];
    real extentZ = aabb[5] - aabb[2];
    return std::max(extentX, std::max(extentY, extentZ));
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Velocity a body gains in this step from everything but contacts (restitution threshold).
+ *
+ * \param body The body (local or shadow copy) with a valid index_ of this step.
+ * \return The magnitude of the linear velocity increment.
+ *
+ * The cached velocity v_ + dv_ minus the velocity stored in the body, evaluated after the body
+ * caching (and the lubrication fold) and before the contact solve: the semi-implicit hydro
+ * increment of a hydro body (folded into v_), the force increment F dt / m of a body driven by
+ * forces (in dv_; folded with relaxationParam_ by the first synchronizeVelocities() of a
+ * multi-process run), the owner's value for a shadow copy, 0 for a fixed or sleeping body.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+inline real CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::freeVelocityIncrement( ConstBodyID body ) const
+{
+   const size_t j( body->index_ );
+   return ( v_[j] + dv_[j] - body->getLinearVel() ).length();
 }
 //*************************************************************************************************
 
@@ -2226,6 +2419,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
    p_.resize( numContactsMasked );
    pseudoDist_.resize( numContactsMasked );
    pp_.resize( numContactsMasked );
+   if( useRestitution_ ) {
+      cor_.resize( numContactsMasked );
+      impactSpeed_.resize( numContactsMasked );
+      restitutionImpulse_.resize( numContactsMasked );
+   }
 
    {
       maximumPenetration_ = 0;
@@ -2295,6 +2493,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
          pseudoDist_[j] = dist_[j];
          if( useSplitImpulse_ && dist_[j] < 0 )
             dist_[j] = 0;
+
+         // Restitution (setRestitution()): the contact's coefficient; whether it bounces is
+         // decided by armRestitution() after the body caching.
+         if( useRestitution_ )
+            cor_[j] = c->getRestitution();
 
          mu_[j]       = c->getFriction();
 
@@ -2430,6 +2633,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
 #endif
    }
 
+   // Restitution (setRestitution()): which contacts bounce. The threshold needs the cached
+   // post-hydro velocities, hence after the body caching (HCSITS does this in the contact caching).
+   if( useRestitution_ )
+      armRestitution( dt );
+
    // Iterate relaxation a constant number of times
    for( size_t it = 0; it < maxIterations_; ++it ) {
       //pe_LOG_WARNING_SECTION( log ) {
@@ -2488,6 +2696,19 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
 #endif
    }
 
+   // Restitution post-pass (setRestitutionPostPass()): the inelastic solve above has settled the
+   // compression impulses; a fixed number of sweeps now adds the capped bounce to the armed
+   // contacts. Same synchronisation as the velocity solve; the sweep count is a solver setting
+   // and therefore the same on every process. As in HCSITS, between the velocity solve and the
+   // split-impulse position solve.
+   restitutionPassStats_ = RestitutionPassStats();
+   if( useRestitution_ && useRestitutionPostPass_ ) {
+      for( size_t it = 0; it < restitutionIterations_; ++it ) {
+         relaxRestitutionPostPass( dtinv );
+         synchronizeVelocities();
+      }
+   }
+
    // Split impulse: the position solve. Normal-only, non-negative pseudo impulses on separate
    // pseudo velocities, with the same iteration count and the same synchronisation as the
    // velocity solve (synchronizeVelocities() works on v_/w_/dv_/dw_, so the pseudo arrays are
@@ -2509,6 +2730,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::resolveC
    // exactly one rank globally (local-local at the owner, cross-rank at the
    // contact-point owner), so no designated-treater logic is needed here.
    // Sphere-sphere only: wall/global-body stress is a separate channel.
+   // With restitution on, p_ also holds the post-pass increments (restitution impulse and the
+   // re-relaxed friction), in the same unrelaxed convention as the PGS impulse (setRestitution()).
    for( size_t i = 0; i < numContactsMasked; ++i ) {
       // Sphere-wall contacts (Couette z-planes): accumulate the converged
       // impulse ON the wall. Local-global contacts are treated on exactly
@@ -2759,6 +2982,78 @@ real CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::relaxPse
    }
 
    return delta_max;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Decides which contacts bounce in this step (setRestitution()).
+ *
+ * \param dt The time step size.
+ * \return void
+ *
+ * Counterpart of the restitution block in the contact caching of
+ * HardContactSemiImplicitTimesteppingSolvers::resolveContacts(), with the same arithmetic for the
+ * pre-step normal velocity (restitutionPreStepNormalVelocity()) and for both schemes, and the EL
+ * threshold max( restitutionThreshold_, 2 max( |dv_free,1|, |dv_free,2| ) ) instead of
+ * max( restitutionThreshold_, 2 |g| dt ) (see setRestitution()). Called after the body caching,
+ * whose cached velocities carry the step's free-flight increment, and before the velocity solve.
+ * Contacts with e = 0 are never armed and the post-pass skips them.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::armRestitution( real dt )
+{
+   const size_t numContactsMasked( p_.size() );
+
+   for( size_t j = 0; j < numContactsMasked; ++j ) {
+      impactSpeed_[j] = real( 0 );
+      restitutionImpulse_[j] = real( 0 );
+
+      const real e( cor_[j] );
+      if( e <= real( 0 ) )
+         continue;
+
+      const real vn( restitutionPreStepNormalVelocity( body1_[j], body2_[j], r1_[j], r2_[j], n_[j] ) );
+      const real threshold( std::max( restitutionThreshold_, real( 2 ) * std::max( freeVelocityIncrement( body1_[j] ),
+                                                                                    freeVelocityIncrement( body2_[j] ) ) ) );
+      if( vn < -threshold ) {
+         if( useRestitutionPostPass_ )
+            impactSpeed_[j] = -e * vn;
+         else
+            dist_[j] = e * vn * dt;
+      }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief One Gauss-Seidel sweep of the capped restitution post-pass (setRestitutionPostPass()).
+ *
+ * \param dtinv The inverse of the time step size.
+ * \return The largest normal impulse increment of the sweep.
+ *
+ * The sweep is restitutionPostPassSweep() of pe/core/collisionsystem/RestitutionPostPass.h, the
+ * same code as HardContactSemiImplicitTimesteppingSolvers::relaxRestitutionPostPass().
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+real CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::relaxRestitutionPostPass( real dtinv )
+{
+   return restitutionPostPassSweep( *this, dtinv );
 }
 //*************************************************************************************************
 
