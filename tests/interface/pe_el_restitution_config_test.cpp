@@ -130,17 +130,34 @@ int main() {
   expect(config.getRestitutionScheme() == "in-solve", "restitutionScheme_ read");
   expect(config.getRestitutionIterations() == 6, "restitutionIterations_ read");
 
+  // A later deck without the keys: the four fields are resolved per deck, absent = the defaults
+  // (a deck must never inherit an enabled switch from an earlier deck of the same process).
   expect(loadThrows(writeDeck("absent_again", "{ \"zWallsEnabled_\": true }")).empty(), "a later deck without the keys loads");
-  expect(config.getRestitutionEnabled() && config.getRestitutionIterations() == 6 &&
-         config.getRestitutionScheme() == "in-solve", "absent keys leave the previous values");
+  expect(!config.getRestitutionEnabled() && config.getRestitutionThreshold() == real(0) &&
+         config.getRestitutionScheme() == "post-pass" && config.getRestitutionIterations() == 4,
+         "absent keys in a later deck -> off, 0, post-pass, 4 (not the previous deck's values)");
 
-  // --- 3. validation --------------------------------------------------------------------------
-  expect(!loadThrows(writeDeck("bad_threshold", "{ \"restitutionThreshold_\": -0.1 }")).empty(), "negative threshold throws");
-  expect(config.getRestitutionThreshold() == real(0.001), "refused threshold leaves the previous value");
-  expect(!loadThrows(writeDeck("bad_scheme", "{ \"restitutionScheme_\": \"postpass\" }")).empty(), "unknown scheme throws");
-  expect(config.getRestitutionScheme() == "in-solve", "refused scheme leaves the previous value");
-  expect(!loadThrows(writeDeck("bad_iterations", "{ \"restitutionIterations_\": 0 }")).empty(), "zero iterations throws");
-  expect(config.getRestitutionIterations() == 6, "refused iterations leave the previous value");
+  // --- 3. validation (all four validated together: a refused deck changes none of them) -------
+  const std::string onDeck("{ \"restitutionEnabled_\": true, \"restitutionThreshold_\": 0.001,"
+                           " \"restitutionScheme_\": \"in-solve\", \"restitutionIterations_\": 6 }");
+  const auto backToOn = [&]() { return loadThrows(writeDeck("on_again", onDeck)).empty(); };
+  const auto stillOn = [&]() {
+    return config.getRestitutionEnabled() && config.getRestitutionThreshold() == real(0.001) &&
+           config.getRestitutionScheme() == "in-solve" && config.getRestitutionIterations() == 6;
+  };
+  struct Bad { const char* name; const char* body; };
+  const Bad bad[] = {
+    { "bad_threshold",  "{ \"restitutionEnabled_\": false, \"restitutionThreshold_\": -0.1 }" },
+    { "bad_scheme",     "{ \"restitutionEnabled_\": false, \"restitutionScheme_\": \"postpass\" }" },
+    { "bad_iterations", "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 0 }" },
+  };
+  for (const Bad& b : bad) {
+    expect(backToOn(), std::string("reload of the enabled deck before ") + b.name);
+    const std::string msg = loadThrows(writeDeck(b.name, b.body));
+    expect(!msg.empty(), std::string(b.name) + " throws");
+    expect(stillOn(), std::string(b.name) + ": the refused deck leaves all four values unchanged");
+  }
+  expect(backToOn(), "reload of the enabled deck before the applier");
 
   // --- 4. applier and echo --------------------------------------------------------------------
   const MaterialID particle = createMaterial("el_rc_particle", real(860), real(0.9), real(0.15), real(0.15),

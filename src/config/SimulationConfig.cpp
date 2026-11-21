@@ -577,15 +577,25 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     if (j.contains("dynamicFriction_"))
         config.setDynamicFriction(j["dynamicFriction_"].get<real>());
 
-    // Restitution switch of the contact solver (the setters validate and throw on invalid values)
-    if (j.contains("restitutionEnabled_"))
-        config.setRestitutionEnabled(j["restitutionEnabled_"].get<bool>());
-    if (j.contains("restitutionThreshold_"))
-        config.setRestitutionThreshold(j["restitutionThreshold_"].get<real>());
-    if (j.contains("restitutionScheme_"))
-        config.setRestitutionScheme(j["restitutionScheme_"].get<std::string>());
-    if (j.contains("restitutionIterations_"))
-        config.setRestitutionIterations(j["restitutionIterations_"].get<int>());
+    // Restitution switch of the contact solver. Unlike the other keys these four are resolved PER
+    // DECK: an absent key means the default (off, 0, "post-pass", 4), never the value an earlier
+    // deck of the same process left in the singleton. They are read and validated together and
+    // assigned only if all are valid.
+    {
+        bool enabled = SimulationConfig::defaultRestitutionEnabled();
+        real threshold = SimulationConfig::defaultRestitutionThreshold();
+        std::string scheme = SimulationConfig::defaultRestitutionScheme();
+        int iterations = SimulationConfig::defaultRestitutionIterations();
+        if (j.contains("restitutionEnabled_"))
+            enabled = j["restitutionEnabled_"].get<bool>();
+        if (j.contains("restitutionThreshold_"))
+            threshold = j["restitutionThreshold_"].get<real>();
+        if (j.contains("restitutionScheme_"))
+            scheme = j["restitutionScheme_"].get<std::string>();
+        if (j.contains("restitutionIterations_"))
+            iterations = j["restitutionIterations_"].get<int>();
+        config.setRestitutionParams(enabled, threshold, scheme, iterations);
+    }
 
     if (j.contains("serialEnableEscapeReinsertion_"))
         config.setSerialEnableEscapeReinsertion(j["serialEnableEscapeReinsertion_"].get<bool>());

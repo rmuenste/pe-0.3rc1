@@ -719,19 +719,27 @@ foreach(variant "" "_plain")
 endforeach()
 
 # Json contract of restitutionEnabled_ / restitutionThreshold_ / restitutionScheme_ /
-# restitutionIterations_, the applier (applyOptionalRestitutionParams) and the EL_CONTACT_PARAMS
-# start-up echo line (pe/interface/support/contact_params_echo.h). Config singleton, no stepping.
-add_executable(pe_el_restitution_config_test
-  pe_el_restitution_config_test.cpp
-)
-target_link_libraries(pe_el_restitution_config_test PRIVATE pe_static)
-add_test(
-  NAME pe-el-restitution-config
-  COMMAND pe_el_restitution_config_test
-)
-set_tests_properties(pe-el-restitution-config PROPERTIES
-  LABELS "unit;serial;interface"
-)
+# restitutionIterations_ (per-deck defaults, validation), the applier (applyOptionalRestitutionParams)
+# and the EL_CONTACT_PARAMS start-up echo line (pe/interface/support/contact_params_echo.h); also
+# against HardContactAndFluid, which has no switch (the applier must refuse an enable). These tests
+# write decks, so they need the json loader.
+if(PE_USE_JSON)
+  foreach(variant "" "_fluid")
+    if(variant STREQUAL "_fluid")
+      set(restitution_cfg_lib pe_static_lubstage_fluid)
+    else()
+      set(restitution_cfg_lib pe_static)
+    endif()
+    string(REPLACE "_" "-" variant_name "${variant}")
+    add_executable(pe_el_restitution_config${variant}_test pe_el_restitution_config_test.cpp)
+    target_link_libraries(pe_el_restitution_config${variant}_test PRIVATE ${restitution_cfg_lib})
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_config${variant})
+    add_test(NAME pe-el-restitution-config${variant_name} COMMAND pe_el_restitution_config${variant}_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_config${variant})
+    set_tests_properties(pe-el-restitution-config${variant_name} PROPERTIES LABELS "unit;serial;interface")
+
+  endforeach()
+endif()
 
 # Static against dynamic coefficient of friction (Contact.cpp): a sliding contact must take the
 # dynamic coefficient, a resting one the static coefficient. Box sliding on a plane, box resting

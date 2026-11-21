@@ -398,24 +398,40 @@ public:
     bool getRestitutionEnabled() const { return restitutionEnabled_; }
     void setRestitutionEnabled(bool value) { restitutionEnabled_ = value; }
     real getRestitutionThreshold() const { return restitutionThreshold_; }
-    void setRestitutionThreshold(real value) {
+    void setRestitutionThreshold(real value) { validateRestitutionThreshold(value); restitutionThreshold_ = value; }
+    const std::string& getRestitutionScheme() const { return restitutionScheme_; }
+    void setRestitutionScheme(const std::string& value) { validateRestitutionScheme(value); restitutionScheme_ = value; }
+    int getRestitutionIterations() const { return restitutionIterations_; }
+    void setRestitutionIterations(int value) { validateRestitutionIterations(value); restitutionIterations_ = value; }
+    //! All four at once: validated together, then assigned (a refused set changes none of them).
+    //! loadFromFile() resolves them per deck from the defaults below, so an absent key never
+    //! inherits a value from an earlier deck of the same process.
+    void setRestitutionParams(bool enabled, real threshold, const std::string& scheme, int iterations) {
+        validateRestitutionThreshold(threshold);
+        validateRestitutionScheme(scheme);
+        validateRestitutionIterations(iterations);
+        restitutionEnabled_ = enabled;
+        restitutionThreshold_ = threshold;
+        restitutionScheme_ = scheme;
+        restitutionIterations_ = iterations;
+    }
+    static constexpr bool defaultRestitutionEnabled() { return false; }
+    static constexpr real defaultRestitutionThreshold() { return real(0); }
+    static const char* defaultRestitutionScheme() { return "post-pass"; }
+    static constexpr int defaultRestitutionIterations() { return 4; }
+    static void validateRestitutionThreshold(real value) {
         if (!(value >= real(0)))
             throw std::invalid_argument("restitutionThreshold_ must be >= 0 (an approach speed in m/s), got " +
                                         std::to_string(value));
-        restitutionThreshold_ = value;
     }
-    const std::string& getRestitutionScheme() const { return restitutionScheme_; }
-    void setRestitutionScheme(const std::string& value) {
+    static void validateRestitutionScheme(const std::string& value) {
         if (value != "post-pass" && value != "in-solve")
             throw std::invalid_argument("Unknown restitutionScheme_: " + value +
                                         " (expected \"post-pass\" or \"in-solve\")");
-        restitutionScheme_ = value;
     }
-    int getRestitutionIterations() const { return restitutionIterations_; }
-    void setRestitutionIterations(int value) {
+    static void validateRestitutionIterations(int value) {
         if (value < 1)
             throw std::invalid_argument("restitutionIterations_ must be >= 1, got " + std::to_string(value));
-        restitutionIterations_ = value;
     }
     //@}
     //**************************************************************************************
