@@ -4,10 +4,11 @@
 `q2p1_el_pipeflow`) used to be inelastic: the velocity solve stops the normal approach and the
 material restitution `restitution_` was never read. This note describes the restitution switch
 ported from `HardContactSemiImplicitTimesteppingSolvers` (HCSITS), what the Euler–Lagrange coupling
-changes in the impact law, the limits, and the tests.
+changes in the impact law, what review round 1 changed (section 6), the limits, and the tests.
 
 > **On locations.** Symbols, not line numbers (see the note in
-> [euler-lagrange-solver-conventions.md](euler-lagrange-solver-conventions.md)).
+> [euler-lagrange-solver-conventions.md](euler-lagrange-solver-conventions.md)), except where a
+> review finding is quoted.
 
 ## 1. Switch, keys, echo
 
@@ -16,15 +17,29 @@ changes in the impact law, the limits, and the tests.
 | `restitutionEnabled_` | bool, `false` | `setRestitution()` |
 | `restitutionThreshold_` | real >= 0 (m/s), `0` | `setRestitutionThreshold()` |
 | `restitutionScheme_` | `"post-pass"` (default) or `"in-solve"` | `setRestitutionPostPass( scheme == "post-pass" )` |
-| `restitutionIterations_` | int >= 1, `4` | `setRestitutionIterations()` |
+| `restitutionIterations_` | json integer in [1, INT_MAX], `4` | `setRestitutionIterations()` (minimum sweeps) |
 
-The defaults are the HCSITS defaults. Invalid values throw in the `SimulationConfig` setters while
-the deck is read. `restitution_`, `staticFriction_`, `dynamicFriction_` stay the material values.
-`applyOptionalRestitutionParams()` (`pe/interface/support/optional_collision_params.h`) pushes the
-four keys into the collision system. It is called by `setupELTerminalVelocity()` on every process.
-It refuses `restitutionEnabled_ = true` under a solver without the switch (`HardContactAndFluid`).
-With the keys absent, the solver is bit for bit the solver without the switch: no restitution array
-is sized, no extra sweep runs, and no extra MPI message is sent.
+The defaults are the HCSITS defaults. Unlike every other key, the four are resolved **per deck**: an
+absent key means its default, never the value an earlier deck of the same process left in the
+`SimulationConfig` singleton. They are read and validated together and assigned only if all are
+valid (`SimulationConfig::setRestitutionParams()`); `restitutionIterations_` must be a json
+integer (1.9, 4.0, "4", 0, -3, 3000000000 are refused, not converted). The other keys keep the
+overlay semantics they had (a later deck without a key keeps the earlier value); some callers
+rely on that, e.g. the resume expectation the driver sets before the setup reads the deck.
+`restitution_`, `staticFriction_`, `dynamicFriction_` stay the material values.
+
+Which setups apply the switch (`pe/interface/support/optional_collision_params.h`):
+
+| setup | switch |
+|---|---|
+| `setupELTerminalVelocity` (q2p1_el_pipeflow) | applied: `applyOptionalRestitutionParams()`, echo line |
+| `setupELFrozenTrace` (parallel; materials take `restitution_` from the deck) | applied |
+| `setupELFrozenTraceSerial` (materials hard-code `e = 0`), `runFrozenFieldTrace`, and every other setup that reads a deck (DKT, DNS drag, Archimedes, Kroupa, fluidization, span, drill, part bench, ATC, rotation, span complex, hash-grid test, lubrication lab) | an explicit `restitutionEnabled_ = true` is refused on every process: `rejectRestitutionRequest()` |
+
+`applyOptionalRestitutionParams()` also refuses `restitutionEnabled_ = true` under a solver
+without the switch (`HardContactAndFluid`, the DNS solver). With the keys absent the solver is bit
+for bit the solver without the switch: no restitution array is sized, no extra sweep runs, no extra
+MPI message is sent, nothing new is printed except the echo line.
 
 The terminal-velocity setup prints one line on the root process after the walls are created
 (`pe/interface/support/contact_params_echo.h`):
@@ -35,162 +50,208 @@ EL_CONTACT_PARAMS pair=particle-particle mu_static=0.3 mu_dynamic=0.3 e=0.9 | pa
 
 The pair values are the values a contact uses. `Material::getStaticFriction( m1, m2 )` is the SUM
 of the two material values, so json `staticFriction_ 0.15` shows as `mu_static=0.3`. The pair
-restitution is a stiffness-weighted mean: for equal stiffnesses and equal material values it is
-the material value. There is one `pair=particle-wall` segment per wall kind the setup created
-(`zwalls`, `boxwalls`, `cylinder`), or `wall=none` if it created none. `restitution=off` means
-every contact is inelastic, and `e=` is then the value a bounce would use. `threshold=` is the user
-value. The solver adds its resting bound (section 3).
+restitution of unlike materials is the square root of the inverse-stiffness-weighted mean of the
+squared coefficients; for equal stiffnesses and values it is the material value. A contact also
+uses `e = 0` when its normal speed at detection is below 1e-8 (section 5). There is one
+`pair=particle-wall` segment per wall kind the setup created (`zwalls`, `boxwalls`, `cylinder`),
+or `wall=none`. `restitution=off` means every contact is inelastic; `e=` is then the value a
+bounce would use. `threshold=` is the user value; the solver adds its resting bound (section 3).
+
+While the switch is on, the EL stepping (`stepELFrozenTrace()`, `src/interface/cfd_stepping.cpp`)
+prints once per CFD step, on the root process:
+
+```
+EL_RESTITUTION_STATS step= 1234 impacting= 17 support= 140323 armed_visits= 102 sweeps_max= 23 restitution_impulse= 3.1e-07
+```
+
+`impacting` = contacts asked to bounce, `support` = all other contacts, both summed over the
+sub-steps of the CFD step and over the processes; `armed_visits` = armed contact visits summed
+over the sweeps; `sweeps_max` = the largest number of post-pass sweeps of a sub-step.
 
 ## 2. Impact law and scheme
-
-The scheme is the HCSITS scheme without changes:
 
 - **Arming.** A contact with pair restitution `e > 0` is *armed* when its pre-step normal relative
   velocity `vn = n · (v1 - v2 + w1 × r1 - w2 × r2)` approaches faster than the threshold
   (`vn < -threshold`). The pre-step velocity is the velocity stored in the bodies at the start of
-  the (sub)step, which is the Moreau–Jean choice. It is computed by
-  `restitutionPreStepNormalVelocity()`.
-- **Capped post-pass** (default, `restitutionScheme_ = "post-pass"`). The velocity solve stays
-  inelastic. Then `restitutionIterations_` Gauss–Seidel sweeps (`restitutionPostPassSweep()`), each
-  followed by `synchronizeVelocities()`, drive every armed contact towards the separation speed
-  `e |vn|` (the Newton target). The separating part of its impulse is held to `e` times the
-  compression impulse `lambda_c` that the inelastic solve applied (the Poisson ceiling). The part
-  of an increment that only stops an approach is always allowed. Other contacts of the pair (with
-  `e > 0`) are swept with the inelastic target. After a normal change, the Coulomb friction of the
-  contact is re-relaxed against the new total normal impulse, so the friction bound is
-  `mu (1 + e) lambda_c`.
-- **In-solve Newton target** (`restitutionScheme_ = "in-solve"`). The armed contact's target
-  distance becomes `dist_ = e vn dt`, so the relaxation itself aims at `-e vn`. There is no cap, and
-  several simultaneous impacts of one body can gain energy (HCSITS test case 7). It is included
-  because it costs one line.
+  the (sub)step, the Moreau–Jean choice (`restitutionPreStepNormalVelocity()`).
+- **Capped post-pass** (default). The velocity solve stays inelastic. `restitutionPostPass()` then
+  sweeps ALL contacts (`restitutionPostPassSweep()`), each sweep followed by
+  `synchronizeVelocities()`:
+  - an armed contact is driven towards the separation speed `e |vn|` (Newton target), its separating
+    impulse held to `e` times the compression impulse `lambda_c` of the inelastic solve (Poisson
+    ceiling); the part of an increment that only stops an approach is always allowed;
+  - every other contact, including the touching contacts with `e = 0`, keeps the inelastic target
+    (normal velocity `>= -dist_/dt`, the positional terms of the compression solve), so a rebound
+    cannot drive a resting neighbour into penetration;
+  - after a normal change the Coulomb friction is re-relaxed against the new total normal impulse
+    (friction bound `mu (1 + e) lambda_c`); a contact unloaded to zero normal impulse loses its
+    tangential impulse with it;
+  - the pass runs no sweep when no contact asks for a bounce on any process (the step is then bit
+    for bit the inelastic step), else at least `restitutionIterations_` sweeps and then until a
+    sweep changes no normal velocity by more than `setRestitutionTolerance()` (1e-9) times the
+    largest impact speed (global maximum), at most `max( restitutionIterations_, maxIterations_ )`
+    (100) sweeps.
+- **In-solve Newton target** (`"in-solve"`). The armed contact's target distance becomes
+  `dist_ = e vn dt`, unless the contact has a positive gap that the free normal motion of the step
+  does not close (`restitutionInSolveDistance()`); then the gap is kept. No cap: several
+  simultaneous impacts of one body can gain energy (HCSITS test case 7).
 
-For one contact this gives the following rebound normal velocity at the end of the impact step:
+For one contact the rebound normal velocity at the end of the impact step is
 
 ```
 v_n+ = min( e |v_n-| , e |v_n,free| + (1 + e) p )
 ```
 
-Here `v_n,free` is the normal velocity the step gives without the contact (section 3), and
-`p = erp * depth / dt` is the Baumgarte push-out of the step's overlap. With split impulse
-`p = 0` and the rebound is `e min( |v_n-|, |v_n,free| )`. Under gravity alone `|v_free| > |v_pre|`,
-so the Newton target binds and the rebound is exactly `e |v_n-|`.
+with `v_n,free` the normal velocity the step gives without the contact (section 3) and
+`p = erp * depth / dt` the Baumgarte push-out (0 with split impulse). Under gravity alone
+`|v_free| > |v_pre|` and the Newton target binds: `e |v_n-|`.
 
 ### Where the code lives (keeping the two solvers in sync)
 
 | Part | HCSITS | HardContactEulerLagrange |
 |---|---|---|
-| Pass diagnostics `RestitutionPassStats` | `RestitutionPostPass.h` (moved there) | the same |
-| Pre-step normal velocity | `restitutionPreStepNormalVelocity()` in the contact caching of `resolveContacts()` | the same function in `armRestitution()` |
-| Arming threshold | `max( threshold, 2 |g| dt )` in the contact caching | `max( threshold, 2 max( |dv_free,1|, |dv_free,2| ) )` in `armRestitution()`, after the body caching |
-| In-solve target `dist_ = e vn dt` | contact caching | `armRestitution()`, the same line |
-| Post-pass sweep | `relaxRestitutionPostPass()` forwards to `restitutionPostPassSweep()` | the same forward |
-| Sweep loop + `synchronizeVelocities()` | after the velocity solve, before split impulse | the same place |
-| Setters and documentation | `setRestitution()` & co. | the same names. The EL documentation lists the EL specifics |
+| `RestitutionPassStats`, the sweep `restitutionPostPassSweep()`, the step loop `restitutionPostPass()` (skip, minimum, tolerance, cap, reductions), `restitutionInSolveDistance()`, `restitutionPreStepNormalVelocity()` | `RestitutionPostPass.h` | the same functions |
+| Arming threshold | `max( threshold, 2 |g| dt )`, contact caching | `max( threshold, 2 max |dv_free| )`, `armRestitution()` after the body caching |
+| In-solve gap test velocity | pre-step `vn` (HCSITS arms before it adds gravity) | free normal velocity `freeNormalVelocity()` |
+| Refusal of a mobile global body | none | `refuseUnsupportedRestitution()` |
 
-The sweep is one function template in `pe/core/collisionsystem/RestitutionPostPass.h`. It works on
-the solver's contact and body arrays (both solvers declare it a friend), and both solvers use it,
-so the impact law exists only once. Only the arming differs, for the reason given in section 3.
-Moving the sweep did not change the HCSITS results: the outputs of `pe-hcsits-restitution`,
-`pe-split-impulse-plain` and the other tests are identical before and after.
+Both solvers declare the two function templates friends; they work on the members documented at
+the top of `RestitutionPostPass.h`.
 
 ## 3. What the Euler–Lagrange coupling changes
 
 **Implicit drag and the pre-impact velocity.** The driver's hydrodynamic increment
-(`elSemiImplicitVelocity()`, with drag implicit and gravity, buoyancy and pressure explicit) is
-folded into the cached velocity before the contact solve, as HCSITS folds gravity. The Newton
-target uses the pre-step velocity, which is unaffected by the increment. The inelastic solve stops
-the post-hydro ("free") approach, so `lambda_c = m_eff ( |v_n,free| + p )` and the Poisson ceiling
-is `e lambda_c`. If the implicit drag decelerates the approach during the impact step,
-`|v_free| < |v_pre|` and the ceiling binds: the rebound is `e |v_free|` (plus the push-out terms).
-If gravity accelerates it, the Newton target binds. The two differ by `O(dt / tau_p)`. In case 11
-(`d = 0.87 mm`, `rho_p = 860`, gas) `tau_p ≈ 2 s` against a PE sub-step of `2.5e-5 s`.
+(`elSemiImplicitVelocity()`, drag implicit, gravity, buoyancy and pressure explicit) is folded into
+the cached velocity before the contact solve, as HCSITS folds gravity. The Newton target uses the
+pre-step velocity. The inelastic solve stops the post-hydro ("free") approach, so
+`lambda_c = m_eff ( |v_n,free| + p )` and the Poisson ceiling is `e lambda_c`. If the drag
+decelerates the approach during the impact step the ceiling binds (`e |v_free|` plus push-out
+terms), if gravity accelerates it the Newton target binds. The difference is the hydro increment of
+one sub-step: `O(dt/tau_p)` times the slip velocity for the drag, `O(dt F/m)` for the other forces
+(`tau_p = m/B`; the Stokes estimate for case 11, `d = 0.87 mm`, `rho_p = 860` in gas, is about 2 s
+against a sub-step of `2.5e-5 s`; it is not a measured dense-bed `m/B`).
 
-**Sub-stepping (10 PE sub-steps per fluid step).** Arming, sweeps and the threshold are evaluated
-per PE sub-step, so the bounce happens in the sub-step of the impact. The hydro increment of the
-remaining sub-steps of that fluid step is computed from the free-flight reference velocity
-(`getEulerLagrangeRefVelocity()`, armed once per fluid step by the driver). That is the
-momentum-conserving design of the drag sub-cycling and applies to inelastic contacts as well. The
-drag therefore reacts to the rebound velocity from the next fluid step on.
+**Sub-stepping (10 PE sub-steps per fluid step).** Arming, sweeps and threshold are evaluated per
+PE sub-step. The hydro increment of the remaining sub-steps of that fluid step is computed from the
+free-flight reference velocity (armed once per fluid step by the driver), the momentum-conserving
+design of the drag sub-cycling: the drag reacts to the rebound from the next fluid step on.
 
-**Resting threshold.** The EL solver does not apply gravity: `Settings::gravity()` is zero in the
-EL decks, and the driver owns gravity. The HCSITS bound `2 |g| dt` would therefore be 0. It is
-replaced, per contact, by twice the larger free-flight velocity increment
-`|dv_free| = |v_ + dv_ - v_body|` of the two bodies (`freeVelocityIncrement()`), evaluated after
-the body caching. This is the hydro increment of a hydro body, `F dt / m` of a body driven by
-forces, the owner's value for a shadow copy, and 0 for a fixed or sleeping body. Under gravity
-alone it equals `2 |g| dt`. A body at rest under gravity has a pre-step approach of at most about
-that value, so a packed bed does not micro-bounce. The Baumgarte push-out at rest is
-`0.7 g dt`, below the bound. Because the threshold needs the cached velocities, the EL solver arms
-after its body caching, whereas HCSITS arms in the contact caching. With EL lubrication on
-(`lubricationEnabled_`), the lubrication fold enters `v_` before the arming. It counts in `dv_free`
-and in `lambda_c`, not in the Newton target.
+**Resting threshold.** `Settings::gravity()` is zero in EL decks (the driver owns gravity), so the
+HCSITS bound `2 |g| dt` is replaced per contact by `2 max( |dv_free,1|, |dv_free,2| )`, the larger
+free-flight increment of the two bodies in this sub-step (`freeVelocityIncrement()`: the hydro
+increment of a hydro body, `F dt / m` of a forced body, the owner's value for a shadow copy, 0 for a
+fixed or sleeping body); under gravity alone `2 |g| dt`. This is a **current-step heuristic**: it
+bounds the free relative normal increment of two spheres in this sub-step, but not an approach left
+over from the previous sub-step (contact residual, overlap correction, a change of the drag at a
+CFD update), and for non-spheres it omits the angular free increment at the contact point. A bed
+exactly at rest cannot arm (pile test: switch on = switch off, bitwise). A settling bed under EL
+drag does arm: in the disordered-bed test (section 7, case 7) 31-147 contacts arm per 400
+sub-steps (micro-bounce), without creating kinetic energy beyond the hydro work, with a drift of
+3-6e-5 m (0.3-0.6 % of r) against 2-5e-5 m with the switch off. Rule I would use instead (not
+implemented, awaiting the owner): arm only if `vn < -max( threshold, 2 |dv_free,now|,
+2 |dv_free,previous sub-step|, v_rest )` with `v_rest` a deck velocity below which pairs are
+inelastic (granular practice: a fraction of `sqrt(g d)`), so that both a forcing change and the
+residual approach of a settling bed stay inelastic. Meanwhile `restitutionThreshold_` is that
+`v_rest`. With EL lubrication on, the lubrication fold enters `v_` before the arming (counted in
+`dv_free` and `lambda_c`, not in the Newton target).
 
-**`relaxationParam_` (0.9).** In a multi-process run every `synchronizeVelocities()` folds the
-corrections with `relaxationParam_`. A single process never does, because the function returns
-early. The post-pass increments are folded like the PGS impulses, so `p_` keeps one convention:
-the applied impulse is `relaxationParam_ * p_` in a multi-process run, and Newton's third law
-holds across ranks. Each sweep re-targets on the folded velocity, so `n` sweeps deliver
-`1 - 0.1^n` of the Newton bounce (0.9999 with 4, measured 0.899917 / 0.9 in the two-rank test). The
-accumulated diagnostics `contactVirial_` and `wallContactImpulse_` sum `p_` after the pass. They
-contain the restitution impulse (and the re-relaxed friction) with the same unrelaxed convention as
-the compression impulse. The known defect is that these sums are `1 / relaxationParam_` times the
-applied impulse in multi-process runs. It is unchanged, neither fixed nor made worse.
+**`relaxationParam_` (alpha = 0.9).** In a multi-process run every `synchronizeVelocities()` folds
+the corrections with alpha; a single process never does. The post-pass increments are folded like
+the PGS impulses, so `p_` keeps one convention (applied impulse `alpha * p_`) and Newton's third
+law holds across ranks. For one uncoupled contact whose Newton target binds, the normal velocity
+after n sweeps obeys
+
+```
+g_n - T = (1 - alpha)^n (g_0 - T)
+```
+
+with `T = e |vn|` and `g_0` the velocity after the compression solve (in the two-rank test the
+Baumgarte push-out `0.07 |v_rel|`): after 4 sweeps `-0.899917 |v_rel|`, the logged value. A binding
+Poisson ceiling or neighbouring contacts change the recurrence; within a process Gauss–Seidel
+updates are seen at once, from other processes only at the synchronisation, so results across
+decompositions agree to the convergence tolerance, not bitwise (two-rank chain: 1e-14 here). The
+pass now continues to the tolerance, which removes the deficit. `contactVirial_` and
+`wallContactImpulse_` sum `p_` after the pass and contain the restitution impulse with the same
+unrelaxed convention as the compression impulse (the known `1/alpha` defect of these sums is
+unchanged).
 
 **Shadow copies and process boundaries.** Each contact is armed and swept on the one process that
-treats it (the contact filtering of `resolveContacts()`). The pre-step velocity of a shadow copy is
-its owner's, sent by `synchronize()`. Its `v_` after the first synchronisation is the owner's
-post-hydro velocity, so `dv_free` agrees too. The corrections reach the owner as the PGS
-corrections do. The sweep count is a solver setting, so every process calls
-`synchronizeVelocities()` the same number of times. The switch must have the same value on every
-process, which the setup guarantees by applying the deck everywhere. A pair across a cut bounces
-exactly like the same pair inside one domain (two-rank test, difference 0).
+treats it. The pre-step velocity of a shadow copy is its owner's (`synchronize()`), its `v_` after
+the first synchronisation the owner's post-hydro velocity. The skip test, the stop test and the
+sweep count are global (`restitutionGlobalMax()`), so every process calls
+`synchronizeVelocities()` the same number of times.
 
-**Fixed and global bodies** (z-walls, box walls, the inner cylinder). They have infinite mass and
-`dv_free = 0`. Their pre-step velocity is the prescribed velocity, so a moving Couette wall
-enters `vn` correctly. Local–global contacts are treated on the sphere owner. The wall's `e` and
-`mu` come from the pair tables like any other pair (echo line).
+**Fixed and global bodies** (z-walls, box walls, the inner cylinder) have infinite mass and
+`dv_free = 0`; their prescribed velocity enters `vn`; local–global contacts are treated on the
+sphere owner. A **finite-mass (non-fixed) global body is refused** while the switch is on
+(`refuseUnsupportedRestitution()`, std::runtime_error at the next step on every process).
 
-## 4. Limits
+## 4. Follow-up (not fixed here): synchronisation of non-fixed global bodies
 
-- A contact whose normal velocity at detection is below `restitutionThreshold()` (1e-8, in
-  `Contact.cpp`) gets `e = 0`. A pair that starts touching therefore bounces only from the next
-  step on, and the post-pass skips it in the step it is born. This is the pe rule and holds in
-  HCSITS as well. The three-sphere chain test exercises it.
-- The sweep count is fixed and not iterated to convergence (the HCSITS documentation shows the
-  effect of 2 against 4 sweeps on a flat box landing). Multi-process runs carry the relaxation
-  deficit `0.1^n`.
-- After a bounce with Baumgarte (`erp 0.7`, no split impulse), an overlap left over from the impact
-  step can add push-out in the next step when `e` is small (`e < 0.7 * remaining overlap / dt`).
-  The post-pass removes the push-out only in the impact step.
-- The frozen-trace setup (`el_frozen_trace.h`) hard-codes `e = 0` for its materials and does not
-  read the switch. Only the terminal-velocity setup (`q2p1_el_pipeflow`) applies and echoes it.
-- Not covered by tests: non-spherical bodies under the EL solver, the inner-cylinder wall (a curved
-  wall with a contact normal through the axis, which uses the same code path as the planes),
-  lubrication together with restitution, and the in-solve scheme beyond a single impact.
-- Observed while porting, unchanged, and not verified by a test: in a multi-process run the first
+Review round 1, P0-2 (line numbers of 1d030e7): the non-fixed-global branch of
+`synchronizeVelocities()` (`HardContactEulerLagrange.h:4997`, now
+`synchronizeVelocities()`, the `globalNonfixedBodies_` block with `MPI_Allreduce`) adds the reduced
+corrections `dv_/dw_` to `v_/w_` in full and leaves `dv_/dw_` set, unlike the owner fold that
+multiplies by `relaxationParam_` and clears them. Every further synchronisation reduces the same
+correction again, and the final integration (`HardContactEulerLagrange.h:2795`, `v_ + dv_`) adds
+the treating rank's local remainder, so the replicas of a mobile global body can end with different
+velocities. The defect predates restitution (it already applies to the PGS iterations); the
+post-pass would add synchronisations to it (`:2705`). Fix: give the reduced correction the same
+applied weight as its contact partner and consume it exactly once; test a local sphere hitting a
+mobile global sphere on two ranks (momentum, both replicas). Until then the combination is refused.
+
+## 5. Limits
+
+- A contact whose normal speed at detection is below `restitutionThreshold()` (1e-8, `Contact.cpp`)
+  has `e = 0`: a pair born touching does not bounce in the step it is born; the post-pass keeps it
+  inelastic (support contact). In a chain of touching spheres the support contacts therefore act
+  inelastically (3-chain: `B` and `C` leave together at `(1+e) u / 3`).
+- The post-pass cost grows with the number of sweeps the rebounds need to converge through the
+  support network (up to 100 per sub-step, each with one synchronisation; logged as `sweeps_max`).
+- After a bounce with Baumgarte an overlap left from the impact step can add push-out in the next
+  step; the post-pass removes the push-out only in the impact step.
+- In-solve with a positive gap in HCSITS: the closing test uses the pre-step velocity (gravity is
+  added after the arming), so a gap that only gravity closes bounces one step later.
+- Not covered by tests: non-spherical bodies under the EL solver, the inner-cylinder wall,
+  lubrication with restitution, the in-solve scheme beyond single impacts and the positive gap,
+  `runFrozenFieldTrace` (compiled only with MPI and CGAL, not built here), a periodic seam (left to
+  the larger FeatFloWer MPI gate: the setup needs three ranks along a periodic axis).
+- Observed, unchanged, not verified by a test: in a multi-process run the first
   `synchronizeVelocities()` folds the explicit force increment `F dt / m` of a body WITHOUT hydro
-  state (it sits in `dv_`) with `relaxationParam_`, so such bodies receive 0.9 of their force.
-  Hydro bodies fold their increment into `v_` beforehand and are not affected.
+  state with `relaxationParam_` (such bodies receive 0.9 of their force); hydro bodies are not
+  affected.
 
-## 5. Tests
+## 6. Review round 1: what changed, also for HCSITS
+
+| Finding | Change | HCSITS |
+|---|---|---|
+| P0-1 support contacts | the sweep visits every contact (e = 0 included) with the inelastic target; the pass loop converges to a tolerance and skips steps without impacts | yes (shared). `pe-hcsits-restitution` output identical except the flat landing: before `v_z' = 0.7998, |omega'| = 0.0024`, after `0.8000, 0.0000` |
+| P1-3 unloading | a contact unloaded to zero normal impulse loses its tangential impulse | yes (shared) |
+| P0-2 mobile global body | refused | no (EL only) |
+| P1-4 in-solve positive gap | gap kept unless the free motion closes it | yes (pre-step velocity as the closing test) |
+| P1-5 / P2-10 config | per-deck defaults, validated together, integer check | - |
+| P1-6 setups | applied in the two supporting EL setups, refused elsewhere | - |
+| P1-7 test registration | the MPI test decides on the compiled solver (skip 77); deck tests need json | - |
+| P2-8 / P2-9 | threshold claim qualified (section 3), recurrence stated and asserted | - |
+
+HCSITS with restitution OFF is unchanged (the pass is not entered).
+
+## 7. Tests
 
 | Test (label) | What | Result (gcc 13.2, Release) |
 |---|---|---|
-| `pe-el-restitution` (unit, serial, rigidbody) | head-on pairs, e = 0.9/0.5 (Baumgarte and split), e = 0 (split), mass ratios 3 and 0.32 | `v_rel'/v_rel = -e`, momentum, and `E_rel'/E_rel = e^2`, all to 1e-12. e = 0 with the switch on is bitwise the switch off. The in-solve scheme gives the same single impact |
-| | drop on the floor, gravity as a force, e = 0.9 | apex ratios 0.8099 / 0.8100 / 0.8098 (e^2 = 0.81), 61 rebounds, `E_max/E_0 = 1.000000`, at rest after 4 s |
-| | drop with the EL drag (`tau_p` = 20 fluid steps, 10 sub-steps), Baumgarte and split | rebound = `min( e|v_pre|, e|v_free| + (1+e) p )` to 1e-9: 0.620262 = e |v_pre| (Baumgarte), 0.618054 = e |v_free| (split, ceiling binds) |
-| | oblique impact, mu = 0.3 per pair | sliding: `p_t/p_n = 0.300000000000`, `p_n = (1+e) m |v_z|`. Sticking: contact point at rest, `p_t/p_n = 0.030` |
-| | resting pile (pyramid in a box with a column on the apex), 5000 steps | max \|v\| 4.2e-6 (bound 2 g dt = 1.96e-3), drift 1.5e-7. Switch on, switch off and off-after-on give the same state hash (no contact of a resting pile is armed) |
-| | three-sphere chain, sphere into a corner | `E_max/E_0 = 1` (no gain), momentum to rounding, corner rebound (0.45, 0, 0.45) = e u in both components |
-| `pe-el-restitution-config` (unit, serial, interface) | json contract, validation, applier, exact echo lines | pass |
-| `pe-el-restitution-mpi` (integration, mpi, 2 ranks) | EL setup from a deck, pair across the cut against the same pair inside one domain | bitwise equal, `v_rel'/v_rel = -0.899917` (Newton within the relaxation deficit) |
-| `pe-kinematic-body`, `pe-surface-velocity` | now detect the semi-implicit solver by type. They used the restitution switch as its marker, which the EL solver now has too | pass |
+| `pe-el-restitution` (unit, serial, rigidbody) | 0 defaults; 1 head-on pairs e = 0.9/0.5/0, mass ratios; 2 drop (apex e^2); 3 drop with EL drag; 4 oblique with friction; 5 resting pile (on = off bitwise); 6 chain and corner; 7 disordered bed under EL drag with forcing steps; 8 mobile global body refused | pass; case 7: impacting contacts 122 / 31 / 147 (Baumgarte) and 138 / 36 / 46 (split) in the three phases, energy created by contacts 0, drift <= 6.1e-5 m |
+| `pe-restitution-support` / `-plain` (EL / HCSITS) | 3- and 5-chain into touching spheres (split, Baumgarte), drop on a resting pile, frictional unloading, positive gap (both schemes) | pass: most closing support contact -1.5e-10 (5-chain), largest closing pile contact 5.6e-9 at impact 1.18 m/s, x momentum conserved when the floor unloads, no impulse across the gap |
+| `pe-el-restitution-config` / `-fluid` | json contract per deck, validation together, integer check, applier (refusal under HardContactAndFluid), echo lines | pass |
+| `pe-el-restitution-setup[-fluid]-frozen/-dnsdrag` | serial frozen trace and DNS drag refuse `restitutionEnabled_ = true` before creating a body (EL and HardContactAndFluid) | pass |
+| `pe-el-restitution-mpi` (integration, mpi, 2 ranks) | pair and coupled chain across the cut against inside one domain; recurrence after 4 sweeps; support contact never closes; mobile global body refused on both ranks | pass: pair bitwise, -0.899917 = prediction, chains 1e-14 apart, 20 sweeps |
+| `pe-kinematic-body`, `pe-surface-velocity` | detect the semi-implicit solver by type | pass |
 
-Compiled against the solver without the switch (origin/master 6003b00), the `pe-el-restitution`
-source fails 23 checks, because every contact stays inelastic. For example, the head-on rebound is
-the Baumgarte artefact `-0.07 v_rel` instead of `-0.9 v_rel`, the first drop apex ratio is 0.21,
-and the corner rebound is 0.035 instead of 0.45. Its resting-pile state hash (`b9b08ddda33abc12`)
-equals the hash of the new solver with the switch off and on. The default path of the pile is
-therefore bitwise the solver before the switch. The full presets are unchanged otherwise: every
-test common to both trees prints the same output, apart from temporary paths, pids and the
-interleaving of MPI output.
+Against 1d030e7 (before review round 1) the new cases fail: support contacts close at 0.45 u
+(split) / 0.415 u (Baumgarte) in the chains and at 0.287 m/s in the pile, the x momentum changes
+by up to 1.4e-3 when the floor unloads, the in-solve scheme bounces across the gap, the config
+keeps the previous deck's values and accepts 1.9 / 4.0 iterations, the setups create their bodies
+instead of refusing, the mobile global body is not refused, and the two-rank chain's support
+contact closes at 0.2075 m/s. Against origin/master 6003b00 (no switch) `pe-el-restitution` fails
+23 checks (all contacts inelastic); its resting-pile hash equals the new solver's with the switch
+off and on.
