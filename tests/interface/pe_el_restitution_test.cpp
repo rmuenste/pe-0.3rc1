@@ -36,9 +36,11 @@
  *       a corner of two planes: no kinetic energy is created, momentum (chain) is conserved, the
  *       corner rebound is e times the incoming velocity in both components.
  *
+ *    8. a finite-mass global body is refused while the switch is on (std::runtime_error).
+ *
  *  Under a configured solver other than HardContactEulerLagrange the test returns 77 (skipped).
  *  Against the EL solver without the switch (origin/master 6003b00) it fails: cases 0-4 and 6
- *  see inelastic contacts.
+ *  see inelastic contacts; against 1d030e7 (before review round 1) case 8 fails.
  */
 //=================================================================================================
 
@@ -498,6 +500,30 @@ static void caseSimultaneous( CollisionSystemID cs )
    }
 }
 
+//=================================================================================================
+// 8. Refusal: a finite-mass global body
+//=================================================================================================
+
+static void caseGlobalMobileRefused( CollisionSystemID cs )
+{
+   applySwitches( cs, true, false );
+   WorldID world = theWorld();
+   world->clear();
+   world->setGravity( 0, 0, 0 );
+   const MaterialID m( material( real(1000), real(0.9), real(0) ) );
+   pe_GLOBAL_SECTION {
+      createSphere( 1, Vec3( 0, 0, 0 ), kR, m );   // global and mobile
+   }
+   bool refused( false );
+   std::string message;
+   try { world->simulationStep( real(1e-4) ); }
+   catch( const std::runtime_error& ex ) { refused = true; message = ex.what(); }
+   std::printf( "mobile global body with restitution on: %s%s\n", refused ? "refused: " : "NOT refused", message.c_str() );
+   expect( refused && message.find( "global" ) != std::string::npos, "a finite-mass global body is refused while restitution is on" );
+   applySwitches( cs, false, false );
+   world->clear();
+}
+
 //! 0. Factory defaults of the switch (template, so that the body compiles without the switch).
 template< typename Handle > void checkDefaults( Handle& cs )
 {
@@ -533,6 +559,7 @@ int main()
    caseOblique( cs );
    casePile( cs );
    caseSimultaneous( cs );
+   caseGlobalMobileRefused( cs );
 
    applySwitches( cs, false, false );
    if( failures == 0 ) std::printf( "pe_el_restitution_test: all checks passed\n" );

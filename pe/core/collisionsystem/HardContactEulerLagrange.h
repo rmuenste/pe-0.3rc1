@@ -93,6 +93,8 @@
 #include <pe/util/Types.h>
 #include <pe/util/Vector.h>
 #include <set>
+#include <sstream>
+#include <stdexcept>
 
 
 
@@ -310,6 +312,7 @@ private:
    real relaxInelasticFrictionlessContacts( real dtinv );
    real relaxPseudoVelocities( real dtinv );
    void armRestitution( real dt );
+   void refuseUnsupportedRestitution() const;
    real relaxApproximateInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByDecoupling( real dtinv );
    real relaxInelasticCoulombContactsByOrthogonalProjections( real dtinv, bool approximate );
@@ -1416,6 +1419,9 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::s
  *    owner's (synchronize()), the corrections reach the owner as for the PGS. The sweep count is
  *    a solver setting, so every process runs the same number of synchronizeVelocities().
  *
+ * Refused (std::runtime_error at the next step, on every process) while a finite-mass global body
+ * exists: refuseUnsupportedRestitution().
+ *
  * The switch must have the same value on every process.
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
@@ -2197,6 +2203,9 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::simulati
    //   log << "New timestep!\n";
    //}
    pe_USER_ASSERT( !requireSync_, "Simulation requires synchronization before continuing." );
+
+   if( useRestitution_ )
+      refuseUnsupportedRestitution();
 
    pe_PROFILING_SECTION {
 #if HAVE_MPI
@@ -3037,6 +3046,44 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::armResti
          else
             dist_[j] = e * vn * dt;
       }
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Refuses restitution in a configuration the post-pass does not support.
+ *
+ * \return void
+ * \exception std::runtime_error A finite-mass (non-fixed) global body exists.
+ *
+ * The synchronisation of non-fixed global bodies (synchronizeVelocities(), the MPI_Allreduce of
+ * globalNonfixedBodies_) adds the reduced corrections to v_/w_ in full and leaves dv_/dw_ set, so
+ * every extra synchronisation of the post-pass would reduce the same correction again, and the
+ * final integration adds the treating rank's local remainder (v_ + dv_). That defect predates the
+ * restitution switch (doc/technical-notes/el-restitution.md, follow-ups); until it is fixed the
+ * combination is refused. Called at the start of every step while the switch is on; global
+ * bodies exist on every process, so every process throws in the same step, before any
+ * communication of that step.
+ */
+template< template<typename> class CD                           // Type of the coarse collision detection algorithm
+        , typename FD                                           // Type of the fine collision detection algorithm
+        , template<typename> class BG                           // Type of the batch generation algorithm
+        , template< template<typename> class                    // Template signature of the coarse collision detection algorithm
+                  , typename                                    // Template signature of the fine collision detection algorithm
+                  , template<typename> class                    // Template signature of the batch generation algorithm
+                  , template<typename,typename,typename> class  // Template signature of the collision response algorithm
+                  > class C >                                   // Type of the configuration
+void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::refuseUnsupportedRestitution() const
+{
+   for( typename std::set<BodyID,LessSystemID>::const_iterator it = globalNonfixedBodies_.begin(); it != globalNonfixedBodies_.end(); ++it ) {
+      if( (*it)->isFixed() ) continue;
+      std::ostringstream msg;
+      msg << "HardContactEulerLagrange: restitution (setRestitution(), json restitutionEnabled_) is not supported "
+          << "together with a finite-mass global body (system id " << (*it)->getSystemID() << ", user id "
+          << (*it)->getID() << "): the synchronisation of non-fixed global bodies would apply the post-pass "
+          << "corrections more than once. Fix the body (setFixed( true )) or switch restitution off.";
+      throw std::runtime_error( msg.str() );
    }
 }
 //*************************************************************************************************
