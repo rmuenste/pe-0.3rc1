@@ -913,11 +913,12 @@ if(PE_USE_MPI AND MPI_FOUND)
 endif()
 
 # Restitution of the EL solver across a process boundary: two ranks, the EL terminal-velocity
-# setup with restitutionEnabled_ from the deck, a pair straddling the cut against the same pair
-# inside one domain (same result to rounding), Newton law within the relaxation deficit. Own
-# working directory (the test writes example.json, as the DKT setup test does in its own).
-# EL solver only (the default pe_CONSTRAINT_SOLVER).
-if(PE_USE_MPI AND MPI_FOUND AND (NOT PE_CONSTRAINT_SOLVER OR PE_CONSTRAINT_SOLVER MATCHES "HardContactEulerLagrange"))
+# setup with restitutionEnabled_ from the deck; a pair and a coupled chain straddling the cut against
+# the same inside one domain, the relaxation recurrence, the refusal of a mobile global body. Own
+# working directory (the test writes example.json, as the DKT setup test does in its own). The test
+# decides on the COMPILED solver (another one may come in through PE_PREPROCESSOR_FLAGS or
+# CMAKE_CXX_FLAGS) and returns 77 (skipped) unless it is HardContactEulerLagrange; needs json.
+if(PE_USE_MPI AND MPI_FOUND AND PE_USE_JSON)
   add_executable(pe_el_restitution_mpi pe_el_restitution_mpi.cpp)
   target_link_libraries(pe_el_restitution_mpi PRIVATE pe_static MPI::MPI_CXX)
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_mpi)
@@ -933,6 +934,7 @@ if(PE_USE_MPI AND MPI_FOUND AND (NOT PE_CONSTRAINT_SOLVER OR PE_CONSTRAINT_SOLVE
   set_tests_properties(pe-el-restitution-mpi PROPERTIES
     LABELS "integration;mpi;rigidbody;interface"
     PROCESSORS 2
+    SKIP_RETURN_CODE 77
     ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
   )
 endif()
