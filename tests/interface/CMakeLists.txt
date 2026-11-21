@@ -721,8 +721,10 @@ endforeach()
 # Json contract of restitutionEnabled_ / restitutionThreshold_ / restitutionScheme_ /
 # restitutionIterations_ (per-deck defaults, validation), the applier (applyOptionalRestitutionParams)
 # and the EL_CONTACT_PARAMS start-up echo line (pe/interface/support/contact_params_echo.h); also
-# against HardContactAndFluid, which has no switch (the applier must refuse an enable). These tests
-# write decks, so they need the json loader.
+# against HardContactAndFluid, which has no switch (the applier must refuse an enable). And the
+# setups without restitution support refusing an explicit restitutionEnabled_ = true (one serial EL
+# and one serial DNS setup, under the EL solver and under HardContactAndFluid). These tests write
+# decks, so they need the json loader.
 if(PE_USE_JSON)
   foreach(variant "" "_fluid")
     if(variant STREQUAL "_fluid")
@@ -738,6 +740,15 @@ if(PE_USE_JSON)
              WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_config${variant})
     set_tests_properties(pe-el-restitution-config${variant_name} PROPERTIES LABELS "unit;serial;interface")
 
+    add_executable(pe_el_restitution_setup${variant}_test pe_el_restitution_setup_test.cpp)
+    target_link_libraries(pe_el_restitution_setup${variant}_test PRIVATE ${restitution_cfg_lib})
+    foreach(setup frozen dnsdrag)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_setup${variant}_${setup})
+      add_test(NAME pe-el-restitution-setup${variant_name}-${setup}
+               COMMAND pe_el_restitution_setup${variant}_test ${setup}
+               WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_setup${variant}_${setup})
+      set_tests_properties(pe-el-restitution-setup${variant_name}-${setup} PROPERTIES LABELS "unit;serial;interface")
+    endforeach()
   endforeach()
 endif()
 

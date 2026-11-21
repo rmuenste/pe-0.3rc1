@@ -17,6 +17,7 @@
 
 #if HAVE_MPI
 #include <pe/interface/setup/parallel_common.h>
+#include <pe/interface/support/optional_collision_params.h>
 #include <pe/interface/support/decompose.h>
 #include <pe/config/SimulationConfig.h>
 #include <random>
@@ -110,6 +111,7 @@ inline void setupDrill(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
+  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDrill");
   world->setGravity( config.getGravity() );
 
   real simRho( config.getFluidDensity() );
@@ -497,6 +499,7 @@ inline void setupDrillSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDrillSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

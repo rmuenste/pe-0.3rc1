@@ -35,6 +35,7 @@ inline void setupLubricationLabSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupLubricationLabSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

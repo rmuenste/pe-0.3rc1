@@ -155,6 +155,7 @@ inline void setupArchimedes(MPI_Comm ex0)
    world = theWorld();
 
    loadSimulationConfig("example.json");
+   rejectRestitutionRequest(SimulationConfig::getInstance(), "setupArchimedes");
 
    const real simViscosity( config.getFluidViscosity() );
    const real simRho( config.getFluidDensity() );

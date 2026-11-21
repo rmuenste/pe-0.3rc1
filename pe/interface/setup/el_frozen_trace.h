@@ -80,6 +80,8 @@ inline void setupELFrozenTrace(MPI_Comm ex0,
   auto &config = SimulationConfig::getInstance();
   WorldID world = theWorld();
   loadSimulationConfig("example.json");
+  // Restitution switch (restitutionEnabled_ & co.): supported, the materials take restitution_.
+  applyOptionalRestitutionParams(*theCollisionSystem(), SimulationConfig::getInstance());
 
   config.setCfdDomainMin(Vec3(xmin, ymin, zmin));
   config.setCfdDomainMax(Vec3(xmax, ymax, zmax));
@@ -370,6 +372,7 @@ inline void setupELFrozenTraceSerial(int cfd_rank,
                                      real zmin, real zmax) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupELFrozenTraceSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

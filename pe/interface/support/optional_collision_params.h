@@ -15,6 +15,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -210,6 +211,21 @@ inline void applyOptionalRestitutionParams(CollisionSystemT& cs, const Simulatio
           "pe::response::HardContactSemiImplicitTimesteppingSolvers, or set restitutionEnabled_ "
           "to false.");
     }
+  }
+}
+
+// Setups that do not support the restitution switch call this right after loading the deck (on
+// every process): an explicit restitutionEnabled_ = true is refused instead of being ignored.
+// Supporting setups call applyOptionalRestitutionParams() instead. Support means the setup applies
+// the switch and gives its contacts a restitution from the deck; today that is the two EL setups
+// with deck-driven materials, setupELTerminalVelocity and the parallel setupELFrozenTrace (see
+// doc/technical-notes/el-restitution.md).
+inline void rejectRestitutionRequest(const SimulationConfig& config, const std::string& setup) {
+  if (config.getRestitutionEnabled()) {
+    throw std::runtime_error(
+        "restitutionEnabled_ is true, but " + setup + " does not support the restitution switch "
+        "of the contact solver (it is applied by setupELTerminalVelocity and the parallel "
+        "setupELFrozenTrace only). Set restitutionEnabled_ to false or remove the key.");
   }
 }
 

@@ -31,6 +31,7 @@ namespace pe {
 inline void setupDNSDragSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(SimulationConfig::getInstance(), "setupDNSDragSerial");
 
   auto& config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
