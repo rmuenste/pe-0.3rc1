@@ -163,6 +163,10 @@ struct RestitutionPassWork
    std::vector<real> scale;        //!< Local impact scale of the row (stop rule).
    std::vector<unsigned char> kind;
    std::vector<unsigned char> affected; //!< 1 once a sweep visited the row: it stays affected for the rest of the pass.
+   std::vector<real> lambda;       //!< Normal impulse of the row as a scalar ledger: n . p_ at the classification, then
+                                   //!< changed by exactly the normal increments of the pass (0 after a release). Every
+                                   //!< state decision of the pass (Newton, ceiling, friction disc, release) reads it, not
+                                   //!< n . p_, whose roundoff for an oblique normal can leave a spurious load.
    std::vector<real> bodyScale;    //!< Largest impact speed of an armed row on the body (by index_; mobile bodies only).
 };
 //*************************************************************************************************
@@ -357,20 +361,23 @@ template< typename CS >
 
 //! Admissible normal increment of row i at relative velocity gdot (what a visit would apply),
 //! with the unilateral bound and, for an armed row, the Poisson cap; also says whether the row is
-//! being driven to its Newton target and whether the cap cut the increment.
+//! being driven to its Newton target, whether the cap cut the increment, and whether the
+//! unilateral projection withdraws the whole normal load (release: d = -lambda; the sweep then
+//! removes the stored impulse vector exactly and demotes an armed row on that visit).
 template< typename CS >
-   static inline real restitutionRowIncrement( const CS& s, size_t i, real gdot_n, bool& newton, bool& cut, real& approach )
+   static inline real restitutionRowIncrement( const CS& s, size_t i, real gdot_n, bool& newton, bool& cut, real& approach, bool& release )
 {
    const RestitutionPassWork& wk( s.restitutionWork_ );
-   const real lambda ( trans( s.n_[i] ) * s.p_[i] );
+   const real lambda ( wk.lambda[i] );
    const real lambdaC( lambda - s.restitutionImpulse_[i] );
    newton = wk.kind[i] == RestitutionPassWork::armedRow && lambdaC > real( 0 );
    const real target( newton ? s.impactSpeed_[i] : wk.target[i] );
    real d( s.diag_n_inv_[i] * ( target - gdot_n ) );
-   d = std::max( lambda + d, real( 0 ) ) - lambda;
+   release = lambda > real( 0 ) && !( lambda + d > real( 0 ) );
+   d = release ? -lambda : std::max( lambda + d, real( 0 ) ) - lambda;
    approach = std::min( std::max( -s.diag_n_inv_[i] * gdot_n, real( 0 ) ), std::max( d, real( 0 ) ) );
    cut = false;
-   if( newton ) {
+   if( newton && !release ) {
       const real allowance( s.cor_[i] * ( lambdaC + approach ) - s.restitutionImpulse_[i] );
       const real dCapped( std::min( d, approach + std::max( allowance, real( 0 ) ) ) );
       cut = dCapped < d;
@@ -385,7 +392,7 @@ template< typename CS >
 template< typename CS >
    static inline Vec3 restitutionRowFriction( const CS& s, size_t i, const Vec3& gdot, real d, bool withFriction )
 {
-   const real lambdaNew( trans( s.n_[i] ) * s.p_[i] + d );
+   const real lambdaNew( s.restitutionWork_.lambda[i] + d );
    if( !( lambdaNew > real( 0 ) ) )
       return -( s.t_[i] * ( trans( s.t_[i] ) * s.p_[i] ) + s.o_[i] * ( trans( s.o_[i] ) * s.p_[i] ) );
    if( !withFriction || !( s.mu_[i] > real( 0 ) ) )
@@ -485,10 +492,31 @@ template< typename CS >
       wk.affected[i] = 1;
       const real gdot_n( trans( s.n_[i] ) * gdot );
 
-      bool newton( false ), cut( false );
+      bool newton( false ), cut( false ), release( false );
       real approach( 0 );
-      const real d( restitutionRowIncrement( s, i, gdot_n, newton, cut, approach ) );
+      const real d( restitutionRowIncrement( s, i, gdot_n, newton, cut, approach, release ) );
       if( newton ) { ++stats.armed; if( cut ) ++stats.capped; }
+
+      // Full withdrawal, decided by the projection on this visit: the stored impulse vector is
+      // removed exactly (p_ = 0, both bodies lose exactly the old impulse), the booking is cleared
+      // and an armed row is demoted now (also on the last sweep), so roundoff of n . p_ can never
+      // leave it armed with a spurious compression allowance.
+      if( release ) {
+         if( wk.kind[i] == RestitutionPassWork::armedRow ) {
+            wk.kind[i] = RestitutionPassWork::demotedRow;
+            ++stats.demoted;
+         }
+         if( s.restitutionImpulse_[i] > real( 0 ) ) { ++stats.clamped; stats.clampedImpulse += s.restitutionImpulse_[i]; }
+         s.restitutionImpulse_[i] = real( 0 );
+         wk.lambda[i] = real( 0 );
+         const Vec3 dp( -s.p_[i] );
+         s.p_[i] = Vec3();
+         s.dv_[i1] += s.body1_[i]->getInvMass() * dp;
+         s.dw_[i1] += s.body1_[i]->getInvInertia() * ( s.r1_[i] % dp );
+         s.dv_[i2] -= s.body2_[i]->getInvMass() * dp;
+         s.dw_[i2] -= s.body2_[i]->getInvInertia() * ( s.r2_[i] % dp );
+         continue;
+      }
 
       // Restitution bookkeeping. A Newton visit of an armed row books the separating remainder of
       // its increment as restitution (the cap keeps lambda_R <= e lambda_C); a negative increment
@@ -512,6 +540,7 @@ template< typename CS >
       if( wk.kind[i] == RestitutionPassWork::demotedRow )
          stats.fallbackImpulse += std::max( d, real( 0 ) );
 
+      wk.lambda[i] += d;
       const Vec3 dp( s.n_[i] * d + restitutionRowFriction( s, i, gdot, d, withFriction ) );
       if( dp[0] == real( 0 ) && dp[1] == real( 0 ) && dp[2] == real( 0 ) )
          continue;
@@ -539,9 +568,9 @@ template< typename CS >
    for( size_t i = 0; i < s.p_.size(); ++i ) {
       const Vec3 gdot( restitutionRowVelocity( s, i ) );
       if( restitutionRowUndisturbed( s, i, gdot ) ) continue;
-      bool newton( false ), cut( false );
+      bool newton( false ), cut( false ), release( false );
       real approach( 0 );
-      const real d( restitutionRowIncrement( s, i, trans( s.n_[i] ) * gdot, newton, cut, approach ) );
+      const real d( restitutionRowIncrement( s, i, trans( s.n_[i] ) * gdot, newton, cut, approach, release ) );
       const real rn( std::abs( d ) / s.diag_n_inv_[i] );
       const Vec3 dpt( restitutionRowFriction( s, i, gdot, d, withFriction ) );
       const real rt( restitutionTangentialSpeed( s, i, dpt ) );
@@ -602,13 +631,14 @@ template< typename CS >
    const size_t n( s.p_.size() );
 
    // 1. classification
-   wk.gdot0.resize( n ); wk.target.resize( n ); wk.scale.assign( n, real( 0 ) ); wk.kind.resize( n ); wk.affected.assign( n, 0 );
+   wk.gdot0.resize( n ); wk.target.resize( n ); wk.scale.assign( n, real( 0 ) ); wk.kind.resize( n ); wk.affected.assign( n, 0 ); wk.lambda.resize( n );
    wk.bodyScale.assign( s.v_.size(), real( 0 ) );
    real impactMax( 0 ), closingBefore( 0 );
    for( size_t i = 0; i < n; ++i ) {
       wk.gdot0[i] = restitutionRowVelocity( s, i );
       const real g0( trans( s.n_[i] ) * wk.gdot0[i] );
       const real lambda0( trans( s.n_[i] ) * s.p_[i] );
+      wk.lambda[i] = lambda0;
       s.restitutionImpulse_[i] = real( 0 );
       if( s.impactSpeed_[i] > real( 0 ) && lambda0 > real( 0 ) ) {
          wk.kind[i] = RestitutionPassWork::armedRow;
@@ -682,7 +712,8 @@ template< typename CS >
       if( s.restitutionImpulse_[i] > real( 0 ) ) { ++stats.delivered; stats.finalRestitutionImpulse += s.restitutionImpulse_[i]; }
       bool newton( false ), cut( false );
       real approach( 0 );
-      restitutionRowIncrement( s, i, gdot_n, newton, cut, approach );
+      bool release( false );
+      restitutionRowIncrement( s, i, gdot_n, newton, cut, approach, release );
       if( cut ) shortfall = std::max( shortfall, s.impactSpeed_[i] - gdot_n );
       else if( newton ) impactError = std::max( impactError, std::abs( s.impactSpeed_[i] - gdot_n ) );
    }

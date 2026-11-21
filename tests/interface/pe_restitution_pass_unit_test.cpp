@@ -19,7 +19,12 @@
  *    4. a sticking wall contact that a capped floor rebound sets slipping: the pass must not
  *       report convergence while the tangential residual is outside the tolerance (finding 2);
  *    5. an impact on a fixed wall does not propagate an impact scale to an unrelated row on the
- *       same wall (finding 5).
+ *       same wall (finding 5);
+ *    6. review round 4, finding 2: an armed row with an OBLIQUE normal (1,1,0)/sqrt(2) fully
+ *       unloaded by the projection, then closed again: no restitution may be booked (n . p_ left a
+ *       roundoff load of 2e-16 that kept the row armed with a fresh compression allowance);
+ *    7. an armed row fully unloaded on the LAST sweep of a pass is counted as demoted and its
+ *       stored impulse is exactly zero.
  *
  *  The test compiles against the round-2 pass (45c9268); fields added later are set through
  *  detectors, so the before results are runtime results.
@@ -114,11 +119,18 @@ struct MockCS
 // Fields added in review round 3 (absent in 45c9268): set when they exist.
 template< typename W, typename = void > struct HasAffected : std::false_type {};
 template< typename W > struct HasAffected< W, std::void_t< decltype( std::declval<W&>().affected ) > > : std::true_type {};
+template< typename W, typename = void > struct HasLedger : std::false_type {};
+template< typename W > struct HasLedger< W, std::void_t< decltype( std::declval<W&>().lambda ) > > : std::true_type {};
 template< typename S, typename = void > struct HasFallback : std::false_type {};
 template< typename S > struct HasFallback< S, std::void_t< decltype( std::declval<S&>().fallbackImpulse ) > > : std::true_type {};
 
 // dependent helpers: the member access is only instantiated where the member exists
 template< typename W > void initAffected( W& wk, size_t n ) { if constexpr ( HasAffected<W>::value ) wk.affected.assign( n, 0 ); else { (void)wk; (void)n; } }
+template< typename W > void initLedger( W& wk, const MockCS& s )
+{
+   if constexpr ( HasLedger<W>::value ) { wk.lambda.resize( s.p_.size() ); for( size_t i = 0; i < s.p_.size(); ++i ) wk.lambda[i] = trans( s.n_[i] ) * s.p_[i]; }
+   else { (void)wk; (void)s; }
+}
 template< typename S > bool fallbackTallied( const S& st )
 {
    if constexpr ( HasFallback<S>::value ) return st.fallbackImpulse > real(0) && st.demoted == 1;
@@ -133,6 +145,7 @@ static void classifyByHand( MockCS& s, real dtinv )
    wk.gdot0.resize( n ); wk.target.resize( n ); wk.scale.assign( n, real(0) ); wk.kind.resize( n );
    wk.bodyScale.assign( s.v_.size(), real(0) );
    initAffected( wk, n );
+   initLedger( wk, s );
    for( size_t i = 0; i < n; ++i ) {
       wk.gdot0[i] = RestitutionPass::restitutionRowVelocity( s, i );
       const real g0( trans( s.n_[i] ) * wk.gdot0[i] ), lambda0( trans( s.n_[i] ) * s.p_[i] );
@@ -261,6 +274,50 @@ static void caseWallScale()
            "5. the floor does not carry the impact scale to an unrelated row" );
 }
 
+//=================================================================================================
+// 6. oblique full unload, then a closing reload: no restitution
+//=================================================================================================
+static void caseObliqueUnload()
+{
+   MockCS s;
+   s.relaxationModel_ = MockCS::InelasticFrictionlessContact;
+   const real e( 0.9 ), h( real(1) / std::sqrt( real(2) ) );
+   const Vec3 n( h, h, 0 ), t( h, -h, 0 );
+   const size_t a( s.addSphere( Vec3() ) ), f( s.addWall() );
+   s.addRow( a, f, n, t, real(1), Vec3(), real(0), e, e * real(1) );
+   classifyByHand( s, real(1e4) );
+   s.dv_[a] = n * real(5);                                  // a neighbour pulls the row apart: full withdrawal
+   RestitutionPass::restitutionPostPassSweep( s, real(1e4) );
+   const real after1( trans( s.n_[0] ) * s.p_[0] );
+   s.dv_[a] = n * real(-1);                                 // then closes it again at 1 m/s
+   RestitutionPass::restitutionPostPassSweep( s, real(1e4) );
+   std::printf( "6. oblique unload: n . p after the withdrawal %.3e, after the closing reload lambda %.6f, booked restitution %.6e, gross %.6e\n",
+                static_cast<double>( after1 ), static_cast<double>( trans( s.n_[0] ) * s.p_[0] ),
+                static_cast<double>( s.restitutionImpulse_[0] ), static_cast<double>( s.restitutionPassStats_.restitutionImpulse ) );
+   expect( s.restitutionImpulse_[0] == real(0) && s.restitutionPassStats_.restitutionImpulse == real(0),
+           "6. a fully withdrawn oblique row books no restitution when it is closed again" );
+}
+
+//=================================================================================================
+// 7. full unload on the last sweep: demoted, impulse exactly zero
+//=================================================================================================
+static void caseLastSweepUnload()
+{
+   MockCS s;
+   s.relaxationModel_ = MockCS::InelasticFrictionlessContact;
+   const real e( 0.9 );
+   const size_t a( s.addSphere( Vec3( 0, 0, real(5) ) ) ), f( s.addWall() );   // separating at 5 m/s after compression
+   s.addRow( a, f, Vec3( 0, 0, 1 ), Vec3( 1, 0, 0 ), real(1), Vec3(), real(0), e, e * real(1) );
+   s.restitutionStopRule_.minSweeps = 1; s.restitutionStopRule_.maxSweeps = 1; s.restitutionStopRule_.checkInterval = 1;
+   RestitutionPass::restitutionPostPass( s, real(1e4) );
+   std::printf( "7. last-sweep unload: sweeps %zu, demoted %zu, stored impulse (%.3e %.3e %.3e), booked %.3e\n", s.restitutionPassStats_.sweeps,
+                s.restitutionPassStats_.demoted, static_cast<double>( s.p_[0][0] ), static_cast<double>( s.p_[0][1] ),
+                static_cast<double>( s.p_[0][2] ), static_cast<double>( s.restitutionImpulse_[0] ) );
+   expect( s.restitutionPassStats_.sweeps == 1 && s.restitutionPassStats_.demoted == 1, "7. a full unload on the last sweep is counted as demoted" );
+   expect( s.p_[0][0] == real(0) && s.p_[0][1] == real(0) && s.p_[0][2] == real(0) && s.restitutionImpulse_[0] == real(0),
+           "7. the released row's stored impulse is exactly zero" );
+}
+
 int main()
 {
    caseRelease();
@@ -268,6 +325,8 @@ int main()
    caseUnloadReload();
    caseTangentialStop();
    caseWallScale();
+   caseObliqueUnload();
+   caseLastSweepUnload();
    if( failures == 0 ) std::printf( "pe_restitution_pass_unit_test: all checks passed\n" );
    else std::printf( "pe_restitution_pass_unit_test: %d check(s) failed\n", failures );
    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
