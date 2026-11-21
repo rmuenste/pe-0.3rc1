@@ -62,7 +62,7 @@ struct ScenarioInfo {
 const ScenarioInfo kScenarios[kNumScenarios] = {
    { "Flat landing",
      "A 0.4 x 0.2 x 0.1 m box lands exactly flat on its four corners at 1 m/s without spin. It must come up at e |v| without rotating. "
-     "The post-pass is a fixed number of sweeps: with two, the corners swept first take more of the bounce and the box comes up slower and turning; four keep it symmetric.",
+     "The lab runs the post-pass with a fixed number of sweeps (minimum = maximum): with two, the corners swept first take more of the bounce and the box comes up slower and turning; four keep it symmetric. The solver default continues until converged.",
      0.8, 0.0, 1e-4, 1.0, true },
    { "Spinning box",
      "The same box with angular velocity about the horizontal y axis at touchdown. The leading edge impacts, the trailing edge is separating but its constraint still takes part in the solve. "
@@ -230,7 +230,9 @@ void applySolver( const Params& p, int scheme )
    cs->setSplitImpulse( p.splitImpulse );
    cs->setRestitution( true );
    cs->setRestitutionPostPass( scheme == kPostPass );
+   // Fixed sweep count for the experiment: minimum = maximum (the solver default stops on its tolerance).
    cs->setRestitutionIterations( static_cast<size_t>( std::max( 1, p.sweeps ) ) );
+   cs->setRestitutionMaxIterations( static_cast<size_t>( std::max( 1, p.sweeps ) ) );
 }
 
 
@@ -446,9 +448,9 @@ void drawControls()
    const double dtLo = 2e-5, dtHi = 2e-3, durLo = 0.1, durHi = 6.0;
    ImGui::SliderScalar( "dt [s]", ImGuiDataType_Double, &p.dt, &dtLo, &dtHi, "%.1e", ImGuiSliderFlags_Logarithmic );
    ImGui::SliderScalar( "duration [s]", ImGuiDataType_Double, &p.duration, &durLo, &durHi, "%.1f" );
-   ImGui::SliderInt( "post-pass sweeps", &p.sweeps, 1, 10 );
+   ImGui::SliderInt( "post-pass sweeps (fixed)", &p.sweeps, 1, 10 );
    if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
-      ImGui::SetTooltip( "setRestitutionIterations(): Box3D uses 2, pe's default is 4.\nOnly the capped post-pass uses it." );
+      ImGui::SetTooltip( "Fixed sweep count: setRestitutionIterations() (minimum) and setRestitutionMaxIterations()\n(maximum) both set to it. Box3D uses 2. The solver default runs at least 4, then to its tolerance.\nOnly the capped post-pass uses it." );
    ImGui::SliderInt( "max iterations", &p.maxIterations, 1, 200 );
    ImGui::Checkbox( "split impulse", &p.splitImpulse );
 
