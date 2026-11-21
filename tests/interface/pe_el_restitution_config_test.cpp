@@ -150,6 +150,12 @@ int main() {
     { "bad_threshold",  "{ \"restitutionEnabled_\": false, \"restitutionThreshold_\": -0.1 }" },
     { "bad_scheme",     "{ \"restitutionEnabled_\": false, \"restitutionScheme_\": \"postpass\" }" },
     { "bad_iterations", "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 0 }" },
+    { "fractional_iterations", "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 1.9 }" },
+    { "float_iterations",      "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 4.0 }" },
+    { "oversized_iterations",  "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 3000000000 }" },
+    { "huge_iterations",       "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": 18446744073709551615 }" },
+    { "negative_iterations",   "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": -3 }" },
+    { "string_iterations",     "{ \"restitutionEnabled_\": false, \"restitutionIterations_\": \"4\" }" },
   };
   for (const Bad& b : bad) {
     expect(backToOn(), std::string("reload of the enabled deck before ") + b.name);
@@ -157,6 +163,8 @@ int main() {
     expect(!msg.empty(), std::string(b.name) + " throws");
     expect(stillOn(), std::string(b.name) + ": the refused deck leaves all four values unchanged");
   }
+  expect(loadThrows(writeDeck("max_iterations", "{ \"restitutionIterations_\": 2147483647 }")).empty(), "INT_MAX iterations load");
+  expect(config.getRestitutionIterations() == 2147483647, "INT_MAX iterations read");
   expect(backToOn(), "reload of the enabled deck before the applier");
 
   // --- 4. applier and echo --------------------------------------------------------------------

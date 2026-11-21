@@ -26,6 +26,8 @@
 //*************************************************************************************************
 
 #include <pe/config/SimulationConfig.h>
+#include <limits>
+#include <stdexcept>
 #include <pe/util/CheckpointMetadata.h>
 #include <fstream>
 #include <stdexcept>
@@ -209,6 +211,26 @@ SimulationConfig& SimulationConfig::getInstance() {
  * \exception std::runtime_error If the file cannot be opened, or if pe was built without JSON support.
  * \exception std::invalid_argument If the packingMethod_ value is invalid.
  */
+#if HAVE_JSON
+namespace {
+
+//! restitutionIterations_: a json integer in [1, INT_MAX], checked before any conversion.
+int parseRestitutionIterations(const nlohmann::json& value) {
+    if (!value.is_number_integer())
+        throw std::invalid_argument("restitutionIterations_ must be an integer in [1, " +
+                                    std::to_string(std::numeric_limits<int>::max()) + "], got " + value.dump());
+    const bool inRange = value.is_number_unsigned()
+        ? value.get<unsigned long long>() <= static_cast<unsigned long long>(std::numeric_limits<int>::max())
+        : value.get<long long>() >= 1 && value.get<long long>() <= std::numeric_limits<int>::max();
+    if (!inRange || (value.is_number_unsigned() && value.get<unsigned long long>() < 1))
+        throw std::invalid_argument("restitutionIterations_ must be an integer in [1, " +
+                                    std::to_string(std::numeric_limits<int>::max()) + "], got " + value.dump());
+    return static_cast<int>(value.get<long long>());
+}
+
+}  // namespace
+#endif
+
 void SimulationConfig::loadFromFile(const std::string &fileName) {
 
 #if HAVE_JSON
@@ -580,7 +602,8 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
     // Restitution switch of the contact solver. Unlike the other keys these four are resolved PER
     // DECK: an absent key means the default (off, 0, "post-pass", 4), never the value an earlier
     // deck of the same process left in the singleton. They are read and validated together and
-    // assigned only if all are valid.
+    // assigned only if all are valid; restitutionIterations_ must be a json integer in [1, INT_MAX]
+    // (1.9, 4.0, "4" and out-of-range values are refused, not converted).
     {
         bool enabled = SimulationConfig::defaultRestitutionEnabled();
         real threshold = SimulationConfig::defaultRestitutionThreshold();
@@ -593,7 +616,7 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
         if (j.contains("restitutionScheme_"))
             scheme = j["restitutionScheme_"].get<std::string>();
         if (j.contains("restitutionIterations_"))
-            iterations = j["restitutionIterations_"].get<int>();
+            iterations = parseRestitutionIterations(j["restitutionIterations_"]);
         config.setRestitutionParams(enabled, threshold, scheme, iterations);
     }
 
