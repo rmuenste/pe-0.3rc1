@@ -307,13 +307,14 @@ inline void restitutionGlobalMax( real* x, int n )
  */
 struct RestitutionTrace
 {
-   long   first, count;  //!< PE_RESTITUTION_TRACE range (first < 0: off).
+   bool   rangeOn;       //!< PE_RESTITUTION_TRACE set and valid.
+   unsigned long long first, count;  //!< PE_RESTITUTION_TRACE range: passes first .. first + count - 1.
    real   pairSpeed;     //!< PE_RESTITUTION_PAIRS (< 0: off).
    size_t step;          //!< Calls of RestitutionPass::run() on this communicator.
    size_t pass;          //!< Passes that ran (not skipped) on this communicator.
    bool   parsed;
    size_t generation;    //!< MPISettings::commGeneration() the settings were read for.
-   RestitutionTrace() : first( -1 ), count( 0 ), pairSpeed( -1 ), step( 0 ), pass( 0 ), parsed( false ), generation( 0 ) {}
+   RestitutionTrace() : rangeOn( false ), first( 0 ), count( 0 ), pairSpeed( -1 ), step( 0 ), pass( 0 ), parsed( false ), generation( 0 ) {}
 
    static RestitutionTrace& instance() { static RestitutionTrace t; return t; }
 
@@ -324,26 +325,31 @@ struct RestitutionTrace
       const size_t gen( MPISettings::commGeneration() );
       if( parsed && gen == generation ) return;
       parsed = true; generation = gen;
-      first = -1; count = 0; pairSpeed = real( -1 ); step = 0; pass = 0;
-      double v[3] = { -1, 0, -1 };
+      rangeOn = false; first = 0; count = 0; pairSpeed = real( -1 ); step = 0; pass = 0;
+      unsigned long long range[3] = { 0, 0, 0 };   // on, first, count (integers: no rounding of large values)
+      double vmin( -1 );
       if( MPISettings::rank() == MPISettings::root() ) {
          const char* env( std::getenv( "PE_RESTITUTION_TRACE" ) );
-         long a( 0 ), b( 0 );
-         if( env && std::sscanf( env, "%ld:%ld", &a, &b ) == 2 && a >= 0 && b > 0 ) { v[0] = double( a ); v[1] = double( b ); }
+         unsigned long long a( 0 ), b( 0 );
+         if( env && std::sscanf( env, "%llu:%llu", &a, &b ) == 2 && b > 0 ) { range[0] = 1; range[1] = a; range[2] = b; }
          const char* pairs( std::getenv( "PE_RESTITUTION_PAIRS" ) );
-         double vmin( 0 );
-         if( pairs && std::sscanf( pairs, "%lf", &vmin ) == 1 && vmin >= 0 ) v[2] = vmin;
+         double v( 0 );
+         if( pairs && std::sscanf( pairs, "%lf", &v ) == 1 && v >= 0 ) vmin = v;
       }
 #if HAVE_MPI
-      if( MPISettings::size() > 1 )
-         MPI_Bcast( v, 3, MPI_DOUBLE, MPISettings::root(), MPISettings::comm() );
+      if( MPISettings::size() > 1 ) {
+         MPI_Bcast( range, 3, MPI_UNSIGNED_LONG_LONG, MPISettings::root(), MPISettings::comm() );
+         MPI_Bcast( &vmin, 1, MPI_DOUBLE, MPISettings::root(), MPISettings::comm() );
+      }
 #endif
-      first = static_cast<long>( v[0] ); count = static_cast<long>( v[1] ); pairSpeed = real( v[2] );
+      rangeOn = range[0] != 0; first = range[1]; count = range[2]; pairSpeed = real( vmin );
    }
 
+   //! pass in [first, first + count) without overflow: the lower bound first, then the distance.
    bool active( size_t pass ) const
    {
-      return first >= 0 && static_cast<long>( pass ) >= first && static_cast<long>( pass ) < first + count;
+      const unsigned long long p( pass );
+      return rangeOn && p >= first && p - first < count;
    }
 };
 //*************************************************************************************************
@@ -513,10 +519,12 @@ template< typename CS >
       // leave it armed with a spurious compression allowance.
       if( release ) {
          if( wk.kind[i] == RestitutionPassWork::armedRow ) {
+            // the clamp diagnostic from the same provisional booking as a partial withdrawal
+            const real lambdaR( s.restitutionImpulse_[i] + d - approach );
+            if( lambdaR < real( 0 ) ) { ++stats.clamped; stats.clampedImpulse -= lambdaR; }
             wk.kind[i] = RestitutionPassWork::demotedRow;
             ++stats.demoted;
          }
-         if( s.restitutionImpulse_[i] > real( 0 ) ) { ++stats.clamped; stats.clampedImpulse += s.restitutionImpulse_[i]; }
          s.restitutionImpulse_[i] = real( 0 );
          wk.lambda[i] = real( 0 );
          const Vec3 dp( -s.p_[i] );
