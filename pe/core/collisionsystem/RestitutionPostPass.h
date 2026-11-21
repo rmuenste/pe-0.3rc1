@@ -124,11 +124,13 @@ inline real restitutionPreStepNormalVelocity( BodyID b1, BodyID b2, const Vec3& 
  * speed) - keeps the inelastic target -dist_/dt with the positional terms of the compression solve,
  * so a rebound cannot drive the bodies of a resting contact into each other. After a normal change the Coulomb friction of the contact is re-relaxed in the
  * decoupled manner of relaxApproximateInelasticCoulombContactsByDecoupling() against the new
- * total normal impulse, unless the relaxation model is frictionless.
+ * total normal impulse, unless the relaxation model is frictionless; a contact whose normal
+ * impulse drops to zero loses its tangential impulse with it.
  *
  * Moved here from HardContactSemiImplicitTimesteppingSolvers::relaxRestitutionPostPass();
- * restitutionPostPass() calls it. Change against the HCSITS
- * original (review round 1, P0-1): the original skipped contacts with e = 0 on every sweep.
+ * restitutionPostPass() calls it. Changes against the HCSITS
+ * original (review round 1): the original skipped contacts with e = 0 on every sweep (P0-1), and a
+ * contact unloaded to zero normal impulse kept its old tangential impulse (P1-3).
  */
 template< typename CS >
 real restitutionPostPassSweep( CS& s, real dtinv )
@@ -208,6 +210,11 @@ real restitutionPostPassSweep( CS& s, real dtinv )
             ptNew[1] *= f;
          }
          dp += s.t_[i] * ( ptNew[0] - pt[0] ) + s.o_[i] * ( ptNew[1] - pt[1] );
+      }
+      else if( lambdaNew <= real( 0 ) ) {
+         // Unloaded (a neighbour's rebound pulled the bodies apart): the Coulomb disc has radius
+         // zero, so the old tangential impulse goes as well, through the same body corrections.
+         dp -= s.t_[i] * ( trans( s.t_[i] ) * s.p_[i] ) + s.o_[i] * ( trans( s.o_[i] ) * s.p_[i] );
       }
 
       s.p_[i] += dp;

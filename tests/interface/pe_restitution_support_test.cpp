@@ -218,6 +218,50 @@ static void caseDropOnPile( CollisionSystemID cs )
    expect( worst <= real(1e-6) * vImpact, "drop on pile: no pile contact is driven closed by the rebound" );
 }
 
+//=================================================================================================
+// 3. Frictional unloading
+//=================================================================================================
+
+static void caseUnloading( CollisionSystemID cs )
+{
+   const real e( 0.9 ), u( 1 ), dt( 1e-4 ), rB( 0.03 ), rA( kR ), angle( 20.0 * M_PI / 180.0 );
+   int lifted( 0 );
+   for( real gEff : { real(40), real(80), real(120), real(160), real(200), real(260), real(340) } ) {
+      applySwitches( cs, true, true );
+      WorldID world = freshWorld();
+      const MaterialID m( material( real(1000), e, real(0.25) ) );   // pair mu = 0.5
+      createPlane( 1, 0, 0, 1, 0, m );
+      SphereID B = createSphere( 2, Vec3( 0, 0, rB ), rB, m );
+      const Vec3 dir( -std::cos( angle ), 0, -std::sin( angle ) );   // from B's centre to A's at contact
+      const Vec3 contactCentre( B->getPosition() + ( rA + rB ) * dir );
+      SphereID A = createSphere( 3, contactCentre - Vec3( u * dt * real(5.9), 0, 0 ), rA, m );
+      const Vec3 FB( 0, 0, -B->getMass() * gEff );
+      for( int i = 0; i < 50; ++i ) { B->addForce( FB ); world->simulationStep( dt ); }   // B rests on the floor (A not yet moving)
+      A->setLinearVel( Vec3( u, 0, 0 ) );
+      bool found( false );
+      for( int i = 0; i < 40 && !found; ++i ) {
+         const real px0( A->getMass() * A->getLinearVel()[0] + B->getMass() * B->getLinearVel()[0] );
+         const real vA0( A->getLinearVel()[0] );
+         B->addForce( FB );
+         world->simulationStep( dt );
+         if( A->getLinearVel()[0] == vA0 ) continue;
+         found = true;
+         const real px1( A->getMass() * A->getLinearVel()[0] + B->getMass() * B->getLinearVel()[0] );
+         const real vzB( B->getLinearVel()[2] );
+         std::printf( "unloading, pressing %5.0f m/s^2: v_z(B) after %+.4e, x momentum change %+.3e (A's %.3e)\n",
+                      static_cast<double>( gEff ), static_cast<double>( vzB ), static_cast<double>( px1 - px0 ),
+                      static_cast<double>( A->getMass() * u ) );
+         if( vzB > real(1e-9) ) {
+            ++lifted;
+            expect( std::fabs( px1 - px0 ) <= real(1e-12) * A->getMass() * u,
+                    "unloading: a floor contact unloaded by the rebound keeps no tangential impulse (x momentum conserved)" );
+         }
+      }
+      expect( found, "unloading: an impact happened" );
+   }
+   expect( lifted > 0, "unloading: at least one pressing force at which the rebound lifts the large sphere" );
+}
+
 int main()
 {
    if( !HasRestitution<CollisionSystemType>::value ) {
@@ -230,6 +274,7 @@ int main()
       caseChain( cs, 5, split == 1 );
    }
    caseDropOnPile( cs );
+   caseUnloading( cs );
    applySwitches( cs, false, false );
    if( failures == 0 ) std::printf( "pe_restitution_support_test: all checks passed\n" );
    else std::printf( "pe_restitution_support_test: %d check(s) failed\n", failures );
