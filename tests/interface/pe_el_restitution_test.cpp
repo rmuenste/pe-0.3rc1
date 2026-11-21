@@ -36,6 +36,12 @@
  *       a corner of two planes: no kinetic energy is created, momentum (chain) is conserved, the
  *       corner rebound is e times the incoming velocity in both components.
  *
+ *    7. a disordered bed (36 spheres settled in a box of four walls) under active EL drag with step
+ *       changes of the carrier forcing between fluid steps: drag cancelling 98 % of the weight,
+ *       released, cancelled again (40 fluid steps x 10 sub-steps each), Baumgarte and split: the
+ *       contacts create no kinetic energy beyond the work of the hydro forces and the bed moves
+ *       less than 1 % of r; the number of contacts that arm (micro-bounce) is printed, not
+ *       asserted;
  *    8. a finite-mass global body is refused while the switch is on (std::runtime_error).
  *
  *  Under a configured solver other than HardContactEulerLagrange the test returns 77 (skipped).
@@ -501,6 +507,162 @@ static void caseSimultaneous( CollisionSystemID cs )
 }
 
 //=================================================================================================
+// 7. Resting pile under active EL drag with step changes of the carrier forcing
+//=================================================================================================
+
+template< typename T, typename = void > struct HasImpactingCount : std::false_type {};
+template< typename T > struct HasImpactingCount< T, std::void_t< decltype( std::declval<const T&>().impacting ) > > : std::true_type {};
+
+//! Contacts asked to bounce in the last step (pass stats; 0 without the switch or the counter).
+template< typename Handle > size_t impactingContacts( Handle& cs )
+{
+   typedef typename std::remove_reference<decltype( *cs )>::type CS;
+   if constexpr ( HasRestitution<CS>::value ) {
+      const auto& st( cs->getRestitutionPassStats() );
+      typedef typename std::remove_cv<typename std::remove_reference<decltype( st )>::type>::type Stats;
+      if constexpr ( HasImpactingCount<Stats>::value ) return st.impacting;
+      else { (void)st; return 0; }
+   }
+   else { (void)cs; return 0; }
+}
+
+//! Armed visits of the post-pass in the last step (0 without the switch).
+template< typename Handle > size_t armedVisits( Handle& cs )
+{
+   typedef typename std::remove_reference<decltype( *cs )>::type CS;
+   if constexpr ( HasRestitution<CS>::value ) return cs->getRestitutionPassStats().armed;
+   else { (void)cs; return 0; }
+}
+
+struct DragPileResult { size_t armed[3]; size_t impacting[3]; real created[3]; real drift[3]; real vmax[3]; };
+
+struct SavedBody { Vec3 x, v, w; };
+
+//! A disordered bed: 3 x 3 x 4 spheres on a jittered lattice (spacing 2.04 r, jitter 0.03 r) in a
+//! box of four walls 6.4 r wide, dropped and settled under gravity (as a force, switch off, 24000
+//! steps of 2.5e-5 s). The settled state is computed once and every run starts from it.
+static std::vector<BodyID> buildDisorderedBed( CollisionSystemID cs, std::vector<SavedBody>& saved )
+{
+   WorldID world = theWorld();
+   world->clear();
+   world->setGravity( 0, 0, 0 );
+   const MaterialID m( material( real(1000), real(0.9), real(0.15) ) );
+   const real half( real(3.2) * kR );
+   createPlane( 1,  0,  0, 1, 0, m );
+   createPlane( 2,  1,  0, 0, -half, m );
+   createPlane( 3, -1,  0, 0, -half, m );
+   createPlane( 4,  0,  1, 0, -half, m );
+   createPlane( 5,  0, -1, 0, -half, m );
+   std::vector<BodyID> bodies;
+   pe::id_t id( 10 );
+   if( saved.empty() ) {
+      applySwitches( cs, false, false );
+      unsigned int seed( 12345 );
+      const auto jitter = [&seed]() { seed = seed * 1103515245u + 12345u; return ( ( seed >> 8 ) % 2001 ) / real(1000) - real(1); };
+      for( int iz = 0; iz < 4; ++iz )
+         for( int iy = -1; iy <= 1; ++iy )
+            for( int ix = -1; ix <= 1; ++ix )
+               bodies.push_back( createSphere( id++, Vec3( ix * real(2.04) * kR + real(0.03) * kR * jitter(),
+                                                           iy * real(2.04) * kR + real(0.03) * kR * jitter(),
+                                                           kR + iz * real(2.04) * kR + real(0.05) * kR ), kR, m ) );
+      for( int i = 0; i < 24000; ++i ) {
+         for( BodyID b : bodies ) b->addForce( Vec3( 0, 0, -b->getMass() * kG ) );
+         world->simulationStep( real(2.5e-5) );
+      }
+      real vmax( 0 ), zmax( 0 );
+      for( BodyID b : bodies ) { vmax = std::max( vmax, b->getLinearVel().length() ); zmax = std::max( zmax, b->getPosition()[2] ); }
+      std::printf( "disordered bed settled (0.6 s): max |v| %.3e, top centre at %.3f r\n", static_cast<double>( vmax ), static_cast<double>( zmax / kR ) );
+      for( BodyID b : bodies ) saved.push_back( SavedBody{ b->getPosition(), b->getLinearVel(), b->getAngularVel() } );
+   }
+   else {
+      for( const SavedBody& sb : saved ) {
+         SphereID sp = createSphere( id++, sb.x, kR, m );
+         sp->setLinearVel( sb.v );
+         sp->setAngularVel( sb.w );
+         bodies.push_back( sp );
+      }
+   }
+   return bodies;
+}
+
+//! The settled bed of buildDisorderedBed() with an EL hydro state on every sphere: weight as the
+//! other force, drag B = m / tau with tau = 20 fluid steps, carrier velocity u_f upward. Phase 0:
+//! drag cancels 98 % of the weight (u_f = 0.98 g tau); phase 1: released (u_f = 0); phase 2:
+//! cancelled again. Each phase 40 fluid steps of 10 sub-steps of 2.5e-5 s (the FeatFloWer case-11
+//! sub-step); the hydro state and the free-flight reference are re-armed per fluid step, as the
+//! driver does. Per sub-step the work of the free (hydro) increment,
+//! W = sum m dv_free . ( v_pre + dv_free / 2 ), is the exact kinetic-energy change without
+//! contacts, so E_c = KE_after - KE_pre - W is what the contact solve did; the sum of its positive
+//! parts is the energy the contacts created.
+static DragPileResult runDragPile( CollisionSystemID cs, std::vector<SavedBody>& saved, bool restitution, bool split )
+{
+   std::vector<BodyID> bodies( buildDisorderedBed( cs, saved ) );
+   applySwitches( cs, restitution, split );
+   std::vector<Vec3> start;
+   for( BodyID b : bodies ) start.push_back( b->getPosition() );
+   const real dtSub( 2.5e-5 );
+   const int subSteps( 10 ), fluidSteps( 40 );
+   const real tau( 20 * subSteps * dtSub );
+   DragPileResult r;
+   for( int ph = 0; ph < 3; ++ph ) {
+      r.armed[ph] = 0; r.impacting[ph] = 0; r.created[ph] = 0; r.drift[ph] = 0; r.vmax[ph] = 0;
+      const real uf( ph == 1 ? real(0) : real(0.98) * kG * tau );
+      for( int fs = 0; fs < fluidSteps; ++fs ) {
+         for( BodyID b : bodies ) {
+            elSetHydroState( b, b->getMass() / tau, Vec3( 0, 0, uf ), Vec3( 0, 0, -b->getMass() * kG ), true );
+            elSetRefVelocity( b, b->getLinearVel() );
+         }
+         for( int k = 0; k < subSteps; ++k ) {
+            std::vector<Vec3> vPre, uref;
+            real kePre( 0 );
+            for( BodyID b : bodies ) { vPre.push_back( b->getLinearVel() ); uref.push_back( refVelocity( b ) ); kePre += kinetic( b ); }
+            theWorld()->simulationStep( dtSub );
+            r.armed[ph] += armedVisits( cs );
+            r.impacting[ph] += impactingContacts( cs );
+            real keAfter( 0 ), work( 0 );
+            for( size_t j = 0; j < bodies.size(); ++j ) {
+               const Vec3 dvf( refVelocity( bodies[j] ) - uref[j] );
+               work += bodies[j]->getMass() * ( trans( dvf ) * ( vPre[j] + real(0.5) * dvf ) );
+               keAfter += kinetic( bodies[j] );
+               r.drift[ph] = std::max( r.drift[ph], ( bodies[j]->getPosition() - start[j] ).length() );
+               r.vmax[ph] = std::max( r.vmax[ph], bodies[j]->getLinearVel().length() );
+            }
+            r.created[ph] += std::max( keAfter - kePre - work, real(0) );
+         }
+      }
+   }
+   for( BodyID b : bodies ) elSetHydroState( b, real(0), Vec3(), Vec3(), false );
+   return r;
+}
+
+static void caseDragPile( CollisionSystemID cs )
+{
+   const real mgr( real(1000) * real(4.0 / 3.0) * M_PI * kR * kR * kR * kG * kR );   // m g r of one sphere
+   std::vector<SavedBody> saved;
+   buildDisorderedBed( cs, saved );
+   for( int split = 0; split < 2; ++split ) {
+      const DragPileResult off( runDragPile( cs, saved, false, split == 1 ) );
+      const DragPileResult on( runDragPile( cs, saved, true, split == 1 ) );
+      for( int ph = 0; ph < 3; ++ph ) {
+         const char* name[3] = { "drag cancels 98 % of the weight", "released", "cancelled again" };
+         std::printf( "bed under EL drag (%s), phase %d (%s): switch on: impacting contacts %zu (armed visits %zu), energy created by contacts %.3e m g r, "
+                      "max drift %.3e, max |v| %.3e | switch off: created %.3e m g r, drift %.3e, max |v| %.3e\n",
+                      split ? "split" : "Baumgarte", ph, name[ph], on.impacting[ph], on.armed[ph], static_cast<double>( on.created[ph] / mgr ),
+                      static_cast<double>( on.drift[ph] ), static_cast<double>( on.vmax[ph] ),
+                      static_cast<double>( off.created[ph] / mgr ), static_cast<double>( off.drift[ph] ), static_cast<double>( off.vmax[ph] ) );
+         // Asserted: the contacts create no kinetic energy beyond the work of the hydro forces
+         // (switch on, either correction scheme), and the bed stays put (drift below 1 % of r).
+         // NOT asserted: the number of impacting contacts. The current-step threshold
+         // 2 |dv_free| lets contacts of a settling bed arm (micro-bounce); the counts are printed
+         // and discussed in doc/technical-notes/el-restitution.md.
+         expect( on.created[ph] <= off.created[ph] + real(1e-12) * mgr,
+                 "bed under EL drag: the contacts create no energy beyond the external work (switch on)" );
+         expect( on.drift[ph] < real(0.01) * kR, "bed under EL drag: the bed stays put (drift < 1 % of r)" );
+      }
+   }
+}
+
+//=================================================================================================
 // 8. Refusal: a finite-mass global body
 //=================================================================================================
 
@@ -559,6 +721,7 @@ int main()
    caseOblique( cs );
    casePile( cs );
    caseSimultaneous( cs );
+   caseDragPile( cs );
    caseGlobalMobileRefused( cs );
 
    applySwitches( cs, false, false );
