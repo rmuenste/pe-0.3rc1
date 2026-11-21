@@ -739,6 +739,16 @@ foreach(variant "" "_plain")
   )
 endforeach()
 
+# Unit tests of the post-pass on a mock collision system (RestitutionPass called directly): skip
+# certificate, Poisson ceiling through unload and reload, tangential stop decision, wall scale.
+add_executable(pe_restitution_pass_unit_test pe_restitution_pass_unit_test.cpp)
+target_link_libraries(pe_restitution_pass_unit_test PRIVATE pe_static)
+add_test(NAME pe-restitution-pass-unit COMMAND pe_restitution_pass_unit_test)
+set_tests_properties(pe-restitution-pass-unit PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 60
+)
+
 # Json contract of restitutionEnabled_ / restitutionThreshold_ / restitutionScheme_ /
 # restitutionIterations_ (per-deck defaults, validation), the applier (applyOptionalRestitutionParams)
 # and the EL_CONTACT_PARAMS start-up echo line (pe/interface/support/contact_params_echo.h); also
@@ -980,6 +990,39 @@ if(PE_USE_MPI AND MPI_FOUND)
     SKIP_RETURN_CODE 77
     ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
   )
+endif()
+
+# Review round 3: the impact scale of a body is the same on every rank that holds it (one-treater
+# chain against the split chain under the production stop rule), and the registry of non-fixed
+# global bodies (fix + destroy, clear + repopulate, registered fixed then unfixed; restitution off),
+# both solvers on two ranks.
+if(PE_USE_MPI AND MPI_FOUND)
+  foreach(variant "" "_plain")
+    if(variant STREQUAL "_plain")
+      set(r3_lib pe_static_lubstage_plain)
+    else()
+      set(r3_lib pe_static)
+    endif()
+    string(REPLACE "_" "-" variant_name "${variant}")
+    add_executable(pe_restitution_scale${variant}_mpi pe_restitution_scale_mpi.cpp)
+    target_link_libraries(pe_restitution_scale${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
+    add_test(NAME pe-restitution-scale-mpi${variant_name}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+              $<TARGET_FILE:pe_restitution_scale${variant}_mpi> ${MPIEXEC_POSTFLAGS})
+    set_tests_properties(pe-restitution-scale-mpi${variant_name} PROPERTIES
+      LABELS "integration;mpi;rigidbody" PROCESSORS 2 SKIP_RETURN_CODE 77
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    add_executable(pe_global_registry${variant}_mpi pe_global_registry_mpi.cpp)
+    target_link_libraries(pe_global_registry${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
+    foreach(mode fixdestroy clear unfix)
+      add_test(NAME pe-global-registry-mpi${variant_name}-${mode}
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+                $<TARGET_FILE:pe_global_registry${variant}_mpi> ${MPIEXEC_POSTFLAGS} ${mode})
+      set_tests_properties(pe-global-registry-mpi${variant_name}-${mode} PROPERTIES
+        LABELS "integration;mpi;rigidbody" PROCESSORS 2 TIMEOUT 120
+        ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    endforeach()
+  endforeach()
 endif()
 
 # Contract test for the optional cylinderWallEnabled_ / cylinderWallRadius_ deck keys of the EL

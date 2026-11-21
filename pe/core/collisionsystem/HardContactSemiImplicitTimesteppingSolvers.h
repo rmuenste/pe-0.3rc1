@@ -311,6 +311,9 @@ private:
    //@{
    void synchronize();
    void synchronizeVelocities();
+   //! Restitution post-pass: per-body maximum of \a scale (indexed by index_) over the owner and its
+   //! shadow copies (RestitutionPass::exchangeBodyScales(); collective, a no-op on one process).
+   void exchangeRestitutionBodyScales( std::vector<real>& scale ) { RestitutionPass::exchangeBodyScales( *this, scale ); }
    //! Rebuilds globalNonfixedBodies_ from the live body storage (fixation changes after add()).
    void refreshGlobalNonfixedBodies();
    //@}
@@ -1147,11 +1150,14 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimeste
  *    the relaxation model is frictionless, so spin and tangential velocity still exchange over
  *    the full \f$ (1+e) \f$ impulse as in a rigid impact.
  *
- * The sweeps (restitutionPostPass() of RestitutionPostPass.h, shared with the EL solver) run at
- * least setRestitutionIterations() times and then until a sweep changes no normal velocity by
- * more than setRestitutionTolerance() times the largest impact speed, at most
- * max( setRestitutionIterations(), setMaxIterations() ) times; a step in which no contact asks
- * for a bounce runs none. Before review round 1 of the EL port the count was fixed: with two
+ * The sweeps (restitutionPostPass() of RestitutionPostPass.h, shared with the EL solver) follow
+ * RestitutionStopRule: at least setRestitutionIterations() sweeps, then a stop test every
+ * setRestitutionCheckInterval() sweeps on the synchronised velocities (projected normal and
+ * tangential residuals of every affected row against setRestitutionTolerance( abs, rel ): abs +
+ * rel times the row's local impact scale), at most max( setRestitutionIterations(),
+ * setRestitutionMaxIterations() ) sweeps (default 4 / 24 / every 4 / 1e-4 + 1e-3); the budget is
+ * independent of setMaxIterations() (the inelastic solve). A step in which no contact asks for a
+ * bounce runs none. Before review round 1 of the EL port the count was fixed: with two
  * sweeps (Box3D's count) a box landing flat on four corners came up at 0.95 of
  * \f$ e\,|\dot g_n^-| \f$ with a visible spin, with four at 0.9998 with 0.0024 rad/s, and the
  * support contacts of a five-sphere chain still closed at 3.7 % of the impact speed. Each sweep
@@ -2321,9 +2327,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactSemiImplicitTimesteppingSo
    if( useRestitution_ && !useRestitutionPostPass_ ) {
       for( size_t j = 0; j < impactSpeed_.size(); ++j ) {
          if( !( impactSpeed_[j] < real( 0 ) ) ) continue;
-         const real dist( dist_[j] );
-         dist_[j] = restitutionInSolveDistance( dist, cor_[j], impactSpeed_[j], freeNormalVelocity( j ), dt );
-         if( dist_[j] != dist ) ++restitutionPassStats_.inSolveTargets;
+         // the Newton target is installed unless a positive gap stays open (counted when installed)
+         if( !restitutionInSolveKeepsGap( dist_[j], freeNormalVelocity( j ), dt ) ) {
+            dist_[j] = restitutionInSolveDistance( dist_[j], cor_[j], impactSpeed_[j], freeNormalVelocity( j ), dt );
+            ++restitutionPassStats_.inSolveTargets;
+         }
          impactSpeed_[j] = real( 0 );
       }
    }

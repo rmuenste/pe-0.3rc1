@@ -333,6 +333,9 @@ private:
    //@{
    void synchronize();
    void synchronizeVelocities();
+   //! Restitution post-pass: per-body maximum of \a scale (indexed by index_) over the owner and its
+   //! shadow copies (RestitutionPass::exchangeBodyScales(); collective, a no-op on one process).
+   void exchangeRestitutionBodyScales( std::vector<real>& scale ) { RestitutionPass::exchangeBodyScales( *this, scale ); }
    //! Rebuilds globalNonfixedBodies_ from the live body storage (fixation changes after add()).
    void refreshGlobalNonfixedBodies();
    //@}
@@ -1508,10 +1511,12 @@ inline void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::s
  * \param n Minimum number of sweeps (>= 1); default 4. Each sweep costs one synchronizeVelocities().
  *
  * The pass (restitutionPostPass(), shared with HCSITS) runs none when no contact asks for a
- * bounce on any process, else at least n sweeps and then until a sweep changes no normal velocity
- * by more than setRestitutionTolerance() (default 1e-9) times the largest impact speed, at most
- * max( n, setMaxIterations() ) sweeps; the stop test is a global maximum (one MPI_Allreduce per
- * sweep after the n-th, one per step for the impact speed).
+ * bounce on any process, else at least n sweeps and then follows RestitutionStopRule: a stop test
+ * every setRestitutionCheckInterval() sweeps on the synchronised velocities (projected normal and
+ * tangential residuals of every affected row within setRestitutionTolerance( abs, rel ): abs +
+ * rel times the row's local impact scale), at most max( n, setRestitutionMaxIterations() )
+ * sweeps (independent of setMaxIterations(), the budget of the inelastic solve). Each stop test
+ * is one MPI_Allreduce; the pass start adds one reduction and the owner <-> shadow scale exchange.
  * \return void
  */
 template< template<typename> class CD                           // Type of the coarse collision detection algorithm
@@ -3087,9 +3092,11 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactEulerLagrange> >::armResti
          if( useRestitutionPostPass_ )
             impactSpeed_[j] = -e * vn;
          else {
-            const real dist( dist_[j] );
-            dist_[j] = restitutionInSolveDistance( dist, e, vn, freeNormalVelocity( j ), dt );
-            if( dist_[j] != dist ) ++restitutionPassStats_.inSolveTargets;
+            // the Newton target is installed unless a positive gap stays open (counted when installed)
+            if( !restitutionInSolveKeepsGap( dist_[j], freeNormalVelocity( j ), dt ) ) {
+               dist_[j] = restitutionInSolveDistance( dist_[j], e, vn, freeNormalVelocity( j ), dt );
+               ++restitutionPassStats_.inSolveTargets;
+            }
          }
       }
    }
