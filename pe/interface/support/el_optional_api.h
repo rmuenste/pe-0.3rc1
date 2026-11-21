@@ -188,16 +188,25 @@ struct HasRestitutionPassStats : std::false_type {};
 template <typename CollisionSystemT>
 struct HasRestitutionPassStats<CollisionSystemT, std::void_t<
     decltype(std::declval<const CollisionSystemT&>().getRestitution()),
-    decltype(std::declval<const CollisionSystemT&>().getRestitutionPassStats().impacting)>>
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionPostPass()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionPassStats().delivered)>>
     : std::true_type {};
 
-//! Process-local sums of the pass statistics over the sub-steps of one CFD step.
+//! Restitution statistics of the sub-steps of one CFD step (RestitutionPassStats, summed or
+//! maximised over the sub-steps; process-local until elRestitutionTallyReduce()).
 struct ElRestitutionTally {
-  double impacting = 0, support = 0, armedVisits = 0, sweeps = 0, maxSweeps = 0, restitutionImpulse = 0;
+  enum Sum { candidates, inSolve, armed, delivered, support, armedVisits, impulseGross, impulseFinal, numSums };
+  enum Same { sweeps, converged, capped, skipped, numSame };        // identical on every process
+  enum Max { sweepsMax, residual, residualRel, tangential, closingBefore, closingAfter,
+             impactError, shortfall, approach, restingApproach, numMax };
+  double sum[numSums] = {};
+  double same[numSame] = {};
+  double max[numMax] = {};
+  bool postPass = true;
 };
 
 //*************************************************************************************************
-/*!\brief Adds the last step's pass statistics to \a tally; returns whether the switch is on.
+/*!\brief Adds the last step's restitution statistics to \a tally; returns whether the switch is on.
  *
  * False (and nothing added) for a solver without the switch or with the switch off.
  */
@@ -205,13 +214,25 @@ template <typename CollisionSystemT>
 inline bool elAccumulateRestitutionStats(const CollisionSystemT& cs, ElRestitutionTally& tally) {
   if constexpr (HasRestitutionPassStats<CollisionSystemT>::value) {
     if (!cs.getRestitution()) return false;
+    typedef ElRestitutionTally T;
     const auto& st = cs.getRestitutionPassStats();
-    tally.impacting += static_cast<double>(st.impacting);
-    tally.support += static_cast<double>(st.support);
-    tally.armedVisits += static_cast<double>(st.armed);
-    tally.sweeps += static_cast<double>(st.sweeps);
-    tally.maxSweeps = std::max(tally.maxSweeps, static_cast<double>(st.sweeps));
-    tally.restitutionImpulse += static_cast<double>(st.restitutionImpulse);
+    tally.postPass = cs.getRestitutionPostPass();
+    tally.sum[T::candidates] += st.candidates;
+    tally.sum[T::inSolve] += st.inSolveTargets;
+    tally.sum[T::armed] += st.armedRows;
+    tally.sum[T::delivered] += st.delivered;
+    tally.sum[T::support] += st.supportRows;
+    tally.sum[T::armedVisits] += st.armed;
+    tally.sum[T::impulseGross] += st.restitutionImpulse;
+    tally.sum[T::impulseFinal] += st.finalRestitutionImpulse;
+    tally.same[T::sweeps] += st.sweeps;
+    if (st.stop == 1) tally.same[T::skipped] += 1;
+    if (st.stop == 2) tally.same[T::converged] += 1;
+    if (st.stop == 3) tally.same[T::capped] += 1;
+    const double m[T::numMax] = {double(st.sweeps), st.residual, st.residualRel, st.tangentialResidual,
+                                 st.supportClosingBefore, st.supportClosingAfter, st.impactError,
+                                 st.newtonShortfall, st.approachMax, st.restingApproachMax};
+    for (int k = 0; k < T::numMax; ++k) tally.max[k] = std::max(tally.max[k], m[k]);
     return true;
   } else {
     (void)cs; (void)tally;

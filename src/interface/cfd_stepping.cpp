@@ -432,20 +432,45 @@ void stepELFrozenTrace() {
   }
   TimeStep::stepsize(fullStepSize);
 
-  // Restitution post-pass statistics of this CFD step (only while the switch is on, so an
-  // inelastic run prints nothing new): contacts asked to bounce and support contacts summed over
-  // the sub-steps and the processes, sweeps summed and their maximum over sub-steps and processes.
+  // Restitution statistics of this CFD step (only while the switch is on, so an inelastic run
+  // prints nothing new). Counts summed over the sub-steps and the processes (candidates: approach
+  // faster than the threshold; armed: candidates with compression impulse; delivered: armed rows
+  // ending with a restitution impulse; impulse_gross: separating increments, impulse_final: booked
+  // at the end of the passes, both unrelaxed); sub-step stop reasons and sweeps (the same on every
+  // process); velocity measures maxima over sub-steps and processes. pe_step is this counter,
+  // cfd_step = pe_step + 1 the step number the CFD audits print.
   if (restitutionOn) {
-    double sums[5] = {restitutionTally.impacting, restitutionTally.support, restitutionTally.armedVisits,
-                      restitutionTally.sweeps, restitutionTally.restitutionImpulse};   // sums[3]: sweeps over sub-steps and processes
-    double maxSweeps = restitutionTally.maxSweeps;
-    MPI_Allreduce(MPI_IN_PLACE, sums, 5, MPI_DOUBLE, MPI_SUM, cartcomm);
-    MPI_Allreduce(MPI_IN_PLACE, &maxSweeps, 1, MPI_DOUBLE, MPI_MAX, cartcomm);
+    typedef ElRestitutionTally T;
+    MPI_Allreduce(MPI_IN_PLACE, restitutionTally.sum, T::numSums, MPI_DOUBLE, MPI_SUM, cartcomm);
+    MPI_Allreduce(MPI_IN_PLACE, restitutionTally.same, T::numSame, MPI_DOUBLE, MPI_MAX, cartcomm);
+    MPI_Allreduce(MPI_IN_PLACE, restitutionTally.max, T::numMax, MPI_DOUBLE, MPI_MAX, cartcomm);
     pe_EXCLUSIVE_SECTION(0) {
+      const double passes = restitutionTally.same[T::converged] + restitutionTally.same[T::capped];
       std::ostringstream line;   // own stream: the precision of std::cout stays untouched
-      line << std::setprecision(6) << "EL_RESTITUTION_STATS step= " << timestep
-           << " impacting= " << sums[0] << " support= " << sums[1] << " armed_visits= " << sums[2]
-           << " sweeps_max= " << maxSweeps << " restitution_impulse= " << sums[4];
+      line << std::setprecision(6) << "EL_RESTITUTION_STATS pe_step= " << timestep << " cfd_step= " << timestep + 1
+           << " scheme= " << (restitutionTally.postPass ? "post-pass" : "in-solve")
+           << " candidates= " << restitutionTally.sum[T::candidates]
+           << " armed= " << restitutionTally.sum[T::armed]
+           << " delivered= " << restitutionTally.sum[T::delivered]
+           << " in_solve= " << restitutionTally.sum[T::inSolve]
+           << " support= " << restitutionTally.sum[T::support]
+           << " armed_visits= " << restitutionTally.sum[T::armedVisits]
+           << " impulse_gross= " << restitutionTally.sum[T::impulseGross]
+           << " impulse_final= " << restitutionTally.sum[T::impulseFinal]
+           << " substeps_converged= " << restitutionTally.same[T::converged]
+           << " substeps_capped= " << restitutionTally.same[T::capped]
+           << " substeps_skipped= " << restitutionTally.same[T::skipped]
+           << " sweeps_mean= " << (passes > 0 ? restitutionTally.same[T::sweeps] / passes : 0.0)
+           << " sweeps_max= " << restitutionTally.max[T::sweepsMax]
+           << " residual= " << restitutionTally.max[T::residual]
+           << " residual_rel= " << restitutionTally.max[T::residualRel]
+           << " tangential_residual= " << restitutionTally.max[T::tangential]
+           << " support_closing_before= " << restitutionTally.max[T::closingBefore]
+           << " support_closing_after= " << restitutionTally.max[T::closingAfter]
+           << " impact_error= " << restitutionTally.max[T::impactError]
+           << " newton_shortfall= " << restitutionTally.max[T::shortfall]
+           << " approach_max= " << restitutionTally.max[T::approach]
+           << " resting_approach_max= " << restitutionTally.max[T::restingApproach];
       std::cout << line.str() << std::endl;
     }
   }
