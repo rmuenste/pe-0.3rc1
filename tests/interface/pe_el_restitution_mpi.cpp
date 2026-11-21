@@ -24,7 +24,8 @@
  *      Newton target e |v_rel| and g_0 the velocity after the compression solve (here the
  *      Baumgarte push-out of the impact step's overlap, 0.07 |v_rel|). The pairs impact with the
  *      pass held to its minimum of n = 4 sweeps (tolerance 1): -0.899917 |v_rel| (1e-10). The
- *      chains impact later with the default tolerance (sweeps until converged);
+ *      chains impact later with the strict regression rule (up to 100 sweeps, tested every sweep,
+ *      relative tolerance 1e-9; 60 sweeps at the impact step in round 2);
  *    - momentum of each pair and chain conserved (1e-12);
  *    - the support contact of each chain never closes (normal velocity >= -1e-9 u after every
  *      step);
@@ -119,7 +120,7 @@ int run( CS& cs, int rank )
                           m[10] * v[10] + m[11] * v[11] + m[12] * v[12] };
    // Pairs impact in step 6 with the post-pass stopped at its minimum of four sweeps (tolerance 1:
    // the relaxation recurrence below applies to exactly n = 4); the chains impact in step 16 with
-   // the default tolerance (sweeps until converged).
+   // the strict regression rule set at step 10 (sweeps until converged to relative 1e-9).
    cs.setRestitutionIterations( 4 );
    cs.setRestitutionMaxIterations( 4 );          // pairs: exactly four sweeps
    double worstSupport = 0.0, separation[3] = { 0, 0, 0 }, midAB3 = 0, midBC3 = 0;
@@ -154,7 +155,7 @@ int run( CS& cs, int rank )
       const double g0 = erp * 0.1;   // push-out of the overlap 0.1 * 2u dt, relative to |v_rel| = 2u
       const double predicted = -( e - std::pow( 1.0 - alpha, 4 ) * ( e - g0 ) );
       std::printf( "v_rel' / v_rel: pair 1 %.15f, pair 2 %.15f, recurrence (1 - alpha)^4 prediction %.15f (sweeps %zu)\n", rel1, rel2, predicted, pairSweeps );
-      std::printf( "chains: %zu sweeps at the impact step (converged to the default tolerance)\n", chainSweeps );
+      std::printf( "chains: %zu sweeps at the impact step (strict rule: max 100, every sweep, relative 1e-9)\n", chainSweeps );
       std::printf( "chain 1 (support across the cut): v = %.12f %.12f %.12f\n", v[4], v[5], v[6] );
       std::printf( "chain 2 (inside rank 0):           v = %.12f %.12f %.12f\n", v[7], v[8], v[9] );
       std::printf( "chain 3 (A-B on rank 0, B-C on rank 1): v = %.12f %.12f %.12f; contact midpoints at the impact %.4f / %.4f\n",

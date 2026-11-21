@@ -11,11 +11,15 @@
  *
  *    1. a pile of 48 spheres (4 x 4 x 3 on a jittered lattice) in a box of four walls on the floor
  *       with the drag carrying f = 20 %, 50 % and 90 % of the weight (u_f = f g tau): after 0.8 s
- *       of settling, a late window of 0.1 s has ZERO delivered rebounds and no candidate, the
- *       spheres are slower than 1e-3 m/s; the largest pre-step relative normal approach speed at a
- *       contact (both windows) is printed for the calibration of v_rest;
+ *       of settling, a late window of 0.1 s has ZERO delivered rebounds and no candidate, every
+ *       sphere is slower than 1e-3 m/s at every sub-step of the window, and no sphere moves by
+ *       more than 5 % of its radius over the window (sustained rest); the largest pre-step
+ *       relative normal approach speed at a contact (both windows) is printed for the
+ *       calibration of v_rest;
  *    2. single spheres hitting the floor at 0.05, 0.1 and 0.2 m/s under the same drag (f = 50 %):
- *       one rebound delivered, rebound ratio above 0.85 (e = 0.9 less the drag of the sub-step);
+ *       one rebound delivered, rebound ratio e = 0.9 within the stop tolerance of the post-pass:
+ *       the Newton target e |v_n-| is met to abs + rel e |v_n-| (1e-4 m/s + 1e-3 of the impact
+ *       speed), i.e. |ratio - 0.9| <= ( 1e-4 + 1e-3 * 0.9 v ) / v (plus 1e-9 rounding);
  *    3. a sphere dropped at 0.1 m/s onto the settled pile (f = 50 %): at least one rebound
  *       delivered.
  */
@@ -74,8 +78,8 @@ template< typename Handle > void fluidStep( Handle& cs, const std::vector<BodyID
       w.candidates += st.candidates;
       w.approach = std::max( w.approach, st.approachMax );
       w.resting = std::max( w.resting, st.restingApproachMax );
+      for( BodyID b : bodies ) w.vmax = std::max( w.vmax, b->getLinearVel().length() );   // every sub-step
    }
-   for( BodyID b : bodies ) w.vmax = std::max( w.vmax, b->getLinearVel().length() );
 }
 
 static MaterialID material()
@@ -136,7 +140,8 @@ template< typename Handle > void run( Handle& cs )
                       static_cast<double>( late.approach ), static_cast<double>( late.resting ), static_cast<double>( late.vmax ),
                       static_cast<double>( drift ), static_cast<double>( vEnd ) );
          expect( late.delivered == 0 && late.candidates == 0, "pile: no rebound (no candidate) in the late window" );
-         expect( late.vmax < real(1e-3), "pile: sustained rest (every sphere slower than 1e-3 m/s in the late window)" );
+         expect( late.vmax < real(1e-3), "pile: sustained rest (every sphere slower than 1e-3 m/s at every sub-step of the late window)" );
+         expect( drift < real(0.05) * kR, "pile: sustained rest (no sphere moves by 5 % of its radius over the late window)" );
          if( f == real(0.5) ) {
             // 3. a sphere dropped onto the settled pile
             real top( 0 );
@@ -174,7 +179,9 @@ template< typename Handle > void run( Handle& cs )
          }
          std::printf( "floor impact at %.2f m/s under drag: delivered %zu, rebound %.6f m/s, ratio %.4f\n",
                       static_cast<double>( v ), w.delivered, static_cast<double>( vPost ), static_cast<double>( -vPost / vPre ) );
-         expect( w.delivered == 1 && -vPost / vPre > real(0.85), "floor impact in the fluidised range keeps its rebound" );
+         const real band( ( real(1e-4) + real(1e-3) * real(0.9) * v ) / v + real(1e-9) );
+         expect( w.delivered == 1 && std::fabs( -vPost / vPre - real(0.9) ) <= band,
+                 "floor impact in the fluidised range keeps its rebound (ratio 0.9 within the stop tolerance)" );
       }
       cs->setRestitution( false );
    }

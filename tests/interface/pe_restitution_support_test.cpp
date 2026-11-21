@@ -170,8 +170,13 @@ static void caseChain( CollisionSystemID cs, int n, bool split )
       expect( std::fabs( p1 - p0 ) <= real(1e-12) * s[0]->getMass() * u, what );
       std::snprintf( what, sizeof( what ), "chain %d (%s): kinetic energy not above the value before the impact step", n, tag );
       expect( E1 <= E0 * ( real(1) + real(1e-12) ), what );
-      std::snprintf( what, sizeof( what ), "chain %d (%s): the impacting sphere rebounds", n, tag );
-      expect( s[0]->getLinearVel()[0] < real(0.5) * u, what );
+      // An inelastic chain leaves A moving forward (u / n with the others); with e = 0.9 the A-B row
+      // separates at the Newton speed e u (the support rows act inelastically), so A moves back.
+      // Tolerance: the strict stop rule of this test (relative 1e-9) plus rounding.
+      std::snprintf( what, sizeof( what ), "chain %d (%s): the impacting sphere rebounds (moves backwards)", n, tag );
+      expect( s[0]->getLinearVel()[0] < real(0), what );
+      std::snprintf( what, sizeof( what ), "chain %d (%s): the A-B separation speed is e u", n, tag );
+      expect( std::fabs( s[1]->getLinearVel()[0] - s[0]->getLinearVel()[0] - e * u ) <= real(1e-6) * u, what );
    }
    std::snprintf( what, sizeof( what ), "chain %d (%s): an impact happened", n, tag );
    expect( found, what );
