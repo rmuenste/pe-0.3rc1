@@ -24,7 +24,17 @@
  *       unloaded by the projection, then closed again: no restitution may be booked (n . p_ left a
  *       roundoff load of 2e-16 that kept the row armed with a fresh compression allowance);
  *    7. an armed row fully unloaded on the LAST sweep of a pass is counted as demoted and its
- *       stored impulse is exactly zero.
+ *       stored impulse is exactly zero;
+ *    8. review round 5, finding 1: one visit of a SLIDING row (mu 0.3) whose load increases
+ *       (lambda 1, d 0.5): the tangential impulse ends on the disc 0.45 (b047e41: 0.60, the radius
+ *       used lambda + 2d), and the residual evaluator agrees (zero tangential residual after it);
+ *    9. the same with a partial withdrawal (lambda 1, d -0.6): friction limited to 0.12 (b047e41:
+ *       discarded);
+ *   10. randomized consistency (fixed seed): 300 independent sphere pairs with oblique normals,
+ *       friction, armed and support rows, random disturbances over 8 sweeps (loads, withdrawals,
+ *       releases); after every sweep |n . p - lambda| within rounding, tangential impulse within
+ *       mu lambda, lambda_R <= e lambda_C, p_ = 0 after a release, the pair's momentum unchanged
+ *       by the sweep.
  *
  *  The test compiles against the round-2 pass (45c9268); fields added later are set through
  *  detectors, so the before results are runtime results.
@@ -112,6 +122,15 @@ struct MockCS
       // sphere against a wall, contact point on the line of the normal: normal mass 1, tangential 1 / 3.5
       diag_n_inv_.push_back( real(1) );
       diag_to_inv_.push_back( Mat2( real(1) / real(3.5), real(0), real(0), real(1) / real(3.5) ) );
+   }
+   //! Row between two spheres b1 and b2 (contact points at -R n and +R n from the centres):
+   //! normal mass 1/2, tangential response 2 (1 + R^2 Iinv) = 7.
+   void addPairRow( size_t b1, size_t b2, const Vec3& n, const Vec3& t, real lambda, const Vec3& pt, real mu, real e, real impact )
+   {
+      addRow( b1, b2, n, t, lambda, pt, mu, e, impact );
+      r2_.back() = kR * n;
+      diag_n_inv_.back() = real(0.5);
+      diag_to_inv_.back() = Mat2( real(1) / real(7), real(0), real(0), real(1) / real(7) );
    }
    Vec3 vel( size_t b ) const { return v_[b] + dv_[b]; }
 };
@@ -318,6 +337,88 @@ static void caseLastSweepUnload()
            "7. the released row's stored impulse is exactly zero" );
 }
 
+//=================================================================================================
+// 8./9. one visit of a sliding row: the Coulomb radius uses the post-visit load once
+//=================================================================================================
+template< typename W > real ledger( const W& wk, const MockCS& s, size_t i )
+{
+   if constexpr ( HasLedger<W>::value ) return wk.lambda[i];
+   else return trans( s.n_[i] ) * s.p_[i];
+}
+
+static void caseSlidingVisit( real dn, real expectFriction, const char* tag )
+{
+   MockCS s;
+   const real mu( 0.3 );
+   const size_t a( s.addSphere( Vec3( real(2), 0, 0 ) ) ), f( s.addWall() );   // slip 2 m/s along t = x
+   s.addRow( a, f, Vec3( 0, 0, 1 ), Vec3( 1, 0, 0 ), real(1), Vec3( -mu, 0, 0 ), mu, real(0), real(0) );   // sliding, on the disc
+   classifyByHand( s, real(1e4) );
+   s.dv_[a] = Vec3( 0, 0, -dn );   // normal velocity -dn: the support target g0 = 0 gives d = dn (normal mass 1)
+   RestitutionPass::restitutionPostPassSweep( s, real(1e4) );
+   const real lambda( trans( s.n_[0] ) * s.p_[0] ), pt( trans( s.t_[0] ) * s.p_[0] );
+   real m[4];
+   RestitutionPass::restitutionResiduals( s, m );
+   std::printf( "%s: lambda after the visit %.6f (ledger %.6f), tangential impulse %.6f (disc mu lambda = %.6f), residual after the visit: normal %.3e tangential %.3e\n",
+                tag, static_cast<double>( lambda ), static_cast<double>( ledger( s.restitutionWork_, s, 0 ) ), static_cast<double>( pt ),
+                static_cast<double>( mu * lambda ), static_cast<double>( m[0] ), static_cast<double>( m[2] ) );
+   expect( std::fabs( std::fabs( pt ) - expectFriction ) <= real(1e-12), std::string( tag ) + ": the tangential impulse ends on the disc of the post-visit load" );
+   expect( m[2] <= real(1e-12), std::string( tag ) + ": the residual evaluator agrees with the sweep (zero tangential residual after the visit)" );
+}
+
+//=================================================================================================
+// 10. randomized consistency
+//=================================================================================================
+static void caseRandomized()
+{
+   MockCS s;
+   s.bodies.reserve( 700 );
+   const int P( 300 );
+   unsigned long long seed( 20261122ULL );
+   const auto rnd = [&seed]() { seed = seed * 6364136223846793005ULL + 1442695040888963407ULL; return real( ( seed >> 11 ) * ( 1.0 / 9007199254740992.0 ) ); };
+   const auto unit = [&]() { Vec3 v; do { v = Vec3( 2 * rnd() - 1, 2 * rnd() - 1, 2 * rnd() - 1 ); } while( v.length() < real(0.1) || v.length() > real(1) ); return v / v.length(); };
+   for( int k = 0; k < P; ++k ) { s.addSphere( Vec3() ); s.addSphere( Vec3() ); }
+   for( int k = 0; k < P; ++k ) {
+      const Vec3 n( unit() );
+      Vec3 t( n % unit() ); t /= t.length();
+      const real mu( real(0.5) * rnd() ), lambda( rnd() < real(0.2) ? real(0) : real(2) * rnd() );
+      const real e( rnd() < real(0.5) ? real(0.9) : real(0) ), impact( e > 0 && lambda > 0 && rnd() < real(0.7) ? e * real(2) * rnd() : real(0) );
+      const real ang( real(6.283185307179586) * rnd() ), rad( mu * lambda * rnd() );
+      const Vec3 o( n % t );
+      s.addPairRow( 2 * k, 2 * k + 1, n, t, lambda, t * ( rad * std::cos( ang ) ) + o * ( rad * std::sin( ang ) ), mu, e, impact );
+   }
+   classifyByHand( s, real(1e4) );
+   int bad( 0 ); size_t releases( 0 ), withdrawals( 0 ), loads( 0 );
+   real worstLedger( 0 ), worstDisc( 0 ), worstCeiling( 0 ), worstMomentum( 0 );
+   for( int sweep = 0; sweep < 8; ++sweep ) {
+      for( size_t b = 0; b < s.dv_.size(); ++b ) s.dv_[b] += unit() * ( real(1.5) * rnd() );
+      std::vector<Vec3> dv0( s.dv_ ); std::vector<real> lam0( P );
+      for( int k = 0; k < P; ++k ) lam0[k] = ledger( s.restitutionWork_, s, k );
+      RestitutionPass::restitutionPostPassSweep( s, real(1e4) );
+      for( int k = 0; k < P; ++k ) {
+         const real lambda( ledger( s.restitutionWork_, s, k ) ), np( trans( s.n_[k] ) * s.p_[k] );
+         const real pt( std::sqrt( std::pow( trans( s.t_[k] ) * s.p_[k], 2 ) + std::pow( trans( s.o_[k] ) * s.p_[k], 2 ) ) );
+         const real lr( s.restitutionImpulse_[k] );
+         if( lam0[k] > 0 && lambda == 0 ) ++releases; else if( lambda < lam0[k] ) ++withdrawals; else if( lambda > lam0[k] ) ++loads;
+         worstLedger = std::max( worstLedger, std::fabs( np - lambda ) / ( real(1) + std::fabs( lambda ) ) );
+         worstDisc = std::max( worstDisc, pt - s.mu_[k] * lambda );
+         worstCeiling = std::max( worstCeiling, lr - s.cor_[k] * ( lambda - lr ) );
+         const Vec3 dmom( ( s.dv_[2 * k] - dv0[2 * k] ) + ( s.dv_[2 * k + 1] - dv0[2 * k + 1] ) );   // both masses 1
+         worstMomentum = std::max( worstMomentum, dmom.length() );
+         if( lambda == real(0) && lam0[k] > 0 && !( s.p_[k][0] == 0 && s.p_[k][1] == 0 && s.p_[k][2] == 0 ) ) ++bad;
+      }
+   }
+   std::printf( "10. randomized (300 pairs, 8 sweeps): releases %zu, partial withdrawals %zu, loads %zu; worst |n.p - lambda|/(1+lambda) %.3e, "
+                "worst |p_t| - mu lambda %.3e, worst lambda_R - e lambda_C %.3e, worst momentum change %.3e, released rows with p != 0: %d\n",
+                releases, withdrawals, loads, static_cast<double>( worstLedger ), static_cast<double>( worstDisc ), static_cast<double>( worstCeiling ),
+                static_cast<double>( worstMomentum ), bad );
+   expect( releases > 0 && withdrawals > 0 && loads > 0, "10. the random visits exercise releases, partial withdrawals and loads" );
+   expect( worstLedger <= real(1e-14), "10. |n . p - lambda| within rounding after every sweep" );
+   expect( worstDisc <= real(1e-13), "10. tangential impulse within mu lambda after every sweep" );
+   expect( worstCeiling <= real(1e-13), "10. lambda_R <= e lambda_C after every sweep" );
+   expect( worstMomentum <= real(1e-13), "10. the sweep conserves the momentum of every pair" );
+   expect( bad == 0, "10. a released row has p_ = 0 exactly" );
+}
+
 int main()
 {
    caseRelease();
@@ -327,6 +428,9 @@ int main()
    caseWallScale();
    caseObliqueUnload();
    caseLastSweepUnload();
+   caseSlidingVisit( real(0.5), real(0.45), "8. sliding row, load increase (lambda 1, d 0.5)" );
+   caseSlidingVisit( real(-0.6), real(0.12), "9. sliding row, partial withdrawal (lambda 1, d -0.6)" );
+   caseRandomized();
    if( failures == 0 ) std::printf( "pe_restitution_pass_unit_test: all checks passed\n" );
    else std::printf( "pe_restitution_pass_unit_test: %d check(s) failed\n", failures );
    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

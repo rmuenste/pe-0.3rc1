@@ -396,12 +396,13 @@ template< typename CS >
 }
 
 //! Tangential (Coulomb, decoupled) increment of row i for the normal increment d at relative
-//! velocity gdot: the sticking increment projected onto the disc mu ( lambda + d ), or the removal
-//! of the whole tangential impulse when the row unloads.
+//! velocity gdot: the sticking increment projected onto the disc mu lambdaNew, or the removal of
+//! the whole tangential impulse when the row unloads. lambdaNew is the normal load AFTER the visit
+//! (ledger before the visit + d), computed once by the caller; the sweep and the residual pass the
+//! same value, and the sweep commits the ledger only after this call.
 template< typename CS >
-   static inline Vec3 restitutionRowFriction( const CS& s, size_t i, const Vec3& gdot, real d, bool withFriction )
+   static inline Vec3 restitutionRowFriction( const CS& s, size_t i, const Vec3& gdot, real d, real lambdaNew, bool withFriction )
 {
-   const real lambdaNew( s.restitutionWork_.lambda[i] + d );
    if( !( lambdaNew > real( 0 ) ) )
       return -( s.t_[i] * ( trans( s.t_[i] ) * s.p_[i] ) + s.o_[i] * ( trans( s.o_[i] ) * s.p_[i] ) );
    if( !withFriction || !( s.mu_[i] > real( 0 ) ) )
@@ -549,8 +550,9 @@ template< typename CS >
       if( wk.kind[i] == RestitutionPassWork::demotedRow )
          stats.fallbackImpulse += std::max( d, real( 0 ) );
 
-      wk.lambda[i] += d;
-      const Vec3 dp( s.n_[i] * d + restitutionRowFriction( s, i, gdot, d, withFriction ) );
+      const real lambdaNew( wk.lambda[i] + d );   // the post-visit load, once
+      const Vec3 dp( s.n_[i] * d + restitutionRowFriction( s, i, gdot, d, lambdaNew, withFriction ) );
+      wk.lambda[i] = lambdaNew;                    // committed after the friction projection
       if( dp[0] == real( 0 ) && dp[1] == real( 0 ) && dp[2] == real( 0 ) )
          continue;
       s.p_[i] += dp;
@@ -581,7 +583,7 @@ template< typename CS >
       real approach( 0 );
       const real d( restitutionRowIncrement( s, i, trans( s.n_[i] ) * gdot, newton, cut, approach, release ) );
       const real rn( std::abs( d ) / s.diag_n_inv_[i] );
-      const Vec3 dpt( restitutionRowFriction( s, i, gdot, d, withFriction ) );
+      const Vec3 dpt( restitutionRowFriction( s, i, gdot, d, wk.lambda[i] + d, withFriction ) );
       const real rt( restitutionTangentialSpeed( s, i, dpt ) );
       m[0] = std::max( m[0], rn );
       m[2] = std::max( m[2], rt );
