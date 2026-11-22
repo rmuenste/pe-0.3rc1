@@ -305,6 +305,31 @@ inline void restitutionGlobalMax( real* x, int n )
  * reset and read again collectively on the new communicator at its first run(). A debug aid, not
  * a diagnostic stream.
  */
+//! Parses PE_RESTITUTION_TRACE="first:count": both fields complete unsigned decimal tokens
+//! (digits only: no sign, no blanks, no trailing characters), each within unsigned long long, and
+//! count > 0. Returns false (trace off) for anything else.
+inline bool restitutionParseTraceRange( const char* text, unsigned long long& first, unsigned long long& count )
+{
+   if( !text ) return false;
+   unsigned long long v[2] = { 0, 0 };
+   const char* c( text );
+   for( int field = 0; field < 2; ++field ) {
+      if( *c < '0' || *c > '9' ) return false;   // empty field, sign or other character
+      unsigned long long x( 0 );
+      while( *c >= '0' && *c <= '9' ) {
+         const unsigned long long digit( static_cast<unsigned long long>( *c - '0' ) );
+         if( x > ( ~0ULL - digit ) / 10ULL ) return false;   // would exceed ULLONG_MAX
+         x = x * 10ULL + digit;
+         ++c;
+      }
+      v[field] = x;
+      if( field == 0 ) { if( *c != ':' ) return false; ++c; }
+   }
+   if( *c != '\0' || v[1] == 0 ) return false;
+   first = v[0]; count = v[1];
+   return true;
+}
+
 struct RestitutionTrace
 {
    bool   rangeOn;       //!< PE_RESTITUTION_TRACE set and valid.
@@ -329,9 +354,8 @@ struct RestitutionTrace
       unsigned long long range[3] = { 0, 0, 0 };   // on, first, count (integers: no rounding of large values)
       double vmin( -1 );
       if( MPISettings::rank() == MPISettings::root() ) {
-         const char* env( std::getenv( "PE_RESTITUTION_TRACE" ) );
          unsigned long long a( 0 ), b( 0 );
-         if( env && std::sscanf( env, "%llu:%llu", &a, &b ) == 2 && b > 0 ) { range[0] = 1; range[1] = a; range[2] = b; }
+         if( restitutionParseTraceRange( std::getenv( "PE_RESTITUTION_TRACE" ), a, b ) ) { range[0] = 1; range[1] = a; range[2] = b; }
          const char* pairs( std::getenv( "PE_RESTITUTION_PAIRS" ) );
          double v( 0 );
          if( pairs && std::sscanf( pairs, "%lf", &v ) == 1 && v >= 0 ) vmin = v;
