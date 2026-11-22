@@ -48,6 +48,15 @@ int rank_ = 0;
 typedef std::remove_reference<decltype( *theCollisionSystem() )>::type CollisionSystemType;
 template< typename T, typename = void > struct IsRepairedSolver : std::false_type {};
 template< typename T > struct IsRepairedSolver< T, std::void_t< decltype( std::declval<T&>().setRestitutionPostPass( true ) ) > > : std::true_type {};
+
+//! synchronizeForces() only where the solver is EL or HCSITS: the call is dependent on CS and is
+//! instantiated only in that branch, so the fixture compiles (and skips) for every selectable
+//! solver (DEMSolver declares the function private, FFDSolver has none).
+template< typename CS > void syncForces( CS& cs )
+{
+   if constexpr ( IsRepairedSolver<CS>::value ) cs.synchronizeForces();
+   else (void)cs;
+}
 const double R = 0.01, U = 0.5, DT = 1e-4;
 
 MaterialID material() { return createMaterial( 1000.0, 0.0, 0.0, 0.0, 0.25, 300.0, 1e5, 10.0, 10.0 ); }
@@ -190,7 +199,7 @@ std::vector<double> unfixRun( bool registeredFixed, double* force )
    if( theWorld()->ownsPoint( a ) ) { SphereID s = createSphere( 1, a, R, m ); s->setLinearVel( Vec3( U, 0, 0 ) ); }
    theWorld()->synchronize();
    if( rank_ == 0 ) g->addForce( Vec3( 0, 0, 1e-3 ) );
-   theCollisionSystem()->synchronizeForces();
+   syncForces( *theCollisionSystem() );
    double f[2] = { 0, 0 }, mine( g->getForce()[2] );
    MPI_Allgather( &mine, 1, MPI_DOUBLE, f, 1, MPI_DOUBLE, MPI_COMM_WORLD );
    force[0] = f[0]; force[1] = f[1];
