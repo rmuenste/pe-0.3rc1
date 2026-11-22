@@ -410,6 +410,26 @@ uses `d`; the friction helper now takes the post-visit load from the caller; the
 final diagnostics evaluate `restitutionRowIncrement()` and the helper on the unchanged ledger, as a
 visit would.
 
+## 6f. Review round 6: what changed (test infrastructure; no solver arithmetic changed)
+
+The only production-header change is the trace parser. The restitution-on 400-step bed run of the
+round-6 binary is checked bitwise against binary 3dc21409-pe4e4ad17 (case-11 production binary).
+
+| Finding | Change | Test | Before (4e4ad17) |
+|---|---|---|---|
+| 1 registry fixture on every solver (P1) | `synchronizeForces()` called through a template helper instantiated only for EL / HCSITS (`if constexpr`), so the fixture compiles and skips (77) for every selectable solver | alternate-solver builds (job `altsolver_r6`): HardContactAndFluid builds and skips, DEMSolver / FFDSolver: fixture object compiles (their libraries do not build on master, `ContactVector::addLubricationContact()` calls `Contact::setLubricationFlag()`, missing in their contact trait) | runtime (compile): the fixture object does not compile under DEMSolver (private `synchronizeForces()`) or FFDSolver (no such member), job 164935 |
+| 2 Debug runtimes (P1) | `pe-el-restitution` TIMEOUT 1700 s (Debug run 828 s, job 164931); `pe-el-restitution-rest` split into `-pile20`, `-pile50`, `-pile90`, `-impacts` (whole test 3320 s in Debug), TIMEOUT 2400 s each | assertion-enabled serial suite on the clean HEAD | both timed out at 120 / 170 s in Debug; run directly they pass with no assertion |
+| 3 case 10 strength (P2) | per body the signed linear and angular update equals the row's `p_after - p_before`; the observed update equals the evaluator's pre-visit prediction; Coulomb complementarity after the visit (stick inside the disc, friction opposing the slip on it); a demoted row's booking stays zero | local mutations of the sweep, not committed: wrong sign of body 2's linear update, body 1's angular update dropped, friction discarded; the test fails for each (the dropped angular update is caught only by the new checks) | - |
+| 4 trace parser (P2) | `restitutionParseTraceRange()`: complete unsigned decimal tokens, overflow-checked, count > 0 | `pe-restitution-pass-unit` case 11 (`0:-1`, `5:0`, garbage, `+3:4`, an endpoint at ULLONG_MAX, overflow, a valid range; membership near ULLONG_MAX) | none (the old parser accepted `0:-1` by inspection) |
+
+Assertion-enabled baseline: the seven tests that fail in a Debug build of this branch outside the
+restitution code (`pe-angular-dof-mask`, `pe-particle-motion`: ellipsoidtrait/Default.h:159
+"Invalid inertia detected"; `pe-cylinder-plane-contact`: Quaternion.h:254 "Invalid quaternion
+parameters"; `pe-remote-query`: MPI.h:174 MPI_Barrier "Invalid function call";
+`pe-fbm-query-stress-mpi-2/-4`, `pe-dkt-parallel-setup-mpi`: HardContactAndFluid.h:1659
+`!requireSync_`) fail identically, same assertions and lines, on origin/master 6003b00 (job
+164929): pre-existing defects outside this branch.
+
 ## 7. Tests
 
 | Test (label) | What | Result (gcc 13.2, Release) |
