@@ -34,7 +34,11 @@
  *       friction, armed and support rows, random disturbances over 8 sweeps (loads, withdrawals,
  *       releases); after every sweep |n . p - lambda| within rounding, tangential impulse within
  *       mu lambda, lambda_R <= e lambda_C, p_ = 0 after a release, the pair's momentum unchanged
- *       by the sweep.
+ *       by the sweep; each body receives exactly the signed row impulse (linear and angular), the
+ *       observed update equals the evaluator's pre-visit prediction, Coulomb complementarity holds
+ *       after the visit (stick inside the disc, friction opposing the slip on it), a demoted row's
+ *       booking stays zero (review round 6, finding 3);
+ *   11. the PE_RESTITUTION_TRACE range parser and the membership test (review round 6, finding 4).
  *
  *  The test compiles against the round-2 pass (45c9268); fields added later are set through
  *  detectors, so the before results are runtime results.
@@ -387,14 +391,50 @@ static void caseRandomized()
       s.addPairRow( 2 * k, 2 * k + 1, n, t, lambda, t * ( rad * std::cos( ang ) ) + o * ( rad * std::sin( ang ) ), mu, e, impact );
    }
    classifyByHand( s, real(1e4) );
-   int bad( 0 ); size_t releases( 0 ), withdrawals( 0 ), loads( 0 );
+   int bad( 0 ); size_t releases( 0 ), withdrawals( 0 ), loads( 0 ), sticking( 0 ), sliding( 0 ), demotedVisits( 0 );
    real worstLedger( 0 ), worstDisc( 0 ), worstCeiling( 0 ), worstMomentum( 0 );
+   real worstBody( 0 ), worstPredict( 0 ), worstStick( 0 ), worstSlideDir( 0 ), worstDemotedBooking( 0 );
    for( int sweep = 0; sweep < 8; ++sweep ) {
       for( size_t b = 0; b < s.dv_.size(); ++b ) s.dv_[b] += unit() * ( real(1.5) * rnd() );
-      std::vector<Vec3> dv0( s.dv_ ); std::vector<real> lam0( P );
-      for( int k = 0; k < P; ++k ) lam0[k] = ledger( s.restitutionWork_, s, k );
+      std::vector<Vec3> dv0( s.dv_ ), dw0( s.dw_ ), p0( s.p_ ), predicted( P );
+      std::vector<real> lam0( P );
+      std::vector<unsigned char> demotedBefore( P );
+      for( int k = 0; k < P; ++k ) {
+         lam0[k] = ledger( s.restitutionWork_, s, k );
+         demotedBefore[k] = s.restitutionWork_.kind[k] == RestitutionPassWork::demotedRow;
+         // the evaluator's prediction of this visit (the independent pairs see no other row)
+         const Vec3 gdot( RestitutionPass::restitutionRowVelocity( s, k ) );
+         if( RestitutionPass::restitutionRowUndisturbed( s, k, gdot ) ) { predicted[k] = Vec3(); continue; }
+         bool newton( false ), cut( false ), release( false ); real approach( 0 );
+         const real d( RestitutionPass::restitutionRowIncrement( s, k, trans( s.n_[k] ) * gdot, newton, cut, approach, release ) );
+         predicted[k] = release ? -s.p_[k] : s.n_[k] * d + RestitutionPass::restitutionRowFriction( s, k, gdot, d, lam0[k] + d, true );
+      }
       RestitutionPass::restitutionPostPassSweep( s, real(1e4) );
       for( int k = 0; k < P; ++k ) {
+         // each body received exactly the row's stored impulse change, signed, linear and angular
+         const Vec3 dp( s.p_[k] - p0[k] );
+         const size_t b1( 2 * k ), b2( 2 * k + 1 );
+         const Vec3 e1( ( s.dv_[b1] - dv0[b1] ) - dp ), e2( ( s.dv_[b2] - dv0[b2] ) + dp );
+         const Vec3 a1( ( s.dw_[b1] - dw0[b1] ) - kIinv * ( s.r1_[k] % dp ) ), a2( ( s.dw_[b2] - dw0[b2] ) + kIinv * ( s.r2_[k] % dp ) );
+         worstBody = std::max( worstBody, std::max( std::max( e1.length(), e2.length() ), std::max( a1.length(), a2.length() ) / kIinv / kR ) );
+         worstPredict = std::max( worstPredict, ( dp - predicted[k] ).length() );
+         // Coulomb complementarity after the visit, independent of the friction helper:
+         // inside the disc the contact point sticks, on the disc the friction opposes the slip
+         {
+            const Vec3 g( RestitutionPass::restitutionRowVelocity( s, k ) );
+            const Vec3 slip( g - s.n_[k] * ( trans( s.n_[k] ) * g ) );
+            const Vec3 ptv( s.p_[k] - s.n_[k] * ( trans( s.n_[k] ) * s.p_[k] ) );
+            const real lam( ledger( s.restitutionWork_, s, k ) ), limit( s.mu_[k] * lam );
+            if( !( lam > 0 ) ) worstStick = std::max( worstStick, ptv.length() );   // unloaded: no friction
+            else if( s.mu_[k] > 0 ) {
+               if( ptv.length() < limit * ( real(1) - real(1e-9) ) ) { ++sticking; worstStick = std::max( worstStick, slip.length() ); }
+               else { ++sliding; worstSlideDir = std::max( worstSlideDir, trans( slip ) * ptv / ( ptv.length() + real(1e-300) ) ); }
+            }
+         }
+         // a demoted row never books restitution again
+         if( demotedBefore[k] || s.restitutionWork_.kind[k] == RestitutionPassWork::demotedRow ) {
+            ++demotedVisits; worstDemotedBooking = std::max( worstDemotedBooking, s.restitutionImpulse_[k] );
+         }
          const real lambda( ledger( s.restitutionWork_, s, k ) ), np( trans( s.n_[k] ) * s.p_[k] );
          const real pt( std::sqrt( std::pow( trans( s.t_[k] ) * s.p_[k], 2 ) + std::pow( trans( s.o_[k] ) * s.p_[k], 2 ) ) );
          const real lr( s.restitutionImpulse_[k] );
@@ -417,6 +457,43 @@ static void caseRandomized()
    expect( worstCeiling <= real(1e-13), "10. lambda_R <= e lambda_C after every sweep" );
    expect( worstMomentum <= real(1e-13), "10. the sweep conserves the momentum of every pair" );
    expect( bad == 0, "10. a released row has p_ = 0 exactly" );
+   std::printf( "10. per body: worst |dv - m^-1 dp| or |dw - I^-1 (r x dp)| / (Iinv R) %.3e; worst |dp - evaluator prediction| %.3e; "
+                "sticking rows %zu (worst slip %.3e), sliding rows %zu (worst slip . friction direction %.3e); demoted row visits %zu (worst booking %.3e)\n",
+                static_cast<double>( worstBody ), static_cast<double>( worstPredict ), sticking, static_cast<double>( worstStick ), sliding,
+                static_cast<double>( worstSlideDir ), demotedVisits, static_cast<double>( worstDemotedBooking ) );
+   expect( worstBody <= real(1e-13), "10. each body receives exactly the signed row impulse (linear and angular, both bodies)" );
+   expect( worstPredict <= real(1e-13), "10. the observed row update equals the evaluator's pre-visit prediction" );
+   expect( sticking > 0 && sliding > 0, "10. the random visits exercise sticking and sliding rows" );
+   expect( worstStick <= real(1e-12), "10. inside the disc the contact point sticks after the visit (no friction discarded)" );
+   expect( worstSlideDir <= real(1e-12), "10. on the disc the friction opposes the remaining slip" );
+   expect( demotedVisits > 0 && worstDemotedBooking == real(0), "10. a demoted row's booking stays zero" );
+}
+
+//=================================================================================================
+// 11. trace range parser and membership (review round 6, finding 4)
+//=================================================================================================
+static void caseTraceParser()
+{
+   struct C { const char* text; bool ok; unsigned long long first, count; };
+   const C cases[] = { { "0:-1", false, 0, 0 }, { "5:0", false, 0, 0 }, { "garbage", false, 0, 0 }, { "3:4x", false, 0, 0 },
+                       { "+3:4", false, 0, 0 }, { " 3:4", false, 0, 0 }, { "3:", false, 0, 0 }, { ":4", false, 0, 0 },
+                       { "18446744073709551616:1", false, 0, 0 }, { "18446744073709551615:1", true, 18446744073709551615ULL, 1 },
+                       { "2:3", true, 2, 3 } };
+   int bad( 0 );
+   for( const C& c : cases ) {
+      unsigned long long f( 77 ), n( 77 );
+      const bool ok( restitutionParseTraceRange( c.text, f, n ) );
+      if( ok != c.ok || ( ok && ( f != c.first || n != c.count ) ) ) { std::printf( "   parser: '%s' -> %d (%llu, %llu)\n", c.text, ok ? 1 : 0, f, n ); ++bad; }
+   }
+   RestitutionTrace t;
+   t.rangeOn = true; t.first = 18446744073709551610ULL; t.count = 18446744073709551615ULL;   // first + count would overflow
+   const bool m1( t.active( size_t(5) ) ), m2( t.active( size_t(18446744073709551612ULL) ) );
+   t.first = 2; t.count = 3;
+   const bool m3( t.active( 1 ) ), m4( t.active( 2 ) ), m5( t.active( 4 ) ), m6( t.active( 5 ) );
+   std::printf( "11. trace range parser: %d of %zu cases wrong; membership near ULLONG_MAX %d %d (expected 0 1), [2,5): %d %d %d %d (expected 0 1 1 0)\n",
+                bad, sizeof( cases ) / sizeof( cases[0] ), m1 ? 1 : 0, m2 ? 1 : 0, m3 ? 1 : 0, m4 ? 1 : 0, m5 ? 1 : 0, m6 ? 1 : 0 );
+   expect( bad == 0, "11. the trace range parser accepts exactly complete unsigned ranges with count > 0" );
+   expect( !m1 && m2 && !m3 && m4 && m5 && !m6, "11. range membership without overflow" );
 }
 
 int main()
@@ -431,6 +508,7 @@ int main()
    caseSlidingVisit( real(0.5), real(0.45), "8. sliding row, load increase (lambda 1, d 0.5)" );
    caseSlidingVisit( real(-0.6), real(0.12), "9. sliding row, partial withdrawal (lambda 1, d -0.6)" );
    caseRandomized();
+   caseTraceParser();
    if( failures == 0 ) std::printf( "pe_restitution_pass_unit_test: all checks passed\n" );
    else std::printf( "pe_restitution_pass_unit_test: %d check(s) failed\n", failures );
    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
