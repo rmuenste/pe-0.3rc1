@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <utility>
 #include <vector>
 #include <fstream>
 
@@ -461,7 +462,8 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromData(
     const std::vector<pe::Vec3>& contactPointData,
     int nx, int ny, int nz,
     pe::real spacing,
-    const pe::Vec3& origin)
+    const pe::Vec3& origin,
+    bool invertedForDomainBoundary)
 {
     try {
         auto map = std::unique_ptr<DistanceMap>(new DistanceMap());
@@ -471,6 +473,7 @@ std::unique_ptr<DistanceMap> DistanceMap::createFromData(
         if (!map->_pimpl->isValid()) {
             return nullptr;
         }
+        map->inverted_ = invertedForDomainBoundary;
         return map;
     }
     catch (const std::exception& e) {
@@ -515,7 +518,14 @@ pe::real DistanceMap::interpolateDistance(pe::real x, pe::real y, pe::real z) co
 pe::Vec3 DistanceMap::interpolateNormal(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateNormal(x, y, z); }
 pe::Vec3 DistanceMap::interpolateContactPoint(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateContactPoint(x, y, z); }
 pe::real DistanceMap::interpolateAlpha(pe::real x, pe::real y, pe::real z) const { return _pimpl->interpolateAlpha(x, y, z); }
-void DistanceMap::invertForDomainBoundary() { _pimpl->invertForDomainBoundary(); }
+void DistanceMap::invertForDomainBoundary()
+{
+    _pimpl->invertForDomainBoundary();
+    inverted_ = !inverted_;
+    if (changeListener_) changeListener_();
+}
+bool DistanceMap::isInvertedForDomainBoundary() const { return inverted_; }
+void DistanceMap::setChangeListener(std::function<void()> listener) { changeListener_ = std::move(listener); }
 int DistanceMap::getNx() const { return _pimpl->getNx(); }
 int DistanceMap::getNy() const { return _pimpl->getNy(); }
 int DistanceMap::getNz() const { return _pimpl->getNz(); }

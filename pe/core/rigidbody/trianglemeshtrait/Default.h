@@ -537,6 +537,16 @@ protected:
    //@}
    //**********************************************************************************************
 
+   //**DistanceMap hooks****************************************************************************
+   /*!
+ame DistanceMap hooks */
+   //@{
+   // Implemented by TriangleMesh, which knows the complete DistanceMap type.
+   virtual void distanceMapAttached() {}             //!< Called after distanceMap_ was set.
+   virtual void widenBoundingBoxForDistanceMap() {}  //!< Called after aabb_ was recomputed.
+   //@}
+   //**********************************************************************************************
+
 private:
    //**CGAL AABB Tree helper methods***************************************************************
    /*!\name CGAL AABB Tree helper methods */
@@ -675,6 +685,7 @@ void TriangleMeshTrait<C>::move( real dt )
 
       // Setting the axis-aligned bounding box
       TriangleMeshBase::calcBoundingBox();
+      widenBoundingBoxForDistanceMap();
 
       // Invalidate AABB tree since the mesh has moved
       invalidateAABBTree();
@@ -1109,6 +1120,7 @@ void TriangleMeshTrait<C>::disableDistanceMapAcceleration()
 #ifdef PE_USE_CGAL
    distanceMap_.reset();
    distanceMapEnabled_ = false;
+   this->calcBoundingBox();   // an inverted map had widened the box
 #endif
 }
 //*************************************************************************************************
@@ -1162,6 +1174,7 @@ void TriangleMeshTrait<C>::setDistanceMap(std::unique_ptr<DistanceMap> distanceM
 #ifdef PE_USE_CGAL
    distanceMap_ = std::move(distanceMap);
    distanceMapEnabled_ = (distanceMap_ != nullptr);
+   distanceMapAttached();
 #endif
 }
 //*************************************************************************************************

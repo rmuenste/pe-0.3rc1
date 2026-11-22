@@ -4024,7 +4024,8 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::synchronize()
                               subobjparam.contactPointData_,
                               subobjparam.nx_, subobjparam.ny_, subobjparam.nz_,
                               subobjparam.spacing_,
-                              subobjparam.origin_
+                              subobjparam.origin_,
+                              subobjparam.dmInverted_
                            );
                            
                            if( distanceMap ) {

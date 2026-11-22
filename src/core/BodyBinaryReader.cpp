@@ -793,10 +793,10 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                // Reconstruct DistanceMap from parameters if available
                if (objparam.hasDistanceMapParams_) {
                   // Check version compatibility
-                  if (objparam.dmVersion_ != 1) {
+                  if (objparam.dmVersion_ != 1 && objparam.dmVersion_ != 2) {
                      pe_LOG_WARNING_SECTION( log ) {
                         log << "Warning: DistanceMap version " << (int)objparam.dmVersion_
-                            << " not supported. Expected version 1. Skipping DistanceMap reconstruction.\n";
+                            << " not supported. Expected version 1 or 2. Skipping DistanceMap reconstruction.\n";
                      }
                   } else {
                      pe_LOG_DEBUG_SECTION( log ) {
@@ -805,6 +805,11 @@ void BodyBinaryReader::unmarshalAll( Buffer& buffer, bool global, bool reassignS
                             << ", tolerance=" << objparam.dmTolerance_ << "\n";
                      }
                      obj->enableDistanceMapAcceleration(objparam.dmResolution_, objparam.dmTolerance_);
+                     // The map is rebuilt from the surface, so a map that was inverted for a
+                     // domain boundary (version 2 record) has to be inverted again.
+                     if (objparam.dmInverted_ && obj->hasDistanceMap()) {
+                        obj->getDistanceMap()->invertForDomainBoundary();
+                     }
                   }
                }
 #else

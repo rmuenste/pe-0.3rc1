@@ -737,6 +737,60 @@ Look for:
 - Single large clusters (>10 candidates) when expecting multiple contact regions
 - Average normals that don't align with mesh geometry
 
+### Inverted DistanceMap (domain boundary) and the bounding box
+
+`invertForDomainBoundary()` turns a closed surface into a container: the inside becomes the
+valid region and the contact region is the outside of the surface. The map records this
+(`isInvertedForDomainBoundary()`; a second call restores the solid map and clears the flag).
+
+The contact region of a container is not bounded by the surface, only by the grid of the map,
+which reaches `tolerance` cells beyond it. Two parts of the pipeline work with the bounding box
+of the mesh: the coarse detection pairs a sphere with the mesh only while their boxes overlap,
+and `MaxContacts::collideTMeshWithDistanceMap()` drops every sample point outside that box. So
+the box of a mesh whose map is inverted is the box of the map's grid, not the box of its
+vertices (`TriangleMesh::widenBoundingBoxForDistanceMap()`, applied by `calcBoundingBox()` and
+after every move). The mesh listens to its map, so the box follows the inversion whoever calls
+it; the usual `mesh->getDistanceMap()->invertForDomainBoundary()` needs nothing else. Meshes
+without a map or with a solid map keep the vertex box.
+
+What this means in practice: `tolerance` is the depth behind the wall in which a body is still
+pushed back, `tolerance * spacing` in length. It has to cover the deepest overshoot, which is
+about the distance a body travels in one step.
+
+Before this, the vertex box was used for inverted maps too. Where the surface touches its own
+bounding box, a point that has passed through the wall is outside the box, so a sphere sinking
+into the wall there got no contact and left the domain. Measured on the ATC arc
+(`tests/interface/pe_atc_arc_containment.cpp`, weight along -y, the wall touches the box along
+the bottom of the arc where the spheres settle, 2000 spheres, 2000 steps):
+
+| | serial mode | four processes |
+|---|---|---|
+| vertex box (before) | 17 lost | 18 lost |
+| grid box (now) | 0 lost | 0 lost |
+
+All lost spheres left through that bottom line. Stage 12 of
+`tests/interface/pe_primitive_mesh_distancemap_test.cpp` checks the box, the contacts of a
+sphere at and beyond a wall that is a face of the vertex box, and the checkpoint round trip.
+
+The flag travels with the map. The rebuild parameters marshalled with a triangle mesh
+(`pe/core/Marshalling.h`) are a version 1 record (resolution, tolerance) for a solid map and a
+version 2 record (the same plus one byte) for an inverted one, so records of solid maps are
+unchanged. A checkpoint rebuilds the map from the surface and inverts it again if the record
+says so (`src/core/BodyBinaryReader.cpp`; before, an inverted map came back as a solid one). A
+shadow copy built from the map's data (`HardContactAndFluid`) gets the flag with the data.
+
+Accuracy of the map on that case (tube radius 0.25, sphere radius 0.0092; error = interpolated
+distance against the exact surface, at sphere centres within four radii of the wall):
+
+| resolution | spacing | error along the wall | error at the rim between wall and cap |
+|---|---|---|---|
+| 100 | 4.4 radii | 0.13 radii | 1.19 radii |
+| 200 | 2.2 radii | 0.043 radii | 0.55 radii |
+| 400 | 1.1 radii | 0.024 radii | 0.26 radii |
+
+The trilinear interpolation rounds off the edge between the wall and the cap, so spheres
+resting in that corner sit up to that much inside the exact surface.
+
 ## Conclusion
 
 The DistanceMap collision detection system provides an efficient acceleration structure for collision detection involving triangle meshes. The mesh-to-mesh multi-contact manifold system with intelligent clustering generates physically meaningful contact sets that capture the geometric structure of complex collisions.

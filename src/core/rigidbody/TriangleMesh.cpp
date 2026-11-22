@@ -1786,8 +1786,73 @@ void TriangleMesh::calcBoundingBox()
       //this is already done in the supportContactThreshold() function
    }
 
+   widenBoundingBoxForDistanceMap();
+
    pe_INTERNAL_ASSERT( aabb_.isValid()        , "Invalid bounding box detected" );
    pe_INTERNAL_ASSERT( aabb_.contains( gpos_ ), "Invalid bounding box detected" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!rief Grows the bounding box to the grid of a DistanceMap that is inverted for a domain boundary.
+ *
+ * \return void
+ *
+ * A mesh whose DistanceMap is inverted (DistanceMap::invertForDomainBoundary()) is a container:
+ * the bodies are inside the surface and a body that penetrates the wall reaches to the outside
+ * of it. The contact region therefore is not bounded by the surface. It is bounded by the grid
+ * of the map, which extends the given number of padding cells (the tolerance of
+ * enableDistanceMapAcceleration()) beyond the surface. The coarse collision detection pairs
+ * bodies by their bounding boxes and the DistanceMap contact generation discards points outside
+ * the box of the mesh, so with the box of the vertices a body that sinks into the wall where the
+ * wall touches that box would get no contact at all. The box of such a mesh is the box of the
+ * grid instead. Meshes without a map or with a map that is not inverted keep the vertex box.
+ */
+void TriangleMesh::widenBoundingBoxForDistanceMap()
+{
+#ifdef PE_USE_CGAL
+   if( !distanceMapEnabled_ || !distanceMap_ || !distanceMap_->isInvertedForDomainBoundary() )
+      return;
+
+   // Corners of the grid in the body frame; the box of their images covers a rotated mesh too
+   const Vec3 lo( distanceMap_->getOrigin() );
+   const real h( distanceMap_->getSpacing() );
+   const Vec3 hi( lo[0] + static_cast<real>( distanceMap_->getNx() - 1 ) * h,
+                  lo[1] + static_cast<real>( distanceMap_->getNy() - 1 ) * h,
+                  lo[2] + static_cast<real>( distanceMap_->getNz() - 1 ) * h );
+
+   for( int i = 0; i < 8; ++i ) {
+      const Vec3 corner( pointFromBFtoWF( Vec3( ( i & 1 ) ? hi[0] : lo[0],
+                                                ( i & 2 ) ? hi[1] : lo[1],
+                                                ( i & 4 ) ? hi[2] : lo[2] ) ) );
+      for( int k = 0; k < 3; ++k ) {
+         aabb_[k]   = std::min( aabb_[k],   corner[k] );
+         aabb_[k+3] = std::max( aabb_[k+3], corner[k] );
+      }
+   }
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!rief Connects the triangle mesh to the DistanceMap it has just been given.
+ *
+ * \return void
+ *
+ * The mesh listens to its map: inverting the map for a domain boundary changes the bounding box
+ * of the mesh (see widenBoundingBoxForDistanceMap()), whoever calls the inversion. The box is
+ * also recomputed right away, since the new map may already be inverted (a map rebuilt from the
+ * data of a shadow copy).
+ */
+void TriangleMesh::distanceMapAttached()
+{
+#ifdef PE_USE_CGAL
+   if( distanceMap_ )
+      distanceMap_->setChangeListener( [this]() { calcBoundingBox(); } );
+   calcBoundingBox();
+#endif
 }
 //*************************************************************************************************
 
@@ -3363,6 +3428,7 @@ void TriangleMesh::enableDistanceMapAcceleration(int resolution, int tolerance)
       // Access protected members from trait base class
       distanceMap_ = DistanceMap::create(this, resolution, tolerance);
       distanceMapEnabled_ = (distanceMap_ != nullptr);
+      distanceMapAttached();
 
       if (!distanceMapEnabled_) {
          std::cerr << "Warning: Failed to create DistanceMap for TriangleMesh " << getID() << std::endl;
@@ -3387,6 +3453,7 @@ void TriangleMesh::disableDistanceMapAcceleration()
 #ifdef PE_USE_CGAL
    distanceMap_.reset();
    distanceMapEnabled_ = false;
+   calcBoundingBox();   // an inverted map had widened the box
 #endif
 }
 //*************************************************************************************************
