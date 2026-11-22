@@ -40,8 +40,12 @@
  *       booking stays zero (review round 6, finding 3);
  *   11. the PE_RESTITUTION_TRACE range parser and the membership test (review round 6, finding 4).
  *
- *  The test compiles against the round-2 pass (45c9268); fields added later are set through
- *  detectors, so the before results are runtime results.
+ *  Fields added in later rounds are set through detectors. The failing-before results recorded in
+ *  doc/technical-notes/el-restitution.md were obtained with the fixture as committed in the round
+ *  that added the case, built against the previous library: cases 1-5 with the file of 132a1a9
+ *  against 45c9268, cases 6-7 with 77ac5a5 against 10aaf83, cases 8-10 with 7bf387d against
+ *  b047e41. The current file (case 11 calls restitutionParseTraceRange(), the row helpers have
+ *  their round-5 signatures) needs the current header.
  */
 //=================================================================================================
 
@@ -54,6 +58,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -393,7 +398,8 @@ static void caseRandomized()
    classifyByHand( s, real(1e4) );
    int bad( 0 ); size_t releases( 0 ), withdrawals( 0 ), loads( 0 ), sticking( 0 ), sliding( 0 ), demotedVisits( 0 );
    real worstLedger( 0 ), worstDisc( 0 ), worstCeiling( 0 ), worstMomentum( 0 );
-   real worstBody( 0 ), worstPredict( 0 ), worstStick( 0 ), worstSlideDir( 0 ), worstDemotedBooking( 0 );
+   real worstBody( 0 ), worstPredict( 0 ), worstStick( 0 ), worstSlideDir( 0 ), worstAnti( 0 );
+   size_t demotedNonzero( 0 ), fastSliding( 0 );
    for( int sweep = 0; sweep < 8; ++sweep ) {
       for( size_t b = 0; b < s.dv_.size(); ++b ) s.dv_[b] += unit() * ( real(1.5) * rnd() );
       std::vector<Vec3> dv0( s.dv_ ), dw0( s.dw_ ), p0( s.p_ ), predicted( P );
@@ -428,12 +434,20 @@ static void caseRandomized()
             if( !( lam > 0 ) ) worstStick = std::max( worstStick, ptv.length() );   // unloaded: no friction
             else if( s.mu_[k] > 0 ) {
                if( ptv.length() < limit * ( real(1) - real(1e-9) ) ) { ++sticking; worstStick = std::max( worstStick, slip.length() ); }
-               else { ++sliding; worstSlideDir = std::max( worstSlideDir, trans( slip ) * ptv / ( ptv.length() + real(1e-300) ) ); }
+               else {
+                  ++sliding; worstSlideDir = std::max( worstSlideDir, trans( slip ) * ptv / ( ptv.length() + real(1e-300) ) );
+                  // appreciable sliding speed: the friction impulse is anti-parallel to the slip
+                  // (isotropic sphere pairs: the decoupled projection is along -slip)
+                  if( slip.length() > real(1e-6) && ptv.length() > real(0) ) {
+                     ++fastSliding;
+                     worstAnti = std::max( worstAnti, ( ptv / ptv.length() + slip / slip.length() ).length() );
+                  }
+               }
             }
          }
          // a demoted row never books restitution again
          if( demotedBefore[k] || s.restitutionWork_.kind[k] == RestitutionPassWork::demotedRow ) {
-            ++demotedVisits; worstDemotedBooking = std::max( worstDemotedBooking, s.restitutionImpulse_[k] );
+            ++demotedVisits; if( s.restitutionImpulse_[k] != real(0) ) ++demotedNonzero;   // exactly zero, either sign
          }
          const real lambda( ledger( s.restitutionWork_, s, k ) ), np( trans( s.n_[k] ) * s.p_[k] );
          const real pt( std::sqrt( std::pow( trans( s.t_[k] ) * s.p_[k], 2 ) + std::pow( trans( s.o_[k] ) * s.p_[k], 2 ) ) );
@@ -458,15 +472,17 @@ static void caseRandomized()
    expect( worstMomentum <= real(1e-13), "10. the sweep conserves the momentum of every pair" );
    expect( bad == 0, "10. a released row has p_ = 0 exactly" );
    std::printf( "10. per body: worst |dv - m^-1 dp| or |dw - I^-1 (r x dp)| / (Iinv R) %.3e; worst |dp - evaluator prediction| %.3e; "
-                "sticking rows %zu (worst slip %.3e), sliding rows %zu (worst slip . friction direction %.3e); demoted row visits %zu (worst booking %.3e)\n",
+                "sticking rows %zu (worst slip %.3e), sliding rows %zu (worst slip . friction direction %.3e); demoted row visits %zu (nonzero bookings %.0f)\n",
                 static_cast<double>( worstBody ), static_cast<double>( worstPredict ), sticking, static_cast<double>( worstStick ), sliding,
-                static_cast<double>( worstSlideDir ), demotedVisits, static_cast<double>( worstDemotedBooking ) );
+                static_cast<double>( worstSlideDir ), demotedVisits, static_cast<double>( demotedNonzero ) );
+   std::printf( "10. sliding rows with slip > 1e-6: %zu, worst |p_t/|p_t| + slip/|slip|| %.3e\n", fastSliding, static_cast<double>( worstAnti ) );
    expect( worstBody <= real(1e-13), "10. each body receives exactly the signed row impulse (linear and angular, both bodies)" );
    expect( worstPredict <= real(1e-13), "10. the observed row update equals the evaluator's pre-visit prediction" );
    expect( sticking > 0 && sliding > 0, "10. the random visits exercise sticking and sliding rows" );
    expect( worstStick <= real(1e-12), "10. inside the disc the contact point sticks after the visit (no friction discarded)" );
    expect( worstSlideDir <= real(1e-12), "10. on the disc the friction opposes the remaining slip" );
-   expect( demotedVisits > 0 && worstDemotedBooking == real(0), "10. a demoted row's booking stays zero" );
+   expect( fastSliding > 0 && worstAnti <= real(1e-9), "10. on the disc with appreciable slip the friction impulse is anti-parallel to the slip" );
+   expect( demotedVisits > 0 && demotedNonzero == 0, "10. a demoted row's booking is exactly zero on every visit" );
 }
 
 //=================================================================================================
@@ -485,12 +501,15 @@ static void caseTraceParser()
       const bool ok( restitutionParseTraceRange( c.text, f, n ) );
       if( ok != c.ok || ( ok && ( f != c.first || n != c.count ) ) ) { std::printf( "   parser: '%s' -> %d (%llu, %llu)\n", c.text, ok ? 1 : 0, f, n ); ++bad; }
    }
+   // membership near the largest pass number active() can receive (size_t, 32 or 64 bit), with
+   // first + count beyond ULLONG_MAX; the parser's unsigned long long boundary is tested above
+   const size_t smax( std::numeric_limits<size_t>::max() );
    RestitutionTrace t;
-   t.rangeOn = true; t.first = 18446744073709551610ULL; t.count = 18446744073709551615ULL;   // first + count would overflow
-   const bool m1( t.active( size_t(5) ) ), m2( t.active( size_t(18446744073709551612ULL) ) );
+   t.rangeOn = true; t.first = static_cast<unsigned long long>( smax ) - 5ULL; t.count = std::numeric_limits<unsigned long long>::max();
+   const bool m1( t.active( size_t(5) ) ), m2( t.active( smax - 2 ) );
    t.first = 2; t.count = 3;
    const bool m3( t.active( 1 ) ), m4( t.active( 2 ) ), m5( t.active( 4 ) ), m6( t.active( 5 ) );
-   std::printf( "11. trace range parser: %d of %zu cases wrong; membership near ULLONG_MAX %d %d (expected 0 1), [2,5): %d %d %d %d (expected 0 1 1 0)\n",
+   std::printf( "11. trace range parser: %d of %zu cases wrong; membership near SIZE_MAX %d %d (expected 0 1), [2,5): %d %d %d %d (expected 0 1 1 0)\n",
                 bad, sizeof( cases ) / sizeof( cases[0] ), m1 ? 1 : 0, m2 ? 1 : 0, m3 ? 1 : 0, m4 ? 1 : 0, m5 ? 1 : 0, m6 ? 1 : 0 );
    expect( bad == 0, "11. the trace range parser accepts exactly complete unsigned ranges with count > 0" );
    expect( !m1 && m2 && !m3 && m4 && m5 && !m6, "11. range membership without overflow" );
