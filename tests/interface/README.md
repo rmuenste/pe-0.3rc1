@@ -111,6 +111,42 @@ cmake --build build-interface-mpi-cgal
 ctest --test-dir build-interface-mpi-cgal -L mpi --output-on-failure
 ```
 
+## ATC Arc Containment (both PE modes)
+
+`pe_atc_arc_containment.cpp` builds one program per build mode from the same source and runs
+the ATC case (spheres inside the boundary surface of a 90 degree arc of a coiled tube, closed
+by two spherical caps; inverted DistanceMap) on the fixture `fixtures/atc_arc`:
+
+- with MPI and CGAL: `pe-atc-arc-containment-mpi-4`, the parallel `setupATC()` on four
+  processes, one per slab of `single_plane.txt`,
+- with CGAL and without MPI: `pe-atc-arc-containment-serial`, the serial-mode
+  `setupATCSerial()`.
+
+Both drive the engine like an Euler-Lagrange CFD driver (the submerged weight is added as a
+force every step) for 600 steps: the 400 spheres fall onto the wall and pile up at the bottom
+of the arc, in the parallel case across the plane between ranks 1 and 2. After every step the
+sphere centres are compared with the exact surface and the owned spheres are counted over all
+processes. The test fails if a centre leaves the domain, a sphere is lost or owned twice, or
+a sphere reaches more than one radius through the wall.
+
+```bash
+cmake -S . -B build-atc-mpi-cgal -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+  -DPE_BUILD_INTERFACE_TESTS=ON -DPE_USE_MPI=ON -DPE_USE_CGAL=ON
+cmake --build build-atc-mpi-cgal --target pe_atc_arc_containment
+ctest --test-dir build-atc-mpi-cgal -R pe-atc-arc --output-on-failure
+```
+
+Drop `-DPE_USE_MPI=ON` for the serial-mode case. The program also runs by hand on other
+inputs, with other gravity directions, a Stokes drag and a dump of the final positions; see
+its file header. `fixtures/atc_arc/gen_atc_arc_inputs.py` writes the inputs (surface,
+positions, slab planes, deck). The wall of this surface touches the bounding box of its
+vertices along the bottom of the arc, exactly where the spheres settle, so the test also
+guards the bounding box of meshes with an inverted DistanceMap
+(`doc/technical-notes/distance-map-implementation.md`); the focused check of that is stage 12
+of `pe_primitive_mesh_distancemap_test.cpp`.
+
+With GCC 15 the pinned CGAL 5.3.2 needs `-DCMAKE_CXX_FLAGS=-Wno-template-body`.
+
 ## Lubrication Tests
 
 - `pe-lubrication-model` (`pe_lubrication_model_test`): pure-math unit test of the

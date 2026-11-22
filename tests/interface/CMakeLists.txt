@@ -852,3 +852,47 @@ add_test(
 set_tests_properties(pe-cylinder-wall-config PROPERTIES
   LABELS "unit;serial;interface"
 )
+
+# Containment of spheres inside the boundary surface of the ATC arc (the liquid segment of the
+# Archimedes tube crystalliser; 90 deg mesh M273), driven like an Euler-Lagrange run: submerged
+# weight every step, the spheres fall onto the wall and pile up at the bottom of the arc. One
+# source for both PE modes: with MPI it calls the parallel setupATC() (four slabs from
+# single_plane.txt, one process each; the pile forms across the plane between ranks 1 and 2),
+# without MPI the serial-mode setupATCSerial(). Every step it compares the sphere centres with
+# the exact surface and counts the owned spheres; it fails if a centre leaves the domain, a
+# sphere is lost or owned twice, or a sphere reaches more than one radius through the wall.
+# Needs the DistanceMap. Fixture: fixtures/atc_arc (written by gen_atc_arc_inputs.py there).
+if(PE_USE_CGAL)
+  add_executable(pe_atc_arc_containment pe_atc_arc_containment.cpp)
+  set(PE_ATC_ARC_FIXTURE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/atc_arc")
+  set(PE_ATC_ARC_WORK_ROOT "${CMAKE_CURRENT_BINARY_DIR}/atc-arc-runs")
+  if(PE_USE_MPI AND MPI_FOUND)
+    target_link_libraries(pe_atc_arc_containment PRIVATE pe_static MPI::MPI_CXX)
+    add_test(
+      NAME pe-atc-arc-containment-mpi-4
+      COMMAND
+        ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
+        ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_atc_arc_containment>
+        --inputs "${PE_ATC_ARC_FIXTURE_DIR}"
+        --run-dir "${PE_ATC_ARC_WORK_ROOT}/mpi-4"
+        ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-atc-arc-containment-mpi-4 PROPERTIES
+      LABELS "integration;mpi;cgal;interface"
+      PROCESSORS 4
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+    )
+  else()
+    target_link_libraries(pe_atc_arc_containment PRIVATE pe_static)
+    add_test(
+      NAME pe-atc-arc-containment-serial
+      COMMAND pe_atc_arc_containment
+        --inputs "${PE_ATC_ARC_FIXTURE_DIR}"
+        --run-dir "${PE_ATC_ARC_WORK_ROOT}/serial"
+    )
+    set_tests_properties(pe-atc-arc-containment-serial PROPERTIES
+      LABELS "integration;serial;cgal;interface"
+    )
+  endif()
+endif()
