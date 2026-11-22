@@ -426,9 +426,29 @@ Assertion-enabled baseline: the seven tests that fail in a Debug build of this b
 restitution code (`pe-angular-dof-mask`, `pe-particle-motion`: ellipsoidtrait/Default.h:159
 "Invalid inertia detected"; `pe-cylinder-plane-contact`: Quaternion.h:254 "Invalid quaternion
 parameters"; `pe-remote-query`: MPI.h:174 MPI_Barrier "Invalid function call";
-`pe-fbm-query-stress-mpi-2/-4`, `pe-dkt-parallel-setup-mpi`: HardContactAndFluid.h:1659
-`!requireSync_`) fail identically, same assertions and lines, on origin/master 6003b00 (job
-164929): pre-existing defects outside this branch.
+`pe-fbm-query-stress-mpi-2/-4`: HardContactAndFluid.h:1659 `!requireSync_` in their control phase;
+`pe-dkt-parallel-setup-mpi`: prints that all checks passed on both ranks, then aborts because
+`MPI_Comm_rank()` is called after `MPI_Finalize()`) fail identically, same assertions and lines,
+on origin/master 6003b00 (job 164929): pre-existing defects outside this branch.
+
+## 6g. Review round 7: tests and documentation only
+
+Verdict PASS WITH FOLLOW-UPS. `git diff ce2a7f7 HEAD -- pe src` is empty: no solver, interface
+or library code changed in this round.
+
+| Item | Change |
+|---|---|
+| case 10 (P2) | on the Coulomb boundary with appreciable slip (> 1e-6) the friction impulse must be anti-parallel to the slip (`|p_t/|p_t| + slip/|slip|| <= 1e-9`); on every demoted visit the booking must be exactly zero (either sign). Local mutations, not committed (job `mutations_r7`): friction rotated by 0.1 rad on the disc, and a negative booking on a release; the test fails for each: the rotation fails the new anti-parallel check (worst value 8.6e-13 on the clean code) and also cases 8, 9 and the slip-direction check; the negative booking fails the new exact-zero check and also cases 6 and 7 |
+| case 11 (P3) | the membership example is built near `numeric_limits<size_t>::max()` (32- or 64-bit `size_t`); the parser's unsigned long long boundary stays a separate parser case |
+| note 6f (P3) | DKT recorded with its own signature (abort after `MPI_Finalize()`) |
+| unit test header (P3) | names the fixture revision behind each historical failing-before result |
+
+Assertion-enabled suites on the clean HEAD ce2a7f7 (job 164937): serial 60/64, the four
+failures are the pre-existing ones listed in 6f; all five EL registrations pass inside their limits
+(`pe-el-restitution` 831 s, `-rest-pile20` 1095 s, `-pile50` 1083 s, `-pile90` 1081 s,
+`-impacts` 0.1 s). MPI 34/37, the three failures are the pre-existing ones; every restitution and
+registry test passes. The assertion messages are identical to master's (job 164929); none fires
+in restitution, post-pass or registry code.
 
 ## 7. Tests
 
