@@ -692,10 +692,11 @@ add_test(
   NAME pe-el-restitution
   COMMAND pe_el_restitution_test
 )
+# TIMEOUT: about twice the assertion-enabled (Debug) runtime, 828 s (job 164931); Release 23 s.
 set_tests_properties(pe-el-restitution PROPERTIES
   LABELS "unit;serial;rigidbody"
   SKIP_RETURN_CODE 77
-  TIMEOUT 120
+  TIMEOUT 1700
 )
 
 # Restitution at the scale of the case-11 bed (0.87 mm spheres, EL drag, v_rest 0.01 m/s, default
@@ -703,12 +704,16 @@ set_tests_properties(pe-el-restitution PROPERTIES
 # range keep their rebound. EL solver (default library); 77 = another configured solver.
 add_executable(pe_el_restitution_rest_test pe_el_restitution_rest_test.cpp)
 target_link_libraries(pe_el_restitution_rest_test PRIVATE pe_static)
-add_test(NAME pe-el-restitution-rest COMMAND pe_el_restitution_rest_test)
-set_tests_properties(pe-el-restitution-rest PROPERTIES
-  LABELS "integration;serial;rigidbody"
-  SKIP_RETURN_CODE 77
-  TIMEOUT 170
-)
+# Split into its four parts: the whole test took 3320 s in Debug (job 164931; Release 94 s). TIMEOUT
+# about twice the Debug runtime of the largest part (a pile, about 1100 s).
+foreach(part pile20 pile50 pile90 impacts)
+  add_test(NAME pe-el-restitution-rest-${part} COMMAND pe_el_restitution_rest_test ${part})
+  set_tests_properties(pe-el-restitution-rest-${part} PROPERTIES
+    LABELS "integration;serial;rigidbody"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 2400
+  )
+endforeach()
 
 # Restitution post-pass with several contacts per body (support contacts of a chain and of a pile,
 # frictional unloading, a positive gap below the contact threshold, a remote impact, an orthogonal

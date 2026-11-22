@@ -114,7 +114,10 @@ static std::vector<BodyID> buildPile( MaterialID m )
    return bodies;
 }
 
-template< typename Handle > void run( Handle& cs )
+//! part: "all" (default), "pile20", "pile50", "pile90" (case 1 at one drag fraction; pile50 includes
+//! case 3), "impacts" (case 2). The parts are registered as separate tests so that each completes
+//! in an assertion-enabled (Debug) build within its limit (the whole test took 3320 s there).
+template< typename Handle > void run( Handle& cs, const std::string& part )
 {
    typedef typename std::remove_reference<decltype( *cs )>::type CS;
    if constexpr ( HasElHydroState<RigidBody>::value && std::is_class<CS>::value ) {
@@ -124,6 +127,8 @@ template< typename Handle > void run( Handle& cs )
       // 1. defluidised pile
       std::vector<BodyID> settled;
       for( real f : { real(0.2), real(0.5), real(0.9) } ) {
+         const std::string tag( f == real(0.2) ? "pile20" : f == real(0.5) ? "pile50" : "pile90" );
+         if( part != "all" && part != tag ) continue;
          std::vector<BodyID> bodies( buildPile( m ) );
          Window settle, late;
          for( int s = 0; s < 3200; ++s ) fluidStep( cs, bodies, f, settle );
@@ -161,6 +166,7 @@ template< typename Handle > void run( Handle& cs )
 
       // 2. impacts on the floor in the fluidised range
       for( real v : { real(0.05), real(0.1), real(0.2) } ) {
+         if( part != "all" && part != "impacts" ) break;
          WorldID world = theWorld();
          world->clear();
          createPlane( 1, 0, 0, 1, 0, m );
@@ -190,14 +196,19 @@ template< typename Handle > void run( Handle& cs )
    else { (void)cs; }
 }
 
-int main()
+int main( int argc, char** argv )
 {
    if( !HasElHydroState<RigidBody>::value ) {
       std::printf( "pe_el_restitution_rest_test: the configured collision system is not HardContactEulerLagrange, skipped\n" );
       return 77;
    }
    CollisionSystemID cs = theCollisionSystem();
-   run( cs );
+   const std::string part( argc > 1 ? argv[1] : "all" );
+   if( part != "all" && part != "pile20" && part != "pile50" && part != "pile90" && part != "impacts" ) {
+      std::printf( "usage: pe_el_restitution_rest_test [all | pile20 | pile50 | pile90 | impacts]\n" );
+      return 2;
+   }
+   run( cs, part );
    if( failures == 0 ) std::printf( "pe_el_restitution_rest_test: all checks passed\n" );
    else std::printf( "pe_el_restitution_rest_test: %d check(s) failed\n", failures );
    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
