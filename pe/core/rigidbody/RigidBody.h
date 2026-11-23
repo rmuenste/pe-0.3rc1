@@ -290,6 +290,12 @@ public:
            inline void        applyForces        ( real dt );
            inline void        applyFluidForces   ( real dt, real relaxation = real(1) );
 
+           inline bool        hasPrevFluidForce  () const;
+           inline const Vec3& getPrevFluidForce  () const;
+           inline const Vec3& getPrevFluidTorque () const;
+           inline void        setPrevFluidForce  ( bool has, const Vec3& force,
+                                                   const Vec3& torque );
+
            inline void        addTorque( real tx, real ty, real tz );
            inline void        addTorque( const Vec3& t );
 
@@ -1836,6 +1842,53 @@ inline void RigidBody::applyFluidForces( real dt, real relaxation )
    v_[1] *= linearDofMask_[1];
    v_[2] *= linearDofMask_[2];
    resetForce();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns whether applyFluidForces() has stored a previous fluid force and torque.
+ */
+inline bool RigidBody::hasPrevFluidForce() const
+{
+   return hasPrevFluidForce_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the fluid force stored by the last applyFluidForces() call.
+ */
+inline const Vec3& RigidBody::getPrevFluidForce() const
+{
+   return prevFluidForce_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the fluid torque stored by the last applyFluidForces() call.
+ */
+inline const Vec3& RigidBody::getPrevFluidTorque() const
+{
+   return prevFluidTorque_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Sets the fluid-force history used by applyFluidForces() (for restoring a checkpoint).
+ *
+ * \param has Whether a previous fluid force and torque are stored.
+ * \param force The previous fluid force.
+ * \param torque The previous fluid torque.
+ * \return void
+ */
+inline void RigidBody::setPrevFluidForce( bool has, const Vec3& force, const Vec3& torque )
+{
+   hasPrevFluidForce_ = has;
+   prevFluidForce_    = force;
+   prevFluidTorque_   = torque;
 }
 //*************************************************************************************************
 
