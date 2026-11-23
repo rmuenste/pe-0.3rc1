@@ -185,6 +185,8 @@ Important behavior:
 3. `decomposePeriodicXY3D(...)` (periodic X/Y only)
 4. `decomposePeriodicX3D(...)` (periodic X only)
 5. `decomposeDomain2DArchimedes(...)` (custom 2D using supplied half-space arrays)
+6. `decomposeDomainPlaneSlabs(...)` (chain of slabs between planes of any orientation, one
+   process per slab; `loadSlabPlanes(...)` reads the planes from a file)
 
 Common pattern in these helpers:
 
@@ -193,6 +195,29 @@ Common pattern in these helpers:
 - Apply periodicity through non-zero `offset` vectors.
 
 These APIs are flexible in decomposition mode but still fundamentally half-space based.
+
+### Slabs from the plane file of the CFD partition
+
+`decomposeDomainPlaneSlabs(slab, planes, nSlabs)` is the pe side of the pe_partpy strategy
+`plane_single`. That strategy reads `single_plane.txt` (one plane per line, `px py pz nx ny nz`)
+and gives a CFD element to the first plane whose positive side holds all its vertices. The pe
+function builds the same regions from the same file:
+
+- slab 0: positive side of plane 0
+- slab k: positive side of plane k and negative side of plane k-1
+- last slab: negative side of the last cut (and the positive side of the closing plane, if
+  the file has that extra line)
+
+Rank k of the communicator gets slab k, which is CFD subdomain k+1, and is connected to the
+previous and the next slab. The normals are used as written (the Archimedes loader re-orients
+them, which would reverse the slab order of such a file). The planes may be inclined to each
+other: the ATC case cuts a bent tube with planes through the coil axis, so its slabs are
+wedges. Two limits follow from connecting only neighbours in the chain: bodies must stay away
+from the line where the planes meet, and no body may reach across a whole slab. The cuts match
+the CFD partition exactly only if they lie on element faces of the CFD mesh.
+
+Used by `setupATC` (`pe/interface/setup/atc.h`); exercised with 1 to 4 processes by
+`tests/interface/pe_atc_arc_containment.cpp`.
 
 
 ## Domain Ownership Semantics (Important for Coupling)

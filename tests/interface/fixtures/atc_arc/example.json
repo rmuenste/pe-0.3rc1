@@ -1,0 +1,42 @@
+{
+  "timesteps_": 600,
+  "stepsize_": 0.0005,
+  "substeps_": 1,
+  "processesX_": 4,
+  "processesY_": 1,
+  "processesZ_": 1,
+  "vtk_": false,
+  "visspacing_": 50,
+  "useCheckpointer_": false,
+  "resume_": false,
+  "checkpoint_path_": "checkpoints",
+  "benchRadius_": 0.0092,
+  "particleDensity_": 1.42,
+  "fluidViscosity_": 0.058,
+  "fluidDensity_": 1.0,
+  "gravity_": [
+    0.0,
+    -980.0,
+    0.0
+  ],
+  "packingMethod_": "external",
+  "xyzFilePath_": "particles.xyz",
+  "domainBoundary_": {
+    "enabled": true,
+    "file": "atc_arc_boundary.obj",
+    "position": [
+      2.00085068555e-15,
+      -2.2477203676,
+      0.0875
+    ],
+    "fixed": true,
+    "visible": true,
+    "distanceMap": {
+      "enabled": true,
+      "resolution": 200,
+      "tolerance": 6,
+      "invertForDomainBoundary": true,
+      "writeVti": false
+    }
+  }
+}

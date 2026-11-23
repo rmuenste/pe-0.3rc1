@@ -53,6 +53,14 @@
  *       field attributes to the side faces are re-attributed to the top face);
  *   11. a cylinder lying in a V-groove mesh touching both slopes: each slope keeps its own
  *       contacts with its own normal (the re-attribution leaves genuine two-face contact alone).
+ *   12. the slab with its DistanceMap inverted for a domain boundary (a 2 x 2 x 0.5 container
+ *       whose walls are the faces of its own bounding box): the map carries the flag and the
+ *       bounding box of the mesh grows to the grid of the map (the padding of 5 cells on every
+ *       side); a sphere inside that reaches 0.02 through the top wall gets a contact at depth
+ *       0.02 pushing it back in, in both dispatch orders, and so does a sphere that has passed
+ *       the wall completely (before, both had no contact: the points through the wall are
+ *       outside the box of the vertices); a second inversion restores the vertex box; a
+ *       checkpoint written with the inverted map restores an inverted map and the wide box.
  *
  *  Serial world setup, no MPI.
  */
@@ -60,6 +68,7 @@
 
 #include <pe/core.h>
 #include <pe/core/detection/fine/MaxContacts.h>
+#include <pe/util/Checkpointer.h>
 
 #include <algorithm>
 #include <cmath>
@@ -490,6 +499,85 @@ int main()
       expect( left >= 2 && right >= 2 && left + right == static_cast<int>( log.entries.size() ),
               "cylinder in the V-groove: both slopes keep their own contacts (no false re-attribution)" );
       expect( depthsOk, "cylinder in the V-groove: every contact at depth 0.01 with its slope's normal" );
+   }
+
+   // --- 12. DistanceMap inverted for a domain boundary -------------------------------------------
+   {
+      for( World::Iterator it = world->begin(); it != world->end(); )
+         it = world->destroy( it );
+
+      TriangleMeshID cont = makeSlabBody( 1, mat );
+      const real pad( real(5) * cont->getDistanceMap()->getSpacing() );   // tolerance = 5 cells
+      const real eps( real(1e-6) );
+
+      // box of the mesh: xmin ymin zmin xmax ymax zmax
+      const auto boxIs = [&]( real grow ) {
+         const RigidBody::AABB& b( cont->getAABB() );
+         const real half[3] = { real(1), real(1), real(0.25) };
+         bool ok = true;
+         for( int k = 0; k < 3; ++k ) {
+            ok = ok && b[k]   <= -half[k] - grow + eps && b[k]   >= -half[k] - grow - real(0.06);
+            ok = ok && b[k+3] >=  half[k] + grow - eps && b[k+3] <=  half[k] + grow + real(0.06);
+         }
+         return ok;
+      };
+
+      expect( !cont->getDistanceMap()->isInvertedForDomainBoundary(), "container: a new map is not inverted" );
+      expect( boxIs( real(0) ), "container: a solid mesh keeps the box of its vertices" );
+
+      cont->getDistanceMap()->invertForDomainBoundary();
+      expect( cont->getDistanceMap()->isInvertedForDomainBoundary(), "container: the map carries the inverted flag" );
+      expect( boxIs( pad ), "container: the box of the mesh is the box of the grid (padding on every side)" );
+
+      // inside, reaching 0.02 through the top wall (the wall is the top face of the vertex box)
+      const real rad( real(0.05) );
+      SphereID sph = createSphere( 2, Vec3( real(0.3), real(-0.2), real(0.25) - rad + delta ), rad, mat );
+      for( int order = 0; order < 2; ++order ) {
+         const ContactLog log = order == 0 ? run( cont, sph ) : run( sph, cont );
+         const Deepest d = deepest( log, sph );
+         std::printf( "container, sphere %.2f through the top wall (order %d): %d contact(s), deepest %.4f, normal z %.3f\n",
+                      static_cast<double>( delta ), order, static_cast<int>( log.entries.size() ),
+                      static_cast<double>( d.dist ), static_cast<double>( d.normal[2] ) );
+         expect( d.any, "container: a sphere reaching through the wall gets a contact" );
+         expect( d.any && std::fabs( d.dist + delta ) < real(1e-2), "container: contact depth is the depth through the wall" );
+         expect( d.any && d.normal[2] < real(-0.95), "container: the contact pushes the sphere back into the container" );
+      }
+
+      // completely through the wall, still inside the padding of the grid
+      sph->setPosition( Vec3( real(0.3), real(-0.2), real(0.25) + real(0.1) ) );
+      {
+         const ContactLog log = run( cont, sph );
+         const Deepest d = deepest( log, sph );
+         std::printf( "container, sphere 0.10 beyond the top wall: %d contact(s), deepest %.4f, normal z %.3f\n",
+                      static_cast<int>( log.entries.size() ), static_cast<double>( d.dist ),
+                      static_cast<double>( d.normal[2] ) );
+         expect( d.any, "container: a sphere beyond the wall still gets a contact" );
+         expect( d.any && std::fabs( d.dist + real(0.15) ) < real(1e-2), "container: depth of the far side of the escaped sphere" );
+         expect( d.any && d.normal[2] < real(-0.95), "container: the escaped sphere is pushed back towards the container" );
+      }
+
+      // a second inversion gives the solid back
+      cont->getDistanceMap()->invertForDomainBoundary();
+      expect( !cont->getDistanceMap()->isInvertedForDomainBoundary(), "container: a second inversion clears the flag" );
+      expect( boxIs( real(0) ), "container: a second inversion restores the box of the vertices" );
+
+      // checkpoint round trip of the inverted map
+      cont->getDistanceMap()->invertForDomainBoundary();
+      const std::string dir( "./_primitive_mesh_dm_test" ), name( "inverted" );
+      writeCheckpoint( dir, name );
+      for( World::Iterator it = world->begin(); it != world->end(); )
+         it = world->destroy( it );
+      readCheckpoint( dir, name );
+      cont = nullptr;
+      for( World::Iterator it = world->begin(); it != world->end(); ++it ) {
+         if( it->getType() == triangleMeshType )
+            cont = static_body_cast<TriangleMesh>( *it );
+      }
+      expect( cont != nullptr && cont->hasDistanceMap(), "container: the checkpoint restores the mesh with a map" );
+      if( cont != nullptr && cont->hasDistanceMap() ) {
+         expect( cont->getDistanceMap()->isInvertedForDomainBoundary(), "container: the restored map is inverted" );
+         expect( boxIs( pad ), "container: the restored mesh has the box of the grid" );
+      }
    }
 
    if( failures == 0 ) {

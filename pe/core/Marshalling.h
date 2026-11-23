@@ -551,10 +551,16 @@ inline void marshal( Buffer& buffer, const TriangleMesh& obj ) {
          for( size_t i = 0; i < contactData.size(); ++i )
             marshal( buffer, contactData[i] );
 
-         // Marshal DistanceMap rebuild parameters (for checkpointing - lightweight)
-         buffer << static_cast<uint8_t>(1);  // Version 1
+         // Marshal DistanceMap rebuild parameters (for checkpointing - lightweight).
+         // Version 1: resolution, tolerance. Version 2: the same followed by one byte, 1 if the
+         // map is inverted for a domain boundary. Version 2 is written only for an inverted
+         // map, so the record of every other mesh is unchanged.
+         const bool inverted = dm->isInvertedForDomainBoundary();
+         buffer << static_cast<uint8_t>(inverted ? 2 : 1);
          buffer << obj.getDistanceMapResolution();
          buffer << obj.getDistanceMapTolerance();
+         if (inverted)
+            buffer << static_cast<uint8_t>(1);
       }
    } else {
       // Even if no DistanceMap, write flag indicating no parameters
@@ -632,6 +638,11 @@ inline void unmarshal( Buffer& buffer, TriangleMesh::Parameters& objparam, bool 
       buffer >> objparam.dmVersion_;
       buffer >> objparam.dmResolution_;
       buffer >> objparam.dmTolerance_;
+      if (objparam.dmVersion_ >= 2) {
+         uint8_t inverted;
+         buffer >> inverted;
+         objparam.dmInverted_ = (inverted != 0);
+      }
       objparam.hasDistanceMapParams_ = true;
    } else {
       // Check if we have rebuild parameters even without full data

@@ -12,7 +12,7 @@
  *
  * \section Available Functions
  *
- * The interface provides five core decomposition functions:
+ * The interface provides these core decomposition functions:
  *
  * 1. **decomposeDomain()** - Universal non-periodic decomposition
  *    - Handles all axis configurations (1D, 2D, 3D)
@@ -35,6 +35,11 @@
  * 5. **decomposeDomain2DArchimedes()** - Specialized 2D decomposition
  *    - Custom geometry support using HalfSpace definitions
  *    - Designed for Archimedes screw and complex 2D shapes
+ *
+ * 6. **decomposeDomainPlaneSlabs()** - Chain of slabs between planes of any orientation
+ *    - One process per slab, the planes come from a file (loadSlabPlanes())
+ *    - Same planes and meaning as the pe_partpy strategy plane_single, so the pe domains
+ *      coincide with the subdomains of a CFD mesh partitioned by the same file
  *
  * \section Usage Requirements
  *
@@ -68,6 +73,10 @@
 #include <pe/core/domaindecomp/Merging.h>
 #include <pe/core/domaindecomp/Process.h>
 #include <pe/core/domaindecomp/RectilinearGrid.h>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #else
@@ -2475,6 +2484,121 @@ inline void decomposePeriodicZ3D(int center[],
                                HalfSpace( Vec3(0,0,1), +(bz+top[2]*dz  ) ) ), offset );
    }
 }
+
+
+//*************************************************************************************************
+/*!\brief Loads the dividing planes of a slab decomposition from a text file.
+ *
+ * \param filename The plane file; one plane per line as "px py pz nx ny nz" (a point on the
+ *                 plane and its normal). Empty lines are skipped.
+ * \param planes The half spaces on the positive side of the planes are appended in file order.
+ * \param error Receives the reason if the function fails.
+ * \return true if the file was read completely, false otherwise.
+ *
+ * The normals are taken as they are written, they are not re-oriented. This is the file format
+ * and the meaning of the pe_partpy strategy plane_single (file single_plane.txt), so the same
+ * file can partition the CFD mesh and decompose the pe domain, see decomposeDomainPlaneSlabs().
+ */
+inline bool loadSlabPlanes( const std::string& filename, std::vector<HalfSpace>& planes,
+                            std::string& error )
+{
+   std::ifstream file( filename.c_str() );
+   if( !file.is_open() ) {
+      error = "could not open the plane file " + filename + ".";
+      return false;
+   }
+
+   std::string line;
+   int lineNumber( 0 );
+   while( std::getline( file, line ) ) {
+      ++lineNumber;
+      if( line.find_first_not_of( " \t\r" ) == std::string::npos )
+         continue;
+
+      std::istringstream iss( line );
+      double px, py, pz, nx, ny, nz;
+      if( !( iss >> px >> py >> pz >> nx >> ny >> nz ) ) {
+         error = "line " + std::to_string( lineNumber ) + " of " + filename +
+                 " does not hold six numbers (px py pz nx ny nz).";
+         return false;
+      }
+
+      const Vec3 normal( nx, ny, nz );
+      if( !( normal.sqrLength() > real(0) ) ) {
+         error = "line " + std::to_string( lineNumber ) + " of " + filename +
+                 " holds a zero normal.";
+         return false;
+      }
+
+      planes.push_back( HalfSpace( normal, Vec3( px, py, pz ) ) );
+   }
+
+   return true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Domain decomposition into a chain of slabs separated by planes of any orientation.
+ *
+ * \param slab Index of the slab of this process; it is also the rank of the process.
+ * \param planes The dividing planes in slab order, each as the half space on its positive side.
+ * \param nSlabs Total number of slabs (the number of processes).
+ * \exception std::invalid_argument Invalid slab index or number of planes.
+ *
+ * Slab k is the positive side of plane k without the positive side of plane k-1:
+ *
+ *    slab 0         positive side of plane 0
+ *    slab k         positive side of plane k and negative side of plane k-1
+ *    slab nSlabs-1  negative side of plane nSlabs-2 (and positive side of plane nSlabs-1,
+ *                   if the list holds that closing plane)
+ *
+ * so \a planes holds nSlabs-1 or nSlabs entries. This is how the pe_partpy strategy
+ * plane_single assigns the elements of a CFD mesh: an element belongs to the first plane
+ * whose positive side holds all its vertices. Reading the same plane file on both sides
+ * (loadSlabPlanes()) therefore gives rank k of pe the region of CFD subdomain k+1.
+ *
+ * Every process is connected to the previous and the next slab only. The planes may be
+ * inclined to each other (for instance planes through the axis of a coil that cut a bent
+ * tube into sectors); the slabs then are wedges that meet where the planes intersect. The
+ * bodies have to stay away from those intersections, and a body must never reach across a
+ * whole slab, because slabs that are not neighbours in the chain are not connected.
+ */
+inline void decomposeDomainPlaneSlabs( int slab, const std::vector<HalfSpace>& planes, int nSlabs )
+{
+   const int nPlanes( static_cast<int>( planes.size() ) );
+
+   if( nSlabs < 1 || slab < 0 || slab >= nSlabs )
+      throw std::invalid_argument( "Invalid slab index" );
+   if( nSlabs == 1 )
+      return;
+   if( nPlanes != nSlabs-1 && nPlanes != nSlabs )
+      throw std::invalid_argument( "A decomposition into n slabs needs n-1 or n planes" );
+
+   const auto negativeSide = []( const HalfSpace& hs ) {
+      return HalfSpace( -hs.getNormal(), -hs.getDisplacement() );
+   };
+
+   // Hands the geometry of slab s to the given function (the type depends on the slab)
+   const auto withSlab = [&]( int s, const auto& use ) {
+      const bool lower( s > 0 );        // bounded by plane s-1
+      const bool upper( s < nPlanes );  // bounded by plane s
+      if( lower && upper )
+         use( intersect( planes[s], negativeSide( planes[s-1] ) ) );
+      else if( upper )
+         use( planes[s] );
+      else
+         use( negativeSide( planes[s-1] ) );
+   };
+
+   withSlab( slab, []( const auto& geometry ) { defineLocalDomain( geometry ); } );
+
+   if( slab > 0 )
+      withSlab( slab-1, [&]( const auto& geometry ) { connect( slab-1, geometry ); } );
+   if( slab+1 < nSlabs )
+      withSlab( slab+1, [&]( const auto& geometry ) { connect( slab+1, geometry ); } );
+}
+//*************************************************************************************************
 
 }
 

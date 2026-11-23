@@ -139,14 +139,16 @@ public:
 
       // DistanceMap rebuild parameters for checkpointing (lightweight)
       bool hasDistanceMapParams_;     // Flag indicating DistanceMap was enabled
-      uint8_t dmVersion_;             // Version for future compatibility (currently 1)
+      uint8_t dmVersion_;             // Version of the parameter record: 1, or 2 (with dmInverted_)
       int dmResolution_;              // Resolution parameter for rebuild
       int dmTolerance_;               // Tolerance parameter for rebuild
       pe::real dmSpacing_;            // Spacing parameter (if explicitly set, otherwise derived from resolution)
+      bool dmInverted_;               // The map is inverted for a domain boundary (version 2)
 
       // Constructor to initialize DistanceMap fields
       Parameters() : hasDistanceMapData_(false), nx_(0), ny_(0), nz_(0), spacing_(0.0),
-                     hasDistanceMapParams_(false), dmVersion_(1), dmResolution_(50), dmTolerance_(5), dmSpacing_(0.0) {}
+                     hasDistanceMapParams_(false), dmVersion_(1), dmResolution_(50), dmTolerance_(5), dmSpacing_(0.0),
+                     dmInverted_(false) {}
 #endif
    };
    //**********************************************************************************************
@@ -223,6 +225,11 @@ public:
 
    virtual void calcBoundingBox();  // Calculation of the axis-aligned bounding box
 
+protected:
+   virtual void distanceMapAttached();             // Listens to the map and updates the bounding box
+   virtual void widenBoundingBoxForDistanceMap();  // Grows the box to the grid of an inverted map
+
+public:
    bool hasClosedSurface() const;
    void setColoredTriangleTexture(povray::WriterID pov);
 

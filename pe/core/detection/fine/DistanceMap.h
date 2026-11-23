@@ -1,6 +1,7 @@
 #ifndef DISTANCEMAP_H
 #define DISTANCEMAP_H
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -96,6 +97,9 @@ public:
      * @param nz Number of grid cells in Z direction
      * @param spacing Grid spacing (uniform in all directions)
      * @param origin Grid origin coordinates
+     * @param invertedForDomainBoundary True if the data is that of a map inverted for a domain
+     *        boundary (see invertForDomainBoundary()); the data is taken as it is, only the
+     *        flag is set
      * @return Unique pointer to the created DistanceMap, or nullptr on failure
      */
     static std::unique_ptr<DistanceMap> createFromData(
@@ -105,7 +109,8 @@ public:
         const std::vector<pe::Vec3>& contactPointData,
         int nx, int ny, int nz,
         pe::real spacing,
-        const pe::Vec3& origin
+        const pe::Vec3& origin,
+        bool invertedForDomainBoundary = false
     );
 #endif
 
@@ -158,8 +163,28 @@ public:
      *
      * Use case: Representing simulation domain boundaries where particles should
      * be kept inside the domain (e.g., helix channel boundaries in extrusion).
+     *
+     * The call toggles isInvertedForDomainBoundary() (a second call restores the solid map)
+     * and notifies the change listener. A triangle mesh listens to its map and recomputes its
+     * bounding box: the contact region of an inverted map is the outside of the surface, so
+     * the box of the mesh then is the box of the grid, see TriangleMesh::calcBoundingBox().
      */
     void invertForDomainBoundary();
+
+    /**
+     * @brief Returns whether the map is inverted for a domain boundary
+     * @return True after an odd number of invertForDomainBoundary() calls (or if the map was
+     *         created from the data of an inverted map)
+     */
+    bool isInvertedForDomainBoundary() const;
+
+    /**
+     * @brief Sets the function that is called whenever the map changes (currently: inversion)
+     * @param listener The function, or an empty function to remove it
+     *
+     * Used by the triangle mesh that owns the map; a map has at most one listener.
+     */
+    void setChangeListener(std::function<void()> listener);
 
     // Grid access methods
     int getNx() const;
@@ -180,6 +205,9 @@ private:
 
     class Impl; // Forward-declare the implementation class
     std::unique_ptr<Impl> _pimpl; // Pointer to implementation
+
+    bool inverted_ = false;                 // Inverted for a domain boundary
+    std::function<void()> changeListener_;  // Called after the map has changed
 };
 
 } // namespace pe

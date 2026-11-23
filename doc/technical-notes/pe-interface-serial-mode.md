@@ -105,10 +105,14 @@ Key points when adding a case:
   needs a parallel implementation. But the symbol must still exist in both
   halves so the CFD side links in either build. A stub must **abort with a
   clear message**, never return silently with an empty world.
-- **ATC is a placeholder in parallel mode.** `commf2c_atc_` still forwards to
-  `setupATC`, but [setup/atc.h](../../pe/interface/setup/atc.h) currently
-  aborts with a "not functional at the moment" message until the parallel
-  setup is implemented. The serial `setupATCSerial` is functional.
+- **ATC has both halves.** `setupATC` in [setup/atc.h](../../pe/interface/setup/atc.h)
+  builds the world of `setupATCSerial` (same materials and order, boundary surface with an
+  inverted DistanceMap, same sphere numbering) and decomposes it into a chain of slabs along
+  the tube, one process each. The slab planes come from `single_plane.txt`, the file the
+  pe_partpy strategy `plane_single` partitioned the CFD mesh with, so rank k of pe owns the
+  region of CFD subdomain k+1 (`loadSlabPlanes()` / `decomposeDomainPlaneSlabs()` in
+  `support/decompose.h`). `tests/interface/pe_atc_arc_containment.cpp` runs both halves on the
+  same inputs.
 
 ### The minimal bootstrap: `commf2c_init_` / `setupGeneralInit`
 

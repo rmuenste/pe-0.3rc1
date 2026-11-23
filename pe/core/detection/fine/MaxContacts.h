@@ -6525,7 +6525,10 @@ bool MaxContacts::collideTMeshWithDistanceMap( Type geom, TriangleMeshID mesh, C
       // Only the part of the primitive inside the mesh's bounding box (inflated by the
       // threshold) can touch: the samplers restrict themselves to it, so the pitch is the grid
       // based spacing whatever the size of the primitive, and samples outside it are rejected
-      // below before the transform and the interpolation.
+      // below before the transform and the interpolation. For a map that is inverted for a
+      // domain boundary the contact region is the outside of the surface; the box of such a
+      // mesh is the box of the map's grid (TriangleMesh::widenBoundingBoxForDistanceMap()), so
+      // points that have passed through the wall are kept as far as the grid reaches.
       const RigidBody::AABB& mbb( mesh->getAABB() );
       const Vec3 mlo( mbb[0] - contactThreshold, mbb[1] - contactThreshold, mbb[2] - contactThreshold );
       const Vec3 mhi( mbb[3] + contactThreshold, mbb[4] + contactThreshold, mbb[5] + contactThreshold );
