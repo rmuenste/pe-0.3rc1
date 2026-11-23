@@ -295,14 +295,15 @@ void Ellipsoid::setOrientation( real r, real i, real j, real k )
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global sphere inside an exclusive section" );
 
-   // No updates of the moment of inertia and the axis-aligned bounding boxes
-   // of the sphere are needed. Therefore the superordinate body doesn't have to
-   // be notified of the rotation!
+   // Unlike a sphere's, an ellipsoid's bounding box depends on its orientation: it is
+   // recomputed, and the superordinate body is notified, as for a box.
 
    q_ = Quat( r, i, j, k );     // Setting the orientation of the sphere
    R_ = q_.toRotationMatrix();  // Updating the rotation of the sphere
 
-   wake();  // Waking the sphere from sleep mode
+   Ellipsoid::calcBoundingBox();  // Updating the axis-aligned bounding box of the ellipsoid
+   wake();             // Waking the ellipsoid from sleep mode
+   signalRotation();   // Signaling the change of orientation to the superordinate body
 }
 //*************************************************************************************************
 
@@ -329,14 +330,15 @@ void Ellipsoid::setOrientation( const Quat& q )
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global sphere inside an exclusive section" );
 
-   // No updates of the moment of inertia and the axis-aligned bounding boxes
-   // of the sphere are needed. Therefore the superordinate body doesn't have to
-   // be notified of the rotation!
+   // Unlike a sphere's, an ellipsoid's bounding box depends on its orientation: it is
+   // recomputed, and the superordinate body is notified, as for a box.
 
    q_ = q;                      // Setting the orientation of the sphere
    R_ = q_.toRotationMatrix();  // Updating the rotation of the sphere
 
-   wake();  // Waking the sphere from sleep mode
+   Ellipsoid::calcBoundingBox();  // Updating the axis-aligned bounding box of the ellipsoid
+   wake();             // Waking the ellipsoid from sleep mode
+   signalRotation();   // Signaling the change of orientation to the superordinate body
 }
 //*************************************************************************************************
 
@@ -496,14 +498,15 @@ void Ellipsoid::rotate( const Vec3& axis, real angle )
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global sphere inside an exclusive section" );
 
-   // No updates of the moment of inertia and the axis-aligned bounding boxes
-   // of the sphere are needed. Therefore the superordinate body doesn't have to
-   // be notified of the rotation!
+   // Unlike a sphere's, an ellipsoid's bounding box depends on its orientation: it is
+   // recomputed, and the superordinate body is notified, as for a box.
 
    q_ = Quat( axis, angle ) * q_;  // Updating the orientation of the sphere
    R_ = q_.toRotationMatrix();     // Updating the rotation of the sphere
 
-   wake();  // Waking the sphere from sleep mode
+   Ellipsoid::calcBoundingBox();  // Updating the axis-aligned bounding box of the ellipsoid
+   wake();             // Waking the ellipsoid from sleep mode
+   signalRotation();   // Signaling the change of orientation to the superordinate body
 }
 //*************************************************************************************************
 
@@ -540,9 +543,8 @@ void Ellipsoid::rotate( real xangle, real yangle, real zangle )
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global sphere inside an exclusive section" );
 
-   // No updates of the moment of inertia and the axis-aligned bounding boxes
-   // of the sphere are needed. Therefore the superordinate body doesn't have to
-   // be notified of the rotation!
+   // Unlike a sphere's, an ellipsoid's bounding box depends on its orientation: it is
+   // recomputed, and the superordinate body is notified, as for a box.
 
    // Updating the orientation of the sphere
    q_.rotateX( xangle );  // Rotation around the x-axis
@@ -551,7 +553,9 @@ void Ellipsoid::rotate( real xangle, real yangle, real zangle )
 
    R_ = q_.toRotationMatrix();  // Updating the rotation of the sphere
 
-   wake();  // Waking the sphere from sleep mode
+   Ellipsoid::calcBoundingBox();  // Updating the axis-aligned bounding box of the ellipsoid
+   wake();             // Waking the ellipsoid from sleep mode
+   signalRotation();   // Signaling the change of orientation to the superordinate body
 }
 //*************************************************************************************************
 
@@ -617,14 +621,15 @@ void Ellipsoid::rotate( const Quat& dq )
    if( global_ && ExclusiveSection::isActive() )
       throw std::logic_error( "Invalid rotation of a global sphere inside an exclusive section" );
 
-   // No updates of the moment of inertia and the axis-aligned bounding boxes
-   // of the sphere are needed. Therefore the superordinate body doesn't have to
-   // be notified of the rotation!
+   // Unlike a sphere's, an ellipsoid's bounding box depends on its orientation: it is
+   // recomputed, and the superordinate body is notified, as for a box.
 
    q_ = dq * q_;                // Updating the orientation of the sphere
    R_ = q_.toRotationMatrix();  // Updating the rotation of the sphere
 
-   wake();  // Waking the sphere from sleep mode
+   Ellipsoid::calcBoundingBox();  // Updating the axis-aligned bounding box of the ellipsoid
+   wake();             // Waking the ellipsoid from sleep mode
+   signalRotation();   // Signaling the change of orientation to the superordinate body
 }
 //*************************************************************************************************
 
