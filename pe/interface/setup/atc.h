@@ -89,6 +89,7 @@ inline void setupATC( MPI_Comm ex0 )
    world = theWorld();
 
    loadSimulationConfig( "example.json" );
+   rejectRestitutionRequest( *theCollisionSystem(), SimulationConfig::getInstance(), "setupATC" );
 
    mpisystem = theMPISystem();
    mpisystem->setComm( ex0 );
