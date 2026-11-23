@@ -1101,3 +1101,260 @@ if(PE_USE_CGAL)
     )
   endif()
 endif()
+
+# ---------------------------------------------------------------------------------------
+# pe::coupling, the typed C++ coupling API (pe/interface/coupling/, doc/technical-notes/
+# coupling-api.md). Each scenario runs in its own process: pe's world is process-global.
+#
+# Header self-containment, compile only: every coupling header compiled on its own by the bare
+# compiler -- no pe build flags, no forced config.h, -Werror -- once alone and once after
+# <mpi.h> when an MPI is found. That is the situation of a CFD code that includes the header
+# next to <mpi.h> while pe itself may be built without MPI (FEAT3).
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  if(NOT PE_USE_MPI)
+    find_package(MPI QUIET COMPONENTS CXX)
+  endif()
+  if(PE_USE_MPI)
+    set(coupling_header_labels "unit;mpi;interface;coupling")
+  else()
+    set(coupling_header_labels "unit;serial;interface;coupling")
+  endif()
+  foreach(coupling_header IN ITEMS Export Types BuildInfo Engine)
+    add_test(
+      NAME pe-coupling-header-standalone-${coupling_header}
+      COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -Wall -Wextra -Wshadow -pedantic -Werror
+        -fsyntax-only -x c++ -I${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/pe/interface/coupling/${coupling_header}.h
+    )
+    set_tests_properties(pe-coupling-header-standalone-${coupling_header} PROPERTIES
+      LABELS "${coupling_header_labels}"
+    )
+    if(MPI_CXX_FOUND)
+      set(coupling_mpi_includes)
+      foreach(dir IN LISTS MPI_CXX_INCLUDE_DIRS)
+        list(APPEND coupling_mpi_includes "-I${dir}")
+      endforeach()
+      add_test(
+        NAME pe-coupling-header-standalone-${coupling_header}-after-mpi-h
+        COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -Wall -Wextra -Wshadow -Werror
+          -fsyntax-only -x c++ ${coupling_mpi_includes} -include mpi.h -I${PROJECT_SOURCE_DIR}
+          ${PROJECT_SOURCE_DIR}/pe/interface/coupling/${coupling_header}.h
+      )
+      set_tests_properties(pe-coupling-header-standalone-${coupling_header}-after-mpi-h PROPERTIES
+        LABELS "${coupling_header_labels}"
+      )
+    endif()
+  endforeach()
+endif()
+
+# Header self-containment, linked: a translation unit that includes only the coupling header
+# (and, in the second variant, <mpi.h> before and after it) links against pe and queries the
+# build information. Registered in both trees; the MPI tree runs it under the mpi label.
+# Without MPI the program also drives an Engine (with MPI that would need MPI_Init).
+if(PE_USE_MPI)
+  set(coupling_header_engine 0)
+else()
+  set(coupling_header_engine 1)
+endif()
+add_executable(pe_coupling_header_test pe_coupling_header_test.cpp)
+target_link_libraries(pe_coupling_header_test PRIVATE pe_static)
+target_compile_definitions(pe_coupling_header_test PRIVATE PE_COUPLING_TEST_WITH_MPI_H=0
+  PE_COUPLING_TEST_ENGINE=${coupling_header_engine})
+add_test(NAME pe-coupling-header COMMAND pe_coupling_header_test)
+set_tests_properties(pe-coupling-header PROPERTIES LABELS "${coupling_header_labels}")
+
+# Shared library (PE_LIBRARY_TYPE=BOTH): libpe.so is built with -fvisibility=hidden, so an
+# executable that uses only the coupling API links and runs only if PE_COUPLING_API exports it.
+if(TARGET pe_shared)
+  add_executable(pe_coupling_shared_smoke pe_coupling_header_test.cpp)
+  target_link_libraries(pe_coupling_shared_smoke PRIVATE pe_shared)
+  target_compile_definitions(pe_coupling_shared_smoke PRIVATE PE_COUPLING_TEST_WITH_MPI_H=0
+    PE_COUPLING_TEST_ENGINE=${coupling_header_engine})
+  add_test(NAME pe-coupling-shared-smoke COMMAND pe_coupling_shared_smoke)
+  set_tests_properties(pe-coupling-shared-smoke PROPERTIES LABELS "${coupling_header_labels}")
+endif()
+if(MPI_CXX_FOUND)
+  add_executable(pe_coupling_header_mpi_h_test pe_coupling_header_test.cpp)
+  target_link_libraries(pe_coupling_header_mpi_h_test PRIVATE pe_static MPI::MPI_CXX)
+  target_compile_definitions(pe_coupling_header_mpi_h_test PRIVATE PE_COUPLING_TEST_WITH_MPI_H=1)
+  add_test(NAME pe-coupling-header-mpi-h COMMAND pe_coupling_header_mpi_h_test)
+  set_tests_properties(pe-coupling-header-mpi-h PROPERTIES LABELS "${coupling_header_labels}")
+endif()
+
+# The serial-semantics tests. They need no MPI_Init, so they are serial-only (an MPI build
+# runs the pe-coupling-mpi test instead).
+if(NOT PE_USE_MPI)
+  # Build information and the per-setting support under each solver the test build has: the
+  # configured pe_static (pe/config/Collisions.h default unless PE_CONSTRAINT_SOLVER is set)
+  # and the two solver variants.
+  if(PE_CONSTRAINT_SOLVER)
+    set(coupling_default_solver "${PE_CONSTRAINT_SOLVER}")
+  else()
+    set(coupling_default_solver "pe::response::HardContactEulerLagrange")
+  endif()
+  foreach(variant "" "_fluid" "_plain")
+    if(variant STREQUAL "_fluid")
+      set(coupling_lib pe_static_lubstage_fluid)
+      set(coupling_solver "pe::response::HardContactAndFluid")
+    elseif(variant STREQUAL "_plain")
+      set(coupling_lib pe_static_lubstage_plain)
+      set(coupling_solver "pe::response::HardContactSemiImplicitTimesteppingSolvers")
+    else()
+      set(coupling_lib pe_static)
+      set(coupling_solver "${coupling_default_solver}")
+    endif()
+    string(REPLACE "_" "-" coupling_variant_name "${variant}")
+    add_executable(pe_coupling_build_info${variant}_test pe_coupling_build_info_test.cpp)
+    target_link_libraries(pe_coupling_build_info${variant}_test PRIVATE ${coupling_lib})
+    target_compile_definitions(pe_coupling_build_info${variant}_test PRIVATE
+      "PE_COUPLING_EXPECTED_SOLVER=\"${coupling_solver}\"")
+    add_test(NAME pe-coupling-build-info${coupling_variant_name}
+      COMMAND pe_coupling_build_info${variant}_test)
+    set_tests_properties(pe-coupling-build-info${coupling_variant_name} PROPERTIES
+      LABELS "unit;serial;interface;coupling")
+  endforeach()
+
+  # Compile-level test of the solver-feature detection: stand-in types without the members
+  # compile through the dispatch templates and report "absent" / BodyForce::unknown.
+  add_executable(pe_coupling_detection_test pe_coupling_detection_test.cpp)
+  target_link_libraries(pe_coupling_detection_test PRIVATE pe_static)
+  add_test(NAME pe-coupling-detection COMMAND pe_coupling_detection_test)
+  set_tests_properties(pe-coupling-detection PROPERTIES LABELS "unit;serial;interface;coupling")
+
+  # Creation, enumeration (native bodies of every shape, fixed bodies, a plane), state, state
+  # override, id lookup after add and destroy. Configured solver.
+  add_executable(pe_coupling_world_test pe_coupling_world_test.cpp)
+  target_link_libraries(pe_coupling_world_test PRIVATE pe_static)
+  add_test(NAME pe-coupling-world COMMAND pe_coupling_world_test)
+  set_tests_properties(pe-coupling-world PROPERTIES LABELS "unit;serial;interface;coupling")
+
+  # Point classification: analytic, spatial index with the grid asserted active, ownership rule,
+  # after motion with refresh; the legacy extern "C" queries give the same owners.
+  add_executable(pe_coupling_classification_test pe_coupling_classification_test.cpp)
+  target_link_libraries(pe_coupling_classification_test PRIVATE pe_static)
+  add_test(NAME pe-coupling-classification COMMAND pe_coupling_classification_test)
+  set_tests_properties(pe-coupling-classification PROPERTIES
+    LABELS "integration;serial;interface;coupling;fbm;query" TIMEOUT 300)
+
+  # Load accumulation, the relaxation arithmetic bit for bit, the first-load rule, clearLoads(),
+  # the step guards. Configured solver (no gravity, no contact).
+  add_executable(pe_coupling_loads_test pe_coupling_loads_test.cpp)
+  target_link_libraries(pe_coupling_loads_test PRIVATE pe_static)
+  add_test(NAME pe-coupling-loads COMMAND pe_coupling_loads_test)
+  set_tests_properties(pe-coupling-loads PROPERTIES LABELS "unit;serial;interface;coupling")
+
+  # HardContactAndFluid: buoyant first step, settling onto a plane, substeps, no stdout output.
+  add_executable(pe_coupling_fluid_test pe_coupling_fluid_test.cpp)
+  target_link_libraries(pe_coupling_fluid_test PRIVATE pe_static_lubstage_fluid)
+  add_test(NAME pe-coupling-fluid COMMAND pe_coupling_fluid_test)
+  set_tests_properties(pe-coupling-fluid PROPERTIES
+    LABELS "integration;serial;interface;coupling" TIMEOUT 300)
+
+  # The FEAT3 wrapper (control/rigid_body/pe_world.cpp) replicated call by call against the API:
+  # one sphere settling with relaxed loads, bit for bit over 1500 steps, two configurations.
+  add_executable(pe_coupling_feat_equivalence_test pe_coupling_feat_equivalence_test.cpp)
+  target_link_libraries(pe_coupling_feat_equivalence_test PRIVATE pe_static_lubstage_fluid)
+  add_test(NAME pe-coupling-feat-equivalence COMMAND pe_coupling_feat_equivalence_test)
+  set_tests_properties(pe-coupling-feat-equivalence PROPERTIES
+    LABELS "integration;serial;interface;coupling" TIMEOUT 300)
+
+  # Checkpoint: written by one process, restored by a second one that rebuilds the world
+  # (fixture), compared bit for bit -- three spheres, and a 64-sphere pile with the hash grid
+  # active; and the error paths.
+  set(PE_COUPLING_CHECKPOINT_DIR "${CMAKE_CURRENT_BINARY_DIR}/coupling-checkpoint")
+  file(MAKE_DIRECTORY "${PE_COUPLING_CHECKPOINT_DIR}")
+  add_executable(pe_coupling_checkpoint_test pe_coupling_checkpoint_test.cpp)
+  target_link_libraries(pe_coupling_checkpoint_test PRIVATE pe_static_lubstage_fluid)
+  add_test(NAME pe-coupling-checkpoint-write
+    COMMAND pe_coupling_checkpoint_test --write "${PE_COUPLING_CHECKPOINT_DIR}")
+  set_tests_properties(pe-coupling-checkpoint-write PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_SETUP pe-coupling-checkpoint)
+  add_test(NAME pe-coupling-checkpoint-restart
+    COMMAND pe_coupling_checkpoint_test --read "${PE_COUPLING_CHECKPOINT_DIR}")
+  set_tests_properties(pe-coupling-checkpoint-restart PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_REQUIRED pe-coupling-checkpoint)
+  set(PE_COUPLING_CHECKPOINT_PILE_DIR "${CMAKE_CURRENT_BINARY_DIR}/coupling-checkpoint-pile")
+  file(MAKE_DIRECTORY "${PE_COUPLING_CHECKPOINT_PILE_DIR}")
+  add_test(NAME pe-coupling-checkpoint-pile-write
+    COMMAND pe_coupling_checkpoint_test --write "${PE_COUPLING_CHECKPOINT_PILE_DIR}" --pile)
+  set_tests_properties(pe-coupling-checkpoint-pile-write PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_SETUP pe-coupling-checkpoint-pile)
+  add_test(NAME pe-coupling-checkpoint-pile-restart
+    COMMAND pe_coupling_checkpoint_test --read "${PE_COUPLING_CHECKPOINT_PILE_DIR}" --pile)
+  set_tests_properties(pe-coupling-checkpoint-pile-restart PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_REQUIRED pe-coupling-checkpoint-pile)
+  # Characterisation: bodies exchange hash-grid cells before many simultaneous contacts; the
+  # restart is reproducible only up to contact-order round-off (see the test's file comment).
+  set(PE_COUPLING_CHECKPOINT_SHAKE_DIR "${CMAKE_CURRENT_BINARY_DIR}/coupling-checkpoint-shake")
+  file(MAKE_DIRECTORY "${PE_COUPLING_CHECKPOINT_SHAKE_DIR}")
+  add_test(NAME pe-coupling-checkpoint-shake-write
+    COMMAND pe_coupling_checkpoint_test --write "${PE_COUPLING_CHECKPOINT_SHAKE_DIR}" --shake)
+  set_tests_properties(pe-coupling-checkpoint-shake-write PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_SETUP pe-coupling-checkpoint-shake)
+  add_test(NAME pe-coupling-checkpoint-shake-restart
+    COMMAND pe_coupling_checkpoint_test --read "${PE_COUPLING_CHECKPOINT_SHAKE_DIR}" --shake)
+  set_tests_properties(pe-coupling-checkpoint-shake-restart PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_REQUIRED pe-coupling-checkpoint-shake)
+  # Characterisation: bodies created and destroyed after stepping began; pe's coarse detector
+  # then holds the bodies in another order than a rebuilt world (not bitwise, bounded).
+  set(PE_COUPLING_CHECKPOINT_HISTORY_DIR "${CMAKE_CURRENT_BINARY_DIR}/coupling-checkpoint-history")
+  file(MAKE_DIRECTORY "${PE_COUPLING_CHECKPOINT_HISTORY_DIR}")
+  add_test(NAME pe-coupling-checkpoint-history-write
+    COMMAND pe_coupling_checkpoint_test --write "${PE_COUPLING_CHECKPOINT_HISTORY_DIR}" --history)
+  set_tests_properties(pe-coupling-checkpoint-history-write PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_SETUP pe-coupling-checkpoint-history)
+  add_test(NAME pe-coupling-checkpoint-history-restart
+    COMMAND pe_coupling_checkpoint_test --read "${PE_COUPLING_CHECKPOINT_HISTORY_DIR}" --history)
+  set_tests_properties(pe-coupling-checkpoint-history-restart PROPERTIES
+    LABELS "integration;serial;interface;coupling;checkpoint"
+    FIXTURES_REQUIRED pe-coupling-checkpoint-history)
+  # Characterisation: the stored normal of a tilted plane at rest changes in its first step.
+  add_test(NAME pe-coupling-plane-geometry COMMAND pe_coupling_checkpoint_test --plane-geometry)
+  set_tests_properties(pe-coupling-plane-geometry PROPERTIES
+    LABELS "unit;serial;interface;coupling;checkpoint")
+  add_test(NAME pe-coupling-checkpoint-errors COMMAND pe_coupling_checkpoint_test --errors)
+  set_tests_properties(pe-coupling-checkpoint-errors PROPERTIES
+    LABELS "unit;serial;interface;coupling;checkpoint")
+endif()
+
+# MPI build: the stage-1 semantics. Two ranks: advance() synchronizes before stepping, shadow
+# copies are reported, the operations whose state cannot follow ownership yet are refused with
+# "not implemented yet"; one rank: fully functional.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_coupling_mpi_test pe_coupling_mpi_test.cpp)
+  target_link_libraries(pe_coupling_mpi_test PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+  add_test(
+    NAME pe-coupling-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_test>
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi PROPERTIES
+    LABELS "integration;mpi;interface;coupling"
+    PROCESSORS 2
+    TIMEOUT 120
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+  )
+  # The same binary on one rank: the MPI build is fully functional on one process.
+  add_test(
+    NAME pe-coupling-mpi-single
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_test>
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-single PROPERTIES
+    LABELS "integration;mpi;interface;coupling"
+    TIMEOUT 120
+  )
+endif()
