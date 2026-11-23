@@ -903,7 +903,7 @@ inline bool operator==( const Quaternion<T1>& lhs, const Quaternion<T2>& rhs )
    if( !equal( lhs[0], rhs[0] ) ||
        !equal( lhs[1], rhs[1] ) ||
        !equal( lhs[2], rhs[2] ) ||
-       !equal( lhs[2], rhs[2] ) )
+       !equal( lhs[3], rhs[3] ) )
       return false;
    else return true;
 }

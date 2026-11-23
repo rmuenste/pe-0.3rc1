@@ -38,6 +38,7 @@
 #include <pe/core/Materials.h>
 #include <pe/core/Thresholds.h>
 #include <pe/util/Assert.h>
+#include "VertexCachePose.h"
 
 
 namespace pe {
@@ -259,7 +260,7 @@ void InnerMeshBase::calcInertia()
  * \return void
  */
 void InnerMeshBase::updateCache() {
-   if(lastGpos_ == gpos_ && lastQ_ == q_) {
+   if(detail::sameCachePose(lastGpos_, lastQ_, gpos_, q_)) {
       return; //cache is up to date
    }
 
