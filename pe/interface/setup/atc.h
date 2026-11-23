@@ -78,6 +78,7 @@ inline void setupATCSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupATCSerial");
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
   const bool isRepresentative = (config.getCfdRank() == 1);

@@ -16,6 +16,7 @@
 
 #if HAVE_MPI
 #include <pe/interface/setup/parallel_common.h>
+#include <pe/interface/support/optional_collision_params.h>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -66,6 +67,7 @@ inline void setupFluidization(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFluidization");
 
   const real simViscosity(config.getFluidViscosity());
   const real simRho(config.getFluidDensity());
@@ -277,6 +279,7 @@ namespace pe {
 inline void setupFluidizationSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFluidizationSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);
@@ -456,6 +459,7 @@ inline void setupFluidizationSerial(int cfd_rank) {
 inline void setupFluidizationSRRSerial(int cfd_rank) {
   pe::logging::Logger::setCustomRank(cfd_rank);
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFluidizationSRRSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

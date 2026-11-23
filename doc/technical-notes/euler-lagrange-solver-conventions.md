@@ -113,6 +113,15 @@ Two things make this easy to get wrong:
   error. Fixing one missing method commonly just reveals the next; rebuild and re-scan
   until clean rather than assuming a single error is the whole story.
 
+## 4. Restitution is opt-in and needs the free-flight increment
+
+`HardContactEulerLagrange` is inelastic unless `restitutionEnabled_` (json) / `setRestitution()`
+switches the Newton/Poisson post-pass on; `restitution_` alone is only the material value. The
+resting threshold uses the step's free-flight velocity increment of the bodies instead of
+`Settings::gravity()` (zero in EL decks, gravity is the driver's), and the start-up line
+`EL_CONTACT_PARAMS` shows the effective pair friction (the SUM of the two material values) and
+restitution. Details, EL specifics and limits: [el-restitution.md](el-restitution.md).
+
 ## Related notes
 
 - [contact-solvers-overview.md](contact-solvers-overview.md) — the response solver families and how they are selected.

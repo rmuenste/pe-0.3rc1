@@ -31,6 +31,7 @@
 
 #include <pe/core.h>
 #include <pe/math/Vector3.h>
+#include <algorithm>
 #include <type_traits>
 #include <utility>
 
@@ -172,6 +173,75 @@ inline void elResetLubricationVirial(CollisionSystemT& cs) {
     cs.resetElLubricationVirial();
   } else {
     (void)cs;
+  }
+}
+//*************************************************************************************************
+
+//=================================================================================================
+// Restitution post-pass statistics (HardContactEulerLagrange / HCSITS, RestitutionPostPass.h)
+//=================================================================================================
+
+//! Detect the restitution switch and its pass statistics on the collision system.
+template <typename CollisionSystemT, typename = void>
+struct HasRestitutionPassStats : std::false_type {};
+
+template <typename CollisionSystemT>
+struct HasRestitutionPassStats<CollisionSystemT, std::void_t<
+    decltype(std::declval<const CollisionSystemT&>().getRestitution()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionPostPass()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionPassStats().delivered)>>
+    : std::true_type {};
+
+//! Restitution statistics of the sub-steps of one CFD step (RestitutionPassStats, summed or
+//! maximised over the sub-steps; process-local until elRestitutionTallyReduce()).
+struct ElRestitutionTally {
+  enum Sum { candidates, inSolve, armed, delivered, separating, demoted, support, armedVisits, impulseGross,
+             impulseFinal, impulseFallback, numSums };
+  enum Same { sweeps, converged, capped, skipped, violations, numSame };   // identical on every process
+  enum Max { sweepsMax, residual, residualRel, tangential, closingBefore, closingAfter,
+             impactError, shortfall, approach, restingApproach, supportScale, numMax };
+  double sum[numSums] = {};
+  double same[numSame] = {};
+  double max[numMax] = {};
+  bool postPass = true;
+};
+
+//*************************************************************************************************
+/*!\brief Adds the last step's restitution statistics to \a tally; returns whether the switch is on.
+ *
+ * False (and nothing added) for a solver without the switch or with the switch off.
+ */
+template <typename CollisionSystemT>
+inline bool elAccumulateRestitutionStats(const CollisionSystemT& cs, ElRestitutionTally& tally) {
+  if constexpr (HasRestitutionPassStats<CollisionSystemT>::value) {
+    if (!cs.getRestitution()) return false;
+    typedef ElRestitutionTally T;
+    const auto& st = cs.getRestitutionPassStats();
+    tally.postPass = cs.getRestitutionPostPass();
+    tally.sum[T::candidates] += st.candidates;
+    tally.sum[T::inSolve] += st.inSolveTargets;
+    tally.sum[T::armed] += st.armedRows;
+    tally.sum[T::delivered] += st.delivered;
+    tally.sum[T::separating] += st.separating;
+    tally.sum[T::demoted] += st.demoted;
+    tally.sum[T::impulseFallback] += st.fallbackImpulse;
+    tally.sum[T::support] += st.supportRows;
+    tally.sum[T::armedVisits] += st.armed;
+    tally.sum[T::impulseGross] += st.restitutionImpulse;
+    tally.sum[T::impulseFinal] += st.finalRestitutionImpulse;
+    tally.same[T::sweeps] += st.sweeps;
+    tally.same[T::violations] += st.violations;
+    if (st.stop == 1) tally.same[T::skipped] += 1;
+    if (st.stop == 2) tally.same[T::converged] += 1;
+    if (st.stop == 3) tally.same[T::capped] += 1;
+    const double m[T::numMax] = {double(st.sweeps), st.residual, st.residualRel, st.tangentialResidual,
+                                 st.supportClosingBefore, st.supportClosingAfter, st.impactError,
+                                 st.newtonShortfall, st.approachMax, st.restingApproachMax, st.supportScaleMax};
+    for (int k = 0; k < T::numMax; ++k) tally.max[k] = std::max(tally.max[k], m[k]);
+    return true;
+  } else {
+    (void)cs; (void)tally;
+    return false;
   }
 }
 //*************************************************************************************************

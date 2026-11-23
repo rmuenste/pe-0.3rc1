@@ -26,6 +26,8 @@
 //*************************************************************************************************
 
 #include <pe/config/SimulationConfig.h>
+#include <limits>
+#include <stdexcept>
 #include <pe/util/CheckpointMetadata.h>
 #include <fstream>
 #include <stdexcept>
@@ -141,6 +143,14 @@ SimulationConfig::SimulationConfig()
     , restitution_(0.0)
     , staticFriction_(0.1)
     , dynamicFriction_(0.05)
+    , restitutionEnabled_(false)
+    , restitutionThreshold_(0.0)
+    , restitutionScheme_("post-pass")
+    , restitutionIterations_(4)
+    , restitutionMaxIterations_(24)
+    , restitutionCheckInterval_(4)
+    , restitutionAbsTolerance_(1e-4)
+    , restitutionRelTolerance_(1e-3)
     , serialEnableEscapeReinsertion_(false)
     , serialEnableStuckDiagnostics_(false)
     , serialReinsertionSafetyMargin_(0.02)
@@ -205,6 +215,35 @@ SimulationConfig& SimulationConfig::getInstance() {
  * \exception std::runtime_error If the file cannot be opened, or if pe was built without JSON support.
  * \exception std::invalid_argument If the packingMethod_ value is invalid.
  */
+#if HAVE_JSON
+namespace {
+
+//! A sweep count (restitutionIterations_, restitutionMaxIterations_): a json integer in
+//! [1, INT_MAX], checked before any conversion.
+int parseRestitutionCount(const nlohmann::json& value, const char* key) {
+    const std::string range = std::string(key) + " must be an integer in [1, " +
+                              std::to_string(std::numeric_limits<int>::max()) + "], got " + value.dump();
+    if (!value.is_number_integer())
+        throw std::invalid_argument(range);
+    const bool inRange = value.is_number_unsigned()
+        ? value.get<unsigned long long>() <= static_cast<unsigned long long>(std::numeric_limits<int>::max())
+        : value.get<long long>() >= 1 && value.get<long long>() <= std::numeric_limits<int>::max();
+    if (!inRange || (value.is_number_unsigned() && value.get<unsigned long long>() < 1))
+        throw std::invalid_argument(range);
+    return static_cast<int>(value.get<long long>());
+}
+
+//! A tolerance (restitutionAbsTolerance_, restitutionRelTolerance_): a json number, finite and >= 0
+//! (the range is checked by the setter).
+real parseRestitutionTolerance(const nlohmann::json& value, const char* key) {
+    if (!value.is_number())
+        throw std::invalid_argument(std::string(key) + " must be a number >= 0, got " + value.dump());
+    return value.get<real>();
+}
+
+}  // namespace
+#endif
+
 void SimulationConfig::loadFromFile(const std::string &fileName) {
 
 #if HAVE_JSON
@@ -572,6 +611,37 @@ void SimulationConfig::loadFromFile(const std::string &fileName) {
 
     if (j.contains("dynamicFriction_"))
         config.setDynamicFriction(j["dynamicFriction_"].get<real>());
+
+    // Restitution switch of the contact solver. Unlike the other keys these eight are resolved PER
+    // DECK: an absent key means the default (off, 0, "post-pass", min 4 / max 24 sweeps, check
+    // every 4, tolerance 1e-4 + 1e-3), never the value an earlier
+    // deck of the same process left in the singleton. They are read and validated together and
+    // assigned only if all are valid; restitutionIterations_ must be a json integer in [1, INT_MAX]
+    // (1.9, 4.0, "4" and out-of-range values are refused, not converted).
+    {
+        bool enabled = SimulationConfig::defaultRestitutionEnabled();
+        real threshold = SimulationConfig::defaultRestitutionThreshold();
+        std::string scheme = SimulationConfig::defaultRestitutionScheme();
+        int iterations = SimulationConfig::defaultRestitutionIterations();
+        if (j.contains("restitutionEnabled_"))
+            enabled = j["restitutionEnabled_"].get<bool>();
+        if (j.contains("restitutionThreshold_"))
+            threshold = j["restitutionThreshold_"].get<real>();
+        if (j.contains("restitutionScheme_"))
+            scheme = j["restitutionScheme_"].get<std::string>();
+        if (j.contains("restitutionIterations_"))
+            iterations = parseRestitutionCount(j["restitutionIterations_"], "restitutionIterations_");
+        RestitutionStopKeys stop;
+        if (j.contains("restitutionMaxIterations_"))
+            stop.maxIterations = parseRestitutionCount(j["restitutionMaxIterations_"], "restitutionMaxIterations_");
+        if (j.contains("restitutionCheckInterval_"))
+            stop.checkInterval = parseRestitutionCount(j["restitutionCheckInterval_"], "restitutionCheckInterval_");
+        if (j.contains("restitutionAbsTolerance_"))
+            stop.absTolerance = parseRestitutionTolerance(j["restitutionAbsTolerance_"], "restitutionAbsTolerance_");
+        if (j.contains("restitutionRelTolerance_"))
+            stop.relTolerance = parseRestitutionTolerance(j["restitutionRelTolerance_"], "restitutionRelTolerance_");
+        config.setRestitutionParams(enabled, threshold, scheme, iterations, stop);
+    }
 
     if (j.contains("serialEnableEscapeReinsertion_"))
         config.setSerialEnableEscapeReinsertion(j["serialEnableEscapeReinsertion_"].get<bool>());

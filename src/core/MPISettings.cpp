@@ -54,6 +54,7 @@ int      MPISettings::rank_( 0 );
 int      MPISettings::root_( 0 );
 size_t   MPISettings::bits_( 0 );
 MPI_Comm MPISettings::comm_;
+size_t   MPISettings::commGeneration_( 0 );
 
 
 
@@ -120,6 +121,7 @@ void MPISettings::comm( MPI_Comm communicator )
 
    // Setting the communicator
    comm_ = communicator;
+   ++commGeneration_;
 
 #if HAVE_MPI
    // Checking if the MPI system has been initialized

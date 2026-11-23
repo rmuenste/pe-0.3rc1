@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <pe/config/SimulationConfig.h>
+#include <pe/interface/support/contact_params_echo.h>
 #include <pe/interface/support/decompose.h>
 #include <pe/interface/support/geometry_utils.h>
 #include <pe/interface/support/optional_collision_params.h>
@@ -302,6 +303,14 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
     abortSetup("zWallsEnabled_ requires periodicZ_ = false.");
   }
 
+  // Restitution switch of the contact solver (restitutionEnabled_ & co.; absent = inelastic, the
+  // solver default). Refused when the active solver has no switch.
+  try {
+    applyOptionalRestitutionParams(*theCollisionSystem(), config);
+  } catch (const std::exception& ex) {
+    abortSetup(ex.what());
+  }
+
   const real sphereRadius = config.getBenchRadius();
   const real rhoParticle  = config.getParticleDensity();
   const Vec3 initialParticleVelocity(config.getInitialParticleVelocity());
@@ -447,6 +456,7 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
                                              config.getStaticFriction(),
                                              config.getDynamicFriction(),
                                              0.2, 80, 100, 10, 11);
+  ContactEchoWalls echoWalls;  // fixed walls of this setup, for the EL_CONTACT_PARAMS line
 
   // Plane-Couette z-walls: two global planes with a prescribed tangential
   // x-velocity (Kroupa 2016 shear cell; here symmetric +-U/2 by config).
@@ -465,6 +475,7 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
                                              config.getStaticFriction(),
                                              config.getDynamicFriction(),
                                              0.2, 80, 100, 10, 11);
+    echoWalls.push_back(std::make_pair(std::string("zwalls"), wallMaterial));
     pe_GLOBAL_SECTION {
       PlaneID wallBot = createPlane(12010,  0.0, 0.0,  1.0,  zmin, wallMaterial, true);
       PlaneID wallTop = createPlane(12011,  0.0, 0.0, -1.0, -zmax, wallMaterial, true);
@@ -496,6 +507,7 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
                                             config.getStaticFriction(),
                                             config.getDynamicFriction(),
                                             0.2, 80, 100, 10, 11);
+    echoWalls.push_back(std::make_pair(std::string("boxwalls"), boxMaterial));
     pe_GLOBAL_SECTION {
       createPlane(12020,  1.0, 0.0, 0.0,  xmin, boxMaterial, true);
       createPlane(12021, -1.0, 0.0, 0.0, -xmax, boxMaterial, true);
@@ -528,6 +540,7 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
                                             config.getStaticFriction(),
                                             config.getDynamicFriction(),
                                             0.2, 80, 100, 10, 11);
+    echoWalls.push_back(std::make_pair(std::string("cylinder"), cylMaterial));
     const Vec3 cylCenter = config.getSeedCylinderCenter();
     pe_GLOBAL_SECTION {
       // pe cylinders are created along x; rotate by 90 degrees about y to align with z
@@ -542,6 +555,11 @@ inline void setupELTerminalVelocity(MPI_Comm ex0,
                 << config.getCylinderWallRadius() << ", axis z through ("
                 << cylCenter[0] << "," << cylCenter[1] << "), z=[" << zmin << "," << zmax << "].\n";
     }
+  }
+
+  // Effective contact parameters (pair values as the contacts use them) and the restitution switch
+  pe_EXCLUSIVE_SECTION(0) {
+    std::cout << elContactParamsLine(*theCollisionSystem(), sphereMaterial, echoWalls) << "\n";
   }
 
   unsigned long localParticles = 0;

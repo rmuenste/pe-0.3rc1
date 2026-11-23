@@ -63,6 +63,7 @@ public:
    static inline int      root();
    static inline size_t   bits();
    static inline MPI_Comm comm();
+   static inline size_t   commGeneration();
    //@}
    //**********************************************************************************************
 
@@ -97,6 +98,7 @@ private:
    static int      root_;      //!< The root MPI process.
    static size_t   bits_;      //!< The number of bits necessary to represent the largest rank.
    static MPI_Comm comm_;      //!< The MPI communicator for the physics engine.
+   static size_t   commGeneration_; //!< Number of communicator installations (comm()); lets per-communicator state reset.
    //@}
    //**********************************************************************************************
 
@@ -207,6 +209,20 @@ inline MPI_Comm MPISettings::comm()
 {
    if( !active_ ) activate();
    return comm_;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the number of communicator installations so far (comm( MPI_Comm ), setComm()).
+ *
+ * \return The installation counter; it changes whenever a new PE communicator is installed, so
+ *         state that must be initialised collectively per communicator can detect a new one.
+ */
+inline size_t MPISettings::commGeneration()
+{
+   if( !active_ ) activate();
+   return commGeneration_;
 }
 //*************************************************************************************************
 

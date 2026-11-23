@@ -678,6 +678,116 @@ set_tests_properties(pe-hcsits-restitution PROPERTIES
   TIMEOUT 120
 )
 
+# Restitution of the Euler-Lagrange solver (HardContactEulerLagrange::setRestitution(), port of
+# the HCSITS switch above; shared post-pass in pe/core/collisionsystem/RestitutionPostPass.h):
+# head-on impacts (Newton law, momentum, energy e^2, equal and unequal masses), drop on the floor
+# (apex ratio e^2, rest), the impact law with the EL drag active, oblique impact with friction, a
+# resting pile in a box (stays at rest; switch off bitwise reproducible), simultaneous contacts.
+# Linked against the default library (the EL solver); 77 = another configured solver (skipped).
+add_executable(pe_el_restitution_test
+  pe_el_restitution_test.cpp
+)
+target_link_libraries(pe_el_restitution_test PRIVATE pe_static)
+add_test(
+  NAME pe-el-restitution
+  COMMAND pe_el_restitution_test
+)
+# TIMEOUT: about twice the assertion-enabled (Debug) runtime, 828 s (job 164931); Release 23 s.
+set_tests_properties(pe-el-restitution PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  SKIP_RETURN_CODE 77
+  TIMEOUT 1700
+)
+
+# Restitution at the scale of the case-11 bed (0.87 mm spheres, EL drag, v_rest 0.01 m/s, default
+# stop rule): a defluidised pile comes to rest with zero delivered rebounds, impacts in the fluidised
+# range keep their rebound. EL solver (default library); 77 = another configured solver.
+add_executable(pe_el_restitution_rest_test pe_el_restitution_rest_test.cpp)
+target_link_libraries(pe_el_restitution_rest_test PRIVATE pe_static)
+# Split into its four parts: the whole test took 3320 s in Debug (job 164931; Release 94 s). TIMEOUT
+# about twice the Debug runtime of the largest part (a pile, about 1100 s).
+foreach(part pile20 pile50 pile90 impacts)
+  add_test(NAME pe-el-restitution-rest-${part} COMMAND pe_el_restitution_rest_test ${part})
+  set_tests_properties(pe-el-restitution-rest-${part} PROPERTIES
+    LABELS "integration;serial;rigidbody"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 2400
+  )
+endforeach()
+
+# Restitution post-pass with several contacts per body (support contacts of a chain and of a pile,
+# frictional unloading, a positive gap below the contact threshold, a remote impact, an orthogonal
+# impact on a loaded floor contact) and its stop rule (pe-restitution-stoprule), on both solvers that have the
+# switch: the EL solver (default library) and the semi-implicit one (plain variant).
+foreach(variant "" "_plain")
+  if(variant STREQUAL "_plain")
+    set(support_lib pe_static_lubstage_plain)
+  else()
+    set(support_lib pe_static)
+  endif()
+  string(REPLACE "_" "-" variant_name "${variant}")
+  add_executable(pe_restitution_stoprule${variant}_test pe_restitution_stoprule_test.cpp)
+  target_link_libraries(pe_restitution_stoprule${variant}_test PRIVATE ${support_lib})
+  add_test(NAME pe-restitution-stoprule${variant_name} COMMAND pe_restitution_stoprule${variant}_test)
+  set_tests_properties(pe-restitution-stoprule${variant_name} PROPERTIES
+    LABELS "unit;serial;rigidbody"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 120
+  )
+  add_executable(pe_restitution_support${variant}_test pe_restitution_support_test.cpp)
+  target_link_libraries(pe_restitution_support${variant}_test PRIVATE ${support_lib})
+  add_test(NAME pe-restitution-support${variant_name} COMMAND pe_restitution_support${variant}_test)
+  set_tests_properties(pe-restitution-support${variant_name} PROPERTIES
+    LABELS "unit;serial;rigidbody"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 120
+  )
+endforeach()
+
+# Unit tests of the post-pass on a mock collision system (RestitutionPass called directly): skip
+# certificate, Poisson ceiling through unload and reload, tangential stop decision, wall scale.
+add_executable(pe_restitution_pass_unit_test pe_restitution_pass_unit_test.cpp)
+target_link_libraries(pe_restitution_pass_unit_test PRIVATE pe_static)
+add_test(NAME pe-restitution-pass-unit COMMAND pe_restitution_pass_unit_test)
+set_tests_properties(pe-restitution-pass-unit PROPERTIES
+  LABELS "unit;serial;rigidbody"
+  TIMEOUT 60
+)
+
+# Json contract of restitutionEnabled_ / restitutionThreshold_ / restitutionScheme_ /
+# restitutionIterations_ (per-deck defaults, validation), the applier (applyOptionalRestitutionParams)
+# and the EL_CONTACT_PARAMS start-up echo line (pe/interface/support/contact_params_echo.h); also
+# against HardContactAndFluid, which has no switch (the applier must refuse an enable). And the
+# setups without restitution support refusing an explicit restitutionEnabled_ = true (one serial EL
+# and one serial DNS setup, under the EL solver and under HardContactAndFluid). These tests write
+# decks, so they need the json loader.
+if(PE_USE_JSON)
+  foreach(variant "" "_fluid")
+    if(variant STREQUAL "_fluid")
+      set(restitution_cfg_lib pe_static_lubstage_fluid)
+    else()
+      set(restitution_cfg_lib pe_static)
+    endif()
+    string(REPLACE "_" "-" variant_name "${variant}")
+    add_executable(pe_el_restitution_config${variant}_test pe_el_restitution_config_test.cpp)
+    target_link_libraries(pe_el_restitution_config${variant}_test PRIVATE ${restitution_cfg_lib})
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_config${variant})
+    add_test(NAME pe-el-restitution-config${variant_name} COMMAND pe_el_restitution_config${variant}_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_config${variant})
+    set_tests_properties(pe-el-restitution-config${variant_name} PROPERTIES LABELS "unit;serial;interface")
+
+    add_executable(pe_el_restitution_setup${variant}_test pe_el_restitution_setup_test.cpp)
+    target_link_libraries(pe_el_restitution_setup${variant}_test PRIVATE ${restitution_cfg_lib})
+    foreach(setup frozen dnsdrag inherit)
+      file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_setup${variant}_${setup})
+      add_test(NAME pe-el-restitution-setup${variant_name}-${setup}
+               COMMAND pe_el_restitution_setup${variant}_test ${setup}
+               WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_setup${variant}_${setup})
+      set_tests_properties(pe-el-restitution-setup${variant_name}-${setup} PROPERTIES LABELS "unit;serial;interface")
+    endforeach()
+  endforeach()
+endif()
+
 # Static against dynamic coefficient of friction (Contact.cpp): a sliding contact must take the
 # dynamic coefficient, a resting one the static coefficient. Box sliding on a plane, box resting
 # on and sliding down an incline whose slope lies between the two coefficients, box on a fixed box.
@@ -836,6 +946,101 @@ if(PE_USE_MPI AND MPI_FOUND)
     PROCESSORS 2
     ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
   )
+endif()
+
+# Restitution of the EL solver across a process boundary: two ranks, the EL terminal-velocity
+# setup with restitutionEnabled_ from the deck; a pair and a coupled chain straddling the cut against
+# the same inside one domain, the relaxation recurrence, the refusal of a mobile global body. Own
+# working directory (the test writes example.json, as the DKT setup test does in its own). The test
+# decides on the COMPILED solver (another one may come in through PE_PREPROCESSOR_FLAGS or
+# CMAKE_CXX_FLAGS) and returns 77 (skipped) unless it is HardContactEulerLagrange; needs json.
+if(PE_USE_MPI AND MPI_FOUND AND PE_USE_JSON)
+  add_executable(pe_el_restitution_mpi pe_el_restitution_mpi.cpp)
+  target_link_libraries(pe_el_restitution_mpi PRIVATE pe_static MPI::MPI_CXX)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_mpi)
+  add_test(
+    NAME pe-el-restitution-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_el_restitution_mpi>
+      ${MPIEXEC_POSTFLAGS}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/el_restitution_mpi
+  )
+  set_tests_properties(pe-el-restitution-mpi PROPERTIES
+    LABELS "integration;mpi;rigidbody;interface"
+    PROCESSORS 2
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+  )
+endif()
+
+# Restitution of the semi-implicit solver on two ranks: a pair and a chain with its rows treated on
+# different ranks through the convergence tail of the post-pass (momentum, exact send filter), and
+# the refusal of a mobile global body on both ranks. Plain library variant; 77 = no stop rule.
+if(PE_USE_MPI AND MPI_FOUND)
+  add_executable(pe_hcsits_restitution_mpi pe_hcsits_restitution_mpi.cpp)
+  target_link_libraries(pe_hcsits_restitution_mpi PRIVATE pe_static_lubstage_plain MPI::MPI_CXX)
+  add_test(
+    NAME pe-hcsits-restitution-mpi
+    COMMAND
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+      ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_hcsits_restitution_mpi>
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-hcsits-restitution-mpi PROPERTIES
+    LABELS "integration;mpi;rigidbody"
+    PROCESSORS 2
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}"
+  )
+endif()
+
+# Review round 3: the impact scale of a body is the same on every rank that holds it (one-treater
+# chain against the split chain under the production stop rule), and the registry of non-fixed
+# global bodies (fix + destroy, clear + repopulate, registered fixed then unfixed; restitution off),
+# both solvers on two ranks.
+if(PE_USE_MPI AND MPI_FOUND)
+  foreach(variant "" "_plain")
+    if(variant STREQUAL "_plain")
+      set(r3_lib pe_static_lubstage_plain)
+    else()
+      set(r3_lib pe_static)
+    endif()
+    string(REPLACE "_" "-" variant_name "${variant}")
+    add_executable(pe_restitution_scale${variant}_mpi pe_restitution_scale_mpi.cpp)
+    target_link_libraries(pe_restitution_scale${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
+    add_test(NAME pe-restitution-scale-mpi${variant_name}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+              $<TARGET_FILE:pe_restitution_scale${variant}_mpi> ${MPIEXEC_POSTFLAGS})
+    set_tests_properties(pe-restitution-scale-mpi${variant_name} PROPERTIES
+      LABELS "integration;mpi;rigidbody" PROCESSORS 2 SKIP_RETURN_CODE 77
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    add_executable(pe_restitution_trace_comm${variant}_mpi pe_restitution_trace_comm_mpi.cpp)
+    target_link_libraries(pe_restitution_trace_comm${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
+    add_test(NAME pe-restitution-trace-comm-mpi${variant_name}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+              $<TARGET_FILE:pe_restitution_trace_comm${variant}_mpi> ${MPIEXEC_POSTFLAGS})
+    set_tests_properties(pe-restitution-trace-comm-mpi${variant_name} PROPERTIES
+      LABELS "integration;mpi;rigidbody" PROCESSORS 2 SKIP_RETURN_CODE 77 TIMEOUT 60
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    add_executable(pe_global_registry${variant}_mpi pe_global_registry_mpi.cpp)
+    target_link_libraries(pe_global_registry${variant}_mpi PRIVATE ${r3_lib} MPI::MPI_CXX)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/global_registry${variant})
+    foreach(mode fixdestroy clear fixstepunfix fixstepunfix-iter unfixref unfix)
+      add_test(NAME pe-global-registry-mpi${variant_name}-${mode}
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+                $<TARGET_FILE:pe_global_registry${variant}_mpi> ${MPIEXEC_POSTFLAGS} ${mode}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/global_registry${variant})
+      set_tests_properties(pe-global-registry-mpi${variant_name}-${mode} PROPERTIES
+        LABELS "integration;mpi;rigidbody" PROCESSORS 2 TIMEOUT 120 SKIP_RETURN_CODE 77
+        ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    endforeach()
+    # the registered-fixed scenario compares against a reference written by a separate process
+    set_tests_properties(pe-global-registry-mpi${variant_name}-unfixref PROPERTIES FIXTURES_SETUP global_registry_ref${variant})
+    set_tests_properties(pe-global-registry-mpi${variant_name}-unfix PROPERTIES FIXTURES_REQUIRED global_registry_ref${variant})
+  endforeach()
 endif()
 
 # Contract test for the optional cylinderWallEnabled_ / cylinderWallRadius_ deck keys of the EL

@@ -44,7 +44,7 @@ setup or contact handling itself.
 |---|---|---|
 | `pe/interface/cfd_entry_points.h`, `cfd_queries.h`, `object_queries.h`, `fbm_gate_probe.h`, `frozen_field_trace.h` | The ABI: every `extern "C"` symbol FeatFloWer binds to, plus the C++ query API behind it | `src/interface/*.cpp`, tests |
 | `pe/interface/setup/<case>.h` | One coupled case per file: the parallel `setupXxx(MPI_Comm)` under `#if HAVE_MPI`, the serial `setupXxxSerial(int)` unconditionally (every build, so the smoke test can use it); `parallel_common.h` / `serial_common.h` are the preludes they are written against | `src/interface/cfd_entry_points.cpp`, the smoke test |
-| `pe/interface/support/` | Helpers shared by the setups: `optional_collision_params.h` (config appliers), `el_optional_api.h` / `el_hydro_compat.h` (solver-detecting shims), `geometry_utils.h`, `serial_step_features.h`, `serial_stepping.h`, `decompose.h` (domain decompositions, also used by the MPI examples) | setups, stepping, examples, tests |
+| `pe/interface/support/` | Helpers shared by the setups: `optional_collision_params.h` (config appliers), `contact_params_echo.h` (the `EL_CONTACT_PARAMS` start-up line), `el_optional_api.h` / `el_hydro_compat.h` (solver-detecting shims), `geometry_utils.h`, `serial_step_features.h`, `serial_stepping.h`, `decompose.h` (domain decompositions, also used by the MPI examples) | setups, stepping, examples, tests |
 | `src/interface/cfd_entry_points.cpp` | The `commf2c_*` dispatch, both modes | - |
 | `src/interface/cfd_queries.cpp` | The C query/get-set wrappers | - |
 | `src/interface/cfd_stepping.cpp` | `step_simulation_()` and friends; parallel stepping and the interface globals | - |

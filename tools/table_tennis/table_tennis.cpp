@@ -2721,7 +2721,7 @@ void drawPhysicsWindow()
          if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
             ImGui::SetTooltip( "On (default): the solve stays inelastic and a separate pass adds the bounce,\nwith the restitution impulse capped at e times the compression impulse (Poisson),\nso several contacts impacting at once cannot create energy.\nOff: the Newton target -e v_n is part of the contact solve (the original scheme). Single contacts are unchanged." );
          if( s.solver.restitutionPostPass )
-            ImGui::SliderInt( "post-pass sweeps", &s.solver.restitutionIterations, 1, 10 );
+            ImGui::SliderInt( "post-pass minimum sweeps", &s.solver.restitutionIterations, 1, 10 );
       }
    }
    ImGui::End();
