@@ -16,6 +16,7 @@
 
 #if HAVE_MPI
 #include <pe/interface/setup/parallel_common.h>
+#include <pe/interface/support/optional_collision_params.h>
 #include <iostream>
 #include <string>
 #include <pe/config/SimulationConfig.h>
@@ -62,6 +63,7 @@ inline void setupSpan(MPI_Comm ex0) {
   world = theWorld();
 
   loadSimulationConfig("example.json");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupSpan");
 
   const real simRho( config.getFluidDensity() );
   const real simViscosity( config.getFluidViscosity() );
@@ -242,6 +244,7 @@ inline void setupFSIBenchSerial(int cfd_rank) {
 
   // Load configuration from JSON file
   SimulationConfig::loadFromFile("example.json");
+  rejectRestitutionRequest(*theCollisionSystem(), SimulationConfig::getInstance(), "setupFSIBenchSerial");
 
   auto &config = SimulationConfig::getInstance();
   config.setCfdRank(cfd_rank);

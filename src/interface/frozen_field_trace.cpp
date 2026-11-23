@@ -17,6 +17,7 @@
 
 #if HAVE_MPI && PE_USE_CGAL
 #include <pe/config/SimulationConfig.h>
+#include <pe/interface/support/optional_collision_params.h>
 #include <pe/core/GlobalSection.h>
 #include <pe/core/MPI.h>
 #include <pe/core/MPISystem.h>
@@ -578,6 +579,7 @@ FrozenFieldTraceResult runFrozenFieldTrace(
    std::string localError;
    try {
       SimulationConfig::loadFromFile( "example.json" );
+      rejectRestitutionRequest( *theCollisionSystem(), SimulationConfig::getInstance(), "runFrozenFieldTrace" );
    }
    catch( const std::exception& error ) {
       localError = error.what();

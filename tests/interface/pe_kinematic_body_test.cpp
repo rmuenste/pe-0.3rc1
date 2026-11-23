@@ -55,11 +55,13 @@ using namespace pe;
 // has setRestitution() and honours World::setGravity() without buoyancy.
 template< typename T, typename = void > struct HasSplitImpulse : std::false_type {};
 template< typename T > struct HasSplitImpulse< T, std::void_t< decltype( std::declval<T&>().setSplitImpulse( true ) ) > > : std::true_type {};
-template< typename T, typename = void > struct HasRestitution : std::false_type {};
-template< typename T > struct HasRestitution< T, std::void_t< decltype( std::declval<T&>().setRestitution( true ) ) > > : std::true_type {};
 typedef std::remove_reference<decltype( *theCollisionSystem() )>::type CollisionSystemType;
 
-static const bool worldGravity( HasRestitution<CollisionSystemType>::value );
+// Only the semi-implicit solver honours World::setGravity() without buoyancy (the EL solver leaves
+// body forces to the driver, HardContactAndFluid adds buoyancy). Detected by the solver type: the
+// restitution switch, the former marker, exists in the EL solver too.
+static const bool worldGravity( std::is_same< CollisionSystemType::ContactSolver,
+                                              response::HardContactSemiImplicitTimesteppingSolvers< CollisionSystemType::Config > >::value );
 
 
 //*************************************************************************************************

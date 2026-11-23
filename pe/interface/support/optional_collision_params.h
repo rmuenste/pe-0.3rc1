@@ -15,8 +15,10 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace pe {
 
@@ -163,6 +165,82 @@ inline void applyOptionalLubricationParams(CollisionSystemT& cs, const Simulatio
                    "lubrication band undetected between coarse-detection updates.\n";
     }
   }
+}
+
+// Detect whether the active (compile-time selected) collision system has the restitution
+// switch of the hard-contact solvers (HardContactSemiImplicitTimesteppingSolvers and
+// HardContactEulerLagrange; see pe/core/collisionsystem/RestitutionPostPass.h).
+template <typename CollisionSystemT, typename = void>
+struct HasRestitutionSwitch : std::false_type {};
+
+template <typename CollisionSystemT>
+struct HasRestitutionSwitch<CollisionSystemT, std::void_t<
+    decltype(std::declval<CollisionSystemT&>().setRestitution(bool{})),
+    decltype(std::declval<CollisionSystemT&>().setRestitutionThreshold(real{})),
+    decltype(std::declval<CollisionSystemT&>().setRestitutionPostPass(bool{})),
+    decltype(std::declval<CollisionSystemT&>().setRestitutionIterations(std::size_t{})),
+    decltype(std::declval<const CollisionSystemT&>().getRestitution()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionThreshold()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionPostPass()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionIterations()),
+    decltype(std::declval<CollisionSystemT&>().setRestitutionTolerance(real{}, real{})),
+    decltype(std::declval<CollisionSystemT&>().setRestitutionMaxIterations(std::size_t{})),
+    decltype(std::declval<CollisionSystemT&>().setRestitutionCheckInterval(std::size_t{})),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionAbsTolerance()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionRelTolerance()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionCheckInterval()),
+    decltype(std::declval<const CollisionSystemT&>().getRestitutionMaxIterations())>>
+    : std::true_type {};
+
+// Pushes the restitution switch (json restitutionEnabled_, restitutionThreshold_,
+// restitutionScheme_, restitutionIterations_, restitutionMaxIterations_, restitutionCheckInterval_,
+// restitutionAbsTolerance_, restitutionRelTolerance_; collective: every process must load the same deck; validated by the SimulationConfig setters) into the
+// collision system. With the keys absent the values are the solver defaults (off, 0, capped
+// post-pass, 4 sweeps), so the call leaves an inelastic solver bit for bit unchanged. The material
+// value restitution_ is not touched: it is the coefficient a bouncing contact uses.
+//
+// Refuses loudly when restitutionEnabled_ is true but the active solver has no switch (e.g.
+// HardContactAndFluid): the deck would otherwise ask for bouncing contacts and get inelastic ones.
+// Call it on every process (the switch must be the same everywhere).
+template <typename CollisionSystemT>
+inline void applyOptionalRestitutionParams(CollisionSystemT& cs, const SimulationConfig& config) {
+  if constexpr (HasRestitutionSwitch<CollisionSystemT>::value) {
+    cs.setRestitution(config.getRestitutionEnabled());
+    cs.setRestitutionThreshold(config.getRestitutionThreshold());
+    cs.setRestitutionPostPass(config.getRestitutionScheme() == "post-pass");
+    cs.setRestitutionIterations(static_cast<std::size_t>(config.getRestitutionIterations()));
+    cs.setRestitutionMaxIterations(static_cast<std::size_t>(config.getRestitutionMaxIterations()));
+    cs.setRestitutionCheckInterval(static_cast<std::size_t>(config.getRestitutionCheckInterval()));
+    cs.setRestitutionTolerance(config.getRestitutionAbsTolerance(), config.getRestitutionRelTolerance());
+  } else {
+    (void)cs;
+    if (config.getRestitutionEnabled()) {
+      throw std::runtime_error(
+          "restitutionEnabled_ is true but the active pe_CONSTRAINT_SOLVER has no restitution "
+          "switch, so every contact would stay inelastic. The EL setups need "
+          "pe::response::HardContactEulerLagrange (their stepping requires the EL hydro state); "
+          "otherwise set restitutionEnabled_ to false.");
+    }
+  }
+}
+
+// Setups that do not support the restitution switch call this right after loading the deck (on
+// every process): an explicit restitutionEnabled_ = true is refused instead of being ignored, and
+// otherwise the deck's (disabled) settings are applied to the solver, so that a setup in the same
+// process cannot inherit a switch an earlier, supporting setup turned on (World::clear() keeps the
+// solver switches). Supporting setups call applyOptionalRestitutionParams() instead. Support means
+// the setup applies the switch and gives its contacts a restitution from the deck; today that is
+// the two EL setups with deck-driven materials, setupELTerminalVelocity and the parallel
+// setupELFrozenTrace (see doc/technical-notes/el-restitution.md).
+template <typename CollisionSystemT>
+inline void rejectRestitutionRequest(CollisionSystemT& cs, const SimulationConfig& config, const std::string& setup) {
+  if (config.getRestitutionEnabled()) {
+    throw std::runtime_error(
+        "restitutionEnabled_ is true, but " + setup + " does not support the restitution switch "
+        "of the contact solver (it is applied by setupELTerminalVelocity and the parallel "
+        "setupELFrozenTrace only). Set restitutionEnabled_ to false or remove the key.");
+  }
+  applyOptionalRestitutionParams(cs, config);   // switch off whatever an earlier setup left on
 }
 
 // Sets the shadow-copy margin for pairwise lubrication in a domain-decomposed (MPI) setup.
