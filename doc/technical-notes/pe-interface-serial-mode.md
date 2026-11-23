@@ -49,6 +49,8 @@ setup or contact handling itself.
 | `src/interface/cfd_queries.cpp` | The C query/get-set wrappers | - |
 | `src/interface/cfd_stepping.cpp` | `step_simulation_()` and friends; parallel stepping and the interface globals | - |
 | `src/interface/object_queries.cpp`, `fbm_gate_probe.cpp`, `frozen_field_trace.cpp` | The C++ implementations behind the ABI | - |
+| `src/interface/PointOwnership.h` | Internal: the containment test and minimum-id ownership rule of the point queries, shared by `object_queries.cpp` and the coupling API | `object_queries.cpp`, `coupling/Engine.cpp` |
+| `pe/interface/coupling/`, `src/interface/coupling/` | The typed C++ coupling API `pe::coupling` for C++ CFD codes, independent of the extern "C" ABI ([coupling-api.md](coupling-api.md)) | C++ CFD codes (FEAT3), tests |
 
 Nothing on the CFD side includes a pe header: FeatFloWer binds to the C symbols at link time
 and copies `pe/interface/example.json` into two application build directories. Moving files

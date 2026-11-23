@@ -61,6 +61,7 @@ This directory contains focused engineering notes for PE internals. Use this ind
 ## Integration and Coupling
 
 - [pe-interface-serial-mode.md](pe-interface-serial-mode.md): `PE_SERIAL_MODE` vs normal parallel mode, the `commf2c_*` Fortran/C entry-point convention, the representative-rank pattern, CFD force synchronization, and how to write a new interface setup function.
+- [coupling-api.md](coupling-api.md): The typed C++ coupling API `pe::coupling` (`pe/interface/coupling/`) for particle-resolved FBM coupling of C++ CFD codes (FEAT3): self-contained header usable next to `<mpi.h>`, build information and solver-dependent settings, who owns gravity/buoyancy, enumeration and state by system id, point classification (ownership rule, hash-grid pitfalls), under-relaxed loads and substeps (bit for bit with the former FEAT3 wrapper), versioned bitwise checkpoints, stage-1 MPI semantics, relation to the extern "C" interface.
 
 ## Domain Decomposition and MPI
 
