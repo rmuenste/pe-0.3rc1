@@ -1246,6 +1246,13 @@ if(NOT PE_USE_MPI)
   add_test(NAME pe-coupling-loads COMMAND pe_coupling_loads_test)
   set_tests_properties(pe-coupling-loads PROPERTIES LABELS "unit;serial;interface;coupling")
 
+  # Rotated box, capsule, cylinder and ellipsoid through pe's binary checkpoint: the restored
+  # bounding box (and the one Engine::state() reports) is that of the rotated body.
+  add_executable(pe_reload_bounding_box_test pe_reload_bounding_box_test.cpp)
+  target_link_libraries(pe_reload_bounding_box_test PRIVATE pe_static)
+  add_test(NAME pe-reload-bounding-box COMMAND pe_reload_bounding_box_test)
+  set_tests_properties(pe-reload-bounding-box PROPERTIES LABELS "unit;serial;interface;coupling")
+
   # HardContactAndFluid: buoyant first step, settling onto a plane, substeps, no stdout output.
   add_executable(pe_coupling_fluid_test pe_coupling_fluid_test.cpp)
   target_link_libraries(pe_coupling_fluid_test PRIVATE pe_static_lubstage_fluid)
