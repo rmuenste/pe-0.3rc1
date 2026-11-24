@@ -1131,8 +1131,11 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
     if(MPI_CXX_FOUND)
       set(coupling_mpi_includes)
+      # -isystem, as a CFD code sees <mpi.h>: the warnings are meant for the coupling headers,
+      # not for the MPI implementation (Open MPI 4's C++ bindings in mpicxx.h fail
+      # -Wcast-function-type under -Wextra -Werror).
       foreach(dir IN LISTS MPI_CXX_INCLUDE_DIRS)
-        list(APPEND coupling_mpi_includes "-I${dir}")
+        list(APPEND coupling_mpi_includes "-isystem" "${dir}")
       endforeach()
       add_test(
         NAME pe-coupling-header-standalone-${coupling_header}-after-mpi-h
