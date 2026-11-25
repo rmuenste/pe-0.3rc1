@@ -237,6 +237,34 @@ HalfSpace::HalfSpace( const Vec3& normal, const Vec3& gpos, real dx )
 
 //=================================================================================================
 //
+//  CONSTRUCTION OF RELATED HALF SPACES
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!rief Returns the half space on the other side of the boundary plane.
+ *
+ * eturn The half space with the exactly negated normal and displacement and the same overlap.
+ *
+ * Unlike constructing a half space from the negated normal (which normalizes it once more and
+ * can change its last bits), the coefficients are negated exactly, so that for every point the
+ * two tests evaluate exactly opposite numbers: a point lies on the positive side of one of the
+ * two half spaces or of both (on the plane), never of neither, and strictly inside at most one.
+ */
+HalfSpace HalfSpace::opposite() const
+{
+   HalfSpace hs( *this );
+   hs.normal_ = -normal_;
+   hs.d_      = -d_;
+   return hs;
+}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
 //  UTILITY FUNCTIONS
 //
 //=================================================================================================
