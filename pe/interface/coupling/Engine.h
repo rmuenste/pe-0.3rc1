@@ -44,6 +44,20 @@
 #include <pe/interface/coupling/Types.h>
 
 
+//*************************************************************************************************
+/*!rief Defined (as 1) by a pe whose coupling API runs a domain-decomposed world on several
+ *        processes.
+ * \ingroup coupling
+ *
+ * The functions this adds (Engine::decomposeSlabs(), Engine::ownsPoint(), Engine::processRank(),
+ * Engine::processCount(), Engine::loadHistory(), Engine::setLoadHistory(),
+ * Engine::prepareCheckpoint(), readSlabPlanes(), sphereContainsPoints()) are not present in older
+ * pe versions with the coupling API; a client that supports both tests this macro.
+ */
+#define PE_COUPLING_DOMAIN_DECOMPOSITION 1
+//*************************************************************************************************
+
+
 namespace pe {
 
 namespace coupling {

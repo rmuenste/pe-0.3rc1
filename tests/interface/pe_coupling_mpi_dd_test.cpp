@@ -45,6 +45,10 @@
 
 #include "pe_coupling_test_util.h"
 
+#if !defined(PE_COUPLING_DOMAIN_DECOMPOSITION) || PE_COUPLING_DOMAIN_DECOMPOSITION != 1
+#error "pe/interface/coupling/Engine.h must define PE_COUPLING_DOMAIN_DECOMPOSITION as 1"
+#endif
+
 using coupling_test::expect;
 using coupling_test::expectThrows;
 using coupling_test::sameBits;
