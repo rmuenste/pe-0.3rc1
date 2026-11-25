@@ -131,14 +131,30 @@ namespace coupling {
  * refuse such meshes; use convex movable meshes or a CGAL build.
  *
  * \b MPI builds. The engine works on the bodies of the local process. On one process it is
- * fully functional. On more than one process (pe's communicator) reading stays available
- * (enumeration, states, shadow copies via Selection::shadowCopies / BodyState::shadow,
- * classification) and advance() works; everything whose state cannot follow a body to
- * another process yet throws std::runtime_error ("not implemented yet") before changing
- * anything: addLoad(), applyLoads(), writeCheckpoint(), readCheckpoint(), and
- * setKinematicState() on a global body, on a body with shadow copies, on a shadow copy or to
- * a position outside the local subdomain. MPI must be initialized before the Engine is
- * constructed.
+ * fully functional. On more than one process (pe's communicator; MPI must be initialized before
+ * the Engine is constructed):
+ * - decomposeSlabs() decomposes the domain into a chain of slabs, one per process (before any
+ *   body is created); ownsPoint() tells which process creates a body (a body is created by the
+ *   process that owns its centre);
+ * - reading (enumeration, states, shadow copies via Selection::shadowCopies /
+ *   BodyState::shadow, classification) works on the local bodies and shadow copies;
+ *   sphereContainsPoints() evaluates pe's sphere predicate for a sphere the process does not
+ *   hold;
+ * - addLoad() and applyLoads() work locally: each process adds and applies the loads of its
+ *   own bodies. A migrating body loses its coupling history (pe's migration does not carry it,
+ *   see LoadHistory): read it with loadHistory() after applyLoads() and restore it on the new
+ *   owner with setLoadHistory() before its next applyLoads(), and the continuation is bit for
+ *   bit that of one process;
+ * - advance() is collective (it synchronizes before a step when pe or a state override needs
+ *   it);
+ * - setKinematicState() works on local bodies, also with shadow copies, to a position in the
+ *   local or a neighbouring subdomain (pe migrates to neighbours only); a global body, a shadow
+ *   copy or a farther position is refused ("not implemented yet");
+ * - checkpoints: prepareCheckpoint() (collective) gathers the records on the root process,
+ *   which writes them with writeCheckpoint() (version 3, records sorted by id);
+ *   readCheckpoint() is collective (every process gets the same text) and restores each record
+ *   on the process holding the body; a record whose position is beyond the neighbours of that
+ *   process, and a global finite body, are refused before anything changes.
  *
  * \b Checkpoints. Scope: finite non-union bodies plus planes at rest, with empty force and
  * torque slots, written between coupling steps. Both checkpoint functions refuse a world with
@@ -228,6 +244,16 @@ public:
    //@}
    //**********************************************************************************************
 
+   //**Domain decomposition functions**************************************************************
+   /*!\name Domain decomposition functions */
+   //@{
+   void decomposeSlabs( const std::vector<SlabPlane>& planes );
+   bool ownsPoint     ( const Vec3d& point ) const;
+   int  processRank   () const;
+   int  processCount  () const;
+   //@}
+   //**********************************************************************************************
+
    //**Creation functions**************************************************************************
    /*!\name Creation functions */
    //@{
@@ -275,6 +301,8 @@ public:
    void clearLoads            ();
    bool hasPendingLoads       () const;
    void applyLoads            ( double relaxation, double dt );
+   LoadHistory loadHistory    ( BodyId id ) const;
+   void setLoadHistory        ( BodyId id, const LoadHistory& history );
    void advance               ( double dt, unsigned int substeps = 1 );
    void acknowledgeWorldReload();
    //@}
@@ -283,8 +311,9 @@ public:
    //**Checkpoint functions************************************************************************
    /*!\name Checkpoint functions */
    //@{
-   void writeCheckpoint( std::ostream& os ) const;
-   void readCheckpoint ( std::istream& is );
+   void prepareCheckpoint();
+   void writeCheckpoint  ( std::ostream& os ) const;
+   void readCheckpoint   ( std::istream& is );
    //@}
    //**********************************************************************************************
 
@@ -300,6 +329,22 @@ private:
    //@}
    //**********************************************************************************************
 };
+//*************************************************************************************************
+
+//=================================================================================================
+//
+//  FREE FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\name Free functions of the coupling API */
+//@{
+PE_COUPLING_API std::vector<SlabPlane> readSlabPlanes( const std::string& filename );
+
+PE_COUPLING_API void sphereContainsPoints( const Vec3d& centre, double radius, const double* xyz,
+                                           std::size_t numPoints, unsigned char* flags );
+//@}
 //*************************************************************************************************
 
 } // namespace coupling

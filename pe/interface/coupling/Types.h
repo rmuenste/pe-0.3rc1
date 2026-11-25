@@ -232,6 +232,47 @@ struct BodyState
 
 
 //*************************************************************************************************
+/*!\brief A dividing plane of a slab domain decomposition (Engine::decomposeSlabs()).
+ * \ingroup coupling
+ *
+ * The plane through \a point with normal \a normal; its positive side is the closed half space
+ * \f$ n \cdot (x - p) \ge 0 \f$. The normal need not be normalized but must not be zero.
+ */
+struct SlabPlane
+{
+   Vec3d point;   //!< A point on the plane.
+   Vec3d normal;  //!< The normal (towards the positive side).
+};
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The coupling history of a body that the next Engine::applyLoads() relaxes against.
+ * \ingroup coupling
+ *
+ * Two parts, both needed for a continuation that is bit for bit the one of a single process:
+ * the Engine's previous raw load F_(n-1), T_(n-1) (the under-relaxation of applyLoads() blends
+ * against it; absent before the first load: the first load is applied unrelaxed), and pe's
+ * body-level fluid-force history (RigidBody::hasPrevFluidForce() and the force and torque of the
+ * last RigidBody::applyFluidForces() call, which applyLoads() goes through with relaxation 1;
+ * it still decides the sign of a zero). pe's MPI migration does not carry either part, so a
+ * caller that runs pe on several processes reads the history of every body after
+ * applyLoads() (Engine::loadHistory()) and restores it on the body's current owner before the
+ * next one (Engine::setLoadHistory()).
+ */
+struct LoadHistory
+{
+   bool  hasPrevious = false;  //!< Whether the Engine has a previous load of the body.
+   Vec3d previousForce{};      //!< F_(n-1) (raw, as added in the previous coupling step).
+   Vec3d previousTorque{};     //!< T_(n-1).
+   bool  hasFluid = false;     //!< pe's body-level history flag.
+   Vec3d fluidForce{};         //!< pe's stored fluid force of the body.
+   Vec3d fluidTorque{};        //!< pe's stored fluid torque of the body.
+};
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Kinematic state of a rigid body, as overridden by Engine::setKinematicState().
  * \ingroup coupling
  */

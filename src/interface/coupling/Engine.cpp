@@ -61,6 +61,12 @@
 #include <pe/util/Limits.h>
 #include <src/interface/PointOwnership.h>
 #include <src/interface/coupling/SolverFeatures.h>
+#include <fstream>
+#include <map>
+#if HAVE_MPI
+#include <pe/core/domaindecomp/HalfSpace.h>
+#include <pe/interface/support/decompose.h>
+#endif
 
 
 namespace pe {
@@ -585,6 +591,10 @@ inline void requireCheckpointScope( const char* function )
    detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
    for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it ) {
       const ConstBodyID body( *it );
+      if( MPISettings::size() > 1 && body->isGlobal() && body->isFinite() )
+         throw std::runtime_error( where( function ) + "body " + idString( body->getSystemID() ) +
+                                   " is a global finite body, which a checkpoint on more than one "
+                                   "process cannot restore (not implemented yet)" );
       if( shapeKind( body->getType() ) == ShapeKind::other )
          throw std::runtime_error( where( function ) + "body " + idString( body->getSystemID() ) +
                                    " is a union or another composite/inner type, which the "
@@ -629,6 +639,8 @@ struct Engine::Impl
    void   fillState    ( ConstBodyID body, bool shadow, BodyState& s ) const;
    void   pruneHistory ();
    void   pruneVolumes () const;
+   std::string checkpointRecord( const char* function, const char* tag, ConstBodyID body ) const;
+   bool   reachable    ( const Vec3& gpos ) const;
    //**********************************************************************************************
 
    //**Member variables****************************************************************************
@@ -638,6 +650,12 @@ struct Engine::Impl
                                                                //!< kept while the body exists.
    bool                                     overridden_;       //!< Synchronize before the next
                                                                //!< step (several processes).
+   bool                                     decomposed_ = false; //!< decomposeSlabs() was called.
+   bool                                     prepared_ = false; //!< prepareCheckpoint() holds the
+                                                               //!< current checkpoint (several
+                                                               //!< processes).
+   std::string                              preparedText_;     //!< The gathered checkpoint text
+                                                               //!< (root process only).
    mutable std::unordered_map<BodyId,double> meshVolumes_;     //!< Cached triangle-mesh volumes.
    mutable std::vector<BodyID>              candidates_;       //!< Scratch: index candidates.
    mutable std::vector<BodyID>              bodies_;           //!< Scratch: selected bodies.
@@ -882,6 +900,121 @@ static void validateKinematicState( const char* function, const KinematicState& 
  * handle synchronizes before its first step: a previous handle may have overridden a state
  * that pe does not register as requiring a synchronization.
  */
+//*************************************************************************************************
+/*!\brief Formats the checkpoint record of a body: one line, including the newline.
+ *
+ * \param function The name of the calling member function (for messages).
+ * \param tag "body" or "fixedbody".
+ * \param body The body.
+ * \return The line.
+ * \exception std::runtime_error A non-finite state, load or fluid-force history.
+ *
+ * The same text on one process and on several: format version 3, classic locale, 17
+ * significant digits (see Engine::writeCheckpoint()).
+ */
+std::string Engine::Impl::checkpointRecord( const char* function, const char* tag,
+                                            ConstBodyID body ) const
+{
+   std::ostringstream out;
+   out.imbue( std::locale::classic() );
+   out.precision( 17 );
+   BodyState s;
+   fillState( body, false, s );
+   if( !allFinite( s.position ) || !allFinite( s.orientation ) ||
+       !allFinite( s.linearVelocity ) || !allFinite( s.angularVelocity ) )
+      throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
+                                " has a non-finite state" );
+   const auto previous( previous_.find( s.id ) );
+   const bool hasPrevious( previous != previous_.end() );
+   const LoadRecord prev( hasPrevious ? previous->second
+                                      : LoadRecord{ Vec3d{ { 0.0, 0.0, 0.0 } },
+                                                    Vec3d{ { 0.0, 0.0, 0.0 } } } );
+   if( !allFinite( prev.force ) || !allFinite( prev.torque ) )
+      throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
+                                " has a non-finite previous load" );
+   out << tag << ' ' << s.id;
+   for( int k=0; k<3; ++k ) out << ' ' << s.position[k];
+   for( int k=0; k<4; ++k ) out << ' ' << s.orientation[k];
+   for( int k=0; k<3; ++k ) out << ' ' << s.linearVelocity[k];
+   for( int k=0; k<3; ++k ) out << ' ' << s.angularVelocity[k];
+   // pe's own fluid-force history of the body (applyFluidForces() relaxes against it)
+   const Vec3& fluidForce( body->getPrevFluidForce() );
+   const Vec3& fluidTorque( body->getPrevFluidTorque() );
+   if( !finitePe( fluidForce ) || !finitePe( fluidTorque ) )
+      throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
+                                " has a non-finite previous fluid force" );
+   out << ' ' << ( hasPrevious ? 1 : 0 );
+   for( int k=0; k<3; ++k ) out << ' ' << prev.force[k];
+   for( int k=0; k<3; ++k ) out << ' ' << prev.torque[k];
+   out << ' ' << ( body->hasPrevFluidForce() ? 1 : 0 );
+   for( int k=0; k<3; ++k ) out << ' ' << double( fluidForce[k] );
+   for( int k=0; k<3; ++k ) out << ' ' << double( fluidTorque[k] );
+   out << '\n';
+   if( !out )
+      throw std::runtime_error( where( function ) + "formatting the checkpoint failed" );
+   return out.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Whether pe's next synchronization can hand a local body at \a gpos to its owner.
+ *
+ * True if the local subdomain or a connected neighbour subdomain contains the point (pe
+ * migrates bodies to neighbours only and deletes a body that no neighbour takes as an
+ * outflow). Always true on one process.
+ */
+bool Engine::Impl::reachable( const Vec3& gpos ) const
+{
+#if HAVE_MPI
+   if( !parallelRun() )
+      return true;
+   detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
+   if( cs.getDomain().containsPoint( gpos ) )
+      return true;
+   for( auto p=cs.getProcessStorage().begin(); p!=cs.getProcessStorage().end(); ++p )
+      if( p->containsPoint( gpos ) )
+         return true;
+   return false;
+#else
+   UNUSED( gpos );
+   return true;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Agrees on an error over pe's communicator (collective).
+ *
+ * \param error The local error message (empty if none).
+ * \return The message of the lowest-ranked process that has one, on every process; empty if no
+ *         process has one. Without MPI or on one process the local message.
+ */
+inline std::string agreeOnError( const std::string& error )
+{
+#if HAVE_MPI
+   if( !parallelRun() )
+      return error;
+   int first( error.empty() ? std::numeric_limits<int>::max() : MPISettings::rank() );
+   MPI_Allreduce( MPI_IN_PLACE, &first, 1, MPI_INT, MPI_MIN, MPISettings::comm() );
+   if( first == std::numeric_limits<int>::max() )
+      return std::string();
+   int length( first == MPISettings::rank() ? static_cast<int>( error.size() ) : 0 );
+   MPI_Bcast( &length, 1, MPI_INT, first, MPISettings::comm() );
+   std::string message( first == MPISettings::rank() ? error : std::string( std::size_t( length ), ' ' ) );
+   if( length > 0 )
+      MPI_Bcast( &message[0], length, MPI_CHAR, first, MPISettings::comm() );
+   return message;
+#else
+   return error;
+#endif
+}
+//*************************************************************************************************
+
+
+
+
 Engine::Engine()
    : impl_()
 {
@@ -1100,6 +1233,104 @@ bool Engine::splitImpulse() const
    bool enabled( false );
    detail::tryGetSplitImpulse( *theCollisionSystem(), enabled );
    return enabled;
+}
+//*************************************************************************************************
+
+
+
+//=================================================================================================
+//
+//  DOMAIN DECOMPOSITION FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Decomposes pe's domain into a chain of slabs, one per process (collective).
+ *
+ * \param planes The dividing planes in slab order: process k gets slab k, the positive side of
+ *        plane k without the positive side of plane k-1 (see SlabPlane); n - 1 or n planes for
+ *        n processes. Every process passes the same planes.
+ * \return void
+ * \exception std::invalid_argument A non-finite plane, a zero normal or a wrong number of planes.
+ * \exception std::logic_error The domain was decomposed before, or bodies exist already.
+ *
+ * pe's decomposeDomainPlaneSlabs() (pe/interface/support/decompose.h): each process is
+ * connected to the previous and the next slab only, so a body must never reach across a whole
+ * slab. Must be called before the first body is created (also before planes). On one process
+ * (or without MPI) the planes are validated and nothing else happens.
+ */
+void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
+{
+   const char* const function( "decomposeSlabs" );
+   requireNoExclusiveSection( function );
+   const int n( processCount() );
+   if( impl_->decomposed_ )
+      throw std::logic_error( where( function ) + "the domain was decomposed before" );
+   for( const SlabPlane& p : planes ) {
+      if( !allFinite( p.point ) || !allFinite( p.normal ) )
+         throw std::invalid_argument( where( function ) + "a plane is not finite" );
+      const Vec3 normal( toPe( p.normal ) );
+      if( !( normal.sqrLength() > real( 0 ) ) )
+         throw std::invalid_argument( where( function ) + "a plane has a zero normal" );
+   }
+   if( n > 1 && planes.size() != std::size_t( n - 1 ) && planes.size() != std::size_t( n ) ) {
+      std::ostringstream oss;
+      oss << where( function ) << "a decomposition into " << n << " slabs needs " << ( n - 1 )
+          << " or " << n << " planes, not " << planes.size();
+      throw std::invalid_argument( oss.str() );
+   }
+   if( theCollisionSystem()->getBodyStorage().size() > 0 )
+      throw std::logic_error( where( function ) + "bodies exist already; decompose the domain "
+                              "before creating bodies" );
+#if HAVE_MPI
+   if( n > 1 ) {
+      std::vector<HalfSpace> halfSpaces;
+      for( const SlabPlane& p : planes )
+         halfSpaces.push_back( HalfSpace( toPe( p.normal ), toPe( p.point ) ) );
+      decomposeDomainPlaneSlabs( processRank(), halfSpaces, n );
+   }
+#endif
+   impl_->decomposed_ = true;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Whether the local subdomain owns a point (pe's ownership rule).
+ *
+ * \param point The point.
+ * \return Whether a body centred at \a point would be created on (and owned by) this process.
+ *         Exactly one process owns every point (ties go to the lower rank). Always true on one
+ *         process.
+ * \exception std::invalid_argument A non-finite point.
+ */
+bool Engine::ownsPoint( const Vec3d& point ) const
+{
+   if( !allFinite( point ) )
+      throw std::invalid_argument( where( "ownsPoint" ) + "the point is not finite" );
+   if( !parallelRun() )
+      return true;
+   return theCollisionSystem()->getDomain().ownsPoint( toPe( point ) );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The rank of this process in pe's communicator (0 without MPI).
+ */
+int Engine::processRank() const
+{
+   return MPISettings::rank();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The number of processes of pe's communicator (1 without MPI).
+ */
+int Engine::processCount() const
+{
+   return MPISettings::size();
 }
 //*************************************************************************************************
 
@@ -1327,14 +1558,16 @@ void Engine::states( Selection selection, std::vector<BodyState>& states ) const
  *            quaternion that is not unit within pe's accuracy, or a body too small to be
  *            represented at the new position.
  * \exception std::runtime_error On more than one process: a shadow copy, a global body (also a
- *            plane), a body with shadow copies, or a position outside the local subdomain (the
- *            body would migrate) -- not implemented yet. On any process: a global body inside
- *            a pe exclusive section (pe refuses to move it there).
+ *            plane), or a position that neither the local nor a neighbouring subdomain
+ *            contains -- not implemented yet. On any process: a global body inside a pe
+ *            exclusive section (pe refuses to move it there).
  *
  * Without MOBILE_INFINITE pe ignores velocities set on fixed bodies. The hash grid sees the
  * new position after the next refreshSpatialIndex() or simulation step. On more than one
- * process the next advance() synchronizes before stepping, so new shadow copies exist before
- * the contact search.
+ * process the next advance() synchronizes before stepping: a body moved into a neighbouring
+ * subdomain migrates there, and its shadow copies are updated, before the contact search.
+ * Until then the body stays on this process and its shadow copies keep the old state. A
+ * migrating body loses its coupling history (see LoadHistory).
  */
 void Engine::setKinematicState( BodyId id, const KinematicState& state )
 {
@@ -1352,16 +1585,12 @@ void Engine::setKinematicState( BodyId id, const KinematicState& state )
    validateKinematicState( function, state );
    checkRepresentablePose( function, body, state );
 
-   if( parallelRun() ) {
-      if( body->sizeProcesses() > 0 )
-         throwNotImplemented( function, "overriding body " + idString( id ) + ", which has "
-                              "shadow copies on other processes," );
-      if( !theCollisionSystem()->getDomain().ownsPoint( toPe( state.position ) ) )
-         throwNotImplemented( function, "moving body " + idString( id ) + " out of the local "
-                              "subdomain (it would migrate)" );
-   }
+   if( parallelRun() && !impl_->reachable( toPe( state.position ) ) )
+      throwNotImplemented( function, "moving body " + idString( id ) + " beyond the local and "
+                           "the neighbouring subdomains (pe migrates bodies to neighbours only)" );
 
    impl_->overrideState( body, state );
+   impl_->prepared_ = false;
    if( parallelRun() ) impl_->overridden_ = true;
 }
 //*************************************************************************************************
@@ -1561,15 +1790,16 @@ bool Engine::spatialIndexActive() const
  * \return void
  * \exception std::invalid_argument Unknown id, a fixed or infinite body, a non-finite load, or
  *            an accumulated load that would not be finite (the previous sum is kept).
- * \exception std::runtime_error On more than one process (not implemented yet).
+ * \exception std::runtime_error The body is a shadow copy (on more than one process a load is
+ *            added by the process that owns the body).
  *
  * The load must not contain the body forces the solver applies itself (see BuildInfo). To
- * relax a body against its history with a zero load in this step, add a zero load.
+ * relax a body against its history with a zero load in this step, add a zero load. On more
+ * than one process each process adds the loads of its own bodies; the history of a body that
+ * migrated stays behind (see LoadHistory, setLoadHistory()).
  */
 void Engine::addLoad( BodyId id, const Vec3d& force, const Vec3d& torque )
 {
-   requireSingleProcess( "addLoad", "a load (its history cannot follow a body to another "
-                                    "process)" );
    const BodyID body( impl_->findLocal( "addLoad", id ) );
    if( !isMovable( body ) )
       throw std::invalid_argument( where( "addLoad" ) + "body " + idString( id ) +
@@ -1672,7 +1902,10 @@ bool Engine::hasPendingLoads() const
  *            finite in pe::real.
  * \exception std::logic_error Loads were already applied in this coupling step (before the
  *            next advance()).
- * \exception std::runtime_error On more than one process (not implemented yet).
+ *
+ * On more than one process the call is local: each process applies the loads added for its own
+ * bodies, against the history the Engine of that process holds (restore it with
+ * setLoadHistory() after a migration).
  *
  * Only the bodies with a pending load are processed, in storage order; every other body is
  * not touched (its force slot, velocity and load history stay as they are). For a processed
@@ -1688,8 +1921,6 @@ bool Engine::hasPendingLoads() const
 void Engine::applyLoads( double relaxation, double dt )
 {
    const char* const function( "applyLoads" );
-   requireSingleProcess( function, "applying loads (their history cannot follow a body to "
-                                   "another process)" );
    if( !std::isfinite( relaxation ) || relaxation <= 0.0 || relaxation > 1.0 )
       throw std::invalid_argument( where( function ) + "the relaxation must lie in (0, 1]" );
    if( !finiteReal( dt ) || dt <= 0.0 || !( real( dt ) > real( 0 ) ) )
@@ -1777,9 +2008,79 @@ void Engine::applyLoads( double relaxation, double dt )
    impl_->previous_.merge( fresh );
    impl_->pending_.clear();
    loadsAppliedThisStep.store( true );
+   impl_->prepared_ = false;
 
    // Forget the history of bodies that were destroyed (erase only)
    impl_->pruneHistory();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the coupling history of a local finite body (see LoadHistory).
+ *
+ * \param id The system id of a local finite body.
+ * \return The Engine's previous load of the body and pe's body-level fluid-force history.
+ * \exception std::invalid_argument Unknown id or an infinite body.
+ * \exception std::runtime_error A shadow copy.
+ */
+LoadHistory Engine::loadHistory( BodyId id ) const
+{
+   const BodyID body( impl_->findLocal( "loadHistory", id ) );
+   if( !body->isFinite() )
+      throw std::invalid_argument( where( "loadHistory" ) + "body " + idString( id ) +
+                                   " is infinite (a plane)" );
+   LoadHistory h;
+   const auto previous( impl_->previous_.find( id ) );
+   if( previous != impl_->previous_.end() ) {
+      h.hasPrevious    = true;
+      h.previousForce  = previous->second.force;
+      h.previousTorque = previous->second.torque;
+   }
+   h.hasFluid    = body->hasPrevFluidForce();
+   h.fluidForce  = fromPe( body->getPrevFluidForce() );
+   h.fluidTorque = fromPe( body->getPrevFluidTorque() );
+   return h;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Restores the coupling history of a local finite body (see LoadHistory).
+ *
+ * \param id The system id of a local finite body.
+ * \param history The history, e.g. as loadHistory() returned it on the process that owned the
+ *        body before it migrated.
+ * \return void
+ * \exception std::invalid_argument Unknown id, an infinite body or a non-finite history.
+ * \exception std::runtime_error A shadow copy.
+ *
+ * Sets the Engine's previous load (or removes it, if \a history has none: the next load is then
+ * applied unrelaxed) and pe's body-level fluid-force history exactly to the given values.
+ * Nothing is changed when an exception is thrown.
+ */
+void Engine::setLoadHistory( BodyId id, const LoadHistory& history )
+{
+   const char* const function( "setLoadHistory" );
+   const BodyID body( impl_->findLocal( function, id ) );
+   if( !body->isFinite() )
+      throw std::invalid_argument( where( function ) + "body " + idString( id ) +
+                                   " is infinite (a plane)" );
+   if( !allFinite( history.previousForce ) || !allFinite( history.previousTorque ) ||
+       !allFinite( history.fluidForce ) || !allFinite( history.fluidTorque ) ||
+       !finitePe( toPe( history.fluidForce ) ) || !finitePe( toPe( history.fluidTorque ) ) )
+      throw std::invalid_argument( where( function ) + "the history of body " + idString( id ) +
+                                   " is not finite" );
+   if( history.hasPrevious ) {
+      impl_->previous_.reserve( impl_->previous_.size() + 1 );
+      impl_->previous_[id] = LoadRecord{ history.previousForce, history.previousTorque };
+   }
+   else {
+      impl_->previous_.erase( id );
+   }
+   body->setPrevFluidForce( history.hasFluid, toPe( history.fluidForce ),
+                            toPe( history.fluidTorque ) );
+   impl_->prepared_ = false;
 }
 //*************************************************************************************************
 
@@ -1835,6 +2136,7 @@ void Engine::advance( double dt, unsigned int substeps )
       impl_->world_->simulationStep( h );
    }
    loadsAppliedThisStep.store( false );
+   impl_->prepared_ = false;
    impl_->pruneVolumes();
 }
 //*************************************************************************************************
@@ -1858,8 +2160,12 @@ void Engine::advance( double dt, unsigned int substeps )
  *            run yet (checkpoint between coupling steps).
  * \exception std::runtime_error A body the checkpoint cannot restore (a union or another
  *            composite/inner body, a moving plane), a non-finite state or load, a failed write,
- *            pe compiled with sleep mode or with a pe::real wider than double, or more than one
- *            process (not implemented yet).
+ *            pe compiled with sleep mode or with a pe::real wider than double.
+ * \exception std::logic_error On more than one process: called on a process other than the
+ *            root, or without a current prepareCheckpoint().
+ *
+ * On more than one process the root process writes the text that prepareCheckpoint() gathered
+ * (the records of all processes, sorted by system id); see prepareCheckpoint().
  *
  * Format version 3, plain text in the classic locale, 17 significant digits, so every double
  * is restored exactly. Every finite body carries its kinematic state, its previous load (the
@@ -1889,7 +2195,20 @@ void Engine::advance( double dt, unsigned int substeps )
 void Engine::writeCheckpoint( std::ostream& os ) const
 {
    const char* const function( "writeCheckpoint" );
-   requireSingleProcess( function, "a checkpoint" );
+   if( parallelRun() ) {
+      if( !impl_->prepared_ )
+         throw std::logic_error( where( function ) + "on more than one process, call "
+                                 "prepareCheckpoint() on all processes first (and nothing that "
+                                 "changes the world in between)" );
+      if( processRank() != MPISettings::root() )
+         throw std::logic_error( where( function ) + "on more than one process only the root "
+                                 "process writes the checkpoint prepared by prepareCheckpoint()" );
+      const std::string& text( impl_->preparedText_ );
+      os.write( text.data(), static_cast<std::streamsize>( text.size() ) );
+      if( !os )
+         throw std::runtime_error( where( function ) + "writing the checkpoint failed" );
+      return;
+   }
    requireCheckpointBuild( function );
    if( !impl_->pending_.empty() )
       throw std::logic_error( where( function ) + "loads are pending; write the checkpoint "
@@ -1905,51 +2224,16 @@ void Engine::writeCheckpoint( std::ostream& os ) const
    out.precision( 17 );
    out << checkpointMagic << ' ' << checkpointVersion << '\n';
 
-   auto writeRecord = [&]( const char* tag, ConstBodyID body ) {
-      BodyState s;
-      impl_->fillState( body, false, s );
-      if( !allFinite( s.position ) || !allFinite( s.orientation ) ||
-          !allFinite( s.linearVelocity ) || !allFinite( s.angularVelocity ) )
-         throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
-                                   " has a non-finite state" );
-      const auto previous( impl_->previous_.find( s.id ) );
-      const bool hasPrevious( previous != impl_->previous_.end() );
-      const LoadRecord prev( hasPrevious ? previous->second
-                                         : LoadRecord{ Vec3d{ { 0.0, 0.0, 0.0 } },
-                                                       Vec3d{ { 0.0, 0.0, 0.0 } } } );
-      if( !allFinite( prev.force ) || !allFinite( prev.torque ) )
-         throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
-                                   " has a non-finite previous load" );
-      out << tag << ' ' << s.id;
-      for( int k=0; k<3; ++k ) out << ' ' << s.position[k];
-      for( int k=0; k<4; ++k ) out << ' ' << s.orientation[k];
-      for( int k=0; k<3; ++k ) out << ' ' << s.linearVelocity[k];
-      for( int k=0; k<3; ++k ) out << ' ' << s.angularVelocity[k];
-      // pe's own fluid-force history of the body (applyFluidForces() relaxes against it)
-      const Vec3& fluidForce( body->getPrevFluidForce() );
-      const Vec3& fluidTorque( body->getPrevFluidTorque() );
-      if( !finitePe( fluidForce ) || !finitePe( fluidTorque ) )
-         throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
-                                   " has a non-finite previous fluid force" );
-      out << ' ' << ( hasPrevious ? 1 : 0 );
-      for( int k=0; k<3; ++k ) out << ' ' << prev.force[k];
-      for( int k=0; k<3; ++k ) out << ' ' << prev.torque[k];
-      out << ' ' << ( body->hasPrevFluidForce() ? 1 : 0 );
-      for( int k=0; k<3; ++k ) out << ' ' << double( fluidForce[k] );
-      for( int k=0; k<3; ++k ) out << ' ' << double( fluidTorque[k] );
-      out << '\n';
-   };
-
    std::vector<BodyID>& bodies( impl_->bodies_ );
    impl_->collect( Selection::movable, bodies );
    out << "bodies " << bodies.size() << '\n';
    for( std::size_t i=0; i<bodies.size(); ++i )
-      writeRecord( "body", bodies[i] );
+      out << impl_->checkpointRecord( function, "body", bodies[i] );
 
    impl_->collectFixed( bodies );
    out << "fixed " << bodies.size() << '\n';
    for( std::size_t i=0; i<bodies.size(); ++i )
-      writeRecord( "fixedbody", bodies[i] );
+      out << impl_->checkpointRecord( function, "fixedbody", bodies[i] );
    out << "end\n";
 
    if( !out )
@@ -1958,6 +2242,112 @@ void Engine::writeCheckpoint( std::ostream& os ) const
    os.write( text.data(), static_cast<std::streamsize>( text.size() ) );
    if( !os )
       throw std::runtime_error( where( function ) + "writing the checkpoint failed" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Prepares the checkpoint of a world spread over several processes (collective).
+ *
+ * \return void
+ * \exception std::logic_error Loads are pending or were applied in this coupling step (on any
+ *            process), or the call is made inside a pe exclusive section.
+ * \exception std::runtime_error A world the checkpoint cannot restore, a non-finite record, or
+ *            the reason of another process (see writeCheckpoint()).
+ *
+ * On one process (or without MPI) it does nothing: writeCheckpoint() builds the text itself. On
+ * more than one process every process checks its own bodies and formats their records; the
+ * processes agree on the outcome before anything is exchanged (all throw the message of the
+ * lowest-ranked process that found an error, or none throws), then the
+ * records are gathered on the root process (MPISettings::root()), which assembles the
+ * checkpoint: the format of writeCheckpoint() (version 3), the records sorted by system id. The
+ * root then writes it with writeCheckpoint(); any change of the world in between (loads, a
+ * step, a state or history override) discards the prepared text.
+ */
+void Engine::prepareCheckpoint()
+{
+   const char* const function( "prepareCheckpoint" );
+   requireNoExclusiveSection( function );
+   impl_->prepared_ = false;
+   impl_->preparedText_.clear();
+   if( !parallelRun() )
+      return;
+
+#if HAVE_MPI
+   std::string error, local;
+   std::size_t numMovable( 0 ), numFixed( 0 );
+   try {
+      requireCheckpointBuild( function );
+      if( !impl_->pending_.empty() )
+         throw std::logic_error( where( function ) + "loads are pending; write the checkpoint "
+                                 "between coupling steps" );
+      if( loadsAppliedThisStep.load() )
+         throw std::logic_error( where( function ) + "loads were applied in this coupling step; "
+                                 "write the checkpoint after advance()" );
+      requireCheckpointScope( function );
+      std::vector<BodyID>& bodies( impl_->bodies_ );
+      impl_->collect( Selection::movable, bodies );
+      numMovable = bodies.size();
+      for( std::size_t i=0; i<bodies.size(); ++i )
+         local += "M " + impl_->checkpointRecord( function, "body", bodies[i] );
+      impl_->collectFixed( bodies );
+      numFixed = bodies.size();
+      for( std::size_t i=0; i<bodies.size(); ++i )
+         local += "F " + impl_->checkpointRecord( function, "fixedbody", bodies[i] );
+   }
+   catch( const std::exception& ex ) {
+      error = ex.what();
+   }
+   const std::string agreed( agreeOnError( error ) );
+   if( !agreed.empty() )
+      throw std::runtime_error( agreed );
+   UNUSED( numMovable );
+   UNUSED( numFixed );
+
+   // gather the records on the root
+   const int root( MPISettings::root() );
+   const int size( processCount() );
+   int length( static_cast<int>( local.size() ) );
+   std::vector<int> lengths( std::size_t( size ), 0 ), offsets( std::size_t( size ), 0 );
+   MPI_Gather( &length, 1, MPI_INT, lengths.data(), 1, MPI_INT, root, MPISettings::comm() );
+   std::string all;
+   if( processRank() == root ) {
+      int total( 0 );
+      for( int r=0; r<size; ++r ) {
+         offsets[std::size_t( r )] = total;
+         total += lengths[std::size_t( r )];
+      }
+      all.resize( std::size_t( total ) );
+   }
+   MPI_Gatherv( local.data(), length, MPI_CHAR, processRank() == root ? &all[0] : nullptr,
+                lengths.data(), offsets.data(), MPI_CHAR, root, MPISettings::comm() );
+
+   if( processRank() == root ) {
+      std::map<BodyId,std::string> movable, fixed;
+      std::istringstream in( all );
+      in.imbue( std::locale::classic() );
+      std::string line;
+      while( std::getline( in, line ) ) {
+         std::istringstream ls( line.substr( 2 ) );
+         ls.imbue( std::locale::classic() );
+         std::string tag;
+         BodyId id( 0 );
+         ls >> tag >> id;
+         auto& target( line[0] == 'M' ? movable : fixed );
+         target[id] = line.substr( 2 ) + '\n';
+      }
+      std::ostringstream out;
+      out.imbue( std::locale::classic() );
+      out << checkpointMagic << ' ' << checkpointVersion << '\n';
+      out << "bodies " << movable.size() << '\n';
+      for( const auto& r : movable ) out << r.second;
+      out << "fixed " << fixed.size() << '\n';
+      for( const auto& r : fixed ) out << r.second;
+      out << "end\n";
+      impl_->preparedText_ = out.str();
+   }
+   impl_->prepared_ = true;
+#endif
 }
 //*************************************************************************************************
 
@@ -1977,7 +2367,16 @@ void Engine::writeCheckpoint( std::ostream& os ) const
  *            body that cannot be represented at its restored position, a truncated or malformed
  *            checkpoint, a world the checkpoint cannot restore (see writeCheckpoint()), a global
  *            body inside a pe exclusive section, pe compiled with sleep mode or a pe::real wider
- *            than double, or more than one process (not implemented yet).
+ *            than double. On more than one process also: a record whose body is not held by
+ *            exactly one process, a record whose position is beyond the local and neighbouring
+ *            subdomains of the process holding the body, or a global finite body (not
+ *            implemented yet); every process throws the message of the lowest-ranked process
+ *            that found an error.
+ *
+ * On more than one process the call is collective: every process reads the same text, restores
+ * the records of the bodies it holds, and a body whose restored position lies in a neighbouring
+ * subdomain migrates at the next advance() (and loses its coupling history there, see
+ * LoadHistory).
  *
  * Nothing in the world or in the Engine is changed when an exception is thrown (the stream may
  * have been read partially): the whole checkpoint is read and validated before the first body
@@ -1989,26 +2388,22 @@ void Engine::writeCheckpoint( std::ostream& os ) const
 void Engine::readCheckpoint( std::istream& is )
 {
    const char* const function( "readCheckpoint" );
-   requireSingleProcess( function, "a checkpoint" );
-   requireCheckpointBuild( function );
-   requireCheckpointScope( function );
+   const bool parallel( parallelRun() );
+   if( parallel )
+      requireNoExclusiveSection( function );
    const StreamFormatScope formatScope( is );
+
+   // On one process every error is thrown where it is found. On several, every process reads
+   // the whole checkpoint, validates the records of its own bodies, and the processes agree on
+   // the outcome (all throw, or all commit) before anything is changed.
+   std::exception_ptr failure;
+   std::vector<BodyId> recordIds;    // all records, in checkpoint order
+   std::vector<int>    recordHeld;   // 1 if this process holds the body of the record
+   std::size_t numMovable( 0 ), numFixed( 0 ), numMovableLocal( 0 ), numFixedLocal( 0 );
 
    const auto malformed = [&]() {
       return std::runtime_error( where( function ) + "truncated or malformed checkpoint" );
    };
-
-   std::string magic;
-   int version( 0 );
-   is >> magic >> version;
-   if( !is || magic != checkpointMagic )
-      throw std::runtime_error( where( function ) + "not a pe coupling checkpoint" );
-   if( version != checkpointVersion ) {
-      std::ostringstream oss;
-      oss << where( function ) << "unsupported checkpoint version " << version
-          << " (this pe reads version " << checkpointVersion << ")";
-      throw std::runtime_error( oss.str() );
-   }
 
    struct Entry
    {
@@ -2022,6 +2417,21 @@ void Engine::readCheckpoint( std::istream& is )
    std::unordered_set<BodyId> seen;
    std::vector<Entry> entries;
    std::unordered_map<BodyId,LoadRecord> restored;
+
+   try {
+   requireCheckpointBuild( function );
+   requireCheckpointScope( function );
+   std::string magic;
+   int version( 0 );
+   is >> magic >> version;
+   if( !is || magic != checkpointMagic )
+      throw std::runtime_error( where( function ) + "not a pe coupling checkpoint" );
+   if( version != checkpointVersion ) {
+      std::ostringstream oss;
+      oss << where( function ) << "unsupported checkpoint version " << version
+          << " (this pe reads version " << checkpointVersion << ")";
+      throw std::runtime_error( oss.str() );
+   }
 
    auto readRecord = [&]( const char* expectedTag, bool movable ) {
       std::string tag;
@@ -2048,6 +2458,15 @@ void Engine::readCheckpoint( std::istream& is )
 
       bool shadow( false );
       e.body = impl_->find( id, shadow );
+      recordIds.push_back( id );
+      recordHeld.push_back( 0 );
+      if( parallel && ( e.body == nullptr || shadow ) ) {
+         // the body of another process (that it is held exactly once is checked collectively)
+         if( !seen.insert( id ).second )
+            throw std::runtime_error( where( function ) + "body " + idString( id ) +
+                                      " appears twice in the checkpoint" );
+         return;
+      }
       if( e.body == nullptr || shadow ||
           ( movable ? !isMovable( e.body ) : !isFixedFinite( e.body ) ) )
          throw std::runtime_error( where( function ) + "body " + idString( id ) + " of the "
@@ -2089,8 +2508,13 @@ void Engine::readCheckpoint( std::istream& is )
                                          "(without MOBILE_INFINITE) cannot restore bit for bit" );
       }
 #endif
+      if( parallel && !impl_->reachable( toPe( e.state.position ) ) )
+         throw std::runtime_error( where( function ) + "body " + idString( id ) + " would have "
+                                   "to move beyond the local and the neighbouring subdomains "
+                                   "(pe migrates bodies to neighbours only); not implemented yet" );
       if( hasPrevious == 1 ) restored.emplace( id, prev );
       entries.push_back( e );
+      recordHeld.back() = 1;
    };
 
    auto readCount = [&]( const char* expectedTag, std::size_t expected, const char* what ) {
@@ -2098,7 +2522,7 @@ void Engine::readCheckpoint( std::istream& is )
       std::size_t n( 0 );
       is >> tag >> n;
       if( !is || tag != expectedTag ) throw malformed();
-      if( n != expected ) {
+      if( !parallel && n != expected ) {
          std::ostringstream oss;
          oss << where( function ) << "body count mismatch: the checkpoint has " << n << ' '
              << what << " bodies, the world has " << expected;
@@ -2109,32 +2533,160 @@ void Engine::readCheckpoint( std::istream& is )
 
    // ----- Read and validate everything -----
    impl_->collect( Selection::movable, impl_->bodies_ );
-   const std::size_t numMovable( readCount( "bodies", impl_->bodies_.size(), "movable" ) );
+   numMovableLocal = impl_->bodies_.size();
+   numMovable = readCount( "bodies", numMovableLocal, "movable" );
    impl_->collectFixed( impl_->bodies_ );
-   const std::size_t numFixedInWorld( impl_->bodies_.size() );
-   entries.reserve( numMovable + numFixedInWorld );
+   numFixedLocal = impl_->bodies_.size();
+   entries.reserve( numMovable + numFixedLocal );
    for( std::size_t i=0; i<numMovable; ++i )
       readRecord( "body", true );
 
-   const std::size_t numFixed( readCount( "fixed", numFixedInWorld, "fixed finite" ) );
+   numFixed = readCount( "fixed", numFixedLocal, "fixed finite" );
    for( std::size_t i=0; i<numFixed; ++i )
       readRecord( "fixedbody", false );
 
    std::string tag;
    is >> tag;
    if( !is || tag != "end" ) throw malformed();
+   }
+   catch( ... ) {
+      failure = std::current_exception();
+   }
+
+   if( !parallel ) {
+      if( failure ) std::rethrow_exception( failure );
+   }
+   else {
+#if HAVE_MPI
+      std::string error;
+      if( failure ) {
+         try { std::rethrow_exception( failure ); }
+         catch( const std::exception& ex ) { error = ex.what(); }
+         catch( ... ) { error = where( function ) + "unknown error"; }
+      }
+      const std::string agreed( agreeOnError( error ) );
+      if( !agreed.empty() )
+         throw std::runtime_error( agreed );
+      // every process read the same records; each body must be held by exactly one process
+      unsigned long counts[2] = { static_cast<unsigned long>( numMovableLocal ),
+                                  static_cast<unsigned long>( numFixedLocal ) };
+      MPI_Allreduce( MPI_IN_PLACE, counts, 2, MPI_UNSIGNED_LONG, MPI_SUM, MPISettings::comm() );
+      std::vector<int> held( recordHeld );
+      if( !held.empty() )
+         MPI_Allreduce( MPI_IN_PLACE, held.data(), static_cast<int>( held.size() ), MPI_INT,
+                        MPI_SUM, MPISettings::comm() );
+      std::ostringstream oss;
+      if( counts[0] != numMovable || counts[1] != numFixed )
+         oss << where( function ) << "body count mismatch: the checkpoint has " << numMovable
+             << " movable and " << numFixed << " fixed finite bodies, the processes hold "
+             << counts[0] << " and " << counts[1];
+      for( std::size_t r=0; r<held.size() && oss.str().empty(); ++r )
+         if( held[r] != 1 )
+            oss << where( function ) << "body " << recordIds[r] << " of the checkpoint is held "
+                << "by " << held[r] << " processes (expected exactly one)";
+      if( !oss.str().empty() )
+         throw std::runtime_error( oss.str() );
+#endif
+   }
 
    // ----- Commit (no operation below throws: pe's setters throw only for a global body inside
    // an exclusive section, which was refused above) -----
    impl_->previous_.swap( restored );
    impl_->pending_.clear();
    loadsAppliedThisStep.store( false );
+   impl_->prepared_ = false;
+   if( parallel ) impl_->overridden_ = true;
    for( std::size_t i=0; i<entries.size(); ++i ) {
       const Entry& e( entries[i] );
       impl_->overrideState( e.body, e.state );
       e.body->setPrevFluidForce( e.hasFluid,
          Vec3( real( e.fluidForce[0] ), real( e.fluidForce[1] ), real( e.fluidForce[2] ) ),
          Vec3( real( e.fluidTorque[0] ), real( e.fluidTorque[1] ), real( e.fluidTorque[2] ) ) );
+   }
+}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
+//  FREE FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Reads the dividing planes of a slab decomposition from a text file.
+ *
+ * \param filename The plane file: one plane per line, "px py pz nx ny nz" (a point on the plane
+ *        and its normal, taken as written); empty lines are skipped. This is the format of
+ *        pe's loadSlabPlanes() (pe/interface/support/decompose.h) and of the pe_partpy strategy
+ *        plane_single, so one file can partition the CFD mesh and decompose pe's domain.
+ * \return The planes in file order (see Engine::decomposeSlabs()).
+ * \exception std::runtime_error The file cannot be opened, a line does not hold six numbers, or
+ *            a normal is zero or a number is not finite.
+ */
+std::vector<SlabPlane> readSlabPlanes( const std::string& filename )
+{
+   std::ifstream file( filename.c_str() );
+   if( !file.is_open() )
+      throw std::runtime_error( "pe::coupling::readSlabPlanes: could not open the plane file " +
+                                filename );
+   std::vector<SlabPlane> planes;
+   std::string line;
+   int lineNumber( 0 );
+   while( std::getline( file, line ) ) {
+      ++lineNumber;
+      if( line.find_first_not_of( " \t\r" ) == std::string::npos )
+         continue;
+      std::istringstream iss( line );
+      iss.imbue( std::locale::classic() );
+      SlabPlane p;
+      std::string rest;
+      if( !( iss >> p.point[0] >> p.point[1] >> p.point[2] >> p.normal[0] >> p.normal[1]
+                 >> p.normal[2] ) || ( iss >> rest ) )
+         throw std::runtime_error( "pe::coupling::readSlabPlanes: line " +
+                                   std::to_string( lineNumber ) + " of " + filename +
+                                   " does not hold exactly six numbers (px py pz nx ny nz)" );
+      if( !allFinite( p.point ) || !allFinite( p.normal ) ||
+          !( p.normal[0]*p.normal[0] + p.normal[1]*p.normal[1] + p.normal[2]*p.normal[2] > 0.0 ) )
+         throw std::runtime_error( "pe::coupling::readSlabPlanes: line " +
+                                   std::to_string( lineNumber ) + " of " + filename +
+                                   " holds a non-finite number or a zero normal" );
+      planes.push_back( p );
+   }
+   return planes;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Tests points against a sphere with pe's sphere predicate, without a body.
+ *
+ * \param centre The centre.
+ * \param radius The radius.
+ * \param xyz The points, interleaved x0 y0 z0 x1 ...
+ * \param numPoints The number of points.
+ * \param flags Output: 1 where Sphere::containsPoint() of a sphere with this centre and radius
+ *        accepts the point (|x - X|^2 <= r^2 in pe::real, the same expression), 0 elsewhere.
+ * \return void
+ * \exception std::invalid_argument Null pointers with numPoints > 0, or a non-finite argument.
+ *
+ * For callers that hold the states of bodies the local process does not hold (e.g. a coupling
+ * whose processes see all bodies while pe distributes them).
+ */
+void sphereContainsPoints( const Vec3d& centre, double radius, const double* xyz,
+                           std::size_t numPoints, unsigned char* flags )
+{
+   if( numPoints > 0 && ( xyz == nullptr || flags == nullptr ) )
+      throw std::invalid_argument( "pe::coupling::sphereContainsPoints: null point or flag array" );
+   if( !allFinite( centre ) || !std::isfinite( radius ) )
+      throw std::invalid_argument( "pe::coupling::sphereContainsPoints: the sphere is not finite" );
+   const Vec3 gpos_( toPe( centre ) );
+   const real radius_( radius );
+   for( std::size_t i=0; i<numPoints; ++i ) {
+      const Vec3 gpos( real( xyz[3*i] ), real( xyz[3*i+1] ), real( xyz[3*i+2] ) );
+      flags[i] = ( ( gpos - gpos_ ).sqrLength() <= ( radius_*radius_ ) ) ? 1u : 0u;
    }
 }
 //*************************************************************************************************
