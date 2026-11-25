@@ -384,6 +384,9 @@ int main( int argc, char** argv )
    int rank( 0 ), size( 1 );
    MPI_Comm_rank( MPI_COMM_WORLD, &rank );
    MPI_Comm_size( MPI_COMM_WORLD, &size );
+   // pe opens its log only when it logs something: remove the log of an earlier run, so that
+   // expectCleanLog() reads this run's log only
+   std::remove( ( "pe" + std::to_string( rank ) + ".log" ).c_str() );
    if( argc < 2 ) {
       std::fprintf( stderr, "usage: %s <reference file> [--write-reference] [--broken <v>]\n",
                     argv[0] );
