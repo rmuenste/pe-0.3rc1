@@ -23,10 +23,11 @@
  *  4 processes a sphere next to the common axis reaches every slab: advance() refuses it on all
  *  processes (reach rule) and nothing moves.
  *
- *  parallel (4 processes): planes x = -1, -0.95, 1 (an interior slab of width 0.05).
- *  createSphere() refuses a sphere whose reach is not smaller than 0.05; a small sphere whose
- *  displacement in one pe step can carry it two slabs on is refused by advance() on all
- *  processes (displacement rule), and stepped when slow.
+ *  parallel (4 processes): planes x = -1, -0.95, 1 (an interior slab of width 0.05) and the
+ *  closing plane x = 3. createSphere() refuses a sphere whose reach is not smaller than 0.05; a
+ *  small sphere whose displacement in one pe step can carry it two slabs on is refused by
+ *  advance() on all processes (displacement rule), and stepped when slow; a checkpoint whose
+ *  saved position lies beyond the closing plane (no process owns it) is refused.
  *
  *  friction (1 process with --write-reference, 2 processes): two touching spheres on both sides
  *  of the plane x = 0 (the contact point lies on it, so process 0 constructs the contact with a
@@ -188,7 +189,7 @@ static void incline( pc::Engine& engine, int size )
 static void parallel( pc::Engine& engine, int rank )
 {
    std::vector<pc::SlabPlane> planes;
-   for( double x : { -1.0, -0.95, 1.0 } )
+   for( double x : { -1.0, -0.95, 1.0, 3.0 } )
       planes.push_back( pc::SlabPlane{ pc::Vec3d{ { x, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } } );
    engine.decomposeSlabs( planes );
    const pc::MaterialId mat( engine.createMaterial( "rulesParallel", 1000.0, 0.0, 0.1, 0.1 ) );
@@ -228,7 +229,42 @@ static void parallel( pc::Engine& engine, int rank )
    engine.advance( 1.0e-3, 10 );
    const pc::BodyState s2( stateOf( engine, id ) );
    expect( s2.position[0] > s0.position[0] + 0.3, "the step with substeps moved the sphere" );
-   (void)rank;
+
+   // a checkpoint whose saved position lies beyond the closing plane: no process owns it
+   engine.prepareCheckpoint();
+   std::string text;
+   if( rank == 0 ) {
+      std::ostringstream os;
+      engine.writeCheckpoint( os );
+      text = os.str();
+   }
+   int len( int( text.size() ) );
+   MPI_Bcast( &len, 1, MPI_INT, 0, MPI_COMM_WORLD );
+   text.resize( std::size_t( len ) );
+   MPI_Bcast( &text[0], len, MPI_CHAR, 0, MPI_COMM_WORLD );
+   std::istringstream in( text );
+   std::ostringstream edited;
+   std::string line;
+   while( std::getline( in, line ) ) {
+      std::istringstream ls( line );
+      std::string tag;
+      pc::BodyId bid( 0 );
+      if( ( ls >> tag >> bid ) && tag == "body" && bid == id ) {
+         std::vector<std::string> tok;
+         std::istringstream ts( line );
+         std::string t;
+         while( ts >> t ) tok.push_back( t );
+         tok[2] = "3.5";
+         line.clear();
+         for( std::size_t i=0; i<tok.size(); ++i ) line += ( i ? " " : "" ) + tok[i];
+      }
+      edited << line << '\n';
+   }
+   std::istringstream beyond( edited.str() );
+   expectThrows<std::runtime_error>( [&]() { engine.readCheckpoint( beyond ); },
+                                     "a saved position beyond the closing plane", "owned by 0 processes" );
+   const pc::BodyState s3( stateOf( engine, id ) );
+   expect( s3.position == s2.position, "the refused restore changed nothing" );
 }
 //*************************************************************************************************
 
