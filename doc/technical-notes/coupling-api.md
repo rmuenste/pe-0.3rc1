@@ -533,17 +533,31 @@ support pe versions with and without it):
   `processRank()` / `processCount()` report pe's communicator.
 - **Reach rules.** pe keeps shadow copies on, and migrates bodies to, neighbouring slabs only.
   With R the reach of a body for pe's shadow-copy test (radius, or half the diagonal of the
-  bounding box, plus the process overlap `contactThreshold` plus the lubrication shadow margin):
-  `createSphere()` refuses a sphere with R not smaller than the thinnest interior slab (all
-  planes parallel); `advance()` on three or more processes refuses, collectively and before
-  anything moves, every pe step in which a local body's ball of radius R touches a slab that is
-  not the holder's or a neighbour's (rule i: a contact there would be missed, the next migration
-  would need a distant process: "Registering distant processes is not yet implemented"), or its
-  ball of radius R + (|v| + |g| h) h does (rule ii: the step could carry it beyond the neighbours,
-  and pe deletes a body that no neighbour takes as an outflow). Tested by
+  bounding box, plus the process overlap `contactThreshold` plus the lubrication shadow margin)
+  and d = (|v| + a h) h the displacement estimate of one pe step (a the acceleration the solver
+  applies: the buoyancy-reduced gravity |1 - rho_f/rho| |g| where it applies buoyancy, else |g|;
+  0 for a fixed body, which moves with its prescribed velocity): `createSphere()` refuses a
+  sphere with R not smaller than the thinnest interior slab (a process on each side, all
+  bounding planes parallel; the gap to a closing plane is no interior slab, two processes have
+  none); `advance()` on three or more processes refuses, collectively and before anything moves,
+  every pe step in which a local finite body (fixed ones included, global ones not) breaks
+  rule i (its ball of radius R touches a slab that is not the holder's or a neighbour's: a
+  contact there would be missed, the next migration would need a distant process: "Registering
+  distant processes is not yet implemented"), rule ii (so does its ball of radius R + d: the
+  step could carry it beyond the neighbours, and pe deletes a body that no neighbour takes as
+  an outflow) or rule iii (destination: it can reach a neighbouring slab j within d, and its
+  ball of radius R + d touches a slab that is not a neighbour of j; for inclined planes). d is an
+  estimate for a free body: contact impulses and split-impulse corrections are not predicted, so
+  a caller that must not lose bodies checks the body count after the step (the FEAT exchange
+  does, as a fatal error in the same coupling step). The decomposition and the rules are
+  process-wide state, like pe's domain, so a replacement Engine handle keeps them. Tested by
   `pe-coupling-mpi-dd-incline-2/-4` (inclined planes: unique ownership on a plane, unique
-  creation, rule i next to the common axis of wedges) and `pe-coupling-mpi-dd-parallel-4` (the
-  creation rule; rule ii refused with one substep, allowed with ten).
+  creation, rule i next to the common axis of wedges for a movable and a fixed sphere),
+  `pe-coupling-mpi-dd-parallel-4` (the creation rule; rule ii refused with one substep, also with
+  a replacement handle, allowed with 100; a restored position beyond the closing plane refused),
+  `-closing-2` (a short terminal slab is no interior slab), `-destination-4` (planes x = 0,
+  x = 0.04 + 0.01 y, x = 10: a sphere at x = 0.039 moving 0.002 refused by rule iii) and
+  `-buoyant-4` (a light sphere rising 2.025 in one step refused by rule ii; |g| would allow it).
 - **Reading stays available**: enumeration (`Selection::shadowCopies`, `BodyState::shadow`
   report shadow copies), states, point classification (shadow copies are classified like local
   bodies, as in the extern "C" queries). `sphereContainsPoints()` evaluates pe's sphere predicate
@@ -600,14 +614,23 @@ support pe versions with and without it):
   owns its saved position (`Domain::ownsPoint()`, the process a running simulation holds it on;
   exactly one must). A world rebuilt by the creation calls holds a body that migrated after its
   creation elsewhere, possibly several slabs away: such a sphere is moved to the owner with its
-  system id, state and both histories (the holder destroys it, the owner instantiates it with
-  the parameters pe's migration carries; all shadow copies are dropped and rebuilt by one
-  synchronization, the moved spheres get theirs at the synchronization of the next `advance()`).
+  system id, state and both histories: the staying bodies get their saved poses first (so that
+  a pending `setKinematicState()` override cannot migrate them), all shadow copies are dropped,
+  the holder destroys the moving sphere, one synchronization delivers the removals, and the
+  owner creates the sphere as a LOCAL body (instantiated, the remote flag cleared, added to the
+  world, which makes it the owner, as a migrated body arrives) and writes its state through the
+  new pointer; its shadow copies follow at the synchronization of the next `advance()`. An
+  exception during this part of the commit is fatal for the run.
   Tested by `pe-coupling-mpi-dd-4` (a restore three slabs away, continued bit for bit; positions
-  exactly on a plane go to the lower rank; an unknown id is refused) and
-  `pe-coupling-mpi-dd-restart-4` (a fresh process set: the sphere created in slab 0, its step-80
-  checkpoint two slabs away restored on process 2, the history read back bit for bit, steps
-  81-120 bit for bit). A global finite body is refused on several processes. On one process
+  exactly on a plane go to the lower rank; an unknown id is refused), `pe-coupling-mpi-dd-restart-4`
+  (a fresh process set: the sphere created in slab 0, its step-80 checkpoint two slabs away
+  restored on process 2 as a local, non-remote body of that process, the history read back bit
+  for bit, steps 81-120 bit for bit against the uninterrupted 4-process run, including the
+  contact with a global wall, which pe resolves only for a local body) and
+  `pe-coupling-mpi-dd-mixed-4` (one sphere moved back over two slabs, another with a pending
+  override into a neighbour: both restored as local bodies of process 0 at their saved poses).
+  All domain-decomposed tests also require that pe's logs hold no `[ERROR` line, and they are
+  run once more with pe's internal assertions enabled (`PE_NDEBUG=OFF`). A global finite body is refused on several processes. On one process
   both functions are unchanged.
 
 The names avoid assuming that every process holds every body (`Selection::movable` means
