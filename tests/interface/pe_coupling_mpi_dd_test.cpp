@@ -41,6 +41,7 @@
 //=================================================================================================
 
 #include <mpi.h>
+#include <pe/core.h>
 #include <pe/interface/coupling/Engine.h>
 
 #include <cmath>
@@ -104,6 +105,27 @@ static std::string stateLine( int step, const pc::BodyState& s )
    for( int k=0; k<3; ++k ) put( s.linearVelocity[k] );
    for( int k=0; k<3; ++k ) put( s.angularVelocity[k] );
    return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The values of a state line (see stateLine()).
+ */
+static std::vector<double> lineValues( const std::string& line )
+{
+   std::istringstream is( line );
+   std::string tag, hex;
+   int step( 0 );
+   is >> tag >> step;
+   std::vector<double> v;
+   while( is >> hex ) {
+      const std::uint64_t b( std::stoull( hex, nullptr, 16 ) );
+      double x;
+      std::memcpy( &x, &b, sizeof( x ) );
+      v.push_back( x );
+   }
+   return v;
 }
 //*************************************************************************************************
 
@@ -176,6 +198,50 @@ static int slabOf( double x, int n )
       if( x <= -2.0 + 4.0 * ( k + 1 ) / n )
          return k;
    return n - 1;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief On the process holding the body: it is a LOCAL body of pe's central storage (not
+ *        flagged remote) owned by this process; checked collectively (exactly one process).
+ */
+static void expectLocal( pc::BodyId id, const std::string& what )
+{
+   int rank( 0 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   int found( 0 ), good( 0 );
+   const auto& storage( pe::theCollisionSystem()->getBodyStorage() );
+   for( auto it=storage.begin(); it!=storage.end(); ++it ) {
+      if( it->getSystemID() != static_cast<pe::id_t>( id ) )
+         continue;
+      ++found;
+      good += ( !it->isRemote() && it->getOwnerRank() == rank ) ? 1 : 0;
+   }
+   int sums[2] = { found, good };
+   MPI_Allreduce( MPI_IN_PLACE, sums, 2, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   expect( sums[0] == 1 && sums[1] == 1, what + ": the body is a local body of exactly one "
+           "process (not remote, owner = that process)" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief No "[ERROR" line in pe's log of this process (pe<rank>.log in the working directory;
+ *        no log file means nothing was logged).
+ */
+static void expectCleanLog()
+{
+   int rank( 0 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   std::ifstream in( ( "pe" + std::to_string( rank ) + ".log" ).c_str() );
+   std::string line;
+   int errors( 0 );
+   while( std::getline( in, line ) )
+      errors += ( line.find( "[ERROR" ) != std::string::npos ) ? 1 : 0;
+   int total( 0 );
+   MPI_Allreduce( &errors, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   expect( total == 0, "pe's logs hold no [ERROR line (" + std::to_string( total ) + " found)" );
 }
 //*************************************************************************************************
 
@@ -365,6 +431,9 @@ int main( int argc, char** argv )
 
    const pc::MaterialId mat( engine.createMaterial( "ddMat", 1200.0, 0.0, 0.1, 0.1 ) );
    const pc::BodyId id( createTraveller( engine, mat ) );
+   // a global wall at x = 1.9 (solid beyond): the sphere hits it in the last steps and is turned
+   // back (a contact with a global body, which pe resolves only for a local, non-remote body)
+   engine.createPlane( pc::Vec3d{ { -1.0, 0.0, 0.0 } }, -1.9, mat, 99 );
    expectThrows<std::logic_error>( [&]() { engine.decomposeSlabs( slabs( size ) ); },
                                    "decomposition after body creation", "decomposed before" );
 
@@ -391,6 +460,7 @@ int main( int argc, char** argv )
       engine.readCheckpoint( is );
       pc::BodyState after;
       const int restoredOn( holder( engine, id, after, "restart: after the restore" ) );
+      expectLocal( id, "restart: after the restore" );
       if( rank == 0 )
          std::printf( "pe_coupling_mpi_dd_test (%d ranks, restart): created on process %d, "
                       "restored on process %d\n", size, created, restoredOn );
@@ -401,7 +471,9 @@ int main( int argc, char** argv )
       pc::LoadHistory record( gatherHistory( engine, id, restoredOn ) );
       expect( historyLine( record ) == saved,
               "restart: the restored holder's history equals the saved one bit for bit" );
-      std::ifstream in( reference.c_str() );
+      // the uninterrupted run on the same number of processes (written by --save-checkpoint;
+      // with the wall contact pe's parallel contact solve is not bitwise that of one process)
+      std::ifstream in( ( restartFile + ".lines" ).c_str() );
       std::vector<std::string> ref;
       std::string l;
       while( std::getline( in, l ) ) ref.push_back( l );
@@ -416,7 +488,13 @@ int main( int argc, char** argv )
       }
       if( rank == 0 && mismatch > 0 )
          std::printf( "restart: first differing step %d\n", mismatch );
-      expect( mismatch < 0, "restart: steps 81..120 equal the reference bit for bit" );
+      expect( mismatch < 0, "restart: steps 81..120 (including the wall contact) equal the "
+              "uninterrupted run bit for bit" );
+      pc::BodyState last;
+      holder( engine, id, last, "restart: end" );
+      expect( last.linearVelocity[0] < 0.0, "restart: the global wall turned the restored sphere "
+              "back" );
+      expectCleanLog();
       int local( coupling_test::failures() ), total( 0 );
       MPI_Allreduce( &local, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
       if( rank == 0 )
@@ -458,6 +536,11 @@ int main( int argc, char** argv )
          }
       }
    }
+   {
+      pc::BodyState last;
+      holder( engine, id, last, "end of the run" );
+      expect( last.linearVelocity[0] < 0.0, "the global wall turned the sphere back" );
+   }
    int crossings( 0 );
    for( std::size_t i=1; i<owners.size(); ++i ) crossings += ( owners[i] != owners[i-1] ) ? 1 : 0;
    if( rank == 0 )
@@ -472,15 +555,40 @@ int main( int argc, char** argv )
       }
    }
    else {
+      // bit for bit up to the impact on the global wall (the first step with vx < 0 in the
+      // reference); from there pe's parallel contact solve differs in the last bits (measured
+      // 1e-14), so within 1e-12 of the largest value of the step
       std::ifstream in( reference.c_str() );
       std::string l;
-      int mismatch( -1 );
+      int mismatch( -1 ), impact( -1 );
+      double worst( 0.0 );
       for( std::size_t i=0; i<lines.size(); ++i ) {
-         if( !std::getline( in, l ) || l != lines[i] ) { mismatch = int( i ) + 1; break; }
+         if( !std::getline( in, l ) ) { mismatch = int( i ) + 1; break; }
+         const std::vector<double> a( lineValues( l ) ), b( lineValues( lines[i] ) );
+         if( impact < 0 && a.size() > 7 && a[7] < 0.0 ) impact = int( i ) + 1;
+         if( impact < 0 ) {
+            if( l != lines[i] ) { mismatch = int( i ) + 1; break; }
+            continue;
+         }
+         double scale( 0.0 ), diff( 0.0 );
+         for( std::size_t k=0; k<a.size() && k<b.size(); ++k ) {
+            scale = std::max( scale, std::fabs( a[k] ) );
+            diff = std::max( diff, std::fabs( a[k] - b[k] ) );
+         }
+         worst = std::max( worst, diff / scale );
+         if( a.size() != b.size() || diff > 1.0e-12 * scale ) { mismatch = int( i ) + 1; break; }
       }
-      if( rank == 0 && mismatch > 0 )
-         std::printf( "first differing step: %d\n", mismatch );
-      expect( mismatch < 0, "the trajectory equals the single-process reference bit for bit" );
+      if( rank == 0 )
+         std::printf( "pe_coupling_mpi_dd_test (%d ranks): bit for bit up to the wall impact at step "
+                      "%d, afterwards within %.2e of the reference%s\n", size, impact, worst,
+                      mismatch > 0 ? ( ", first differing step " + std::to_string( mismatch ) ).c_str()
+                                   : "" );
+      expect( mismatch < 0 && impact > 0, "the trajectory equals the single-process reference bit "
+              "for bit up to the wall impact, and within 1e-12 after it" );
+   }
+   if( !saveFile.empty() && rank == 0 ) {
+      std::ofstream out( ( saveFile + ".lines" ).c_str() );
+      for( const std::string& l : lines ) out << l << '\n';
    }
 
    // the history: loadHistory() / setLoadHistory() round trip on the holder
@@ -536,6 +644,7 @@ int main( int argc, char** argv )
       }
       std::istringstream is( checkpoint );
       engine.readCheckpoint( is );
+      expectLocal( id, "after the restore" );
       pc::BodyState r;
       expect( holder( engine, id, r, "after the restore" ) == ownerAtCheckpoint,
               "the restored body is held by the owner of its saved position" );
@@ -562,6 +671,7 @@ int main( int argc, char** argv )
          engine.readCheckpoint( on );
          pc::BodyState t;
          const int o( holder( engine, id, t, "on a plane" ) );
+         expectLocal( id, "on a plane" );
          expect( o == k && t.position[0] == x, "a position on plane " + std::to_string( k ) +
                  " is restored on process " + std::to_string( k ) );
          engine.advance( dt );
@@ -634,6 +744,8 @@ int main( int argc, char** argv )
                                          "prepareCheckpoint" );
       }
    }
+
+   expectCleanLog();
 
    int local( coupling_test::failures() ), total( 0 );
    MPI_Allreduce( &local, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );

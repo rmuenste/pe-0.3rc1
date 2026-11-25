@@ -1425,6 +1425,26 @@ if(PE_USE_MPI AND MPI_FOUND)
       LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS ${np}
       ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
   endforeach()
+  foreach(mode closing bignormal)
+    add_test(
+      NAME pe-coupling-mpi-dd-${mode}-2
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> ${mode} ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-${mode}-2 PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 2
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
+  foreach(mode destination buoyant mixed)
+    add_test(
+      NAME pe-coupling-mpi-dd-${mode}-4
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4 ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> ${mode} ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-${mode}-4 PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 4
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
   add_test(
     NAME pe-coupling-mpi-dd-parallel-4
     COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4 ${MPIEXEC_PREFLAGS}
@@ -1461,4 +1481,14 @@ if(PE_USE_MPI AND MPI_FOUND)
   set_tests_properties(pe-coupling-mpi-dd-broken-history PROPERTIES
     LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 2 WILL_FAIL TRUE
     FIXTURES_REQUIRED coupling_dd_reference ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  # every domain-decomposed test in its own working directory: each checks its processes' pe
+  # logs (pe<rank>.log) for [ERROR lines
+  foreach(t pe-coupling-mpi-dd-reference pe-coupling-mpi-dd-2 pe-coupling-mpi-dd-4
+            pe-coupling-mpi-dd-restart-2 pe-coupling-mpi-dd-restart-4 pe-coupling-mpi-dd-broken-history
+            pe-coupling-mpi-dd-incline-2 pe-coupling-mpi-dd-incline-4 pe-coupling-mpi-dd-parallel-4
+            pe-coupling-mpi-dd-closing-2 pe-coupling-mpi-dd-bignormal-2 pe-coupling-mpi-dd-destination-4 pe-coupling-mpi-dd-buoyant-4
+            pe-coupling-mpi-dd-mixed-4 pe-coupling-mpi-dd-friction-reference pe-coupling-mpi-dd-friction-2)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
+    set_tests_properties(${t} PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
+  endforeach()
 endif()
