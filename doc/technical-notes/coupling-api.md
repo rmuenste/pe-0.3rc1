@@ -523,9 +523,27 @@ support pe versions with and without it):
 - **Decomposition.** `decomposeSlabs( planes )` (collective, before the first body, also before
   planes) gives process k slab k of a chain of slabs between planes of any orientation, pe's
   `decomposeDomainPlaneSlabs()`; `readSlabPlanes( file )` reads planes in the format of pe's
-  `loadSlabPlanes()` / pe_partpy `plane_single`. `ownsPoint( x )` tells whether this process owns
-  a point (exactly one does; ties go to the lower rank): a body is created by the owner of its
-  centre. `processRank()` / `processCount()` report pe's communicator.
+  `loadSlabPlanes()` / pe_partpy `plane_single`. The two slabs at a plane share exactly its
+  points: the negative side is the exact complement of the positive one (`HalfSpace::opposite()`
+  negates the stored coefficients; constructing it from the negated normal normalized the normal
+  a second time and could change its last bits, so on an inclined plane two processes could both
+  see a point as their own). `ownsPoint( x )` tells whether this process owns a point (exactly
+  one does; ties go to the lower rank): a body is created by the owner of its centre (a caller
+  that asks every process agrees on one, e.g. the lowest claiming rank, before creating).
+  `processRank()` / `processCount()` report pe's communicator.
+- **Reach rules.** pe keeps shadow copies on, and migrates bodies to, neighbouring slabs only.
+  With R the reach of a body for pe's shadow-copy test (radius, or half the diagonal of the
+  bounding box, plus the process overlap `contactThreshold` plus the lubrication shadow margin):
+  `createSphere()` refuses a sphere with R not smaller than the thinnest interior slab (all
+  planes parallel); `advance()` on three or more processes refuses, collectively and before
+  anything moves, every pe step in which a local body's ball of radius R touches a slab that is
+  not the holder's or a neighbour's (rule i: a contact there would be missed, the next migration
+  would need a distant process: "Registering distant processes is not yet implemented"), or its
+  ball of radius R + (|v| + |g| h) h does (rule ii: the step could carry it beyond the neighbours,
+  and pe deletes a body that no neighbour takes as an outflow). Tested by
+  `pe-coupling-mpi-dd-incline-2/-4` (inclined planes: unique ownership on a plane, unique
+  creation, rule i next to the common axis of wedges) and `pe-coupling-mpi-dd-parallel-4` (the
+  creation rule; rule ii refused with one substep, allowed with ten).
 - **Reading stays available**: enumeration (`Selection::shadowCopies`, `BodyState::shadow`
   report shadow copies), states, point classification (shadow copies are classified like local
   bodies, as in the extern "C" queries). `sphereContainsPoints()` evaluates pe's sphere predicate
@@ -551,20 +569,46 @@ support pe versions with and without it):
   current owner before its next `applyLoads()`. Then the trajectory is bit for bit that of one
   process (`pe-coupling-mpi-dd-2/-4` against the single-process reference, including slab
   crossings and a restore; `pe-coupling-mpi-dd-broken-history`, which skips the restore, fails).
+  **Shadow copies after `applyLoads()`.** The impulse changes the holder's velocity; the shadow
+  copies on other processes keep the old one until the next synchronization, and
+  `HardContactAndFluid` constructs contacts (`detector_.findContacts()`) before it synchronizes
+  velocities in the solve: `Contact::Contact()` reads both bodies' velocities and selects the
+  restitution (normal relative velocity) and static or dynamic friction (tangential relative
+  velocity). So `applyLoads()` marks the world, and the next `advance()` synchronizes before its
+  first pe step. A free body is unaffected (the synchronization only sends states).
+  `pe-coupling-mpi-dd-friction-2`: two touching spheres on both sides of a slab plane, static
+  friction 0.9, dynamic 0.05, the contact constructed by the process holding the shadow copy;
+  the velocities agree with one process to 1e-6 (pe relaxes contacts between processes, so not
+  bitwise); without the synchronization the static coefficient is chosen and the result differs
+  by far more.
 - **`setKinematicState()`** works on local bodies, also on bodies with shadow copies (the
   shadows follow at the next `advance()`), to a position in the local or a connected neighbouring
   subdomain: pe's synchronization migrates bodies to neighbours only and deletes a body no
   neighbour takes (an outflow). Refused ("not implemented yet"): a global body (planes
-  included), a shadow copy, a position beyond the neighbours.
+  included), a shadow copy, a position whose owner (pe's tie rule: a point on the far face of a
+  neighbour slab belongs to the slab beyond it) is not this process or a neighbour.
 - **Checkpoints.** `prepareCheckpoint()` (collective) checks and formats the records of every
   process (all processes throw the message of the lowest-ranked process that found an error, or
   none does) and gathers them on the root (`MPISettings::root()`), which writes them with
-  `writeCheckpoint()`: format version 3, records sorted by system id; any change of the world
-  in between discards the prepared text. `readCheckpoint()` is collective: every process reads
-  the same text, each body must be held by exactly one process, each record is restored by its
-  holder, and a restored position must lie in the holder's or a neighbouring subdomain (the body
-  then migrates at the next `advance()`). A global finite body is refused on several processes.
-  On one process both functions are unchanged.
+  `writeCheckpoint()`: format version 3, records sorted by system id. The prepared text is a
+  snapshot: its validity ends with the next call that changes the world or the coupling state
+  on any process. The root discards it on its own changes (creation, `addLoad()`,
+  `applyLoads()`, `advance()`, `setKinematicState()`, `setLoadHistory()`, `readCheckpoint()`);
+  a change on another process is not detected (no collective validation), so write directly
+  after preparing. `readCheckpoint()` is collective: every process reads the same text, each
+  body must be held by exactly one process, and each record is restored on the process that
+  owns its saved position (`Domain::ownsPoint()`, the process a running simulation holds it on;
+  exactly one must). A world rebuilt by the creation calls holds a body that migrated after its
+  creation elsewhere, possibly several slabs away: such a sphere is moved to the owner with its
+  system id, state and both histories (the holder destroys it, the owner instantiates it with
+  the parameters pe's migration carries; all shadow copies are dropped and rebuilt by one
+  synchronization, the moved spheres get theirs at the synchronization of the next `advance()`).
+  Tested by `pe-coupling-mpi-dd-4` (a restore three slabs away, continued bit for bit; positions
+  exactly on a plane go to the lower rank; an unknown id is refused) and
+  `pe-coupling-mpi-dd-restart-4` (a fresh process set: the sphere created in slab 0, its step-80
+  checkpoint two slabs away restored on process 2, the history read back bit for bit, steps
+  81-120 bit for bit). A global finite body is refused on several processes. On one process
+  both functions are unchanged.
 
 The names avoid assuming that every process holds every body (`Selection::movable` means
 *local* movable bodies).
