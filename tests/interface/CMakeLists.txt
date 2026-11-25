@@ -1367,4 +1367,40 @@ if(PE_USE_MPI AND MPI_FOUND)
     LABELS "integration;mpi;interface;coupling"
     TIMEOUT 120
   )
+
+  # Domain-decomposed world (decomposeSlabs(), loads, history, migration, prepared checkpoint):
+  # the trajectory of a sphere crossing every slab boundary on 2 and 4 processes is compared bit
+  # for bit with the single-process reference written by the fixture test. The broken variant
+  # (the history is not restored after a migration) must fail.
+  add_executable(pe_coupling_mpi_dd_test pe_coupling_mpi_dd_test.cpp)
+  target_link_libraries(pe_coupling_mpi_dd_test PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+  set(coupling_dd_reference ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_reference.txt)
+  add_test(
+    NAME pe-coupling-mpi-dd-reference
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference} --write-reference
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-reference PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 FIXTURES_SETUP coupling_dd_reference
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  foreach(np 2 4)
+    add_test(
+      NAME pe-coupling-mpi-dd-${np}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${np} ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference} ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-${np} PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS ${np}
+      FIXTURES_REQUIRED coupling_dd_reference ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
+  add_test(
+    NAME pe-coupling-mpi-dd-broken-history
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference} --broken skip-history
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-broken-history PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 2 WILL_FAIL TRUE
+    FIXTURES_REQUIRED coupling_dd_reference ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
 endif()
