@@ -121,6 +121,8 @@ Box::Box( id_t sid, id_t uid, const Vec3& gpos, const Vec3& rpos, const Quat& q,
    rpos_   = rpos;                   // Setting the relative position
    q_      = q;                      // Setting the orientation
    R_      = q_.toRotationMatrix();  // Setting the rotation matrix
+   Box::calcBoundingBox();         // The parent constructor computed the bounding box for the
+                                     // identity orientation; recompute it for q
 
    if( fixed ) {
       fixed_   = true;               // Setting the fixed flag

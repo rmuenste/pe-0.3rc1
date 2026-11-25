@@ -182,6 +182,12 @@ public:
    //! bodies (RigidBody::setRelSurfaceVel()); World::simulationStep() warns without it.
    static constexpr bool hasSurfaceVelocity = true;
 
+   //! Body-force semantics, read by the coupling API (pe/interface/coupling/BuildInfo.h): the
+   //! velocity prediction uses driver-supplied forces only; gravity and buoyancy are owned by
+   //! the outer driver (doc/technical-notes/euler-lagrange-solver-conventions.md).
+   static constexpr bool appliesGravity  = false;
+   static constexpr bool appliesBuoyancy = false;
+
    enum RelaxationModel {
       InelasticFrictionlessContact,
       ApproximateInelasticCoulombContactByDecoupling,

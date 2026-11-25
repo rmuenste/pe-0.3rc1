@@ -1,4 +1,5 @@
 #include "coupling_body_access.h"
+#include <src/interface/PointOwnership.h>
 #include <pe/interface/object_queries.h>
 #include <pe/interface/support/el_hydro_compat.h>
 #include <pe/interface/support/el_optional_api.h>
@@ -21,6 +22,10 @@
 //#define ONLY_ROTATION 
 using namespace pe;
 using pe::interface::detail::ghostBodies;
+using pe::interface::detail::minimumOwnerExhaustive;
+using pe::interface::detail::minimumOwnerNearPoint;
+using pe::interface::detail::ownersExhaustive;
+using pe::interface::detail::ownersNearPoint;
 std::map<int, boost::uint64_t> particleMap;
 std::map<int, boost::uint64_t> remoteParticleMap;
 std::map<int, boost::uint64_t> fbmMap;
@@ -529,30 +534,13 @@ void debug_output_particles_() {
  */
 //=================================================================================================
 /*
- *!\brief Keeps the smallest system id seen so far (the ownership rule for overlapping bodies).
+ * The shape dispatch (bodyContainsPoint), the ownership rule (minimum system id among the
+ * containing bodies) and both traversals live in src/interface/PointOwnership.h, shared with
+ * pe::coupling::Engine, so the extern "C" queries below and the coupling API cannot drift
+ * apart - the Layer-1 review found the dispatch copied into each path and, in one of them, a
+ * branch duplicated verbatim. Fixed cylinders and fixed triangle meshes are skipped: the FBM
+ * treats them as geometry, not as particles.
  */
-static inline void ownerCandidate( boost::uint64_t id, bool& found, boost::uint64_t& ownerId ) {
-  if( !found || id < ownerId ) { ownerId = id; found = true; }
-}
-
-/*!\brief Does this body contain the point?
- *
- * The ONE shape dispatch shared by the exhaustive query, the accelerated query and the two
- * owner-list queries below, so the paths cannot drift apart - the Layer-1 review found the
- * dispatch copied into each path and, in one of them, a branch duplicated verbatim. Fixed
- * cylinders and fixed triangle meshes are skipped: the FBM treats them as geometry, not as
- * particles.
- */
-static inline bool bodyContainsPoint( ConstBodyID body, const double pos[3] ) {
-  const GeomType t = body->getType();
-  if( t == sphereType )       return static_cast<const Sphere*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-  if( t == capsuleType )      return static_cast<const Capsule*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-  if( t == boxType )          return static_cast<const Box*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-  if( t == ellipsoidType )    return static_cast<const Ellipsoid*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-  if( t == cylinderType )     return !body->isFixed() && static_cast<const Cylinder*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-  if( t == triangleMeshType ) return !body->isFixed() && static_cast<const TriangleMesh*>(body)->containsPoint(pos[0], pos[1], pos[2]);
-  return false;
-}
 //=================================================================================================
 
 
@@ -567,25 +555,9 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
   // answer depend on traversal order, and the accelerated query traverses in a different order
   // than this one, so the two disagreed for overlapping bodies. The minimum is order-free, so
   // both paths agree by construction. Neither can stop at the first hit any more.
-  bool found = false;
-  boost::uint64_t ownerId = 0;
-  unsigned int i(0);
-  for (; i < theCollisionSystem()->getBodyStorage().size(); i++) {
-    World::SizeType widx = static_cast<World::SizeType>(i);
-    BodyID body = world->getBody(static_cast<unsigned int>(widx));
-
-    if( bodyContainsPoint( body, pos ) ) ownerCandidate( body->getSystemID(), found, ownerId );
-  }
-  for (int j(0); j < ghostBodies().size(); j++) {
-
-    World::SizeType widx = static_cast<World::SizeType>(j);
-    World::SizeType size = ghostBodies().size();
-
-    ConstBodyID body;
-    body = ghostBodies().at(widx);
-
-    if( bodyContainsPoint( body, pos ) ) ownerCandidate( body->getSystemID(), found, ownerId );
-  }
+  // Local bodies first, then the shadow copies (PointOwnership.h).
+  pe::id_t ownerId = 0;
+  const bool found = minimumOwnerExhaustive( pos, ownerId );
 
   if( found ) {
     uint64toByteArray( ownerId, bytes );
@@ -614,28 +586,12 @@ bool pointInsideParticles(int vidx, int* inpr, double pos[3], short int bytes[8]
  * Only bodies in nearby grid cells are checked instead of iterating through all bodies.
  */
 bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short int bytes[8]) {
-  bool accelFound = false;
-  boost::uint64_t accelSystemId = 0;
-
-  // Get candidate bodies from HashGrid (only nearby cells)
+  // Candidate bodies from the HashGrid (only nearby cells), same ownership rule as the
+  // exhaustive path: minimum system id, so the answer does not depend on the order the
+  // candidates come out of the grid (PointOwnership.h).
   std::vector<BodyID> candidates;
-  theCollisionSystem()->getCoarseDetector().getBodiesNearPoint(
-      static_cast<real>(pos[0]),
-      static_cast<real>(pos[1]),
-      static_cast<real>(pos[2]),
-      candidates);
-
-  // Check only candidate bodies (removes duplicates implicitly since we return on first match)
-  for (std::vector<BodyID>::iterator it = candidates.begin(); it != candidates.end(); ++it) {
-    BodyID body = *it;
-    const bool inside = bodyContainsPoint( body, pos );
-
-    if (inside) {
-      // same ownership rule as the exhaustive path: minimum system id, so the answer does not
-      // depend on the order the candidates come out of the grid
-      ownerCandidate( body->getSystemID(), accelFound, accelSystemId );
-    }
-  }
+  pe::id_t accelSystemId = 0;
+  const bool accelFound = minimumOwnerNearPoint( pos, candidates, accelSystemId );
 
   if (accelFound) {
     // inpr is the solid FLAG, not an identity: callers read the boolean return and take the
@@ -707,11 +663,9 @@ bool pointInsideParticlesAccelerated(int vidx, int* inpr, double pos[3], short i
  * show - visible one owner deeper, where the same minimum id can hide a second owner that only
  * one path sees.
  */
-#include <algorithm>
-static void finishOwnerList( std::vector<boost::uint64_t>& owners, int maxOwners,
+// The owner list is sorted ascending and free of duplicates (PointOwnership.h).
+static void finishOwnerList( const std::vector<pe::id_t>& owners, int maxOwners,
                              unsigned long long* ids, int* nOwners ) {
-  std::sort( owners.begin(), owners.end() );
-  owners.erase( std::unique( owners.begin(), owners.end() ), owners.end() );
   *nOwners = static_cast<int>( owners.size() );
   const int m = std::min( *nOwners, maxOwners );
   for( int i = 0; i < m; ++i ) ids[i] = static_cast<unsigned long long>( owners[i] );
@@ -719,27 +673,16 @@ static void finishOwnerList( std::vector<boost::uint64_t>& owners, int maxOwners
 
 extern "C" void pointOwners( const double pos[3], const int* maxOwners,
                              unsigned long long* ids, int* nOwners ) {
-  std::vector<boost::uint64_t> owners;
-  WorldID world = theWorld();
-  for( unsigned int i = 0; i < theCollisionSystem()->getBodyStorage().size(); ++i ) {
-    BodyID body = world->getBody( i );
-    if( bodyContainsPoint( body, pos ) ) owners.push_back( body->getSystemID() );
-  }
-  for( size_t j = 0; j < ghostBodies().size(); ++j ) {
-    ConstBodyID body = ghostBodies().at( j );
-    if( bodyContainsPoint( body, pos ) ) owners.push_back( body->getSystemID() );
-  }
+  std::vector<pe::id_t> owners;
+  ownersExhaustive( pos, owners );
   finishOwnerList( owners, *maxOwners, ids, nOwners );
 }
 
 extern "C" void pointOwnersAccelerated( const double pos[3], const int* maxOwners,
                                         unsigned long long* ids, int* nOwners ) {
   std::vector<BodyID> candidates;
-  theCollisionSystem()->getCoarseDetector().getBodiesNearPoint(
-      static_cast<real>(pos[0]), static_cast<real>(pos[1]), static_cast<real>(pos[2]), candidates );
-  std::vector<boost::uint64_t> owners;
-  for( std::vector<BodyID>::const_iterator it = candidates.begin(); it != candidates.end(); ++it )
-    if( bodyContainsPoint( *it, pos ) ) owners.push_back( (*it)->getSystemID() );
+  std::vector<pe::id_t> owners;
+  ownersNearPoint( pos, candidates, owners );
   finishOwnerList( owners, *maxOwners, ids, nOwners );
 }
 //=================================================================================================

@@ -799,6 +799,32 @@ void Writer::setTexture( ConstTriangleMeshID mesh, const Texture& texture )
 
 
 //*************************************************************************************************
+/*!\brief Setting the texture of a single inner mesh.
+ *
+ * \param mesh The inner mesh to be textured.
+ * \param texture The texture for the inner mesh.
+ * \return void
+ *
+ * This function sets the POV-Ray appearance for the given inner mesh \a mesh. (It was declared
+ * and called by InnerMesh but never defined, which left pe's shared library with an undefined
+ * symbol that no executable could link against.)
+ */
+void Writer::setTexture( ConstInnerMeshID mesh, const Texture& texture )
+{
+   for( InnerMeshes::Iterator pos=innerMeshes_.begin(); pos!=innerMeshes_.end(); ++pos ) {
+      if( pos->mesh_ == mesh ) {
+         pos->default_ = false;
+         pos->texture_ = texture;
+         return;
+      }
+   }
+
+   pe_INTERNAL_ASSERT( false, "Inner mesh is not registered for the POV-Ray visualization" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Setting the texture of all rigid bodies contained in a union.
  *
  * \param u The union to be textured.

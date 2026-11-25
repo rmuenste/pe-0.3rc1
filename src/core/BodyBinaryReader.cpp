@@ -424,6 +424,17 @@ void BodyBinaryReader::readFile( const char* filename ) {
                log << "On rank " << MPISettings::rank() << " the new UniqueID<RigidBody>::globalCounter_ is " << UniqueID<RigidBody>::globalCounter_  << "\n";
             }
 
+            // Without rank prefix bits global ids are drawn from the local counter (see
+            // UniqueID::createGlobal()). A file written before that change carries two
+            // independent counters whose ids overlap; continue after the larger one, so no id
+            // that was restored here is issued again. (Every restored id is below the counter
+            // it was drawn from, so the larger counter is above all of them.) This covers the
+            // same-layout case only (a reader without prefix bits reading a file written without
+            // them); reading binary checkpoints across builds is not supported here.
+            if( MPISettings::bits() == 0 &&
+                UniqueID<RigidBody>::counter_ < UniqueID<RigidBody>::globalCounter_ )
+               UniqueID<RigidBody>::counter_ = UniqueID<RigidBody>::globalCounter_;
+
             // unmarshal all global bodies
             unmarshalAll( globals_, true );
 

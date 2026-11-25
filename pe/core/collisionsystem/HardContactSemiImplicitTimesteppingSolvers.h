@@ -181,6 +181,11 @@ public:
    //! Opt-in marker: this pipeline invokes the shared lubrication stage.
    static constexpr bool hasLubricationStage = true;
 
+   //! Body-force semantics, read by the coupling API (pe/interface/coupling/BuildInfo.h): the
+   //! velocity prediction adds World gravity to every awake movable body; there is no buoyancy.
+   static constexpr bool appliesGravity  = true;
+   static constexpr bool appliesBuoyancy = false;
+
    //! Diagnostics of the most recent lubrication-stage invocation (zeros while the
    //! add-on is off). Read by the extern-C query get_lubrication_stage_diag.
    const lubrication::StageDiagnostics& lubricationStageDiag() const {

@@ -184,6 +184,13 @@ public:
    //! lubricationEnabled_ (see pe/interface/support/optional_collision_params.h).
    static constexpr bool hasLubricationStage = true;
 
+   //! Body-force semantics, read by the coupling API (pe/interface/coupling/BuildInfo.h): the
+   //! velocity prediction adds World gravity to every awake movable body and, for spheres,
+   //! capsules, cylinders, boxes and ellipsoids, scales it by the buoyancy factor
+   //! (1 - Settings::liquidDensity()/rho_p). A CFD driver must not add the submerged weight.
+   static constexpr bool appliesGravity  = true;
+   static constexpr bool appliesBuoyancy = true;
+
    //! Diagnostics of the most recent lubrication-stage invocation (zeros while the
    //! add-on is off). Read by the extern-C query get_lubrication_stage_diag.
    const lubrication::StageDiagnostics& lubricationStageDiag() const {
@@ -250,6 +257,11 @@ public:
    inline void            setAdaptiveBaumgarteCapping( bool enable, real aggressiveness = 50.0 );
    inline void            setSplitImpulse( bool enable );
    inline bool            getSplitImpulse() const { return useSplitImpulse_; }
+   //! Switches the per-sphere velocity-prediction diagnostic block that is printed to stdout on
+   //! the representative CFD rank (SimulationConfig::getCfdRank() == 1). Default: on, as before.
+   inline void            setPredictionDiagnostics( bool enable )
+                          { predictionDiagnostics_ = enable; }
+   inline bool            getPredictionDiagnostics() const { return predictionDiagnostics_; }
    //@}
    //**********************************************************************************************
 
@@ -397,6 +409,7 @@ private:
    std::set<BodyID, LessSystemID> globalNonfixedBodies_;  //!< Global, non-fixed bodies whose applied forces need to be reduced.
    std::vector<real> reductionBuffer_;                    //!< Buffer for the reduction of forces and torques acting on global non-fixed bodies.
    bool requireSync_;         //!< Flag indicating whether this process requires a synchronization prior to the next time step.
+   bool predictionDiagnostics_;  //!< Print the prediction block on the representative rank.
 
    timing::WcTimer timeSimulationStep_, timeCollisionDetection_, timeCollisionResponse_, timeCollisionResponseContactFiltering_, timeCollisionResponseContactCaching_, timeCollisionResponseBodyCaching_, timeCollisionResponseSolving_, timeCollisionResponseIntegration_, timeBodySync_, timeBodySyncAssembling_, timeBodySyncCommunicate_, timeBodySyncParsing_, timeVelocitiesSync_, timeVelocitiesSyncCorrectionsAssembling_, timeVelocitiesSyncCorrectionsCommunicate_, timeVelocitiesSyncCorrectionsParsing_, timeVelocitiesSyncUpdatesAssembling_, timeVelocitiesSyncUpdatesCommunicate_, timeVelocitiesSyncUpdatesParsing_, timeVelocitiesSyncGlobals_;
    std::vector<timing::WcTimer*> timers_;
@@ -481,6 +494,7 @@ CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::CollisionSystem()
    , numContacts_      ( 0 )
    , lastSyncTag_      ( mpitagHCTSSynchronizePositionsAndVelocities2 )
    , requireSync_      ( false )
+   , predictionDiagnostics_( true )
 {
    // Registering all timers
    timers_.push_back( &timeSimulationStep_ );
@@ -2125,7 +2139,7 @@ void CollisionSystem< C<CD,FD,BG,response::HardContactAndFluid> >::resolveContac
              auto &config = SimulationConfig::getInstance();
              const bool isRepresentative = (config.getCfdRank() == 1);
              // comment
-             if(isRepresentative) {
+             if(isRepresentative && predictionDiagnostics_) {
              std::cout << "==========================================================" << std::endl;
              std::cout << "rank: " << MPISettings::rank() << std::endl;
              std::cout << "Velocity update: " << v_[j][2] << std::endl;

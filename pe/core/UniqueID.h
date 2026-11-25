@@ -170,32 +170,34 @@ inline id_t UniqueID<T>::create()
 /*!\brief Generates an ID which is the same on all processes but unique on each process.
  *
  * \return The newly generated ID.
+ *
+ * With MPI the IDs of global bodies carry the process count in their prefix bits, so they never
+ * collide with the rank-prefixed IDs of local bodies. Without prefix bits (a build without MPI)
+ * the two kinds of ID could not be told apart, so a global ID is then drawn from the counter of
+ * the local IDs: before, the first global and the first local body both got the ID 0, and the
+ * body storage asserted (debug) or overwrote its ID lookup (release).
  */
 template< typename T >
 inline id_t UniqueID<T>::createGlobal()
 {
+   if( MPISettings::bits() == 0 )
+      return create();
+
    id_t id( globalCounter_++ );
 
-   if( MPISettings::bits() > 0 ) {
-      const size_t shift( sizeof(id_t)*size_t(8) - MPISettings::bits() );
-      pe_INTERNAL_ASSERT( shift < sizeof(id_t)*size_t(8), "Invalid shift detected" );
+   const size_t shift( sizeof(id_t)*size_t(8) - MPISettings::bits() );
+   pe_INTERNAL_ASSERT( shift < sizeof(id_t)*size_t(8), "Invalid shift detected" );
 
-      const int size( MPISettings::size() );
-      pe_INTERNAL_ASSERT( size >= 0, "MPI system is not initialized" );
+   const int size( MPISettings::size() );
+   pe_INTERNAL_ASSERT( size >= 0, "MPI system is not initialized" );
 
-      if( globalCounter_ >= ( id_t(1) << shift ) ) {
-         // Revert overflow of counter
-         --globalCounter_;
-         throw std::runtime_error( "Unable to create unique ID" );
-      }
-
-      id |= ( static_cast<id_t>( size ) << shift );
-   }
-   else if( globalCounter_ == size_t(0) ) {
+   if( globalCounter_ >= ( id_t(1) << shift ) ) {
       // Revert overflow of counter
       --globalCounter_;
       throw std::runtime_error( "Unable to create unique ID" );
    }
+
+   id |= ( static_cast<id_t>( size ) << shift );
 
    return id;
 }
