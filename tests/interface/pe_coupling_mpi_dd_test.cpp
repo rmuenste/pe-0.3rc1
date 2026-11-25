@@ -421,6 +421,23 @@ int main( int argc, char** argv )
       }
    }
 
+   // a prepared checkpoint is invalidated by a change on the root: a second sphere in the root's
+   // slab, prepareCheckpoint(), then setLoadHistory() of that sphere on the root
+   if( size > 1 ) {
+      const pc::Vec3d centre{ { -1.9, -0.5, 0.0 } };
+      pc::BodyId extra( pc::noBody );
+      if( engine.ownsPoint( centre ) )
+         extra = engine.createSphere( centre, 0.05, mat, 8 );
+      expect( ( rank == 0 ) == ( extra != pc::noBody ), "the second sphere is created on the root" );
+      engine.prepareCheckpoint();
+      if( rank == 0 ) {
+         engine.setLoadHistory( extra, engine.loadHistory( extra ) );
+         expectThrows<std::logic_error>( [&]() { std::ostringstream o; engine.writeCheckpoint( o ); },
+                                         "writeCheckpoint() after setLoadHistory() on the root",
+                                         "prepareCheckpoint" );
+      }
+   }
+
    int local( coupling_test::failures() ), total( 0 );
    MPI_Allreduce( &local, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
    if( rank == 0 )
