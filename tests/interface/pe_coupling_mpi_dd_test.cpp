@@ -12,6 +12,7 @@
  *  License, or (at your option) any later version.
  *
  *  Usage: pe_coupling_mpi_dd_test <reference file> [--write-reference] [--broken <variant>]
+ *                                 [--save-checkpoint <file>] [--restart <file>]
  *
  *  On one process with --write-reference: a sphere driven by fluid loads (relaxation 0.35, some
  *  load components exactly -0 and +0) moves along x; its full state is written as hexadecimal
@@ -22,10 +23,20 @@
  *  reference bit for bit; the body must be held by exactly one process in every step. Further:
  *  ownership of points (exactly one owner), the refusals (decomposition after creation, a wrong
  *  plane count, an override beyond the neighbours), loadHistory() / setLoadHistory(), the
- *  prepared checkpoint (written on the root, read collectively, continued bit for bit), and
+ *  prepared checkpoint (written on the root, read collectively, restored on the owner of the
+ *  saved position also when that is several slabs away from the holder, with the history read
+ *  back from the restored holder bit for bit, continued bit for bit), restored positions
+ *  exactly on a dividing plane (the lower rank holds the body), a checkpoint with an unknown id
+ *  (refused), a prepared checkpoint invalidated by the root's own changes, and
  *  sphereContainsPoints() against containsPoints() of a sphere.
  *
  *  --broken skip-history: the owner does not restore the history (the test must fail).
+ *  --save-checkpoint <file>: also writes the checkpoint of step 80 (after the sphere crossed two
+ *  planes on 4 processes) to <file> and its history record to <file>.history.
+ *  --restart <file>: a fresh process set: the world is rebuilt by the creation calls (the
+ *  sphere in slab 0), the checkpoint of <file> is read (on 4 processes the body moves from
+ *  process 0 to process 2), the restored history must equal <file>.history bit for bit, and
+ *  steps 81..120 must equal the reference bit for bit.
  */
 //=================================================================================================
 
@@ -59,6 +70,7 @@ static const int numSteps( 120 );
 static const double dt( 1.0e-3 );
 static const double relaxation( 0.35 );
 static bool brokenSkipHistory( false );
+static const int saveStep( 80 );
 
 //*************************************************************************************************
 /*!\brief The deterministic fluid load of a step (some components exactly -0 or +0).
@@ -92,6 +104,78 @@ static std::string stateLine( int step, const pc::BodyState& s )
    for( int k=0; k<3; ++k ) put( s.linearVelocity[k] );
    for( int k=0; k<3; ++k ) put( s.angularVelocity[k] );
    return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The bits of a load history as one text line.
+ */
+static std::string historyLine( const pc::LoadHistory& h )
+{
+   std::ostringstream oss;
+   oss << "history " << ( h.hasPrevious ? 1 : 0 ) << ' ' << ( h.hasFluid ? 1 : 0 );
+   const auto put = [&]( double x ) {
+      std::uint64_t b;
+      std::memcpy( &b, &x, sizeof( b ) );
+      char buf[24];
+      std::snprintf( buf, sizeof( buf ), " %016llx", static_cast<unsigned long long>( b ) );
+      oss << buf;
+   };
+   for( int k=0; k<3; ++k ) put( h.previousForce[k] );
+   for( int k=0; k<3; ++k ) put( h.previousTorque[k] );
+   for( int k=0; k<3; ++k ) put( h.fluidForce[k] );
+   for( int k=0; k<3; ++k ) put( h.fluidTorque[k] );
+   return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A checkpoint text with the record of body \a id changed: its x coordinate set to \a x
+ *        (17 significant digits, exact) and its x velocity to 0, or its id replaced by \a newId.
+ */
+static std::string editRecord( const std::string& text, pc::BodyId id, const double* x,
+                               pc::BodyId newId )
+{
+   std::istringstream in( text );
+   std::ostringstream out;
+   std::string line;
+   while( std::getline( in, line ) ) {
+      std::istringstream ls( line );
+      std::string tag;
+      pc::BodyId bid( 0 );
+      if( ( ls >> tag >> bid ) && tag == "body" && bid == id ) {
+         std::vector<std::string> tok;
+         std::istringstream ts( line );
+         std::string t;
+         while( ts >> t ) tok.push_back( t );
+         if( x != nullptr ) {
+            char buf[40];
+            std::snprintf( buf, sizeof( buf ), "%.17g", *x );
+            tok[2] = buf;
+            tok[9] = "0";   // at rest (vx), so that the body stays on the plane
+         }
+         if( newId != pc::noBody ) tok[1] = std::to_string( newId );
+         line.clear();
+         for( std::size_t i=0; i<tok.size(); ++i ) line += ( i ? " " : "" ) + tok[i];
+      }
+      out << line << '\n';
+   }
+   return out.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The slab (process) whose closed region holds x first (ties go to the lower rank).
+ */
+static int slabOf( double x, int n )
+{
+   for( int k=0; k+1<n; ++k )
+      if( x <= -2.0 + 4.0 * ( k + 1 ) / n )
+         return k;
+   return n - 1;
 }
 //*************************************************************************************************
 
@@ -241,10 +325,13 @@ int main( int argc, char** argv )
    }
    const std::string reference( argv[1] );
    bool writeReference( false );
+   std::string saveFile, restartFile;
    for( int i=2; i<argc; ++i ) {
       if( std::string( argv[i] ) == "--write-reference" ) writeReference = true;
       if( std::string( argv[i] ) == "--broken" && i+1 < argc &&
           std::string( argv[i+1] ) == "skip-history" ) brokenSkipHistory = true;
+      if( std::string( argv[i] ) == "--save-checkpoint" && i+1 < argc ) saveFile = argv[i+1];
+      if( std::string( argv[i] ) == "--restart" && i+1 < argc ) restartFile = argv[i+1];
    }
    expect( pc::buildInfo().mpi, "buildInfo().mpi" );
 
@@ -281,6 +368,64 @@ int main( int argc, char** argv )
    expectThrows<std::logic_error>( [&]() { engine.decomposeSlabs( slabs( size ) ); },
                                    "decomposition after body creation", "decomposed before" );
 
+   // a fresh process set restarting from the checkpoint of step 80
+   if( !restartFile.empty() ) {
+      std::string text, saved;
+      if( rank == 0 ) {
+         std::ifstream f( restartFile.c_str() ), g( ( restartFile + ".history" ).c_str() );
+         std::ostringstream all;
+         all << f.rdbuf();
+         text = all.str();
+         std::getline( g, saved );
+      }
+      for( std::string* str : { &text, &saved } ) {
+         int len( int( str->size() ) );
+         MPI_Bcast( &len, 1, MPI_INT, 0, MPI_COMM_WORLD );
+         str->resize( std::size_t( len ) );
+         if( len > 0 ) MPI_Bcast( &( *str )[0], len, MPI_CHAR, 0, MPI_COMM_WORLD );
+      }
+      expect( !text.empty() && !saved.empty(), "restart: the checkpoint files are readable" );
+      pc::BodyState before;
+      const int created( holder( engine, id, before, "restart: before the restore" ) );
+      std::istringstream is( text );
+      engine.readCheckpoint( is );
+      pc::BodyState after;
+      const int restoredOn( holder( engine, id, after, "restart: after the restore" ) );
+      if( rank == 0 )
+         std::printf( "pe_coupling_mpi_dd_test (%d ranks, restart): created on process %d, "
+                      "restored on process %d\n", size, created, restoredOn );
+      expect( restoredOn == slabOf( after.position[0], size ),
+              "restart: the body is held by the owner of its saved position" );
+      if( size == 4 )
+         expect( created == 0 && restoredOn == 2, "restart: the body moved over two slabs" );
+      pc::LoadHistory record( gatherHistory( engine, id, restoredOn ) );
+      expect( historyLine( record ) == saved,
+              "restart: the restored holder's history equals the saved one bit for bit" );
+      std::ifstream in( reference.c_str() );
+      std::vector<std::string> ref;
+      std::string l;
+      while( std::getline( in, l ) ) ref.push_back( l );
+      int mismatch( -1 );
+      for( int step=saveStep+1; step<=numSteps; ++step ) {
+         record = couplingStep( engine, id, step, record );
+         pc::BodyState st;
+         holder( engine, id, st, "restart: continuation" );
+         if( mismatch < 0 && ( std::size_t( step ) > ref.size() ||
+                               stateLine( step, st ) != ref[std::size_t( step - 1 )] ) )
+            mismatch = step;
+      }
+      if( rank == 0 && mismatch > 0 )
+         std::printf( "restart: first differing step %d\n", mismatch );
+      expect( mismatch < 0, "restart: steps 81..120 equal the reference bit for bit" );
+      int local( coupling_test::failures() ), total( 0 );
+      MPI_Allreduce( &local, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+      if( rank == 0 )
+         std::printf( "pe_coupling_mpi_dd_test (%d ranks, restart): %s (%d failed checks over "
+                      "all ranks)\n", size, total ? "FAILED" : "PASSED", total );
+      MPI_Finalize();
+      return total ? 1 : 0;
+   }
+
    // the trajectory: bit for bit the one of a single process
    std::vector<std::string> lines;
    std::vector<int> owners;
@@ -303,6 +448,14 @@ int main( int argc, char** argv )
                                             "writeCheckpoint() on a non-root process", "root" );
          checkpoint = os.str();
          recordAtCheckpoint = record;
+      }
+      if( step == saveStep && !saveFile.empty() ) {
+         engine.prepareCheckpoint();
+         if( rank == 0 ) {
+            std::ofstream f( saveFile.c_str() ), g( ( saveFile + ".history" ).c_str() );
+            engine.writeCheckpoint( f );
+            g << historyLine( record ) << '\n';
+         }
       }
    }
    int crossings( 0 );
@@ -359,7 +512,7 @@ int main( int argc, char** argv )
 
    // the checkpoint: read collectively (the same text on all processes), continue bit for bit.
    // The sphere is now in the last slab; on 4 processes the checkpointed position lies two slabs
-   // away, which is refused (pe migrates bodies to neighbours only).
+   // away: the body is moved to the owner of the saved position, with its id and histories.
    {
       int len( int( checkpoint.size() ) );
       MPI_Bcast( &len, 1, MPI_INT, 0, MPI_COMM_WORLD );
@@ -368,25 +521,27 @@ int main( int argc, char** argv )
       const int ownerAtCheckpoint( owners[std::size_t( checkpointStep - 1 )] );
       pc::BodyState s;
       const int ownerNow( holder( engine, id, s, "before the restore" ) );
-      if( std::abs( ownerNow - ownerAtCheckpoint ) > 1 ) {
-         std::istringstream is( checkpoint );
-         expectThrows<std::runtime_error>( [&]() { engine.readCheckpoint( is ); },
-                                           "a checkpoint position beyond the neighbours",
-                                           "neighbouring subdomains" );
-         // move the body back step by step: one slab per synchronization
-         for( int k=ownerNow-1; k>ownerAtCheckpoint; --k ) {
-            pc::BodyState cur;
-            const int o( holder( engine, id, cur, "moving back" ) );
-            if( rank == o )
-               engine.setKinematicState( id, pc::KinematicState{
-                  pc::Vec3d{ { -2.0 + 4.0 * ( k + 0.5 ) / size, cur.position[1], cur.position[2] } },
-                  cur.orientation, zero, zero } );
-            engine.advance( 1.0e-12 );
-         }
+      if( rank == 0 )
+         std::printf( "pe_coupling_mpi_dd_test (%d ranks): restore from process %d to process "
+                      "%d\n", size, ownerNow, ownerAtCheckpoint );
+      // an unknown id (the counts kept) is refused, nothing changes
+      {
+         std::istringstream bad( editRecord( checkpoint, id, nullptr, id + 1000 ) );
+         expectThrows<std::runtime_error>( [&]() { engine.readCheckpoint( bad ); },
+                                           "a checkpoint with an unknown id",
+                                           size > 1 ? "held by 0 processes" : "not a local" );
+         pc::BodyState t;
+         expect( holder( engine, id, t, "after the refused restore" ) == ownerNow &&
+                 stateLine( 0, t ) == stateLine( 0, s ), "the refused restore changed nothing" );
       }
       std::istringstream is( checkpoint );
       engine.readCheckpoint( is );
-      record = recordAtCheckpoint;
+      pc::BodyState r;
+      expect( holder( engine, id, r, "after the restore" ) == ownerAtCheckpoint,
+              "the restored body is held by the owner of its saved position" );
+      record = gatherHistory( engine, id, ownerAtCheckpoint );
+      expect( historyLine( record ) == historyLine( recordAtCheckpoint ),
+              "the restored holder's history equals the saved one bit for bit" );
       int mismatch( -1 );
       for( int step=checkpointStep+1; step<=numSteps; ++step ) {
          record = couplingStep( engine, id, step, record );
@@ -398,6 +553,21 @@ int main( int argc, char** argv )
       if( rank == 0 && mismatch > 0 )
          std::printf( "after the restore: first differing step %d\n", mismatch );
       expect( mismatch < 0, "the restored run continues bit for bit" );
+
+      // saved positions exactly on a dividing plane: the lower rank holds the body (pe's tie
+      // rule), also when it is several slabs away from the current holder
+      for( int k=0; k+1<size; k+=2 ) {
+         const double x( -2.0 + 4.0 * ( k + 1 ) / size );
+         std::istringstream on( editRecord( checkpoint, id, &x, pc::noBody ) );
+         engine.readCheckpoint( on );
+         pc::BodyState t;
+         const int o( holder( engine, id, t, "on a plane" ) );
+         expect( o == k && t.position[0] == x, "a position on plane " + std::to_string( k ) +
+                 " is restored on process " + std::to_string( k ) );
+         engine.advance( dt );
+         expect( holder( engine, id, t, "on a plane, stepped" ) == k,
+                 "the body on the plane stays on the lower rank" );
+      }
    }
 
    // sphereContainsPoints(): pe's sphere predicate for a sphere the process need not hold
@@ -422,6 +592,14 @@ int main( int argc, char** argv )
          for( unsigned char f : a ) in += f;
          expect( a == b && in > 0 && in < 2000,
                  "sphereContainsPoints() equals containsPoints() of the sphere (surface points)" );
+         // a non-finite point after a valid one: refused before any flag is written
+         const double pts[6] = { s.position[0], s.position[1], s.position[2],
+                                 s.position[0], std::nan( "" ), s.position[2] };
+         unsigned char flags[2] = { 7u, 7u };
+         expectThrows<std::invalid_argument>( [&]() {
+            pc::sphereContainsPoints( s.position, r, pts, 2, flags ); },
+            "sphereContainsPoints() with a non-finite point", "not finite" );
+         expect( flags[0] == 7u && flags[1] == 7u, "the refused query wrote no flag" );
       }
    }
 
@@ -438,6 +616,21 @@ int main( int argc, char** argv )
          engine.setLoadHistory( extra, engine.loadHistory( extra ) );
          expectThrows<std::logic_error>( [&]() { std::ostringstream o; engine.writeCheckpoint( o ); },
                                          "writeCheckpoint() after setLoadHistory() on the root",
+                                         "prepareCheckpoint" );
+      }
+      engine.prepareCheckpoint();
+      if( rank == 0 ) {
+         engine.addLoad( extra, zero, zero );
+         expectThrows<std::logic_error>( [&]() { std::ostringstream o; engine.writeCheckpoint( o ); },
+                                         "writeCheckpoint() after addLoad() on the root",
+                                         "prepareCheckpoint" );
+         engine.clearLoads();
+      }
+      engine.prepareCheckpoint();
+      if( rank == 0 ) {
+         engine.createSphere( pc::Vec3d{ { -1.9, 0.5, 0.0 } }, 0.05, mat, 9 );
+         expectThrows<std::logic_error>( [&]() { std::ostringstream o; engine.writeCheckpoint( o ); },
+                                         "writeCheckpoint() after a creation on the root",
                                          "prepareCheckpoint" );
       }
    }

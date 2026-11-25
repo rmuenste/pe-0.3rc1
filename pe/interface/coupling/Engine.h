@@ -148,8 +148,16 @@ namespace coupling {
  * fully functional. On more than one process (pe's communicator; MPI must be initialized before
  * the Engine is constructed):
  * - decomposeSlabs() decomposes the domain into a chain of slabs, one per process (before any
- *   body is created); ownsPoint() tells which process creates a body (a body is created by the
- *   process that owns its centre);
+ *   body is created; the two slabs at a plane share exactly its points, ties go to the lower
+ *   rank); ownsPoint() tells which process creates a body (a body is created by the process
+ *   that owns its centre; a caller that evaluates it on every process should still agree on
+ *   one, e.g. the lowest claiming rank, before creating). pe keeps shadow copies on, and
+ *   migrates bodies to, neighbouring slabs only, so: createSphere() refuses a sphere whose reach
+ *   (radius plus pe's process overlap) is not smaller than the thinnest interior slab (parallel
+ *   planes); and advance(), on three or more processes, refuses before every pe step a body
+ *   whose reach touches a slab that is not a neighbour of its holder's (a contact there would
+ *   be missed), or whose reach plus its displacement in that step, (|v| + |g| h) h, does (pe
+ *   would delete it as an outflow);
  * - reading (enumeration, states, shadow copies via Selection::shadowCopies /
  *   BodyState::shadow, classification) works on the local bodies and shadow copies;
  *   sphereContainsPoints() evaluates pe's sphere predicate for a sphere the process does not
@@ -158,17 +166,24 @@ namespace coupling {
  *   own bodies. A migrating body loses its coupling history (pe's migration does not carry it,
  *   see LoadHistory): read it with loadHistory() after applyLoads() and restore it on the new
  *   owner with setLoadHistory() before its next applyLoads(), and the continuation is bit for
- *   bit that of one process;
- * - advance() is collective (it synchronizes before a step when pe or a state override needs
- *   it);
+ *   bit that of one process. applyLoads() changes velocities that shadow copies on other
+ *   processes still hold the old values of, so the next advance() synchronizes before its first
+ *   pe step (pe's contact construction reads them);
+ * - advance() is collective (it synchronizes before a step when pe, applied loads or a state
+ *   override need it; pending loads on any process make every process throw);
  * - setKinematicState() works on local bodies, also with shadow copies, to a position in the
  *   local or a neighbouring subdomain (pe migrates to neighbours only); a global body, a shadow
  *   copy or a farther position is refused ("not implemented yet");
  * - checkpoints: prepareCheckpoint() (collective) gathers the records on the root process,
- *   which writes them with writeCheckpoint() (version 3, records sorted by id);
+ *   which writes them with writeCheckpoint() (version 3, records sorted by id). The prepared
+ *   text is a snapshot: its validity ends with the next call that changes the world or the
+ *   coupling state on ANY process; the root notices only its own changes (creation, addLoad(),
+ *   applyLoads(), advance(), setKinematicState(), setLoadHistory(), readCheckpoint()), so write
+ *   it directly after preparing, with no such call on any process in between.
  *   readCheckpoint() is collective (every process gets the same text) and restores each record
- *   on the process holding the body; a record whose position is beyond the neighbours of that
- *   process, and a global finite body, are refused before anything changes.
+ *   on the process that owns its saved position (pe's rule), moving a sphere there with its id
+ *   and histories if the rebuilt world holds it elsewhere; a global finite body is refused
+ *   before anything changes.
  *
  * \b Checkpoints. Scope: finite non-union bodies plus planes at rest, with empty force and
  * torque slots, written between coupling steps. Both checkpoint functions refuse a world with
