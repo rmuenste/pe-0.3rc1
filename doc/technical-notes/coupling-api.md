@@ -516,7 +516,9 @@ first step is applied unrelaxed instead of relaxed against the previous force.
 
 Everything compiles with `PE_USE_MPI=ON`. **On one process the Engine is fully functional**
 (`pe-coupling-mpi-single`). On more than one process of pe's communicator (stage 1: reading
-and stepping; stage 2, branch `feature/coupling-api-mpi`: a domain-decomposed coupling):
+and stepping; stage 2, branch `feature/coupling-api-mpi`: a domain-decomposed coupling, announced
+by the macro `PE_COUPLING_DOMAIN_DECOMPOSITION` (defined as 1 in `Engine.h`) so that a client can
+support pe versions with and without it):
 
 - **Decomposition.** `decomposeSlabs( planes )` (collective, before the first body, also before
   planes) gives process k slab k of a chain of slabs between planes of any orientation, pe's
