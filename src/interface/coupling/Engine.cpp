@@ -242,6 +242,33 @@ inline double bodyVolume( ConstBodyID body )
 
 
 //*************************************************************************************************
+/*!\brief The slab decomposition installed by Engine::decomposeSlabs() (several processes).
+ *
+ * pe's domain and process connections are process-wide and outlive every Engine handle, so the
+ * planes the rules of Engine::Impl::reachError() and ownerSlab() need live here too, not in a
+ * handle: a replacement handle on the living world keeps checking.
+ */
+struct SlabTopology
+{
+   bool decomposed = false;                                   //!< decomposeSlabs() was called.
+#if HAVE_MPI
+   std::vector<HalfSpace> halfSpaces;                         //!< The dividing planes as pe's
+                                                              //!< domain holds them.
+#endif
+   real minInteriorSlab = std::numeric_limits<real>::infinity();  //!< Thinnest slab with a
+                                                              //!< process on each side (all
+                                                              //!< planes parallel), else inf.
+};
+
+inline SlabTopology& slabTopology()
+{
+   static SlabTopology topology;
+   return topology;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Whether a local body is a particle: finite and not fixed.
  */
 inline bool isMovable( ConstBodyID body )
@@ -652,15 +679,6 @@ struct Engine::Impl
                                                                //!< kept while the body exists.
    bool                                     overridden_;       //!< Synchronize before the next
                                                                //!< step (several processes).
-   bool                                     decomposed_ = false; //!< decomposeSlabs() was called.
-#if HAVE_MPI
-   std::vector<HalfSpace>                   halfSpaces_;       //!< decomposeSlabs(): the dividing
-                                                               //!< planes as pe's domain holds
-                                                               //!< them (several processes only).
-#endif
-   real                                     minInteriorSlab_ = std::numeric_limits<real>::infinity();
-                                                               //!< Thinnest interior slab if all
-                                                               //!< planes are parallel, else inf.
    bool                                     prepared_ = false; //!< prepareCheckpoint() holds the
                                                                //!< current checkpoint (several
                                                                //!< processes).
@@ -972,26 +990,34 @@ std::string Engine::Impl::checkpointRecord( const char* function, const char* ta
  *        next pe step of size \a h (a decomposition by decomposeSlabs() on three or more
  *        processes).
  *
- * \param body A local finite body.
+ * \param body A local finite body that is not global (fixed ones included).
  * \param h The size of the next pe step.
  * \return An empty string, or the violated rule.
  *
  * pe keeps shadow copies on, and migrates bodies to, the neighbouring slabs only. With R the
  * reach of the body for pe's shadow-copy test (its bounding sphere radius plus the process
- * overlap contactThreshold plus the shadow-copy margin) the rules are: (i) the ball of radius R
- * around the centre touches no slab that is not the holder's or a neighbour of it (otherwise a
- * contact there is missed, or the next migration needs a distant process); (ii) the ball of
- * radius R + (|v| + |g| h) h, the reach after one pe step without contacts, does not either
- * (otherwise pe can delete the body as an outflow although a distant slab holds its centre).
- * A ball touches slab j if it lies within R of the positive side of plane j and of the negative
- * side of plane j-1 (a conservative test for inclined planes).
+ * overlap contactThreshold plus the shadow-copy margin) and d = (|v| + a h) h the displacement
+ * of one pe step of a free body (a the acceleration the solver applies: the buoyancy-reduced
+ * gravity |1 - rho_f/rho| |g| where the solver applies buoyancy, else |g|; 0 for a fixed body,
+ * which moves with its prescribed velocity), the rules are:
+ * (i) the ball of radius R touches no slab that is not the holder's or a neighbour of it (a
+ *     contact there would be missed; the next migration would need a distant process);
+ * (ii) the ball of radius R + d does not either (pe could delete the body as an outflow);
+ * (iii) destination: for a neighbouring slab j that the centre can reach in this step (within
+ *     d), the ball of radius R + d touches no slab that is neither j nor a neighbour of j (pe
+ *     would send j a registration list with a process j is not connected to). For parallel
+ *     planes (iii) follows from the creation rule; for inclined planes it does not.
+ * d is an estimate for a free body: contact impulses and split-impulse corrections are not
+ * predicted. A ball touches slab j if it lies within the radius of the positive side of plane j
+ * and of the negative side of plane j-1 (a conservative test for inclined planes).
  */
 std::string Engine::Impl::reachError( ConstBodyID body, real h ) const
 {
    const int slab( MPISettings::rank() );
    const int nSlabs( MPISettings::size() );
 #if HAVE_MPI
-   const int nPlanes( static_cast<int>( halfSpaces_.size() ) );
+   const std::vector<HalfSpace>& planes( slabTopology().halfSpaces );
+   const int nPlanes( static_cast<int>( planes.size() ) );
    Vec3 centre( body->getPosition() );
    real radius( 0 );
    if( body->getType() == sphereType )
@@ -1003,36 +1029,71 @@ std::string Engine::Impl::reachError( ConstBodyID body, real h ) const
       radius = real(0.5) * std::sqrt( sq( box[3] - box[0] ) + sq( box[4] - box[1] ) +
                                       sq( box[5] - box[2] ) );
    }
+   // the acceleration of a free body as the solver applies it
+   real accel( 0 );
+   if( !body->isFixed() ) {
+      accel = Settings::gravity().length();
+      const BuildInfo info( buildInfo() );
+      const GeomType type( body->getType() );
+      if( info.buoyancy == BodyForce::appliedBySolver &&
+          ( type == sphereType || type == boxType || type == cylinderType || type == ellipsoidType ) ) {
+         const ConstGeomID g( static_body_cast<const GeomPrimitive>( body ) );
+         const real vol( real( bodyVolume( body ) ) );
+         accel *= std::fabs( vol * ( Material::getDensity( g->getMaterial() ) -
+                                     Settings::liquidDensity() ) * body->getInvMass() );
+      }
+   }
    const real reach( radius + contactThreshold + lubrication::getShadowCopyMargin() );
-   const real speed( body->getLinearVel().length() + Settings::gravity().length() * h );
-   const real travel( reach + speed * h );
+   const real d( ( body->getLinearVel().length() + accel * h ) * h );
+   const real travel( reach + d );
    const auto touches = [&]( int j, real r ) {
-      const bool lower( j == 0 || trans( halfSpaces_[j-1].getNormal() ) * centre -
-                                  halfSpaces_[j-1].getDisplacement() <= r );
-      const bool upper( j >= nPlanes || trans( halfSpaces_[j].getNormal() ) * centre -
-                                        halfSpaces_[j].getDisplacement() >= -r );
+      const bool lower( j == 0 || trans( planes[j-1].getNormal() ) * centre -
+                                  planes[j-1].getDisplacement() <= r );
+      const bool upper( j >= nPlanes || trans( planes[j].getNormal() ) * centre -
+                                        planes[j].getDisplacement() >= -r );
       return lower && upper;
+   };
+   const auto head = [&]() {
+      std::ostringstream oss;
+      oss << "body " << body->getSystemID() << ( body->isFixed() ? " (fixed" : " (" )
+          << ( body->isFixed() ? ", " : "" ) << "held by process " << slab << ", slab " << slab
+          << ")";
+      return oss.str();
    };
    for( int j=0; j<nSlabs; ++j ) {
       if( std::abs( j - slab ) < 2 )
          continue;
       std::ostringstream oss;
       if( touches( j, reach ) )
-         oss << "body " << body->getSystemID() << " (held by process " << slab << ", slab "
-             << slab << ") reaches into slab " << j << ", which is not a neighbour of slab "
-             << slab << " (rule: its reach, radius plus pe's process overlap, " << reach
+         oss << head() << " reaches into slab " << j << ", which is not a neighbour of slab "
+             << slab << " (rule i: its reach, radius plus pe's process overlap, " << reach
              << ", must stay within the holder's and the neighbouring slabs; pe keeps shadow "
              << "copies only there, so a contact in slab " << j << " would be missed and the "
              << "next migration would need a distant process)";
       else if( touches( j, travel ) )
-         oss << "body " << body->getSystemID() << " (held by process " << slab << ", slab "
-             << slab << ") can move into slab " << j << " in one pe step of " << h << " (rule: "
-             << "its reach " << reach << " plus the displacement (|v| + |g| h) h = "
-             << speed * h << " must stay within the holder's and the neighbouring slabs; pe "
-             << "migrates bodies only to neighbours and would delete it as an outflow); use "
-             << "more substeps or thicker slabs";
+         oss << head() << " can move into slab " << j << " in one pe step of " << h << " (rule ii: "
+             << "its reach " << reach << " plus the displacement (|v| + a h) h = " << d
+             << " must stay within the holder's and the neighbouring slabs; pe migrates bodies "
+             << "only to neighbours and would delete it as an outflow); use more substeps or "
+             << "thicker slabs";
       if( !oss.str().empty() )
          return oss.str();
+   }
+   for( int j : { slab - 1, slab + 1 } ) {
+      if( j < 0 || j >= nSlabs || !touches( j, d ) )
+         continue;
+      for( int m=0; m<nSlabs; ++m ) {
+         if( std::abs( m - j ) < 2 || !touches( m, travel ) )
+            continue;
+         std::ostringstream oss;
+         oss << head() << " can reach slab " << j << " in one pe step of " << h << " and then "
+             << "touches slab " << m << ", which is not a neighbour of slab " << j << " (rule iii, "
+             << "destination: reach " << reach << " plus the displacement " << d << "; at the "
+             << "migration pe would hand process " << j << " a registration list with process "
+             << m << ", which it is not connected to); use thicker slabs or planes that do not "
+             << "converge there";
+         return oss.str();
+      }
    }
    return std::string();
 #else
@@ -1057,7 +1118,7 @@ bool Engine::Impl::reachable( const Vec3& gpos ) const
 #if HAVE_MPI
    if( !parallelRun() )
       return true;
-   if( !halfSpaces_.empty() ) {
+   if( !slabTopology().halfSpaces.empty() ) {
       const int owner( ownerSlab( gpos ) );
       return owner >= 0 && std::abs( owner - MPISettings::rank() ) <= 1;
    }
@@ -1091,10 +1152,11 @@ int Engine::Impl::ownerSlab( const Vec3& gpos ) const
 {
 #if HAVE_MPI
    const int nSlabs( MPISettings::size() );
-   const int nPlanes( static_cast<int>( halfSpaces_.size() ) );
+   const std::vector<HalfSpace>& halfSpaces( slabTopology().halfSpaces );
+   const int nPlanes( static_cast<int>( halfSpaces.size() ) );
    for( int j=0; j<nSlabs; ++j ) {
-      const bool lower( j == 0 || halfSpaces_[j-1].opposite().containsPoint( gpos ) );
-      const bool upper( j >= nPlanes || halfSpaces_[j].containsPoint( gpos ) );
+      const bool lower( j == 0 || halfSpaces[j-1].opposite().containsPoint( gpos ) );
+      const bool upper( j >= nPlanes || halfSpaces[j].containsPoint( gpos ) );
       if( lower && upper )
          return j;
    }
@@ -1390,14 +1452,26 @@ void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
    const char* const function( "decomposeSlabs" );
    requireNoExclusiveSection( function );
    const int n( processCount() );
-   if( impl_->decomposed_ )
+   if( slabTopology().decomposed )
       throw std::logic_error( where( function ) + "the domain was decomposed before" );
+   // the normals scaled by a power of two (exact) so that their norm is representable: a finite
+   // normal like (1e200, 0, 0) would otherwise overflow in the normalization and collapse
+   std::vector<Vec3> normals;
    for( const SlabPlane& p : planes ) {
       if( !allFinite( p.point ) || !allFinite( p.normal ) )
          throw std::invalid_argument( where( function ) + "a plane is not finite" );
-      const Vec3 normal( toPe( p.normal ) );
-      if( !( normal.sqrLength() > real( 0 ) ) )
-         throw std::invalid_argument( where( function ) + "a plane has a zero normal" );
+      Vec3 normal( toPe( p.normal ) );
+      const real big( std::max( std::fabs( normal[0] ), std::max( std::fabs( normal[1] ),
+                                                                  std::fabs( normal[2] ) ) ) );
+      if( !( big > real( 0 ) ) || !std::isfinite( big ) )
+         throw std::invalid_argument( where( function ) + "a plane has a zero or non-finite normal" );
+      int e( 0 );
+      std::frexp( big, &e );
+      for( int k=0; k<3; ++k ) normal[k] = std::ldexp( normal[k], -e );
+      const real len( normal.length() );
+      if( !( len > real( 0 ) ) || !std::isfinite( len ) )
+         throw std::invalid_argument( where( function ) + "a plane normal cannot be normalized" );
+      normals.push_back( normal );
    }
    if( n > 1 && planes.size() != std::size_t( n - 1 ) && planes.size() != std::size_t( n ) ) {
       std::ostringstream oss;
@@ -1419,15 +1493,15 @@ void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
 #if HAVE_MPI
    if( n > 1 ) {
       std::vector<HalfSpace> halfSpaces;
-      for( const SlabPlane& p : planes )
-         halfSpaces.push_back( HalfSpace( toPe( p.normal ), toPe( p.point ) ) );
+      for( std::size_t k=0; k<planes.size(); ++k )
+         halfSpaces.push_back( HalfSpace( normals[k], toPe( planes[k].point ) ) );
       decomposeDomainPlaneSlabs( processRank(), halfSpaces, n );
-      impl_->halfSpaces_ = halfSpaces;
-      // all planes parallel (up to the orientation of the normal): the thinnest interior slab,
-      // the distance of consecutive planes
+      // the thinnest interior slab (a process on each side: slabs 1..n-2, between planes k-1
+      // and k; not the gap to a closing plane), if the planes bounding them are parallel (up to
+      // the orientation of the normal); none (infinite) on two processes
       bool parallel( true );
       real thinnest( std::numeric_limits<real>::infinity() );
-      for( std::size_t k=1; k<halfSpaces.size(); ++k ) {
+      for( int k=1; k+1<n; ++k ) {
          const Vec3& a( halfSpaces[k-1].getNormal() );
          const Vec3& b( halfSpaces[k].getNormal() );
          if( ( a % b ).length() > real( 1e-12 ) ) { parallel = false; break; }
@@ -1435,10 +1509,11 @@ void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
                                   halfSpaces[k].getDisplacement() ) );
          thinnest = std::min( thinnest, t );
       }
-      impl_->minInteriorSlab_ = parallel ? thinnest : std::numeric_limits<real>::infinity();
+      slabTopology().halfSpaces = halfSpaces;
+      slabTopology().minInteriorSlab = parallel ? thinnest : std::numeric_limits<real>::infinity();
    }
 #endif
-   impl_->decomposed_ = true;
+   slabTopology().decomposed = true;
 }
 //*************************************************************************************************
 
@@ -1544,15 +1619,15 @@ BodyId Engine::createSphere( const Vec3d& centre, double radius, MaterialId mate
       throw std::invalid_argument( where( "createSphere" ) + "the sphere is not finite or has "
                                    "no positive radius" );
    checkRepresentable( "createSphere", centre, sphereBoxHalfExtent( real( radius ) ) );
-   if( parallelRun() && impl_->decomposed_ ) {
+   if( parallelRun() && slabTopology().decomposed ) {
       // pe keeps shadow copies on neighbouring slabs only: a sphere whose reach is not smaller
       // than the thinnest interior slab can span it and then needs a distant process
       const real reach( real( radius ) + contactThreshold + lubrication::getShadowCopyMargin() );
-      if( !( reach < impl_->minInteriorSlab_ ) ) {
+      if( !( reach < slabTopology().minInteriorSlab ) ) {
          std::ostringstream oss;
          oss << where( "createSphere" ) << "a sphere of radius " << radius << " has the reach "
              << reach << " (radius plus pe's process overlap), which is not smaller than the "
-             << "thinnest interior slab of the decomposition (" << impl_->minInteriorSlab_
+             << "thinnest interior slab of the decomposition (" << slabTopology().minInteriorSlab
              << "); pe keeps shadow copies and migrates bodies only between neighbouring slabs, "
              << "so such a sphere could span a slab (missed contacts, a migration to a distant "
              << "process); use thicker slabs (fewer processes or other planes)";
@@ -2300,13 +2375,14 @@ void Engine::advance( double dt, unsigned int substeps )
    detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
    const DiagnosticsOffScope quiet( cs );
    for( unsigned int i=0; i<substeps; ++i ) {
-      if( parallelRun() && impl_->decomposed_ && processCount() > 2 ) {
+      if( parallelRun() && slabTopology().decomposed && processCount() > 2 ) {
          // the reach and displacement rules of a slab decomposition, before anything moves
-         // (collective; see Impl::reachError())
+         // (collective; see Impl::reachError()): every local finite body, fixed ones included
          std::string error;
-         impl_->collect( Selection::movable, impl_->bodies_ );
+         impl_->collect( Selection::all, impl_->bodies_ );
          for( std::size_t b=0; b<impl_->bodies_.size() && error.empty(); ++b )
-            error = impl_->reachError( impl_->bodies_[b], h );
+            if( impl_->bodies_[b]->isFinite() && !impl_->bodies_[b]->isGlobal() )
+               error = impl_->reachError( impl_->bodies_[b], h );
          const std::string agreed( agreeOnError( error.empty() ? error :
                                                  where( "advance" ) + error ) );
          if( !agreed.empty() )
@@ -2579,8 +2655,11 @@ void Engine::prepareCheckpoint()
  * Spheres only.
  *
  * Nothing in the world or in the Engine is changed when an exception is thrown (the stream may
- * have been read partially): the whole checkpoint is read and validated before the first body
- * is touched, and the commit cannot throw. The world must have been rebuilt exactly as when
+ * have been read partially): the whole checkpoint is read and validated (on several processes:
+ * collectively) before the first body is touched, and the commit cannot throw, except on
+ * several processes when bodies are moved: the destruction, the synchronization and the
+ * instantiation of a moved sphere allocate and communicate after the commit has begun; an
+ * exception there (out of memory, an MPI error) is fatal for the run. The world must have been rebuilt exactly as when
  * the checkpoint was written (same creation calls in the same order, so the bodies get the
  * same system ids). Pending loads are cleared. When a restored run is bit-for-bit identical to
  * the uninterrupted one is described in doc/technical-notes/coupling-api.md.
@@ -2894,31 +2973,65 @@ void Engine::readCheckpoint( std::istream& is )
 #endif
    }
 
-   // ----- Commit (no operation below throws: pe's setters throw only for a global body inside
-   // an exclusive section, which was refused above) -----
+   // The history map of the bodies this process holds after the restore, built before anything
+   // changes (the only allocation of the commit without relocations: the strong guarantee of
+   // the serial path)
+   std::unordered_map<BodyId,LoadRecord> restored;
+   for( std::size_t r=0; r<records.size(); ++r ) {
+      const Record& e( records[r] );
+      const bool mine( parallel ? ownerOf[r] == MPISettings::rank() : e.body != nullptr );
+      if( mine && e.hasPrevious ) restored.emplace( e.id, e.previous );
+   }
+
+   // ----- Commit. Without relocations no operation below throws (pe's setters throw only for a
+   // global body inside an exclusive section, which was refused above). With relocations the
+   // destruction, the synchronization and the instantiation follow; an exception there (out of
+   // memory, an MPI error) is fatal for the run, the state of the worlds is then unspecified. -----
    impl_->pending_.clear();
    loadsAppliedThisStep.store( false );
    impl_->prepared_ = false;
    if( parallel ) impl_->overridden_ = true;
 
+   const auto write = [&]( BodyID body, const Record& e ) {
+      impl_->overrideState( body, e.state );
+      body->setPrevFluidForce( e.hasFluid,
+         Vec3( real( e.fluidForce[0] ), real( e.fluidForce[1] ), real( e.fluidForce[2] ) ),
+         Vec3( real( e.fluidTorque[0] ), real( e.fluidTorque[1] ), real( e.fluidTorque[2] ) ) );
+   };
+
+   // 1. the bodies that stay where they are held: their saved poses (owned by this process)
+   //    first, so that a pending override (setKinematicState() into a neighbour) is replaced
+   //    before any synchronization could migrate them
+   for( std::size_t r=0; r<records.size(); ++r ) {
+      const Record& e( records[r] );
+      if( e.body == nullptr || ( parallel && ownerOf[r] != MPISettings::rank() ) )
+         continue;
+      write( e.body, e );
+   }
+
 #if HAVE_MPI
    if( !relocations.empty() ) {
-      // 1. drop every shadow copy (removal notifications, registrations cleared), destroy the
+      // 2. drop every shadow copy (removal notifications, registrations cleared), destroy the
       //    moving bodies on their holders (no process is registered for them any more), and
-      //    synchronize: the removals arrive, the remaining bodies get fresh shadow copies
+      //    synchronize: the removals arrive, the remaining bodies (all at their saved, owned
+      //    positions) get fresh shadow copies
       detail::tryClearShadowCopies( *theCollisionSystem() );
       std::unordered_set<BodyId> moving;
       for( const Relocation& m : relocations ) moving.insert( m.id );
       for( std::size_t r=0; r<records.size(); ++r ) {
-         if( records[r].body != nullptr && moving.count( records[r].id ) ) {
+         if( records[r].body != nullptr && moving.count( records[r].id ) &&
+             ownerOf[r] != MPISettings::rank() ) {
             impl_->meshVolumes_.erase( records[r].id );
             destroy( records[r].body );
             records[r].body = nullptr;
          }
       }
       World::synchronize();
-      // 2. the owners of the saved positions instantiate the spheres with their ids; the next
-      //    advance() synchronizes before stepping and sends their shadow copies
+      // 3. the owners of the saved positions create the spheres as LOCAL bodies with their ids,
+      //    as a body arrives at its new owner in pe's migration: instantiated, the remote flag
+      //    cleared, added to the world, which sets this process as the owner; then state and
+      //    histories through the new pointer. The next advance() synchronizes before stepping
+      //    and sends their shadow copies.
       std::unordered_map<BodyId,const Relocation*> byId;
       for( const Relocation& m : relocations ) byId[m.id] = &m;
       for( std::size_t r=0; r<records.size(); ++r ) {
@@ -2932,34 +3045,20 @@ void Engine::readCheckpoint( std::istream& is )
             Quat( real( st.orientation[0] ), real( st.orientation[1] ), real( st.orientation[2] ),
                   real( st.orientation[3] ) ),
             real( m.radius ), static_cast<MaterialID>( m.material ), m.visible != 0,
-            m.fixed != 0, true ) );
+            m.fixed != 0, false ) );
+         sphere->setRemote( false );
          sphere->setShellThickness( real( m.shellThickness ) );
          sphere->setCollisionEnabled( m.collisionEnabled != 0 );
          sphere->setRelSurfaceVel( Vec3( real( m.surfaceVel[0] ), real( m.surfaceVel[1] ),
                                          real( m.surfaceVel[2] ) ) );
+         theDefaultManager()->add( sphere );   // an exception here is fatal (see above)
          records[r].body = sphere;
+         write( sphere, records[r] );
       }
    }
 #endif
 
-   // 3. the records of the bodies this process now holds: state and both histories
-   std::unordered_map<BodyId,LoadRecord> restored;
-   for( std::size_t r=0; r<records.size(); ++r ) {
-      const Record& e( records[r] );
-      if( e.body == nullptr || ( parallel && ownerOf[r] != MPISettings::rank() ) )
-         continue;
-      if( e.hasPrevious ) restored.emplace( e.id, e.previous );
-   }
    impl_->previous_.swap( restored );
-   for( std::size_t r=0; r<records.size(); ++r ) {
-      const Record& e( records[r] );
-      if( e.body == nullptr || ( parallel && ownerOf[r] != MPISettings::rank() ) )
-         continue;
-      impl_->overrideState( e.body, e.state );
-      e.body->setPrevFluidForce( e.hasFluid,
-         Vec3( real( e.fluidForce[0] ), real( e.fluidForce[1] ), real( e.fluidForce[2] ) ),
-         Vec3( real( e.fluidTorque[0] ), real( e.fluidTorque[1] ), real( e.fluidTorque[2] ) ) );
-   }
 }
 //*************************************************************************************************
 

@@ -153,11 +153,15 @@ namespace coupling {
  *   that owns its centre; a caller that evaluates it on every process should still agree on
  *   one, e.g. the lowest claiming rank, before creating). pe keeps shadow copies on, and
  *   migrates bodies to, neighbouring slabs only, so: createSphere() refuses a sphere whose reach
- *   (radius plus pe's process overlap) is not smaller than the thinnest interior slab (parallel
- *   planes); and advance(), on three or more processes, refuses before every pe step a body
- *   whose reach touches a slab that is not a neighbour of its holder's (a contact there would
- *   be missed), or whose reach plus its displacement in that step, (|v| + |g| h) h, does (pe
- *   would delete it as an outflow);
+ *   (radius plus pe's process overlap) is not smaller than the thinnest interior slab (a process
+ *   on each side; parallel planes); and advance(), on three or more processes, refuses before
+ *   every pe step, collectively, a local finite body (fixed ones included) whose reach touches a
+ *   slab that is not a neighbour of its holder's (a contact there would be missed), or whose
+ *   reach plus its displacement estimate d = (|v| + a h) h does (a the acceleration the solver
+ *   applies; pe would delete it as an outflow), or that can reach a neighbouring slab j within
+ *   d while its reach plus d touches a slab that is not a neighbour of j (the destination rule).
+ *   d estimates a free body (contact impulses are not predicted). The decomposition and these
+ *   rules are process-wide, like pe's domain: a replacement Engine handle keeps them;
  * - reading (enumeration, states, shadow copies via Selection::shadowCopies /
  *   BodyState::shadow, classification) works on the local bodies and shadow copies;
  *   sphereContainsPoints() evaluates pe's sphere predicate for a sphere the process does not
@@ -222,12 +226,15 @@ namespace coupling {
  *   before the first result is written. An allocation failure later on (the spatial index
  *   collects candidates per point; CGAL mesh predicates may allocate) can leave the results of
  *   earlier points written.
- * - advance(): its checks are local and run before any collective and before the first step;
- *   if a pe step throws, the bodies may have moved partially (pe gives no guarantee).
+ * - advance(): its checks run before the first step (on several processes collectively: the
+ *   pending loads and the reach rules, so every process throws together); if a pe step throws,
+ *   the bodies may have moved partially (pe gives no guarantee).
  * - writeCheckpoint(): the world and the Engine never change; the text is built in memory and
  *   written with one unformatted write(), so on a stream failure the stream may hold a part.
  * - readCheckpoint(): world and Engine unchanged (everything is validated before the first
  *   change, and the commit cannot throw); the stream may have been consumed up to the error.
+ *   Exception: on several processes, when a sphere has to move to another process, the commit
+ *   destroys, synchronizes and instantiates; an exception there is fatal (state unspecified).
  *
  * \b Precision. The API is supported and tested with pe built in double precision. Values are
  * still checked after their conversion to pe::real; BuildInfo reports the real type.
