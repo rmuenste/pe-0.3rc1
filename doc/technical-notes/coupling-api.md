@@ -550,7 +550,14 @@ support pe versions with and without it):
   rule iv (with a closing plane, n planes for n processes: its ball of radius R + d crosses the
   closing plane; the region beyond belongs to no process, every other point belongs to a slab,
   and pe silently discards a contact whose point lies in no process's region; `createSphere()`
-  refuses such a sphere as well; this rule also runs on two processes with a closing plane). d is an
+  refuses such a sphere as well; this rule also runs on two processes with a closing plane).
+  A body that migrated into a process during a pe step or during the synchronization before
+  it has shadow copies only on its previous holder's neighbours; `advance()` synchronizes once
+  more before the next contact search (`pe-coupling-mpi-dd-thirdshadow-3`). pe's migration does
+  not carry a body's sleep state (awake flag and motion average): a migrated body is awake on
+  its new holder. With sleep mode (`PE_SLEEP_THRESHOLD` > 0) a domain-decomposed run therefore
+  differs from one process; a native caller must account for it, the FEAT exchange refuses
+  such a build. d is an
   estimate for a free body: contact impulses and split-impulse corrections are not predicted, so
   a caller that must not lose bodies checks the body count after the step (the FEAT exchange
   does, as a fatal error in the same coupling step). The decomposition and the rules are

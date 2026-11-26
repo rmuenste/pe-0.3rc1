@@ -2435,20 +2435,45 @@ void Engine::advance( double dt, unsigned int substeps )
          if( !agreed.empty() )
             throw std::runtime_error( agreed );
       }
-      if( parallelRun() ) {
+      if( !parallelRun() ) {
+         impl_->world_->simulationStep( h );
+         continue;
+      }
+      // Several processes. The ids held before the pre-step synchronization: a body that migrates
+      // in that synchronization (e.g. after a setKinematicState() into a neighbour) has shadow
+      // copies only on its previous holder's neighbours, so it needs a second synchronization
+      // before the contact search (see below for arrivals during a pe step).
+      const auto arrived = [&]( const std::vector<BodyId>& held ) {
+         for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it )
+            if( !it->isGlobal() && !std::binary_search( held.begin(), held.end(), it->getSystemID() ) )
+               return true;
+         return false;
+      };
+      std::vector<BodyId>& before( impl_->held_ );
+      const auto snapshot = [&]() {
+         before.clear();
+         for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it )
+            if( !it->isGlobal() ) before.push_back( it->getSystemID() );
+         std::sort( before.begin(), before.end() );
+      };
+      {
          bool needSync( detail::syncRequired( cs ) );   // collective
 #if HAVE_MPI
          int overridden( impl_->overridden_ ? 1 : 0 );
          MPI_Allreduce( MPI_IN_PLACE, &overridden, 1, MPI_INT, MPI_LOR, MPISettings::comm() );
          needSync = needSync || ( overridden != 0 );
 #endif
-         if( needSync )
+         if( needSync ) {
+            snapshot();
             World::synchronize();
+#if HAVE_MPI
+            int again( arrived( before ) ? 1 : 0 );
+            MPI_Allreduce( MPI_IN_PLACE, &again, 1, MPI_INT, MPI_LOR, MPISettings::comm() );
+            if( again != 0 )
+               World::synchronize();
+#endif
+         }
          impl_->overridden_ = false;
-      }
-      if( !parallelRun() ) {
-         impl_->world_->simulationStep( h );
-         continue;
       }
       // Several processes: a body that migrated INTO this process in the step has shadow copies
       // only on the neighbours of its previous holder (pe's migration sends copies from there;
@@ -2456,18 +2481,10 @@ void Engine::advance( double dt, unsigned int substeps )
       // which pe runs after the next contact search). So a process that became the holder of a
       // body requests a synchronization before the next pe step (collectively through the
       // overridden_ reduction above, also before the first step of the next advance()).
-      std::vector<BodyId>& before( impl_->held_ );
-      before.clear();
-      for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it )
-         if( !it->isGlobal() ) before.push_back( it->getSystemID() );
-      std::sort( before.begin(), before.end() );
+      snapshot();
       impl_->world_->simulationStep( h );
-      for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it ) {
-         if( !it->isGlobal() && !std::binary_search( before.begin(), before.end(), it->getSystemID() ) ) {
-            impl_->overridden_ = true;
-            break;
-         }
-      }
+      if( arrived( before ) )
+         impl_->overridden_ = true;
    }
    loadsAppliedThisStep.store( false );
    impl_->prepared_ = false;

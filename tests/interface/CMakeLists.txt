@@ -1473,6 +1473,14 @@ if(PE_USE_MPI AND MPI_FOUND)
     LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 3
     FIXTURES_REQUIRED coupling_dd_third ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
   add_test(
+    NAME pe-coupling-mpi-dd-presync-3
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 3 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> presync ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-presync-3 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 3
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
     NAME pe-coupling-mpi-dd-oneproc-1
     COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
       $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> oneproc ${MPIEXEC_POSTFLAGS}
@@ -1523,7 +1531,8 @@ if(PE_USE_MPI AND MPI_FOUND)
             pe-coupling-mpi-dd-incline-2 pe-coupling-mpi-dd-incline-4 pe-coupling-mpi-dd-parallel-4
             pe-coupling-mpi-dd-closing-2 pe-coupling-mpi-dd-bignormal-2 pe-coupling-mpi-dd-closingcontact-2 pe-coupling-mpi-dd-destination-4 pe-coupling-mpi-dd-buoyant-4
             pe-coupling-mpi-dd-mixed-4 pe-coupling-mpi-dd-friction-reference pe-coupling-mpi-dd-friction-2
-            pe-coupling-mpi-dd-thirdshadow-reference pe-coupling-mpi-dd-thirdshadow-3 pe-coupling-mpi-dd-oneproc-1)
+            pe-coupling-mpi-dd-thirdshadow-reference pe-coupling-mpi-dd-thirdshadow-3 pe-coupling-mpi-dd-oneproc-1
+            pe-coupling-mpi-dd-presync-3)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
     set_tests_properties(${t} PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
   endforeach()

@@ -63,6 +63,13 @@
  *  (process 2 needs A's shadow copy, which only the new holder can send): the states after the
  *  step agree with one process (1e-6 of the largest value).
  *
+ *  presync (3 processes): planes z = 0 and 1; a sphere of radius 0.1 created at z = -0.5 is
+ *  moved by setKinematicState() to z = 0.97 (it would migrate to process 1 in the
+ *  synchronization before the next step), a sphere of radius 0.005 sits at z = 1.055 in slab 2
+ *  (the review's native case). The reach rules run before that synchronization, on the holder
+ *  (process 0), and refuse the step: the moved sphere reaches slab 2 (rule i), so the contact
+ *  that only a second synchronization would let process 2 see cannot be missed silently.
+ *
  *  oneproc (1 process): decomposeSlabs() on one process installs nothing and records nothing:
  *  a later Engine configures again; a normal (-1e-200, 0, 0) is accepted (scaled), also from a
  *  plane file (readSlabPlanes()).
@@ -501,6 +508,44 @@ static std::string thirdshadow( pc::Engine& engine, int size )
 
 
 //*************************************************************************************************
+/*!\brief A body that migrates in the synchronization before a step (after setKinematicState())
+ *        and touches a body of the third process in that step; returns the states as one line.
+ */
+static void presync( pc::Engine& engine, int size )
+{
+   {
+      std::vector<pc::SlabPlane> planes;
+      for( double z : { 0.0, 1.0 } )
+         planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, z } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } );
+      engine.decomposeSlabs( planes );
+   }
+   engine.setSplitImpulse( true );
+   engine.setErrorReduction( 1.0 );
+   engine.setContactRelaxation( 1.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesPresync", 1000.0, 0.0, 0.0, 0.0 ) );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, -0.5 } }, 0.1, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 1.055 } }, 0.005, mat, created ) );
+   engine.advance( 1.0e-6 );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId x : ids )
+      if( x == a ) {
+         const pc::BodyState s( engine.state( a ) );
+         engine.setKinematicState( a, pc::KinematicState{ pc::Vec3d{ { 0.0, 0.0, 0.97 } }, s.orientation,
+                                                          zero, zero } );
+      }
+   const pc::BodyState b0( stateOf( engine, b ) );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 0.01 ); },
+                                     "the step after moving the sphere next to the third process's body",
+                                     "rule i", "reaches into slab 2" );
+   expect( stateOf( engine, b ).position == b0.position, "the refused step moved nothing" );
+   (void)size;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief One process: decomposeSlabs() records nothing; small normals.
  */
 static void oneproc( std::unique_ptr<pc::Engine>& handle )
@@ -709,6 +754,9 @@ int main( int argc, char** argv )
    }
    else if( mode == "oneproc" ) {
       oneproc( handle );
+   }
+   else if( mode == "presync" ) {
+      presync( engine, size );
    }
    else if( mode == "thirdshadow" && argc > 2 ) {
       const std::string reference( argv[2] );

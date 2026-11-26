@@ -166,9 +166,12 @@ namespace coupling {
  *   d estimates a free body (contact impulses are not predicted). The decomposition and these
  *   rules are process-wide, like pe's domain: a replacement Engine handle keeps them; one
  *   decomposition per process lifetime (a native replacement of pe's MPI topology is not
- *   detected). After a pe step in which a body migrated into a process, advance() synchronizes
- *   before the next contact search, so that the new holder's further neighbours get its shadow
- *   copy in time (pe's migration sends copies only to the previous holder's neighbours);
+ *   detected). After a pe step or a pre-step synchronization in which a body migrated into a
+ *   process, advance() synchronizes before the next contact search, so that the new holder's
+ *   further neighbours get its shadow copy in time (pe's migration sends copies only to the
+ *   previous holder's neighbours). pe's migration does not carry a body's sleep state (it is
+ *   awake on its new holder); with a pe built with sleep mode this is the caller's
+ *   responsibility (the FEAT exchange refuses such a build);
  * - reading (enumeration, states, shadow copies via Selection::shadowCopies /
  *   BodyState::shadow, classification) works on the local bodies and shadow copies;
  *   sphereContainsPoints() evaluates pe's sphere predicate for a sphere the process does not
