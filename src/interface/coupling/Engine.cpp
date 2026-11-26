@@ -3237,7 +3237,9 @@ void sphereContainsPoints( const Vec3d& centre, double radius, const double* xyz
    const Vec3 gpos_( toPe( centre ) );
    const real radius_( radius );
    for( std::size_t i=0; i<numPoints; ++i ) {
-      const Vec3 gpos( real( xyz[3*i] ), real( xyz[3*i+1] ), real( xyz[3*i+2] ) );
+      // static_cast, not real( ... ): clang parses 'Vec3 gpos( real( xyz[3*i] ), ... )' as a function declaration
+      const Vec3 gpos( static_cast<real>( xyz[3*i] ), static_cast<real>( xyz[3*i+1] ),
+                       static_cast<real>( xyz[3*i+2] ) );
       flags[i] = ( ( gpos - gpos_ ).sqrLength() <= ( radius_*radius_ ) ) ? 1u : 0u;
    }
 }
