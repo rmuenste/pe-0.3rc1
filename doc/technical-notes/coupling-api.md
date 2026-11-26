@@ -545,8 +545,12 @@ support pe versions with and without it):
   contact there would be missed, the next migration would need a distant process: "Registering
   distant processes is not yet implemented"), rule ii (so does its ball of radius R + d: the
   step could carry it beyond the neighbours, and pe deletes a body that no neighbour takes as
-  an outflow) or rule iii (destination: it can reach a neighbouring slab j within d, and its
-  ball of radius R + d touches a slab that is not a neighbour of j; for inclined planes). d is an
+  an outflow), rule iii (destination: it can reach a neighbouring slab j within d, and its
+  ball of radius R + d touches a slab that is not a neighbour of j; for inclined planes) or
+  rule iv (with a closing plane, n planes for n processes: its ball of radius R + d crosses the
+  closing plane; the region beyond belongs to no process, every other point belongs to a slab,
+  and pe silently discards a contact whose point lies in no process's region; `createSphere()`
+  refuses such a sphere as well; this rule also runs on two processes with a closing plane). d is an
   estimate for a free body: contact impulses and split-impulse corrections are not predicted, so
   a caller that must not lose bodies checks the body count after the step (the FEAT exchange
   does, as a fatal error in the same coupling step). The decomposition and the rules are

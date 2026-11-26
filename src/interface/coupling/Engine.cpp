@@ -670,6 +670,13 @@ struct Engine::Impl
    std::string checkpointRecord( const char* function, const char* tag, ConstBodyID body ) const;
    std::string reachError( ConstBodyID body, real h ) const;
    int         ownerSlab ( const Vec3& gpos ) const;
+   bool        closingPlane() const { return slabTopology().decomposed &&
+#if HAVE_MPI
+      static_cast<int>( slabTopology().halfSpaces.size() ) == MPISettings::size();
+#else
+      false;
+#endif
+   }
    bool        reachable ( const Vec3& gpos ) const;
    //**********************************************************************************************
 
@@ -1081,6 +1088,20 @@ std::string Engine::Impl::reachError( ConstBodyID body, real h ) const
              << "thicker slabs";
       if( !oss.str().empty() )
          return oss.str();
+   }
+   // (iv) a closing plane (n planes for n slabs): the region beyond it belongs to no process, so a
+   // contact point there is discarded silently; the ball of radius R + d must stay on its inner
+   // side (the planes of a chain cover everything else)
+   if( nPlanes == nSlabs && nPlanes > 0 ) {
+      const HalfSpace& closing( planes[nPlanes-1] );
+      if( trans( closing.getNormal() ) * centre - closing.getDisplacement() < travel ) {
+         std::ostringstream oss;
+         oss << head() << " reaches beyond the closing plane of the decomposition (rule iv: its "
+             << "reach " << reach << " plus the displacement " << d << " must stay inside the "
+             << "closing plane; the region beyond it belongs to no process, and pe discards a "
+             << "contact whose point lies there)";
+         return oss.str();
+      }
    }
    for( int j : { slab - 1, slab + 1 } ) {
       if( j < 0 || j >= nSlabs || !touches( j, d ) )
@@ -1643,6 +1664,21 @@ BodyId Engine::createSphere( const Vec3d& centre, double radius, MaterialId mate
              << "process); use thicker slabs (fewer processes or other planes)";
          throw std::invalid_argument( oss.str() );
       }
+#if HAVE_MPI
+      // rule iv (see Impl::reachError()): a sphere must not reach beyond a closing plane
+      const std::vector<HalfSpace>& planes( slabTopology().halfSpaces );
+      if( static_cast<int>( planes.size() ) == processCount() && !planes.empty() ) {
+         const HalfSpace& closing( planes.back() );
+         if( trans( closing.getNormal() ) * toPe( centre ) - closing.getDisplacement() < reach ) {
+            std::ostringstream oss;
+            oss << where( "createSphere" ) << "a sphere of radius " << radius << " reaches beyond "
+                << "the closing plane of the decomposition (rule iv: the region beyond it belongs to "
+                << "no process, and pe discards a contact whose point lies there); a closing plane "
+                << "must enclose every body with its reach";
+            throw std::invalid_argument( oss.str() );
+         }
+      }
+#endif
    }
    impl_->prepared_ = false;
    const SphereID sphere( pe::createSphere( static_cast<id_t>( userId ), toPe( centre ),
@@ -2385,7 +2421,8 @@ void Engine::advance( double dt, unsigned int substeps )
    detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
    const DiagnosticsOffScope quiet( cs );
    for( unsigned int i=0; i<substeps; ++i ) {
-      if( parallelRun() && slabTopology().decomposed && processCount() > 2 ) {
+      if( parallelRun() && slabTopology().decomposed &&
+          ( processCount() > 2 || impl_->closingPlane() ) ) {
          // the reach and displacement rules of a slab decomposition, before anything moves
          // (collective; see Impl::reachError()): every local finite body, fixed ones included
          std::string error;

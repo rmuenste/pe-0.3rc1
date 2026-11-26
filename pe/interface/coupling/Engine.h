@@ -159,7 +159,10 @@ namespace coupling {
  *   slab that is not a neighbour of its holder's (a contact there would be missed), or whose
  *   reach plus its displacement estimate d = (|v| + a h) h does (a the acceleration the solver
  *   applies; pe would delete it as an outflow), or that can reach a neighbouring slab j within
- *   d while its reach plus d touches a slab that is not a neighbour of j (the destination rule).
+ *   d while its reach plus d touches a slab that is not a neighbour of j (the destination rule),
+ *   or whose reach plus d crosses a closing plane (n planes for n processes: the region beyond
+ *   it belongs to no process, and pe discards a contact whose point lies there; createSphere()
+ *   refuses such a sphere too).
  *   d estimates a free body (contact impulses are not predicted). The decomposition and these
  *   rules are process-wide, like pe's domain: a replacement Engine handle keeps them; one
  *   decomposition per process lifetime (a native replacement of pe's MPI topology is not

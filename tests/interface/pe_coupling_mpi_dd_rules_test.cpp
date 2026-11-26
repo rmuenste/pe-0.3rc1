@@ -35,6 +35,11 @@
  *  closing (2 processes): divider x = 0, closing plane x = 0.01 (the gap to it is no interior
  *  slab): a sphere of radius 0.02 at x = -1 is created and stepped.
  *
+ *  closingcontact (2 processes): planes z = 0.100 and the closing plane z = 0.102 (the review
+ *  case): a sphere A of radius 0.010 at z = 0.099 reaches beyond the closing plane and is refused
+ *  at creation (rule iv); a sphere B of radius 0.0005 at z = 0.101 is created, and a step that
+ *  could carry it beyond the closing plane is refused (rule iv).
+ *
  *  bignormal (2 processes): the dividing plane x = 0 given with the normal (-1e200, 0, 0), whose
  *  squared length overflows: it still divides x <= 0 (process 0) from x > 0 (process 1).
  *
@@ -405,6 +410,45 @@ static void closing( pc::Engine& engine )
 
 
 //*************************************************************************************************
+/*!\brief A closing plane: rule iv at creation and before a step.
+ */
+static void closingcontact( pc::Engine& engine )
+{
+   engine.decomposeSlabs( { pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.100 } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } },
+                            pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.102 } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } } );
+   const pc::MaterialId mat( engine.createMaterial( "rulesClosingContact", 1000.0, 0.0, 0.1, 0.1 ) );
+   // A: refused on its owner (process 0), agreed by everybody
+   std::string error;
+   int created( 0 );
+   const pc::Vec3d ca{ { 0.0, 0.0, 0.099 } };
+   if( engine.ownsPoint( ca ) ) {
+      try { engine.createSphere( ca, 0.010, mat, 1 ); }
+      catch( const std::exception& ex ) { error = ex.what(); }
+   }
+   int refused( error.find( "rule iv" ) != std::string::npos ? 1 : 0 );
+   MPI_Allreduce( MPI_IN_PLACE, &refused, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   expect( refused == 1, "a sphere reaching beyond the closing plane is refused at creation (rule iv)" );
+   // B: created, then a step towards the closing plane is refused on every process
+   created = 0;
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 0.101 } }, 0.0005, mat, created ) );
+   expect( created == 1, "the small sphere inside is created" );
+   engine.advance( 1.0e-6 );
+   const pc::BodyState s0( stateOf( engine, b ) );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId x : ids )
+      if( x == b )
+         engine.setKinematicState( b, pc::KinematicState{ s0.position, pc::Quatd{ { 1.0, 0.0, 0.0, 0.0 } },
+                                   pc::Vec3d{ { 0.0, 0.0, 1.0 } }, zero } );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 1.0e-3 ); },
+                                     "a step that could carry the sphere beyond the closing plane",
+                                     "rule iv", "closing plane" );
+   expect( stateOf( engine, b ).position == s0.position, "the refused step moved nothing" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief A finite normal whose squared length overflows: (-1e200, 0, 0) at x = 0 must still
  *        divide the space (it collapsed to a zero normal before).
  */
@@ -701,6 +745,9 @@ int main( int argc, char** argv )
                  "the contact of the migrated sphere with the sphere of the third process is found "
                  "in the second substep (states equal to one process; B pushed up)" );
       }
+   }
+   else if( mode == "closingcontact" ) {
+      closingcontact( engine );
    }
    else if( mode == "bignormal" ) {
       bignormal( engine, rank );
