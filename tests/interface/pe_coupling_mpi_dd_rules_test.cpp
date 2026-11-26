@@ -70,6 +70,17 @@
  *  (process 0), and refuse the step: the moved sphere reaches slab 2 (rule i), so the contact
  *  that only a second synchronization would let process 2 see cannot be missed silently.
  *
+ *  nativepresync (1 process with --write-reference, 3 processes): the same situation with pe's
+ *  NATIVE domain setup (defineLocalDomain() and connect() with the half spaces of the planes
+ *  z = 0 and 1, as decomposeDomainPlaneSlabs() does, without Engine::decomposeSlabs(), so no
+ *  reach rule is installed). The sphere of radius 0.1 created at z = -0.5 on process 0 is moved
+ *  by setKinematicState() to z = 0.97: it migrates to process 1 in the synchronization before
+ *  the step and reaches into slab 2, where the sphere of radius 0.005 at z = 1.055 lies. In the
+ *  only substep of the one advance() process 2 must see the moved sphere's shadow copy, which
+ *  only its new holder sends (advance() synchronizes again after an arrival in the pre-step
+ *  synchronization): the states after the step equal those of one process bit for bit (as
+ *  measured) and the small sphere is pushed up.
+ *
  *  oneproc (1 process): decomposeSlabs() on one process installs nothing and records nothing:
  *  a later Engine configures again; a normal (-1e-200, 0, 0) is accepted (scaled), also from a
  *  plane file (readSlabPlanes()).
@@ -546,6 +557,62 @@ static void presync( pc::Engine& engine, int size )
 
 
 //*************************************************************************************************
+/*!\brief The presync situation with pe's native domain setup (no reach rules); returns the
+ *        states after the step as one line.
+ */
+static std::string nativepresync( pc::Engine& engine, int rank, int size )
+{
+   if( size > 1 ) {
+      // three slabs z <= 0, 0 <= z <= 1, z >= 1: each plane as the half space on its positive
+      // side (normal towards decreasing z), its exact complement for the slab above it
+      const pe::HalfSpace p0( pe::Vec3( 0, 0, -1 ), 0 ), p1( pe::Vec3( 0, 0, -1 ), -1 );
+      expect( size == 3, "nativepresync runs on 1 or 3 processes" );
+      if( rank == 0 ) {
+         pe::defineLocalDomain( p0 );
+         pe::connect( 1, pe::intersect( p1, p0.opposite() ) );
+      }
+      else if( rank == 1 ) {
+         pe::defineLocalDomain( pe::intersect( p1, p0.opposite() ) );
+         pe::connect( 0, p0 );
+         pe::connect( 2, p1.opposite() );
+      }
+      else if( rank == 2 ) {
+         pe::defineLocalDomain( p1.opposite() );
+         pe::connect( 1, pe::intersect( p1, p0.opposite() ) );
+      }
+   }
+   engine.setSplitImpulse( true );
+   engine.setErrorReduction( 1.0 );
+   engine.setContactRelaxation( 1.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesNativePresync", 1000.0, 0.0, 0.0, 0.0 ) );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, -0.5 } }, 0.1, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 1.055 } }, 0.005, mat, created ) );
+   expect( created == 1, "the small sphere is created once" );
+   expect( size == 1 || localHolder( b ) == 2, "the small sphere lies on process 2" );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId x : ids )
+      if( x == a ) {
+         const pc::BodyState s( engine.state( a ) );
+         engine.setKinematicState( a, pc::KinematicState{ pc::Vec3d{ { 0.0, 0.0, 0.97 } }, s.orientation,
+                                                          zero, zero } );
+      }
+   engine.advance( 0.01, 1 );
+   expect( size == 1 || localHolder( a ) == 1, "the moved sphere migrated to process 1" );
+   std::ostringstream oss;
+   oss.precision( 17 );
+   for( pc::BodyId x : { a, b } ) {
+      const pc::BodyState s( stateOf( engine, x ) );
+      for( int k=0; k<3; ++k ) oss << ' ' << s.position[k];
+      for( int k=0; k<3; ++k ) oss << ' ' << s.linearVelocity[k];
+   }
+   return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief One process: decomposeSlabs() records nothing; small normals.
  */
 static void oneproc( std::unique_ptr<pc::Engine>& handle )
@@ -758,6 +825,41 @@ int main( int argc, char** argv )
    else if( mode == "presync" ) {
       presync( engine, size );
    }
+   else if( mode == "nativepresync" && argc > 2 ) {
+      const std::string reference( argv[2] );
+      const bool write( argc > 3 && std::string( argv[3] ) == "--write-reference" );
+      const std::string line( nativepresync( engine, rank, size ) );
+      if( write ) {
+         if( rank == 0 ) {
+            std::ofstream out( reference.c_str() );
+            out << line << '\n';
+         }
+      }
+      else {
+         std::ifstream in( reference.c_str() );
+         std::string l;
+         std::getline( in, l );
+         std::istringstream ra( l ), rb( line );
+         std::vector<double> xa, xb;
+         double x( 0 );
+         while( ra >> x ) xa.push_back( x );
+         while( rb >> x ) xb.push_back( x );
+         double diff( 1.0 );
+         if( xa.size() == 12 && xb.size() == 12 ) {
+            diff = 0.0;
+            for( std::size_t i=0; i<12; ++i )
+               diff = std::max( diff, std::fabs( xa[i] - xb[i] ) );
+         }
+         if( rank == 0 )
+            std::printf( "pe_coupling_mpi_dd_rules_test nativepresync (%d ranks): B at z = %.17g "
+                         "(one process: %.17g), largest absolute difference %.3e\n", size,
+                         xb.size() == 12 ? xb[8] : 0.0, xa.size() == 12 ? xa[8] : 0.0, diff );
+         expect( xa.size() == 12 && diff == 0.0 && xa[8] > 1.055,
+                 "the contact of the sphere that migrated in the pre-step synchronization with the "
+                 "sphere of the third process is found in the first substep (states bitwise equal to "
+                 "one process; B pushed up)" );
+      }
+   }
    else if( mode == "thirdshadow" && argc > 2 ) {
       const std::string reference( argv[2] );
       const bool write( argc > 3 && std::string( argv[3] ) == "--write-reference" );
@@ -850,7 +952,7 @@ int main( int argc, char** argv )
    }
    else {
       if( rank == 0 )
-         std::fprintf( stderr, "usage: %s incline | parallel | closing | destination | buoyant | mixed "
+         std::fprintf( stderr, "usage: %s incline | parallel | closing | destination | buoyant | mixed | nativepresync "
                        "| friction <reference> [--write-reference]\n", argv[0] );
       MPI_Abort( MPI_COMM_WORLD, 2 );
    }
