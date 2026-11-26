@@ -60,6 +60,7 @@
 #include <pe/system/SleepMode.h>
 #include <pe/util/Limits.h>
 #include <src/interface/PointOwnership.h>
+#include <src/interface/coupling/GatherLayout.h>
 #include <src/interface/coupling/SolverFeatures.h>
 #include <fstream>
 #include <map>
@@ -687,6 +688,8 @@ struct Engine::Impl
    mutable std::unordered_map<BodyId,double> meshVolumes_;     //!< Cached triangle-mesh volumes.
    mutable std::vector<BodyID>              candidates_;       //!< Scratch: index candidates.
    mutable std::vector<BodyID>              bodies_;           //!< Scratch: selected bodies.
+   std::vector<BodyId>                      held_;             //!< Scratch: ids held before a
+                                                               //!< pe step (advance()).
    //**********************************************************************************************
 };
 //*************************************************************************************************
@@ -1445,7 +1448,12 @@ bool Engine::splitImpulse() const
  * pe's decomposeDomainPlaneSlabs() (pe/interface/support/decompose.h): each process is
  * connected to the previous and the next slab only, so a body must never reach across a whole
  * slab. Must be called before the first body is created (also before planes). On one process
- * (or without MPI) the planes are validated and nothing else happens.
+ * (or without MPI) the planes are validated and nothing else happens (nothing is recorded, so
+ * a later Engine may call it again). On several processes the installed topology is
+ * process-wide, like pe's domain and process connections: one decomposition per process
+ * lifetime (a second call throws, also from another Engine handle). A replacement of pe's MPI
+ * topology by native calls (defineLocalDomain(), connect()) outside the Engine is not detected:
+ * pe offers no hook, and the cached planes of the reach rules would then be stale.
  */
 void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
 {
@@ -1511,9 +1519,11 @@ void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
       }
       slabTopology().halfSpaces = halfSpaces;
       slabTopology().minInteriorSlab = parallel ? thinnest : std::numeric_limits<real>::infinity();
+      slabTopology().decomposed = true;
    }
 #endif
-   slabTopology().decomposed = true;
+   // on one process (or without MPI) only the planes were validated: no topology was installed,
+   // so nothing is recorded and a later Engine may configure again
 }
 //*************************************************************************************************
 
@@ -2399,7 +2409,28 @@ void Engine::advance( double dt, unsigned int substeps )
             World::synchronize();
          impl_->overridden_ = false;
       }
+      if( !parallelRun() ) {
+         impl_->world_->simulationStep( h );
+         continue;
+      }
+      // Several processes: a body that migrated INTO this process in the step has shadow copies
+      // only on the neighbours of its previous holder (pe's migration sends copies from there;
+      // the new holder registers its own further neighbours only at its next synchronization,
+      // which pe runs after the next contact search). So a process that became the holder of a
+      // body requests a synchronization before the next pe step (collectively through the
+      // overridden_ reduction above, also before the first step of the next advance()).
+      std::vector<BodyId>& before( impl_->held_ );
+      before.clear();
+      for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it )
+         if( !it->isGlobal() ) before.push_back( it->getSystemID() );
+      std::sort( before.begin(), before.end() );
       impl_->world_->simulationStep( h );
+      for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it ) {
+         if( !it->isGlobal() && !std::binary_search( before.begin(), before.end(), it->getSystemID() ) ) {
+            impl_->overridden_ = true;
+            break;
+         }
+      }
    }
    loadsAppliedThisStep.store( false );
    impl_->prepared_ = false;
@@ -2575,21 +2606,22 @@ void Engine::prepareCheckpoint()
    UNUSED( numFixed );
 
    // gather the records on the root
+   // (the layout in 64 bits on every process; a layout beyond MPI's int counts is refused by
+   // every process before anything is allocated or sent)
    const int root( MPISettings::root() );
    const int size( processCount() );
-   int length( static_cast<int>( local.size() ) );
-   std::vector<int> lengths( std::size_t( size ), 0 ), offsets( std::size_t( size ), 0 );
-   MPI_Gather( &length, 1, MPI_INT, lengths.data(), 1, MPI_INT, root, MPISettings::comm() );
+   std::uint64_t length64( local.size() );
+   std::vector<std::uint64_t> bytes( std::size_t( size ), 0 );
+   MPI_Allgather( &length64, 1, MPI_UINT64_T, bytes.data(), 1, MPI_UINT64_T, MPISettings::comm() );
+   std::vector<int> lengths, offsets;
+   const std::string layout( detail::gatherLayout( bytes, lengths, offsets ) );
+   if( !layout.empty() )
+      throw std::runtime_error( where( function ) + layout );
+   const int length( lengths[std::size_t( processRank() )] );
    std::string all;
-   if( processRank() == root ) {
-      int total( 0 );
-      for( int r=0; r<size; ++r ) {
-         offsets[std::size_t( r )] = total;
-         total += lengths[std::size_t( r )];
-      }
-      all.resize( std::size_t( total ) );
-   }
-   MPI_Gatherv( local.data(), length, MPI_CHAR, processRank() == root ? &all[0] : nullptr,
+   if( processRank() == root )
+      all.resize( std::size_t( offsets.back() ) + std::size_t( lengths.back() ) );
+   MPI_Gatherv( local.data(), length, MPI_CHAR, processRank() == root && !all.empty() ? &all[0] : nullptr,
                 lengths.data(), offsets.data(), MPI_CHAR, root, MPISettings::comm() );
 
    if( processRank() == root ) {
@@ -2962,14 +2994,18 @@ void Engine::readCheckpoint( std::istream& is )
          throw std::runtime_error( agreedMove );
 
       // all descriptors to all processes (few bodies move)
-      int count( static_cast<int>( mine.size() * sizeof( Relocation ) ) );
-      std::vector<int> bytes( MPISettings::size() ), displs( MPISettings::size(), 0 );
-      MPI_Allgather( &count, 1, MPI_INT, bytes.data(), 1, MPI_INT, MPISettings::comm() );
-      int total( 0 );
-      for( int p=0; p<MPISettings::size(); ++p ) { displs[p] = total; total += bytes[p]; }
-      relocations.resize( std::size_t( total ) / sizeof( Relocation ) );
-      MPI_Allgatherv( mine.data(), count, MPI_BYTE, relocations.data(), bytes.data(),
-                      displs.data(), MPI_BYTE, MPISettings::comm() );
+      // (the layout in 64 bits; refused by every process beyond MPI's int counts)
+      std::uint64_t count64( mine.size() * sizeof( Relocation ) );
+      std::vector<std::uint64_t> bytes64( std::size_t( MPISettings::size() ), 0 );
+      MPI_Allgather( &count64, 1, MPI_UINT64_T, bytes64.data(), 1, MPI_UINT64_T, MPISettings::comm() );
+      std::vector<int> bytes, displs;
+      const std::string layout( detail::gatherLayout( bytes64, bytes, displs ) );
+      if( !layout.empty() )
+         throw std::runtime_error( where( function ) + layout );
+      const std::size_t total( std::size_t( displs.back() ) + std::size_t( bytes.back() ) );
+      relocations.resize( total / sizeof( Relocation ) );
+      MPI_Allgatherv( mine.data(), bytes[std::size_t( MPISettings::rank() )], MPI_BYTE,
+                      relocations.data(), bytes.data(), displs.data(), MPI_BYTE, MPISettings::comm() );
 #endif
    }
 
@@ -3104,8 +3140,10 @@ std::vector<SlabPlane> readSlabPlanes( const std::string& filename )
          throw std::runtime_error( "pe::coupling::readSlabPlanes: line " +
                                    std::to_string( lineNumber ) + " of " + filename +
                                    " does not hold exactly six numbers (px py pz nx ny nz)" );
+      // a zero normal is a zero vector (not a zero squared norm: (-1e-200, 0, 0) is a valid
+      // direction, decomposeSlabs() scales it before the normalization)
       if( !allFinite( p.point ) || !allFinite( p.normal ) ||
-          !( p.normal[0]*p.normal[0] + p.normal[1]*p.normal[1] + p.normal[2]*p.normal[2] > 0.0 ) )
+          ( p.normal[0] == 0.0 && p.normal[1] == 0.0 && p.normal[2] == 0.0 ) )
          throw std::runtime_error( "pe::coupling::readSlabPlanes: line " +
                                    std::to_string( lineNumber ) + " of " + filename +
                                    " holds a non-finite number or a zero normal" );
