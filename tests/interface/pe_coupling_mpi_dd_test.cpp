@@ -413,8 +413,13 @@ int main( int argc, char** argv )
       expectThrows<std::invalid_argument>( [&]() { engine.decomposeSlabs( {} ); },
                                            "decomposition with a wrong plane count", "planes" );
    engine.decomposeSlabs( slabs( size ) );
-   expectThrows<std::logic_error>( [&]() { engine.decomposeSlabs( slabs( size ) ); },
-                                   "a second decomposition", "decomposed before" );
+   // several processes: one decomposition per process lifetime; one process: nothing installed,
+   // a second call validates again
+   if( size > 1 )
+      expectThrows<std::logic_error>( [&]() { engine.decomposeSlabs( slabs( size ) ); },
+                                      "a second decomposition", "decomposed before" );
+   else
+      engine.decomposeSlabs( slabs( size ) );
 
    // every point has exactly one owner
    {
@@ -438,7 +443,8 @@ int main( int argc, char** argv )
    // back (a contact with a global body, which pe resolves only for a local, non-remote body)
    engine.createPlane( pc::Vec3d{ { -1.0, 0.0, 0.0 } }, -1.9, mat, 99 );
    expectThrows<std::logic_error>( [&]() { engine.decomposeSlabs( slabs( size ) ); },
-                                   "decomposition after body creation", "decomposed before" );
+                                   "decomposition after body creation",
+                                   size > 1 ? "decomposed before" : "bodies exist already" );
 
    // a fresh process set restarting from the checkpoint of step 80
    if( !restartFile.empty() ) {

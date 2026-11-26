@@ -1184,6 +1184,13 @@ if(MPI_CXX_FOUND)
   set_tests_properties(pe-coupling-header-mpi-h PROPERTIES LABELS "${coupling_header_labels}")
 endif()
 
+# The layout of the coupling API's variable-length gathers (64-bit sizes, refused beyond MPI's
+# int counts): a pure computation, in serial and MPI builds
+add_executable(pe_coupling_gather_layout_test pe_coupling_gather_layout_test.cpp)
+target_link_libraries(pe_coupling_gather_layout_test PRIVATE pe_static_lubstage_fluid)
+add_test(NAME pe-coupling-gather-layout COMMAND pe_coupling_gather_layout_test)
+set_tests_properties(pe-coupling-gather-layout PROPERTIES LABELS "unit;serial;interface;coupling")
+
 # The serial-semantics tests. They need no MPI_Init, so they are serial-only (an MPI build
 # runs the pe-coupling-mpi test instead).
 if(NOT PE_USE_MPI)
@@ -1445,6 +1452,34 @@ if(PE_USE_MPI AND MPI_FOUND)
       LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 4
       ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
   endforeach()
+  # a migration into a process whose further neighbour holds a body the migrated one touches
+  set(coupling_dd_third ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_thirdshadow_reference.txt)
+  add_test(
+    NAME pe-coupling-mpi-dd-thirdshadow-reference
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> thirdshadow ${coupling_dd_third} --write-reference
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-thirdshadow-reference PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 FIXTURES_SETUP coupling_dd_third
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-thirdshadow-3
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 3 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> thirdshadow ${coupling_dd_third}
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-thirdshadow-3 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 3
+    FIXTURES_REQUIRED coupling_dd_third ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-oneproc-1
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> oneproc ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-oneproc-1 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
   add_test(
     NAME pe-coupling-mpi-dd-parallel-4
     COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4 ${MPIEXEC_PREFLAGS}
@@ -1487,7 +1522,8 @@ if(PE_USE_MPI AND MPI_FOUND)
             pe-coupling-mpi-dd-restart-2 pe-coupling-mpi-dd-restart-4 pe-coupling-mpi-dd-broken-history
             pe-coupling-mpi-dd-incline-2 pe-coupling-mpi-dd-incline-4 pe-coupling-mpi-dd-parallel-4
             pe-coupling-mpi-dd-closing-2 pe-coupling-mpi-dd-bignormal-2 pe-coupling-mpi-dd-destination-4 pe-coupling-mpi-dd-buoyant-4
-            pe-coupling-mpi-dd-mixed-4 pe-coupling-mpi-dd-friction-reference pe-coupling-mpi-dd-friction-2)
+            pe-coupling-mpi-dd-mixed-4 pe-coupling-mpi-dd-friction-reference pe-coupling-mpi-dd-friction-2
+            pe-coupling-mpi-dd-thirdshadow-reference pe-coupling-mpi-dd-thirdshadow-3 pe-coupling-mpi-dd-oneproc-1)
     file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
     set_tests_properties(${t} PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
   endforeach()

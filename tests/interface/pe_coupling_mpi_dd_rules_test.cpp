@@ -50,6 +50,18 @@
  *  other gets a pending override into slab 1; the restore must move the first back (with its
  *  id) and put the second at its saved pose on process 0; both are local bodies of process 0.
  *
+ *  thirdshadow (1 process with --write-reference, 3 processes): planes z = 0.95, 1.96, a global
+ *  floor at z = 0, sphere A (radius 1) at z = 0.94 and sphere B (radius 0.015) at z = 1.99, no
+ *  gravity, split impulses, error reduction and contact relaxation 1, two pe substeps. In the
+ *  first the floor corrects A's penetration by 0.06; A migrates from process 0 to process 1 and
+ *  then overlaps B, which lies wholly in slab 2. In the second the contact A-B must be found
+ *  (process 2 needs A's shadow copy, which only the new holder can send): the states after the
+ *  step agree with one process (1e-6 of the largest value).
+ *
+ *  oneproc (1 process): decomposeSlabs() on one process installs nothing and records nothing:
+ *  a later Engine configures again; a normal (-1e-200, 0, 0) is accepted (scaled), also from a
+ *  plane file (readSlabPlanes()).
+ *
  *  Every mode also requires that pe's logs hold no [ERROR line.
  *
  *  friction (1 process with --write-reference, 2 processes): two touching spheres on both sides
@@ -412,6 +424,70 @@ static void bignormal( pc::Engine& engine, int rank )
 
 
 //*************************************************************************************************
+/*!\brief A migration into a process whose further neighbour holds a body the migrated one
+ *        touches in the next pe step; returns the final states as one line.
+ */
+static std::string thirdshadow( pc::Engine& engine, int size )
+{
+   if( size > 1 ) {
+      std::vector<pc::SlabPlane> planes;
+      for( double z : { 0.95, 1.96 } )
+         planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, z } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } );
+      engine.decomposeSlabs( planes );
+   }
+   engine.setSplitImpulse( true );
+   engine.setErrorReduction( 1.0 );
+   engine.setContactRelaxation( 1.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesThird", 1000.0, 0.0, 0.0, 0.0 ) );
+   engine.createPlane( pc::Vec3d{ { 0.0, 0.0, 1.0 } }, 0.0, mat, 50 );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 0.94 } }, 1.0, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 1.99 } }, 0.015, mat, created ) );
+   engine.advance( 0.02, 2 );
+   std::ostringstream oss;
+   oss.precision( 17 );
+   for( pc::BodyId x : { a, b } ) {
+      const pc::BodyState s( stateOf( engine, x ) );
+      for( int k=0; k<3; ++k ) oss << ' ' << s.position[k];
+      for( int k=0; k<3; ++k ) oss << ' ' << s.linearVelocity[k];
+   }
+   return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief One process: decomposeSlabs() records nothing; small normals.
+ */
+static void oneproc( std::unique_ptr<pc::Engine>& handle )
+{
+   const std::vector<pc::SlabPlane> tiny{ pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.0 } },
+                                                         pc::Vec3d{ { -1.0e-200, 0.0, 0.0 } } } };
+   std::string error;
+   try { handle->decomposeSlabs( tiny ); }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   expect( error.empty(), "a normal (-1e-200, 0, 0) is accepted (" + error + ")" );
+   handle.reset();
+   handle.reset( new pc::Engine() );
+   error.clear();
+   try { handle->decomposeSlabs( tiny ); }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   expect( error.empty(), "a later Engine on one process configures again (" + error + ")" );
+   {
+      std::ofstream f( "tiny_plane.txt" );
+      f << "0 0 0 -1e-200 0 0\n";
+   }
+   error.clear();
+   std::vector<pc::SlabPlane> read;
+   try { read = pc::readSlabPlanes( "tiny_plane.txt" ); }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   expect( error.empty() && read.size() == 1 && read[0].normal[0] == -1.0e-200,
+           "readSlabPlanes() accepts the normal (-1e-200, 0, 0) (" + error + ")" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Converging inclined planes: the destination rule.
  */
 static void destination( pc::Engine& engine )
@@ -586,6 +662,45 @@ int main( int argc, char** argv )
    }
    else if( mode == "closing" ) {
       closing( engine );
+   }
+   else if( mode == "oneproc" ) {
+      oneproc( handle );
+   }
+   else if( mode == "thirdshadow" && argc > 2 ) {
+      const std::string reference( argv[2] );
+      const bool write( argc > 3 && std::string( argv[3] ) == "--write-reference" );
+      const std::string line( thirdshadow( engine, size ) );
+      if( write ) {
+         if( rank == 0 ) {
+            std::ofstream out( reference.c_str() );
+            out << line << '\n';
+         }
+      }
+      else {
+         std::ifstream in( reference.c_str() );
+         std::string l;
+         std::getline( in, l );
+         std::istringstream ra( l ), rb( line );
+         std::vector<double> xa, xb;
+         double x( 0 );
+         while( ra >> x ) xa.push_back( x );
+         while( rb >> x ) xb.push_back( x );
+         double scale( 0.0 ), diff( 1.0 );
+         if( xa.size() == 12 && xb.size() == 12 ) {
+            diff = 0.0;
+            for( std::size_t i=0; i<12; ++i ) {
+               scale = std::max( scale, std::fabs( xa[i] ) );
+               diff = std::max( diff, std::fabs( xa[i] - xb[i] ) );
+            }
+         }
+         if( rank == 0 )
+            std::printf( "pe_coupling_mpi_dd_rules_test thirdshadow (%d ranks): B at z = %.17g (one "
+                         "process: %.17g), largest difference %.3e\n", size,
+                         xb.size() == 12 ? xb[8] : 0.0, xa.size() == 12 ? xa[8] : 0.0, diff );
+         expect( xa.size() == 12 && diff <= 1.0e-6 * scale && xa[8] > 1.99,
+                 "the contact of the migrated sphere with the sphere of the third process is found "
+                 "in the second substep (states equal to one process; B pushed up)" );
+      }
    }
    else if( mode == "bignormal" ) {
       bignormal( engine, rank );
