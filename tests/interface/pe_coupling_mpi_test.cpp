@@ -192,27 +192,29 @@ static void twoProcesses( int rank )
    engine.bodyIds( pc::Selection::shadowCopies, shadows );
 
    const char* const ni( "not implemented yet" );
+   // loads on two processes: each process adds and applies the loads of its own bodies
+   engine.addLoad( farLocal, pc::Vec3d{ { 0.0, 1.0, 0.0 } }, zero );
+   engine.applyLoads( 1.0, 1.0e-3 );
+   expect( engine.state( farLocal ).linearVelocity[1] > 0.0, "C: a local load applied on 2 "
+           "processes" );
+   expect( engine.loadHistory( farLocal ).hasPrevious && engine.loadHistory( farLocal ).hasFluid,
+           "C: the load history of the local body" );
+   engine.advance( 1.0e-9 );
+   setVelocity( engine, farLocal, zero );
    const pc::BodyState far( engine.state( farLocal ) );
-   expectThrows<std::runtime_error>( [&]() { engine.addLoad( farLocal, zero, zero ); },
-                                     "C: addLoad on 2 processes", ni );
-   expect( !engine.hasPendingLoads(), "C: the refused addLoad left nothing pending" );
-   expectThrows<std::runtime_error>( [&]() { engine.applyLoads( 1.0, 1.0e-3 ); },
-                                     "C: applyLoads on 2 processes", ni );
    std::stringstream ckpt;
-   expectThrows<std::runtime_error>( [&]() { engine.writeCheckpoint( ckpt ); },
-                                     "C: writeCheckpoint on 2 processes", ni );
+   expectThrows<std::logic_error>( [&]() { engine.writeCheckpoint( ckpt ); },
+                                   "C: writeCheckpoint without prepareCheckpoint() on 2 processes",
+                                   "prepareCheckpoint" );
    std::stringstream fake( "pe-coupling-checkpoint 3\nbodies 0\nfixed 0\nend\n" );
    expectThrows<std::runtime_error>( [&]() { engine.readCheckpoint( fake ); },
-                                     "C: readCheckpoint on 2 processes", ni );
+                                     "C: readCheckpoint of a world with a global finite body on 2 "
+                                     "processes", "global finite body" );
    const pc::BodyState g( engine.state( global ) );
    expectThrows<std::runtime_error>( [&]() {
       engine.setKinematicState( global, pc::KinematicState{ g.position, g.orientation, zero,
                                                             zero } ); },
       "C: override of a global body", "global" );
-   expectThrows<std::runtime_error>( [&]() {
-      engine.setKinematicState( farLocal, pc::KinematicState{
-         pc::Vec3d{ { -far.position[0], 0.0, 0.0 } }, far.orientation, zero, zero } ); },
-      "C: override that would migrate the body", "migrate" );
    expect( sameBits( engine.state( farLocal ).position, far.position ),
            "C: the refused overrides changed nothing" );
    const pc::Vec3d inside{ { far.position[0] * 1.5, 0.0, 0.0 } };
@@ -223,11 +225,12 @@ static void twoProcesses( int rank )
    if( rank == 0 ) {
       expect( movable.size() == 2 && shadows.empty(), "C rank 0: two local bodies, no shadows" );
       expect( !engine.state( straddling ).shadow, "C rank 0: the straddler is local" );
+      // a body with shadow copies may be overridden (the shadows follow at the next advance())
       const pc::BodyState st( engine.state( straddling ) );
-      expectThrows<std::runtime_error>( [&]() {
-         engine.setKinematicState( straddling, pc::KinematicState{ st.position, st.orientation,
-                                                                   zero, zero } ); },
-         "C rank 0: override of a body with shadow copies", "shadow copies" );
+      engine.setKinematicState( straddling, pc::KinematicState{ st.position, st.orientation,
+                                                                zero, zero } );
+      expect( sameBits( engine.state( straddling ).position, st.position ),
+              "C rank 0: override of a body with shadow copies" );
    }
    else {
       expect( movable.size() == 1 && movable[0] == farLocal, "C rank 1: one local movable body" );

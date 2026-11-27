@@ -2575,8 +2575,11 @@ inline void decomposeDomainPlaneSlabs( int slab, const std::vector<HalfSpace>& p
    if( nPlanes != nSlabs-1 && nPlanes != nSlabs )
       throw std::invalid_argument( "A decomposition into n slabs needs n-1 or n planes" );
 
+   // the exact complement of a plane's positive side (HalfSpace::opposite(): the coefficients
+   // negated exactly, not normalized again), so that the two slabs that share a plane share
+   // exactly its points
    const auto negativeSide = []( const HalfSpace& hs ) {
-      return HalfSpace( -hs.getNormal(), -hs.getDisplacement() );
+      return hs.opposite();
    };
 
    // Hands the geometry of slab s to the given function (the type depends on the slab)

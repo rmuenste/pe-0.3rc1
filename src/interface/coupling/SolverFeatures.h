@@ -181,6 +181,22 @@ struct HasSyncQuery< CS, std::void_t<
 
 
 //*************************************************************************************************
+/*!\brief Whether the collision system can drop all shadow copies for a rebuild
+ *        (clearShadowCopies(): removal notifications to the registered processes, registration
+ *        lists cleared; the next synchronization sends fresh copies).
+ */
+template< typename CS, typename = void >
+struct HasClearShadowCopies : std::false_type
+{};
+
+template< typename CS >
+struct HasClearShadowCopies< CS, std::void_t<
+   decltype( std::declval<CS&>().clearShadowCopies() ) > > : std::true_type
+{};
+//*************************************************************************************************
+
+
+//*************************************************************************************************
 /*!\brief Whether the collision system has the switch of its per-step diagnostic block
  *        (setPredictionDiagnostics( bool ) / getPredictionDiagnostics()).
  */
@@ -445,6 +461,27 @@ inline bool syncRequired( const CS& cs )
 {
    if constexpr( HasSyncQuery<CS>::value ) {
       return cs.isSyncRequired();
+   }
+   else {
+      (void)cs;
+      return false;
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Drops all shadow copies for a rebuild by the next synchronization, if the collision
+ *        system can.
+ *
+ * \return \a true if it could (call it on every process, then synchronize).
+ */
+template< typename CS >
+inline bool tryClearShadowCopies( CS& cs )
+{
+   if constexpr( HasClearShadowCopies<CS>::value ) {
+      cs.clearShadowCopies();
+      return true;
    }
    else {
       (void)cs;

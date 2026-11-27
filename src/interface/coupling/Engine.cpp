@@ -60,7 +60,14 @@
 #include <pe/system/SleepMode.h>
 #include <pe/util/Limits.h>
 #include <src/interface/PointOwnership.h>
+#include <src/interface/coupling/GatherLayout.h>
 #include <src/interface/coupling/SolverFeatures.h>
+#include <fstream>
+#include <map>
+#if HAVE_MPI
+#include <pe/core/domaindecomp/HalfSpace.h>
+#include <pe/interface/support/decompose.h>
+#endif
 
 
 namespace pe {
@@ -231,6 +238,33 @@ inline double bodyVolume( ConstBodyID body )
       case triangleMeshType: return double( static_cast<const TriangleMesh*>( body )->getVolume() );
       default:               return 0.0;
    }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The slab decomposition installed by Engine::decomposeSlabs() (several processes).
+ *
+ * pe's domain and process connections are process-wide and outlive every Engine handle, so the
+ * planes the rules of Engine::Impl::reachError() and ownerSlab() need live here too, not in a
+ * handle: a replacement handle on the living world keeps checking.
+ */
+struct SlabTopology
+{
+   bool decomposed = false;                                   //!< decomposeSlabs() was called.
+#if HAVE_MPI
+   std::vector<HalfSpace> halfSpaces;                         //!< The dividing planes as pe's
+                                                              //!< domain holds them.
+#endif
+   real minInteriorSlab = std::numeric_limits<real>::infinity();  //!< Thinnest slab with a
+                                                              //!< process on each side (all
+                                                              //!< planes parallel), else inf.
+};
+
+inline SlabTopology& slabTopology()
+{
+   static SlabTopology topology;
+   return topology;
 }
 //*************************************************************************************************
 
@@ -585,6 +619,10 @@ inline void requireCheckpointScope( const char* function )
    detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
    for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it ) {
       const ConstBodyID body( *it );
+      if( MPISettings::size() > 1 && body->isGlobal() && body->isFinite() )
+         throw std::runtime_error( where( function ) + "body " + idString( body->getSystemID() ) +
+                                   " is a global finite body, which a checkpoint on more than one "
+                                   "process cannot restore (not implemented yet)" );
       if( shapeKind( body->getType() ) == ShapeKind::other )
          throw std::runtime_error( where( function ) + "body " + idString( body->getSystemID() ) +
                                    " is a union or another composite/inner type, which the "
@@ -629,6 +667,17 @@ struct Engine::Impl
    void   fillState    ( ConstBodyID body, bool shadow, BodyState& s ) const;
    void   pruneHistory ();
    void   pruneVolumes () const;
+   std::string checkpointRecord( const char* function, const char* tag, ConstBodyID body ) const;
+   std::string reachError( ConstBodyID body, real h ) const;
+   int         ownerSlab ( const Vec3& gpos ) const;
+   bool        closingPlane() const { return slabTopology().decomposed &&
+#if HAVE_MPI
+      static_cast<int>( slabTopology().halfSpaces.size() ) == MPISettings::size();
+#else
+      false;
+#endif
+   }
+   bool        reachable ( const Vec3& gpos ) const;
    //**********************************************************************************************
 
    //**Member variables****************************************************************************
@@ -638,9 +687,16 @@ struct Engine::Impl
                                                                //!< kept while the body exists.
    bool                                     overridden_;       //!< Synchronize before the next
                                                                //!< step (several processes).
+   bool                                     prepared_ = false; //!< prepareCheckpoint() holds the
+                                                               //!< current checkpoint (several
+                                                               //!< processes).
+   std::string                              preparedText_;     //!< The gathered checkpoint text
+                                                               //!< (root process only).
    mutable std::unordered_map<BodyId,double> meshVolumes_;     //!< Cached triangle-mesh volumes.
    mutable std::vector<BodyID>              candidates_;       //!< Scratch: index candidates.
    mutable std::vector<BodyID>              bodies_;           //!< Scratch: selected bodies.
+   std::vector<BodyId>                      held_;             //!< Scratch: ids held before a
+                                                               //!< pe step (advance()).
    //**********************************************************************************************
 };
 //*************************************************************************************************
@@ -882,6 +938,295 @@ static void validateKinematicState( const char* function, const KinematicState& 
  * handle synchronizes before its first step: a previous handle may have overridden a state
  * that pe does not register as requiring a synchronization.
  */
+//*************************************************************************************************
+/*!\brief Formats the checkpoint record of a body: one line, including the newline.
+ *
+ * \param function The name of the calling member function (for messages).
+ * \param tag "body" or "fixedbody".
+ * \param body The body.
+ * \return The line.
+ * \exception std::runtime_error A non-finite state, load or fluid-force history.
+ *
+ * The same text on one process and on several: format version 3, classic locale, 17
+ * significant digits (see Engine::writeCheckpoint()).
+ */
+std::string Engine::Impl::checkpointRecord( const char* function, const char* tag,
+                                            ConstBodyID body ) const
+{
+   std::ostringstream out;
+   out.imbue( std::locale::classic() );
+   out.precision( 17 );
+   BodyState s;
+   fillState( body, false, s );
+   if( !allFinite( s.position ) || !allFinite( s.orientation ) ||
+       !allFinite( s.linearVelocity ) || !allFinite( s.angularVelocity ) )
+      throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
+                                " has a non-finite state" );
+   const auto previous( previous_.find( s.id ) );
+   const bool hasPrevious( previous != previous_.end() );
+   const LoadRecord prev( hasPrevious ? previous->second
+                                      : LoadRecord{ Vec3d{ { 0.0, 0.0, 0.0 } },
+                                                    Vec3d{ { 0.0, 0.0, 0.0 } } } );
+   if( !allFinite( prev.force ) || !allFinite( prev.torque ) )
+      throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
+                                " has a non-finite previous load" );
+   out << tag << ' ' << s.id;
+   for( int k=0; k<3; ++k ) out << ' ' << s.position[k];
+   for( int k=0; k<4; ++k ) out << ' ' << s.orientation[k];
+   for( int k=0; k<3; ++k ) out << ' ' << s.linearVelocity[k];
+   for( int k=0; k<3; ++k ) out << ' ' << s.angularVelocity[k];
+   // pe's own fluid-force history of the body (applyFluidForces() relaxes against it)
+   const Vec3& fluidForce( body->getPrevFluidForce() );
+   const Vec3& fluidTorque( body->getPrevFluidTorque() );
+   if( !finitePe( fluidForce ) || !finitePe( fluidTorque ) )
+      throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
+                                " has a non-finite previous fluid force" );
+   out << ' ' << ( hasPrevious ? 1 : 0 );
+   for( int k=0; k<3; ++k ) out << ' ' << prev.force[k];
+   for( int k=0; k<3; ++k ) out << ' ' << prev.torque[k];
+   out << ' ' << ( body->hasPrevFluidForce() ? 1 : 0 );
+   for( int k=0; k<3; ++k ) out << ' ' << double( fluidForce[k] );
+   for( int k=0; k<3; ++k ) out << ' ' << double( fluidTorque[k] );
+   out << '\n';
+   if( !out )
+      throw std::runtime_error( where( function ) + "formatting the checkpoint failed" );
+   return out.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Checks that a local body stays within the reach of pe's neighbour communication in the
+ *        next pe step of size \a h (a decomposition by decomposeSlabs() on three or more
+ *        processes).
+ *
+ * \param body A local finite body that is not global (fixed ones included).
+ * \param h The size of the next pe step.
+ * \return An empty string, or the violated rule.
+ *
+ * pe keeps shadow copies on, and migrates bodies to, the neighbouring slabs only. With R the
+ * reach of the body for pe's shadow-copy test (its bounding sphere radius plus the process
+ * overlap contactThreshold plus the shadow-copy margin) and d = (|v| + a h) h the displacement
+ * of one pe step of a free body (a the acceleration the solver applies: the buoyancy-reduced
+ * gravity |1 - rho_f/rho| |g| where the solver applies buoyancy, else |g|; 0 for a fixed body,
+ * which moves with its prescribed velocity), the rules are:
+ * (i) the ball of radius R touches no slab that is not the holder's or a neighbour of it (a
+ *     contact there would be missed; the next migration would need a distant process);
+ * (ii) the ball of radius R + d does not either (pe could delete the body as an outflow);
+ * (iii) destination: for a neighbouring slab j that the centre can reach in this step (within
+ *     d), the ball of radius R + d touches no slab that is neither j nor a neighbour of j (pe
+ *     would send j a registration list with a process j is not connected to). For parallel
+ *     planes (iii) follows from the creation rule; for inclined planes it does not.
+ * d is an estimate for a free body: contact impulses and split-impulse corrections are not
+ * predicted. A ball touches slab j if it lies within the radius of the positive side of plane j
+ * and of the negative side of plane j-1 (a conservative test for inclined planes).
+ */
+std::string Engine::Impl::reachError( ConstBodyID body, real h ) const
+{
+   const int slab( MPISettings::rank() );
+   const int nSlabs( MPISettings::size() );
+#if HAVE_MPI
+   const std::vector<HalfSpace>& planes( slabTopology().halfSpaces );
+   const int nPlanes( static_cast<int>( planes.size() ) );
+   Vec3 centre( body->getPosition() );
+   real radius( 0 );
+   if( body->getType() == sphereType )
+      radius = static_body_cast<const Sphere>( body )->getRadius();
+   else {
+      const RigidBody::AABB& box( body->getAABB() );
+      centre = Vec3( real(0.5) * ( box[0] + box[3] ), real(0.5) * ( box[1] + box[4] ),
+                     real(0.5) * ( box[2] + box[5] ) );
+      radius = real(0.5) * std::sqrt( sq( box[3] - box[0] ) + sq( box[4] - box[1] ) +
+                                      sq( box[5] - box[2] ) );
+   }
+   // the acceleration of a free body as the solver applies it
+   real accel( 0 );
+   if( !body->isFixed() ) {
+      accel = Settings::gravity().length();
+      const BuildInfo info( buildInfo() );
+      const GeomType type( body->getType() );
+      if( info.buoyancy == BodyForce::appliedBySolver &&
+          ( type == sphereType || type == boxType || type == cylinderType || type == ellipsoidType ) ) {
+         const ConstGeomID g( static_body_cast<const GeomPrimitive>( body ) );
+         const real vol( real( bodyVolume( body ) ) );
+         accel *= std::fabs( vol * ( Material::getDensity( g->getMaterial() ) -
+                                     Settings::liquidDensity() ) * body->getInvMass() );
+      }
+   }
+   const real reach( radius + contactThreshold + lubrication::getShadowCopyMargin() );
+   const real d( ( body->getLinearVel().length() + accel * h ) * h );
+   const real travel( reach + d );
+   const auto touches = [&]( int j, real r ) {
+      const bool lower( j == 0 || trans( planes[j-1].getNormal() ) * centre -
+                                  planes[j-1].getDisplacement() <= r );
+      const bool upper( j >= nPlanes || trans( planes[j].getNormal() ) * centre -
+                                        planes[j].getDisplacement() >= -r );
+      return lower && upper;
+   };
+   const auto head = [&]() {
+      std::ostringstream oss;
+      oss << "body " << body->getSystemID() << ( body->isFixed() ? " (fixed" : " (" )
+          << ( body->isFixed() ? ", " : "" ) << "held by process " << slab << ", slab " << slab
+          << ")";
+      return oss.str();
+   };
+   for( int j=0; j<nSlabs; ++j ) {
+      if( std::abs( j - slab ) < 2 )
+         continue;
+      std::ostringstream oss;
+      if( touches( j, reach ) )
+         oss << head() << " reaches into slab " << j << ", which is not a neighbour of slab "
+             << slab << " (rule i: its reach, radius plus pe's process overlap, " << reach
+             << ", must stay within the holder's and the neighbouring slabs; pe keeps shadow "
+             << "copies only there, so a contact in slab " << j << " would be missed and the "
+             << "next migration would need a distant process)";
+      else if( touches( j, travel ) )
+         oss << head() << " can move into slab " << j << " in one pe step of " << h << " (rule ii: "
+             << "its reach " << reach << " plus the displacement (|v| + a h) h = " << d
+             << " must stay within the holder's and the neighbouring slabs; pe migrates bodies "
+             << "only to neighbours and would delete it as an outflow); use more substeps or "
+             << "thicker slabs";
+      if( !oss.str().empty() )
+         return oss.str();
+   }
+   // (iv) a closing plane (n planes for n slabs): the region beyond it belongs to no process, so a
+   // contact point there is discarded silently; the ball of radius R + d must stay on its inner
+   // side (the planes of a chain cover everything else)
+   if( nPlanes == nSlabs && nPlanes > 0 ) {
+      const HalfSpace& closing( planes[nPlanes-1] );
+      if( trans( closing.getNormal() ) * centre - closing.getDisplacement() < travel ) {
+         std::ostringstream oss;
+         oss << head() << " reaches beyond the closing plane of the decomposition (rule iv: its "
+             << "reach " << reach << " plus the displacement " << d << " must stay inside the "
+             << "closing plane; the region beyond it belongs to no process, and pe discards a "
+             << "contact whose point lies there)";
+         return oss.str();
+      }
+   }
+   for( int j : { slab - 1, slab + 1 } ) {
+      if( j < 0 || j >= nSlabs || !touches( j, d ) )
+         continue;
+      for( int m=0; m<nSlabs; ++m ) {
+         if( std::abs( m - j ) < 2 || !touches( m, travel ) )
+            continue;
+         std::ostringstream oss;
+         oss << head() << " can reach slab " << j << " in one pe step of " << h << " and then "
+             << "touches slab " << m << ", which is not a neighbour of slab " << j << " (rule iii, "
+             << "destination: reach " << reach << " plus the displacement " << d << "; at the "
+             << "migration pe would hand process " << j << " a registration list with process "
+             << m << ", which it is not connected to); use thicker slabs or planes that do not "
+             << "converge there";
+         return oss.str();
+      }
+   }
+   return std::string();
+#else
+   UNUSED( body ); UNUSED( h );
+   return std::string();
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Whether pe's next synchronization hands a local body at \a gpos to its owner.
+ *
+ * With a slab decomposition (decomposeSlabs()): the owner of the point (ownerSlab(), pe's tie
+ * rule; a point on the far face of a neighbour slab belongs to the slab beyond it) is this
+ * process or a neighbour. Otherwise: the local subdomain or a connected neighbour subdomain
+ * contains the point. pe migrates bodies to neighbours only and deletes a body that no
+ * neighbour takes as an outflow. Always true on one process.
+ */
+bool Engine::Impl::reachable( const Vec3& gpos ) const
+{
+#if HAVE_MPI
+   if( !parallelRun() )
+      return true;
+   if( !slabTopology().halfSpaces.empty() ) {
+      const int owner( ownerSlab( gpos ) );
+      return owner >= 0 && std::abs( owner - MPISettings::rank() ) <= 1;
+   }
+   detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
+   if( cs.getDomain().containsPoint( gpos ) )
+      return true;
+   for( auto p=cs.getProcessStorage().begin(); p!=cs.getProcessStorage().end(); ++p )
+      if( p->containsPoint( gpos ) )
+         return true;
+   return false;
+#else
+   UNUSED( gpos );
+   return true;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The slab that owns a point under pe's ownership rule (decomposeSlabs(), several
+ *        processes): the lowest slab whose closed region contains it (the tie of a point on a
+ *        plane goes to the lower rank), evaluated with the very half spaces of pe's domain.
+ *
+ * \param gpos The point.
+ * \return The slab (= rank), or -1 if no slab contains the point (beyond a closing plane).
+ *
+ * Every process computes the same result from the same planes; on a chain of slabs it is the
+ * process whose Domain::ownsPoint() accepts the point.
+ */
+int Engine::Impl::ownerSlab( const Vec3& gpos ) const
+{
+#if HAVE_MPI
+   const int nSlabs( MPISettings::size() );
+   const std::vector<HalfSpace>& halfSpaces( slabTopology().halfSpaces );
+   const int nPlanes( static_cast<int>( halfSpaces.size() ) );
+   for( int j=0; j<nSlabs; ++j ) {
+      const bool lower( j == 0 || halfSpaces[j-1].opposite().containsPoint( gpos ) );
+      const bool upper( j >= nPlanes || halfSpaces[j].containsPoint( gpos ) );
+      if( lower && upper )
+         return j;
+   }
+   return -1;
+#else
+   UNUSED( gpos );
+   return 0;
+#endif
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Agrees on an error over pe's communicator (collective).
+ *
+ * \param error The local error message (empty if none).
+ * \return The message of the lowest-ranked process that has one, on every process; empty if no
+ *         process has one. Without MPI or on one process the local message.
+ */
+//! Whether the active collision system can rebuild its shadow copies (relocation on restart).
+using HasClearShadowCopiesActive = detail::HasClearShadowCopies<detail::ActiveCollisionSystem>;
+
+inline std::string agreeOnError( const std::string& error )
+{
+#if HAVE_MPI
+   if( !parallelRun() )
+      return error;
+   int first( error.empty() ? std::numeric_limits<int>::max() : MPISettings::rank() );
+   MPI_Allreduce( MPI_IN_PLACE, &first, 1, MPI_INT, MPI_MIN, MPISettings::comm() );
+   if( first == std::numeric_limits<int>::max() )
+      return std::string();
+   int length( first == MPISettings::rank() ? static_cast<int>( error.size() ) : 0 );
+   MPI_Bcast( &length, 1, MPI_INT, first, MPISettings::comm() );
+   std::string message( first == MPISettings::rank() ? error : std::string( std::size_t( length ), ' ' ) );
+   if( length > 0 )
+      MPI_Bcast( &message[0], length, MPI_CHAR, first, MPISettings::comm() );
+   return message;
+#else
+   return error;
+#endif
+}
+//*************************************************************************************************
+
+
+
+
 Engine::Engine()
    : impl_()
 {
@@ -1105,6 +1450,146 @@ bool Engine::splitImpulse() const
 
 
 
+//=================================================================================================
+//
+//  DOMAIN DECOMPOSITION FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Decomposes pe's domain into a chain of slabs, one per process (collective).
+ *
+ * \param planes The dividing planes in slab order: process k gets slab k, the positive side of
+ *        plane k without the positive side of plane k-1 (see SlabPlane); n - 1 or n planes for
+ *        n processes. Every process passes the same planes.
+ * \return void
+ * \exception std::invalid_argument A non-finite plane, a zero normal or a wrong number of planes.
+ * \exception std::logic_error The domain was decomposed before, or bodies exist already.
+ *
+ * pe's decomposeDomainPlaneSlabs() (pe/interface/support/decompose.h): each process is
+ * connected to the previous and the next slab only, so a body must never reach across a whole
+ * slab. Must be called before the first body is created (also before planes). On one process
+ * (or without MPI) the planes are validated and nothing else happens (nothing is recorded, so
+ * a later Engine may call it again). On several processes the installed topology is
+ * process-wide, like pe's domain and process connections: one decomposition per process
+ * lifetime (a second call throws, also from another Engine handle). A replacement of pe's MPI
+ * topology by native calls (defineLocalDomain(), connect()) outside the Engine is not detected:
+ * pe offers no hook, and the cached planes of the reach rules would then be stale.
+ */
+void Engine::decomposeSlabs( const std::vector<SlabPlane>& planes )
+{
+   const char* const function( "decomposeSlabs" );
+   requireNoExclusiveSection( function );
+   const int n( processCount() );
+   if( slabTopology().decomposed )
+      throw std::logic_error( where( function ) + "the domain was decomposed before" );
+   // the normals scaled by a power of two (exact) so that their norm is representable: a finite
+   // normal like (1e200, 0, 0) would otherwise overflow in the normalization and collapse
+   std::vector<Vec3> normals;
+   for( const SlabPlane& p : planes ) {
+      if( !allFinite( p.point ) || !allFinite( p.normal ) )
+         throw std::invalid_argument( where( function ) + "a plane is not finite" );
+      Vec3 normal( toPe( p.normal ) );
+      const real big( std::max( std::fabs( normal[0] ), std::max( std::fabs( normal[1] ),
+                                                                  std::fabs( normal[2] ) ) ) );
+      if( !( big > real( 0 ) ) || !std::isfinite( big ) )
+         throw std::invalid_argument( where( function ) + "a plane has a zero or non-finite normal" );
+      int e( 0 );
+      std::frexp( big, &e );
+      for( int k=0; k<3; ++k ) normal[k] = std::ldexp( normal[k], -e );
+      const real len( normal.length() );
+      if( !( len > real( 0 ) ) || !std::isfinite( len ) )
+         throw std::invalid_argument( where( function ) + "a plane normal cannot be normalized" );
+      normals.push_back( normal );
+   }
+   if( n > 1 && planes.size() != std::size_t( n - 1 ) && planes.size() != std::size_t( n ) ) {
+      std::ostringstream oss;
+      oss << where( function ) << "a decomposition into " << n << " slabs needs " << ( n - 1 )
+          << " or " << n << " planes, not " << planes.size();
+      throw std::invalid_argument( oss.str() );
+   }
+   {
+      // collective on several processes: every process refuses, or none
+      int populated( theCollisionSystem()->getBodyStorage().size() > 0 ? 1 : 0 );
+#if HAVE_MPI
+      if( n > 1 )
+         MPI_Allreduce( MPI_IN_PLACE, &populated, 1, MPI_INT, MPI_LOR, MPISettings::comm() );
+#endif
+      if( populated != 0 )
+         throw std::logic_error( where( function ) + "bodies exist already (on at least one "
+                                 "process); decompose the domain before creating bodies" );
+   }
+#if HAVE_MPI
+   if( n > 1 ) {
+      std::vector<HalfSpace> halfSpaces;
+      for( std::size_t k=0; k<planes.size(); ++k )
+         halfSpaces.push_back( HalfSpace( normals[k], toPe( planes[k].point ) ) );
+      decomposeDomainPlaneSlabs( processRank(), halfSpaces, n );
+      // the thinnest interior slab (a process on each side: slabs 1..n-2, between planes k-1
+      // and k; not the gap to a closing plane), if the planes bounding them are parallel (up to
+      // the orientation of the normal); none (infinite) on two processes
+      bool parallel( true );
+      real thinnest( std::numeric_limits<real>::infinity() );
+      for( int k=1; k+1<n; ++k ) {
+         const Vec3& a( halfSpaces[k-1].getNormal() );
+         const Vec3& b( halfSpaces[k].getNormal() );
+         if( ( a % b ).length() > real( 1e-12 ) ) { parallel = false; break; }
+         const real t( std::fabs( trans( b ) * toPe( planes[k-1].point ) -
+                                  halfSpaces[k].getDisplacement() ) );
+         thinnest = std::min( thinnest, t );
+      }
+      slabTopology().halfSpaces = halfSpaces;
+      slabTopology().minInteriorSlab = parallel ? thinnest : std::numeric_limits<real>::infinity();
+      slabTopology().decomposed = true;
+   }
+#endif
+   // on one process (or without MPI) only the planes were validated: no topology was installed,
+   // so nothing is recorded and a later Engine may configure again
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Whether the local subdomain owns a point (pe's ownership rule).
+ *
+ * \param point The point.
+ * \return Whether a body centred at \a point would be created on (and owned by) this process.
+ *         Exactly one process owns every point (ties go to the lower rank). Always true on one
+ *         process.
+ * \exception std::invalid_argument A non-finite point.
+ */
+bool Engine::ownsPoint( const Vec3d& point ) const
+{
+   if( !allFinite( point ) )
+      throw std::invalid_argument( where( "ownsPoint" ) + "the point is not finite" );
+   if( !parallelRun() )
+      return true;
+   return theCollisionSystem()->getDomain().ownsPoint( toPe( point ) );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The rank of this process in pe's communicator (0 without MPI).
+ */
+int Engine::processRank() const
+{
+   return MPISettings::rank();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The number of processes of pe's communicator (1 without MPI).
+ */
+int Engine::processCount() const
+{
+   return MPISettings::size();
+}
+//*************************************************************************************************
+
+
+
 
 //=================================================================================================
 //
@@ -1165,6 +1650,37 @@ BodyId Engine::createSphere( const Vec3d& centre, double radius, MaterialId mate
       throw std::invalid_argument( where( "createSphere" ) + "the sphere is not finite or has "
                                    "no positive radius" );
    checkRepresentable( "createSphere", centre, sphereBoxHalfExtent( real( radius ) ) );
+   if( parallelRun() && slabTopology().decomposed ) {
+      // pe keeps shadow copies on neighbouring slabs only: a sphere whose reach is not smaller
+      // than the thinnest interior slab can span it and then needs a distant process
+      const real reach( real( radius ) + contactThreshold + lubrication::getShadowCopyMargin() );
+      if( !( reach < slabTopology().minInteriorSlab ) ) {
+         std::ostringstream oss;
+         oss << where( "createSphere" ) << "a sphere of radius " << radius << " has the reach "
+             << reach << " (radius plus pe's process overlap), which is not smaller than the "
+             << "thinnest interior slab of the decomposition (" << slabTopology().minInteriorSlab
+             << "); pe keeps shadow copies and migrates bodies only between neighbouring slabs, "
+             << "so such a sphere could span a slab (missed contacts, a migration to a distant "
+             << "process); use thicker slabs (fewer processes or other planes)";
+         throw std::invalid_argument( oss.str() );
+      }
+#if HAVE_MPI
+      // rule iv (see Impl::reachError()): a sphere must not reach beyond a closing plane
+      const std::vector<HalfSpace>& planes( slabTopology().halfSpaces );
+      if( static_cast<int>( planes.size() ) == processCount() && !planes.empty() ) {
+         const HalfSpace& closing( planes.back() );
+         if( trans( closing.getNormal() ) * toPe( centre ) - closing.getDisplacement() < reach ) {
+            std::ostringstream oss;
+            oss << where( "createSphere" ) << "a sphere of radius " << radius << " reaches beyond "
+                << "the closing plane of the decomposition (rule iv: the region beyond it belongs to "
+                << "no process, and pe discards a contact whose point lies there); a closing plane "
+                << "must enclose every body with its reach";
+            throw std::invalid_argument( oss.str() );
+         }
+      }
+#endif
+   }
+   impl_->prepared_ = false;
    const SphereID sphere( pe::createSphere( static_cast<id_t>( userId ), toPe( centre ),
                                             real( radius ), static_cast<MaterialID>( material ) ) );
    return sphere->getSystemID();
@@ -1215,6 +1731,7 @@ BodyId Engine::createPlane( const Vec3d& normal, double offset, MaterialId mater
                                static_cast<MaterialID>( material ) );
    }
    plane->setFixed( true );
+   impl_->prepared_ = false;
    return plane->getSystemID();
 }
 //*************************************************************************************************
@@ -1327,14 +1844,16 @@ void Engine::states( Selection selection, std::vector<BodyState>& states ) const
  *            quaternion that is not unit within pe's accuracy, or a body too small to be
  *            represented at the new position.
  * \exception std::runtime_error On more than one process: a shadow copy, a global body (also a
- *            plane), a body with shadow copies, or a position outside the local subdomain (the
- *            body would migrate) -- not implemented yet. On any process: a global body inside
- *            a pe exclusive section (pe refuses to move it there).
+ *            plane), or a position that neither the local nor a neighbouring subdomain
+ *            contains -- not implemented yet. On any process: a global body inside a pe
+ *            exclusive section (pe refuses to move it there).
  *
  * Without MOBILE_INFINITE pe ignores velocities set on fixed bodies. The hash grid sees the
  * new position after the next refreshSpatialIndex() or simulation step. On more than one
- * process the next advance() synchronizes before stepping, so new shadow copies exist before
- * the contact search.
+ * process the next advance() synchronizes before stepping: a body moved into a neighbouring
+ * subdomain migrates there, and its shadow copies are updated, before the contact search.
+ * Until then the body stays on this process and its shadow copies keep the old state. A
+ * migrating body loses its coupling history (see LoadHistory).
  */
 void Engine::setKinematicState( BodyId id, const KinematicState& state )
 {
@@ -1352,16 +1871,12 @@ void Engine::setKinematicState( BodyId id, const KinematicState& state )
    validateKinematicState( function, state );
    checkRepresentablePose( function, body, state );
 
-   if( parallelRun() ) {
-      if( body->sizeProcesses() > 0 )
-         throwNotImplemented( function, "overriding body " + idString( id ) + ", which has "
-                              "shadow copies on other processes," );
-      if( !theCollisionSystem()->getDomain().ownsPoint( toPe( state.position ) ) )
-         throwNotImplemented( function, "moving body " + idString( id ) + " out of the local "
-                              "subdomain (it would migrate)" );
-   }
+   if( parallelRun() && !impl_->reachable( toPe( state.position ) ) )
+      throwNotImplemented( function, "moving body " + idString( id ) + " beyond the local and "
+                           "the neighbouring subdomains (pe migrates bodies to neighbours only)" );
 
    impl_->overrideState( body, state );
+   impl_->prepared_ = false;
    if( parallelRun() ) impl_->overridden_ = true;
 }
 //*************************************************************************************************
@@ -1561,15 +2076,16 @@ bool Engine::spatialIndexActive() const
  * \return void
  * \exception std::invalid_argument Unknown id, a fixed or infinite body, a non-finite load, or
  *            an accumulated load that would not be finite (the previous sum is kept).
- * \exception std::runtime_error On more than one process (not implemented yet).
+ * \exception std::runtime_error The body is a shadow copy (on more than one process a load is
+ *            added by the process that owns the body).
  *
  * The load must not contain the body forces the solver applies itself (see BuildInfo). To
- * relax a body against its history with a zero load in this step, add a zero load.
+ * relax a body against its history with a zero load in this step, add a zero load. On more
+ * than one process each process adds the loads of its own bodies; the history of a body that
+ * migrated stays behind (see LoadHistory, setLoadHistory()).
  */
 void Engine::addLoad( BodyId id, const Vec3d& force, const Vec3d& torque )
 {
-   requireSingleProcess( "addLoad", "a load (its history cannot follow a body to another "
-                                    "process)" );
    const BodyID body( impl_->findLocal( "addLoad", id ) );
    if( !isMovable( body ) )
       throw std::invalid_argument( where( "addLoad" ) + "body " + idString( id ) +
@@ -1578,6 +2094,7 @@ void Engine::addLoad( BodyId id, const Vec3d& force, const Vec3d& torque )
       throw std::invalid_argument( where( "addLoad" ) + "the load of body " + idString( id ) +
                                    " is not finite" );
 
+   impl_->prepared_ = false;   // a prepared checkpoint is no longer current (see prepareCheckpoint())
    const auto it( impl_->pending_.find( id ) );
    if( it == impl_->pending_.end() ) {
       // The first contribution is stored, not added to zero: 0 + (-0) would turn a negative
@@ -1672,7 +2189,10 @@ bool Engine::hasPendingLoads() const
  *            finite in pe::real.
  * \exception std::logic_error Loads were already applied in this coupling step (before the
  *            next advance()).
- * \exception std::runtime_error On more than one process (not implemented yet).
+ *
+ * On more than one process the call is local: each process applies the loads added for its own
+ * bodies, against the history the Engine of that process holds (restore it with
+ * setLoadHistory() after a migration).
  *
  * Only the bodies with a pending load are processed, in storage order; every other body is
  * not touched (its force slot, velocity and load history stay as they are). For a processed
@@ -1688,8 +2208,6 @@ bool Engine::hasPendingLoads() const
 void Engine::applyLoads( double relaxation, double dt )
 {
    const char* const function( "applyLoads" );
-   requireSingleProcess( function, "applying loads (their history cannot follow a body to "
-                                   "another process)" );
    if( !std::isfinite( relaxation ) || relaxation <= 0.0 || relaxation > 1.0 )
       throw std::invalid_argument( where( function ) + "the relaxation must lie in (0, 1]" );
    if( !finiteReal( dt ) || dt <= 0.0 || !( real( dt ) > real( 0 ) ) )
@@ -1777,9 +2295,84 @@ void Engine::applyLoads( double relaxation, double dt )
    impl_->previous_.merge( fresh );
    impl_->pending_.clear();
    loadsAppliedThisStep.store( true );
+   impl_->prepared_ = false;
+   // The shadow copies of these bodies still carry the velocities from before the impulses, and
+   // pe's contact construction reads them (Contact::Contact(): the relative velocity selects
+   // restitution and static or dynamic friction) before HardContactAndFluid synchronizes
+   // velocities in the solve. advance() therefore synchronizes before the next pe step.
+   if( parallelRun() ) impl_->overridden_ = true;
 
    // Forget the history of bodies that were destroyed (erase only)
    impl_->pruneHistory();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Returns the coupling history of a local finite body (see LoadHistory).
+ *
+ * \param id The system id of a local finite body.
+ * \return The Engine's previous load of the body and pe's body-level fluid-force history.
+ * \exception std::invalid_argument Unknown id or an infinite body.
+ * \exception std::runtime_error A shadow copy.
+ */
+LoadHistory Engine::loadHistory( BodyId id ) const
+{
+   const BodyID body( impl_->findLocal( "loadHistory", id ) );
+   if( !body->isFinite() )
+      throw std::invalid_argument( where( "loadHistory" ) + "body " + idString( id ) +
+                                   " is infinite (a plane)" );
+   LoadHistory h;
+   const auto previous( impl_->previous_.find( id ) );
+   if( previous != impl_->previous_.end() ) {
+      h.hasPrevious    = true;
+      h.previousForce  = previous->second.force;
+      h.previousTorque = previous->second.torque;
+   }
+   h.hasFluid    = body->hasPrevFluidForce();
+   h.fluidForce  = fromPe( body->getPrevFluidForce() );
+   h.fluidTorque = fromPe( body->getPrevFluidTorque() );
+   return h;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Restores the coupling history of a local finite body (see LoadHistory).
+ *
+ * \param id The system id of a local finite body.
+ * \param history The history, e.g. as loadHistory() returned it on the process that owned the
+ *        body before it migrated.
+ * \return void
+ * \exception std::invalid_argument Unknown id, an infinite body or a non-finite history.
+ * \exception std::runtime_error A shadow copy.
+ *
+ * Sets the Engine's previous load (or removes it, if \a history has none: the next load is then
+ * applied unrelaxed) and pe's body-level fluid-force history exactly to the given values.
+ * Nothing is changed when an exception is thrown.
+ */
+void Engine::setLoadHistory( BodyId id, const LoadHistory& history )
+{
+   const char* const function( "setLoadHistory" );
+   const BodyID body( impl_->findLocal( function, id ) );
+   if( !body->isFinite() )
+      throw std::invalid_argument( where( function ) + "body " + idString( id ) +
+                                   " is infinite (a plane)" );
+   if( !allFinite( history.previousForce ) || !allFinite( history.previousTorque ) ||
+       !allFinite( history.fluidForce ) || !allFinite( history.fluidTorque ) ||
+       !finitePe( toPe( history.fluidForce ) ) || !finitePe( toPe( history.fluidTorque ) ) )
+      throw std::invalid_argument( where( function ) + "the history of body " + idString( id ) +
+                                   " is not finite" );
+   if( history.hasPrevious ) {
+      impl_->previous_.reserve( impl_->previous_.size() + 1 );
+      impl_->previous_[id] = LoadRecord{ history.previousForce, history.previousTorque };
+   }
+   else {
+      impl_->previous_.erase( id );
+   }
+   body->setPrevFluidForce( history.hasFluid, toPe( history.fluidForce ),
+                            toPe( history.fluidTorque ) );
+   impl_->prepared_ = false;
 }
 //*************************************************************************************************
 
@@ -1814,27 +2407,87 @@ void Engine::advance( double dt, unsigned int substeps )
    const real h( real( dt ) / real( substeps ) );
    if( !( h > real( 0 ) ) )
       throw std::invalid_argument( where( "advance" ) + "the substep size is zero in pe::real" );
-   if( !impl_->pending_.empty() )
-      throw std::logic_error( where( "advance" ) + "loads were added but not applied; call "
-                              "applyLoads() (or clearLoads()) before advance()" );
+   {
+      // collective on several processes: pending loads on one process make every process throw
+      const std::string pending( impl_->pending_.empty() ? std::string() :
+         where( "advance" ) + "loads were added but not applied (on process " +
+         std::to_string( processRank() ) + "); call applyLoads() (or clearLoads()) before "
+         "advance()" );
+      const std::string agreed( parallelRun() ? agreeOnError( pending ) : pending );
+      if( !agreed.empty() )
+         throw std::logic_error( agreed );
+   }
 
    detail::ActiveCollisionSystem& cs( *theCollisionSystem() );
    const DiagnosticsOffScope quiet( cs );
    for( unsigned int i=0; i<substeps; ++i ) {
-      if( parallelRun() ) {
+      if( parallelRun() && slabTopology().decomposed &&
+          ( processCount() > 2 || impl_->closingPlane() ) ) {
+         // the reach and displacement rules of a slab decomposition, before anything moves
+         // (collective; see Impl::reachError()): every local finite body, fixed ones included
+         std::string error;
+         impl_->collect( Selection::all, impl_->bodies_ );
+         for( std::size_t b=0; b<impl_->bodies_.size() && error.empty(); ++b )
+            if( impl_->bodies_[b]->isFinite() && !impl_->bodies_[b]->isGlobal() )
+               error = impl_->reachError( impl_->bodies_[b], h );
+         const std::string agreed( agreeOnError( error.empty() ? error :
+                                                 where( "advance" ) + error ) );
+         if( !agreed.empty() )
+            throw std::runtime_error( agreed );
+      }
+      if( !parallelRun() ) {
+         impl_->world_->simulationStep( h );
+         continue;
+      }
+      // Several processes. The ids held before the pre-step synchronization: a body that migrates
+      // in that synchronization (e.g. after a setKinematicState() into a neighbour) has shadow
+      // copies only on its previous holder's neighbours, so it needs a second synchronization
+      // before the contact search (see below for arrivals during a pe step).
+      const auto arrived = [&]( const std::vector<BodyId>& held ) {
+         for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it )
+            if( !it->isGlobal() && !std::binary_search( held.begin(), held.end(), it->getSystemID() ) )
+               return true;
+         return false;
+      };
+      std::vector<BodyId>& before( impl_->held_ );
+      const auto snapshot = [&]() {
+         before.clear();
+         for( auto it=cs.getBodyStorage().begin(); it!=cs.getBodyStorage().end(); ++it )
+            if( !it->isGlobal() ) before.push_back( it->getSystemID() );
+         std::sort( before.begin(), before.end() );
+      };
+      {
          bool needSync( detail::syncRequired( cs ) );   // collective
 #if HAVE_MPI
          int overridden( impl_->overridden_ ? 1 : 0 );
          MPI_Allreduce( MPI_IN_PLACE, &overridden, 1, MPI_INT, MPI_LOR, MPISettings::comm() );
          needSync = needSync || ( overridden != 0 );
 #endif
-         if( needSync )
+         if( needSync ) {
+            snapshot();
             World::synchronize();
+#if HAVE_MPI
+            int again( arrived( before ) ? 1 : 0 );
+            MPI_Allreduce( MPI_IN_PLACE, &again, 1, MPI_INT, MPI_LOR, MPISettings::comm() );
+            if( again != 0 )
+               World::synchronize();
+#endif
+         }
          impl_->overridden_ = false;
       }
+      // Several processes: a body that migrated INTO this process in the step has shadow copies
+      // only on the neighbours of its previous holder (pe's migration sends copies from there;
+      // the new holder registers its own further neighbours only at its next synchronization,
+      // which pe runs after the next contact search). So a process that became the holder of a
+      // body requests a synchronization before the next pe step (collectively through the
+      // overridden_ reduction above, also before the first step of the next advance()).
+      snapshot();
       impl_->world_->simulationStep( h );
+      if( arrived( before ) )
+         impl_->overridden_ = true;
    }
    loadsAppliedThisStep.store( false );
+   impl_->prepared_ = false;
    impl_->pruneVolumes();
 }
 //*************************************************************************************************
@@ -1858,8 +2511,12 @@ void Engine::advance( double dt, unsigned int substeps )
  *            run yet (checkpoint between coupling steps).
  * \exception std::runtime_error A body the checkpoint cannot restore (a union or another
  *            composite/inner body, a moving plane), a non-finite state or load, a failed write,
- *            pe compiled with sleep mode or with a pe::real wider than double, or more than one
- *            process (not implemented yet).
+ *            pe compiled with sleep mode or with a pe::real wider than double.
+ * \exception std::logic_error On more than one process: called on a process other than the
+ *            root, or without a current prepareCheckpoint().
+ *
+ * On more than one process the root process writes the text that prepareCheckpoint() gathered
+ * (the records of all processes, sorted by system id); see prepareCheckpoint().
  *
  * Format version 3, plain text in the classic locale, 17 significant digits, so every double
  * is restored exactly. Every finite body carries its kinematic state, its previous load (the
@@ -1889,7 +2546,20 @@ void Engine::advance( double dt, unsigned int substeps )
 void Engine::writeCheckpoint( std::ostream& os ) const
 {
    const char* const function( "writeCheckpoint" );
-   requireSingleProcess( function, "a checkpoint" );
+   if( parallelRun() ) {
+      if( !impl_->prepared_ )
+         throw std::logic_error( where( function ) + "on more than one process, call "
+                                 "prepareCheckpoint() on all processes first (and nothing that "
+                                 "changes the world in between)" );
+      if( processRank() != MPISettings::root() )
+         throw std::logic_error( where( function ) + "on more than one process only the root "
+                                 "process writes the checkpoint prepared by prepareCheckpoint()" );
+      const std::string& text( impl_->preparedText_ );
+      os.write( text.data(), static_cast<std::streamsize>( text.size() ) );
+      if( !os )
+         throw std::runtime_error( where( function ) + "writing the checkpoint failed" );
+      return;
+   }
    requireCheckpointBuild( function );
    if( !impl_->pending_.empty() )
       throw std::logic_error( where( function ) + "loads are pending; write the checkpoint "
@@ -1905,51 +2575,16 @@ void Engine::writeCheckpoint( std::ostream& os ) const
    out.precision( 17 );
    out << checkpointMagic << ' ' << checkpointVersion << '\n';
 
-   auto writeRecord = [&]( const char* tag, ConstBodyID body ) {
-      BodyState s;
-      impl_->fillState( body, false, s );
-      if( !allFinite( s.position ) || !allFinite( s.orientation ) ||
-          !allFinite( s.linearVelocity ) || !allFinite( s.angularVelocity ) )
-         throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
-                                   " has a non-finite state" );
-      const auto previous( impl_->previous_.find( s.id ) );
-      const bool hasPrevious( previous != impl_->previous_.end() );
-      const LoadRecord prev( hasPrevious ? previous->second
-                                         : LoadRecord{ Vec3d{ { 0.0, 0.0, 0.0 } },
-                                                       Vec3d{ { 0.0, 0.0, 0.0 } } } );
-      if( !allFinite( prev.force ) || !allFinite( prev.torque ) )
-         throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
-                                   " has a non-finite previous load" );
-      out << tag << ' ' << s.id;
-      for( int k=0; k<3; ++k ) out << ' ' << s.position[k];
-      for( int k=0; k<4; ++k ) out << ' ' << s.orientation[k];
-      for( int k=0; k<3; ++k ) out << ' ' << s.linearVelocity[k];
-      for( int k=0; k<3; ++k ) out << ' ' << s.angularVelocity[k];
-      // pe's own fluid-force history of the body (applyFluidForces() relaxes against it)
-      const Vec3& fluidForce( body->getPrevFluidForce() );
-      const Vec3& fluidTorque( body->getPrevFluidTorque() );
-      if( !finitePe( fluidForce ) || !finitePe( fluidTorque ) )
-         throw std::runtime_error( where( function ) + "body " + idString( s.id ) +
-                                   " has a non-finite previous fluid force" );
-      out << ' ' << ( hasPrevious ? 1 : 0 );
-      for( int k=0; k<3; ++k ) out << ' ' << prev.force[k];
-      for( int k=0; k<3; ++k ) out << ' ' << prev.torque[k];
-      out << ' ' << ( body->hasPrevFluidForce() ? 1 : 0 );
-      for( int k=0; k<3; ++k ) out << ' ' << double( fluidForce[k] );
-      for( int k=0; k<3; ++k ) out << ' ' << double( fluidTorque[k] );
-      out << '\n';
-   };
-
    std::vector<BodyID>& bodies( impl_->bodies_ );
    impl_->collect( Selection::movable, bodies );
    out << "bodies " << bodies.size() << '\n';
    for( std::size_t i=0; i<bodies.size(); ++i )
-      writeRecord( "body", bodies[i] );
+      out << impl_->checkpointRecord( function, "body", bodies[i] );
 
    impl_->collectFixed( bodies );
    out << "fixed " << bodies.size() << '\n';
    for( std::size_t i=0; i<bodies.size(); ++i )
-      writeRecord( "fixedbody", bodies[i] );
+      out << impl_->checkpointRecord( function, "fixedbody", bodies[i] );
    out << "end\n";
 
    if( !out )
@@ -1958,6 +2593,117 @@ void Engine::writeCheckpoint( std::ostream& os ) const
    os.write( text.data(), static_cast<std::streamsize>( text.size() ) );
    if( !os )
       throw std::runtime_error( where( function ) + "writing the checkpoint failed" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Prepares the checkpoint of a world spread over several processes (collective).
+ *
+ * \return void
+ * \exception std::logic_error Loads are pending or were applied in this coupling step (on any
+ *            process), or the call is made inside a pe exclusive section.
+ * \exception std::runtime_error A world the checkpoint cannot restore, a non-finite record, or
+ *            the reason of another process (see writeCheckpoint()).
+ *
+ * On one process (or without MPI) it does nothing: writeCheckpoint() builds the text itself. On
+ * more than one process every process checks its own bodies and formats their records; the
+ * processes agree on the outcome before anything is exchanged (all throw the message of the
+ * lowest-ranked process that found an error, or none throws), then the
+ * records are gathered on the root process (MPISettings::root()), which assembles the
+ * checkpoint: the format of writeCheckpoint() (version 3), the records sorted by system id. The
+ * root then writes it with writeCheckpoint(). The prepared text is a snapshot whose validity
+ * ends with the next call that changes the world or the coupling state on ANY process. Only
+ * the root's own changes are detected (creation, addLoad(), applyLoads(), advance(),
+ * setKinematicState(), setLoadHistory(), readCheckpoint() discard it there; writeCheckpoint()
+ * then throws); a change on another process is not, so a caller writes directly after
+ * preparing, with no such call on any process in between (no collective validation).
+ */
+void Engine::prepareCheckpoint()
+{
+   const char* const function( "prepareCheckpoint" );
+   requireNoExclusiveSection( function );
+   impl_->prepared_ = false;
+   impl_->preparedText_.clear();
+   if( !parallelRun() )
+      return;
+
+#if HAVE_MPI
+   std::string error, local;
+   std::size_t numMovable( 0 ), numFixed( 0 );
+   try {
+      requireCheckpointBuild( function );
+      if( !impl_->pending_.empty() )
+         throw std::logic_error( where( function ) + "loads are pending; write the checkpoint "
+                                 "between coupling steps" );
+      if( loadsAppliedThisStep.load() )
+         throw std::logic_error( where( function ) + "loads were applied in this coupling step; "
+                                 "write the checkpoint after advance()" );
+      requireCheckpointScope( function );
+      std::vector<BodyID>& bodies( impl_->bodies_ );
+      impl_->collect( Selection::movable, bodies );
+      numMovable = bodies.size();
+      for( std::size_t i=0; i<bodies.size(); ++i )
+         local += "M " + impl_->checkpointRecord( function, "body", bodies[i] );
+      impl_->collectFixed( bodies );
+      numFixed = bodies.size();
+      for( std::size_t i=0; i<bodies.size(); ++i )
+         local += "F " + impl_->checkpointRecord( function, "fixedbody", bodies[i] );
+   }
+   catch( const std::exception& ex ) {
+      error = ex.what();
+   }
+   const std::string agreed( agreeOnError( error ) );
+   if( !agreed.empty() )
+      throw std::runtime_error( agreed );
+   UNUSED( numMovable );
+   UNUSED( numFixed );
+
+   // gather the records on the root
+   // (the layout in 64 bits on every process; a layout beyond MPI's int counts is refused by
+   // every process before anything is allocated or sent)
+   const int root( MPISettings::root() );
+   const int size( processCount() );
+   std::uint64_t length64( local.size() );
+   std::vector<std::uint64_t> bytes( std::size_t( size ), 0 );
+   MPI_Allgather( &length64, 1, MPI_UINT64_T, bytes.data(), 1, MPI_UINT64_T, MPISettings::comm() );
+   std::vector<int> lengths, offsets;
+   const std::string layout( detail::gatherLayout( bytes, lengths, offsets ) );
+   if( !layout.empty() )
+      throw std::runtime_error( where( function ) + layout );
+   const int length( lengths[std::size_t( processRank() )] );
+   std::string all;
+   if( processRank() == root )
+      all.resize( std::size_t( offsets.back() ) + std::size_t( lengths.back() ) );
+   MPI_Gatherv( local.data(), length, MPI_CHAR, processRank() == root && !all.empty() ? &all[0] : nullptr,
+                lengths.data(), offsets.data(), MPI_CHAR, root, MPISettings::comm() );
+
+   if( processRank() == root ) {
+      std::map<BodyId,std::string> movable, fixed;
+      std::istringstream in( all );
+      in.imbue( std::locale::classic() );
+      std::string line;
+      while( std::getline( in, line ) ) {
+         std::istringstream ls( line.substr( 2 ) );
+         ls.imbue( std::locale::classic() );
+         std::string tag;
+         BodyId id( 0 );
+         ls >> tag >> id;
+         auto& target( line[0] == 'M' ? movable : fixed );
+         target[id] = line.substr( 2 ) + '\n';
+      }
+      std::ostringstream out;
+      out.imbue( std::locale::classic() );
+      out << checkpointMagic << ' ' << checkpointVersion << '\n';
+      out << "bodies " << movable.size() << '\n';
+      for( const auto& r : movable ) out << r.second;
+      out << "fixed " << fixed.size() << '\n';
+      for( const auto& r : fixed ) out << r.second;
+      out << "end\n";
+      impl_->preparedText_ = out.str();
+   }
+   impl_->prepared_ = true;
+#endif
 }
 //*************************************************************************************************
 
@@ -1977,11 +2723,29 @@ void Engine::writeCheckpoint( std::ostream& os ) const
  *            body that cannot be represented at its restored position, a truncated or malformed
  *            checkpoint, a world the checkpoint cannot restore (see writeCheckpoint()), a global
  *            body inside a pe exclusive section, pe compiled with sleep mode or a pe::real wider
- *            than double, or more than one process (not implemented yet).
+ *            than double. On more than one process also: a record whose body is not held by
+ *            exactly one process, a saved position that not exactly one process owns (beyond a
+ *            closing plane, on an intersection of dividing planes), a non-sphere that has to
+ *            move to another process, or a global finite body (not implemented yet); every
+ *            process throws the message of the lowest-ranked process that found an error.
+ *
+ * On more than one process the call is collective: every process reads the same text, and each
+ * record is restored on the process that owns its saved position under pe's ownership rule
+ * (Domain::ownsPoint(): the process a running simulation would hold it on; a position on a
+ * dividing plane belongs to the lower rank). A body that the rebuilt world holds elsewhere
+ * (it migrated after its creation, possibly over several slabs) is moved there with its system
+ * id, its state and both histories: the holder destroys it, the owner instantiates the sphere
+ * with pe's migration parameters (user id, radius, shell, material, flags, surface velocity),
+ * and all shadow copies are rebuilt (dropped and synchronized at once; the moved bodies get
+ * theirs at the synchronization the next advance() performs before its first pe step).
+ * Spheres only.
  *
  * Nothing in the world or in the Engine is changed when an exception is thrown (the stream may
- * have been read partially): the whole checkpoint is read and validated before the first body
- * is touched, and the commit cannot throw. The world must have been rebuilt exactly as when
+ * have been read partially): the whole checkpoint is read and validated (on several processes:
+ * collectively) before the first body is touched, and the commit cannot throw, except on
+ * several processes when bodies are moved: the destruction, the synchronization and the
+ * instantiation of a moved sphere allocate and communicate after the commit has begun; an
+ * exception there (out of memory, an MPI error) is fatal for the run. The world must have been rebuilt exactly as when
  * the checkpoint was written (same creation calls in the same order, so the bodies get the
  * same system ids). Pending loads are cleared. When a restored run is bit-for-bit identical to
  * the uninterrupted one is described in doc/technical-notes/coupling-api.md.
@@ -1989,15 +2753,41 @@ void Engine::writeCheckpoint( std::ostream& os ) const
 void Engine::readCheckpoint( std::istream& is )
 {
    const char* const function( "readCheckpoint" );
-   requireSingleProcess( function, "a checkpoint" );
-   requireCheckpointBuild( function );
-   requireCheckpointScope( function );
+   const bool parallel( parallelRun() );
+   if( parallel )
+      requireNoExclusiveSection( function );
    const StreamFormatScope formatScope( is );
+
+   // On one process every error is thrown where it is found. On several, every process reads
+   // the whole checkpoint, validates the records of its own bodies, and the processes agree on
+   // the outcome (all throw, or all commit) before anything is changed.
+   std::exception_ptr failure;
+   std::size_t numMovable( 0 ), numFixed( 0 ), numMovableLocal( 0 ), numFixedLocal( 0 );
 
    const auto malformed = [&]() {
       return std::runtime_error( where( function ) + "truncated or malformed checkpoint" );
    };
 
+   // every record, in checkpoint order (on several processes also the records of other processes)
+   struct Record
+   {
+      BodyId         id;
+      KinematicState state;
+      bool           hasPrevious;
+      LoadRecord     previous;
+      bool           hasFluid;      //!< pe's body-level fluid-force history.
+      Vec3d          fluidForce;
+      Vec3d          fluidTorque;
+      BodyID         body;          //!< The local body (nullptr: held by another process).
+      int            owned;         //!< 1 if this process owns the saved position.
+   };
+
+   std::unordered_set<BodyId> seen;
+   std::vector<Record> records;
+
+   try {
+   requireCheckpointBuild( function );
+   requireCheckpointScope( function );
    std::string magic;
    int version( 0 );
    is >> magic >> version;
@@ -2010,46 +2800,55 @@ void Engine::readCheckpoint( std::istream& is )
       throw std::runtime_error( oss.str() );
    }
 
-   struct Entry
-   {
-      BodyID         body;
-      KinematicState state;
-      bool           hasFluid;      //!< pe's body-level fluid-force history.
-      Vec3d          fluidForce;
-      Vec3d          fluidTorque;
-   };
-
-   std::unordered_set<BodyId> seen;
-   std::vector<Entry> entries;
-   std::unordered_map<BodyId,LoadRecord> restored;
-
    auto readRecord = [&]( const char* expectedTag, bool movable ) {
       std::string tag;
-      BodyId id( 0 );
-      Entry e;
-      is >> tag >> id;
-      for( int k=0; k<3; ++k ) is >> e.state.position[k];
-      for( int k=0; k<4; ++k ) is >> e.state.orientation[k];
-      for( int k=0; k<3; ++k ) is >> e.state.linearVelocity[k];
-      for( int k=0; k<3; ++k ) is >> e.state.angularVelocity[k];
+      Record r;
+      r.id = 0;
+      r.body = nullptr;
+      r.owned = 1;
+      is >> tag >> r.id;
+      for( int k=0; k<3; ++k ) is >> r.state.position[k];
+      for( int k=0; k<4; ++k ) is >> r.state.orientation[k];
+      for( int k=0; k<3; ++k ) is >> r.state.linearVelocity[k];
+      for( int k=0; k<3; ++k ) is >> r.state.angularVelocity[k];
       int hasPrevious( -1 );
-      LoadRecord prev;
       is >> hasPrevious;
-      for( int k=0; k<3; ++k ) is >> prev.force[k];
-      for( int k=0; k<3; ++k ) is >> prev.torque[k];
+      for( int k=0; k<3; ++k ) is >> r.previous.force[k];
+      for( int k=0; k<3; ++k ) is >> r.previous.torque[k];
       int hasFluid( -1 );
       is >> hasFluid;
-      for( int k=0; k<3; ++k ) is >> e.fluidForce[k];
-      for( int k=0; k<3; ++k ) is >> e.fluidTorque[k];
+      for( int k=0; k<3; ++k ) is >> r.fluidForce[k];
+      for( int k=0; k<3; ++k ) is >> r.fluidTorque[k];
       if( !is || tag != expectedTag || ( hasPrevious != 0 && hasPrevious != 1 ) ||
           ( hasFluid != 0 && hasFluid != 1 ) )
          throw malformed();
-      e.hasFluid = ( hasFluid == 1 );
+      r.hasPrevious = ( hasPrevious == 1 );
+      r.hasFluid    = ( hasFluid == 1 );
+      const BodyId id( r.id );
 
       bool shadow( false );
-      e.body = impl_->find( id, shadow );
-      if( e.body == nullptr || shadow ||
-          ( movable ? !isMovable( e.body ) : !isFixedFinite( e.body ) ) )
+      const BodyID body( impl_->find( id, shadow ) );
+      if( parallel && ( body == nullptr || shadow ) ) {
+         // the body of another process (that it is held exactly once is checked collectively);
+         // the record may still be restored here, if this process owns its saved position
+         if( !seen.insert( id ).second )
+            throw std::runtime_error( where( function ) + "body " + idString( id ) +
+                                      " appears twice in the checkpoint" );
+         try {
+            validateKinematicState( function, r.state );
+         }
+         catch( const std::invalid_argument& ex ) {
+            throw std::runtime_error( ex.what() );
+         }
+         if( !allFinite( r.previous.force ) || !allFinite( r.previous.torque ) ||
+             !allFinite( r.fluidForce ) || !allFinite( r.fluidTorque ) )
+            throw std::runtime_error( where( function ) + "body " + idString( id ) +
+                                      " has a non-finite load history in the checkpoint" );
+         records.push_back( r );
+         return;
+      }
+      if( body == nullptr || shadow ||
+          ( movable ? !isMovable( body ) : !isFixedFinite( body ) ) )
          throw std::runtime_error( where( function ) + "body " + idString( id ) + " of the "
                                    "checkpoint is not a local " +
                                    ( movable ? "movable" : "fixed finite" ) +
@@ -2057,20 +2856,20 @@ void Engine::readCheckpoint( std::istream& is )
       if( !seen.insert( id ).second )
          throw std::runtime_error( where( function ) + "body " + idString( id ) +
                                    " appears twice in the checkpoint" );
-      if( e.body->isGlobal() && ExclusiveSection::isActive() )
+      if( body->isGlobal() && ExclusiveSection::isActive() )
          throw std::runtime_error( where( function ) + "the global body " + idString( id ) +
                                    " cannot be moved inside a pe exclusive section" );
       try {
-         validateKinematicState( function, e.state );
-         checkRepresentablePose( function, e.body, e.state );
+         validateKinematicState( function, r.state );
+         checkRepresentablePose( function, body, r.state );
       }
       catch( const std::invalid_argument& ex ) {
          throw std::runtime_error( ex.what() );
       }
-      if( !allFinite( prev.force ) || !allFinite( prev.torque ) )
+      if( !allFinite( r.previous.force ) || !allFinite( r.previous.torque ) )
          throw std::runtime_error( where( function ) + "body " + idString( id ) +
                                    " has a non-finite previous load in the checkpoint" );
-      if( !allFinite( e.fluidForce ) || !allFinite( e.fluidTorque ) )
+      if( !allFinite( r.fluidForce ) || !allFinite( r.fluidTorque ) )
          throw std::runtime_error( where( function ) + "body " + idString( id ) +
                                    " has a non-finite previous fluid force in the checkpoint" );
 #if !( defined( MOBILE_INFINITE ) && MOBILE_INFINITE )
@@ -2079,18 +2878,18 @@ void Engine::readCheckpoint( std::istream& is )
       // velocity is not bit for bit that one -- also only in the sign of a zero -- cannot be
       // restored
       if( !movable ) {
-         const Vec3& v( e.body->getLinearVel() );
-         const Vec3& w( e.body->getAngularVel() );
+         const Vec3& v( body->getLinearVel() );
+         const Vec3& w( body->getAngularVel() );
          for( int k=0; k<3; ++k )
-            if( !sameBits( real( e.state.linearVelocity[k] ), v[k] ) ||
-                !sameBits( real( e.state.angularVelocity[k] ), w[k] ) )
+            if( !sameBits( real( r.state.linearVelocity[k] ), v[k] ) ||
+                !sameBits( real( r.state.angularVelocity[k] ), w[k] ) )
                throw std::runtime_error( where( function ) + "fixed body " + idString( id ) +
                                          " has a velocity in the checkpoint that this build "
                                          "(without MOBILE_INFINITE) cannot restore bit for bit" );
       }
 #endif
-      if( hasPrevious == 1 ) restored.emplace( id, prev );
-      entries.push_back( e );
+      r.body = body;
+      records.push_back( r );
    };
 
    auto readCount = [&]( const char* expectedTag, std::size_t expected, const char* what ) {
@@ -2098,7 +2897,7 @@ void Engine::readCheckpoint( std::istream& is )
       std::size_t n( 0 );
       is >> tag >> n;
       if( !is || tag != expectedTag ) throw malformed();
-      if( n != expected ) {
+      if( !parallel && n != expected ) {
          std::ostringstream oss;
          oss << where( function ) << "body count mismatch: the checkpoint has " << n << ' '
              << what << " bodies, the world has " << expected;
@@ -2109,14 +2908,15 @@ void Engine::readCheckpoint( std::istream& is )
 
    // ----- Read and validate everything -----
    impl_->collect( Selection::movable, impl_->bodies_ );
-   const std::size_t numMovable( readCount( "bodies", impl_->bodies_.size(), "movable" ) );
+   numMovableLocal = impl_->bodies_.size();
+   numMovable = readCount( "bodies", numMovableLocal, "movable" );
    impl_->collectFixed( impl_->bodies_ );
-   const std::size_t numFixedInWorld( impl_->bodies_.size() );
-   entries.reserve( numMovable + numFixedInWorld );
+   numFixedLocal = impl_->bodies_.size();
+   records.reserve( numMovable + numFixedLocal );
    for( std::size_t i=0; i<numMovable; ++i )
       readRecord( "body", true );
 
-   const std::size_t numFixed( readCount( "fixed", numFixedInWorld, "fixed finite" ) );
+   numFixed = readCount( "fixed", numFixedLocal, "fixed finite" );
    for( std::size_t i=0; i<numFixed; ++i )
       readRecord( "fixedbody", false );
 
@@ -2124,17 +2924,323 @@ void Engine::readCheckpoint( std::istream& is )
    is >> tag;
    if( !is || tag != "end" ) throw malformed();
 
-   // ----- Commit (no operation below throws: pe's setters throw only for a global body inside
-   // an exclusive section, which was refused above) -----
-   impl_->previous_.swap( restored );
+   // the owner of every saved position under pe's own rule (the process a running simulation
+   // migrates the body to; ties on a plane go to the lower rank)
+   if( parallel ) {
+      const Domain& domain( theCollisionSystem()->getDomain() );
+      for( Record& r : records )
+         r.owned = domain.ownsPoint( toPe( r.state.position ) ) ? 1 : 0;
+   }
+   }
+   catch( ... ) {
+      failure = std::current_exception();
+   }
+
+   if( !parallel ) {
+      if( failure ) std::rethrow_exception( failure );
+   }
+
+   // Relocations: records whose saved position another process owns than the one that holds the
+   // body now (a body that migrated after its creation, restored into a world rebuilt by the
+   // creation calls). The holder sends the sphere's parameters, as pe's migration does.
+   struct Relocation
+   {
+      BodyId        id;
+      std::uint64_t uid;
+      double        radius;
+      double        shellThickness;
+      double        surfaceVel[3];
+      std::uint64_t material;
+      int           visible;
+      int           fixed;
+      int           collisionEnabled;
+      int           owner;
+   };
+   std::vector<int> holderOf( records.size(), MPISettings::rank() );
+   std::vector<int> ownerOf ( records.size(), MPISettings::rank() );
+   std::vector<Relocation> relocations;
+
+   if( parallel ) {
+#if HAVE_MPI
+      std::string error;
+      if( failure ) {
+         try { std::rethrow_exception( failure ); }
+         catch( const std::exception& ex ) { error = ex.what(); }
+         catch( ... ) { error = where( function ) + "unknown error"; }
+      }
+      const std::string agreed( agreeOnError( error ) );
+      if( !agreed.empty() )
+         throw std::runtime_error( agreed );
+      // every process read the same records; each body must be held by exactly one process and
+      // its saved position owned by exactly one
+      const int rank( MPISettings::rank() );
+      const std::size_t n( records.size() );
+      unsigned long counts[2] = { static_cast<unsigned long>( numMovableLocal ),
+                                  static_cast<unsigned long>( numFixedLocal ) };
+      MPI_Allreduce( MPI_IN_PLACE, counts, 2, MPI_UNSIGNED_LONG, MPI_SUM, MPISettings::comm() );
+      std::vector<int> sums( 2*n ), ranks( 2*n );
+      for( std::size_t r=0; r<n; ++r ) {
+         sums[r]    = records[r].body != nullptr ? 1 : 0;
+         sums[n+r]  = records[r].owned;
+         ranks[r]   = records[r].body != nullptr ? rank : -1;
+         ranks[n+r] = records[r].owned ? rank : -1;
+      }
+      if( n > 0 ) {
+         MPI_Allreduce( MPI_IN_PLACE, sums.data(), static_cast<int>( 2*n ), MPI_INT, MPI_SUM,
+                        MPISettings::comm() );
+         MPI_Allreduce( MPI_IN_PLACE, ranks.data(), static_cast<int>( 2*n ), MPI_INT, MPI_MAX,
+                        MPISettings::comm() );
+      }
+      std::ostringstream oss;
+      if( counts[0] != numMovable || counts[1] != numFixed )
+         oss << where( function ) << "body count mismatch: the checkpoint has " << numMovable
+             << " movable and " << numFixed << " fixed finite bodies, the processes hold "
+             << counts[0] << " and " << counts[1];
+      for( std::size_t r=0; r<n && oss.str().empty(); ++r )
+         if( sums[r] != 1 )
+            oss << where( function ) << "body " << records[r].id << " of the checkpoint is held "
+                << "by " << sums[r] << " processes (expected exactly one)";
+      for( std::size_t r=0; r<n && oss.str().empty(); ++r )
+         if( sums[n+r] != 1 )
+            oss << where( function ) << "the saved position of body " << records[r].id
+                << " is owned by " << sums[n+r] << " processes (expected exactly one: it lies "
+                << "beyond a closing plane, or on an intersection of dividing planes)";
+      if( !oss.str().empty() )
+         throw std::runtime_error( oss.str() );
+      for( std::size_t r=0; r<n; ++r ) {
+         holderOf[r] = ranks[r];
+         ownerOf[r]  = ranks[n+r];
+      }
+
+      // the holders describe the bodies that move to another process
+      std::string local;
+      std::vector<Relocation> mine;
+      for( std::size_t r=0; r<n; ++r ) {
+         if( holderOf[r] == ownerOf[r] || holderOf[r] != rank )
+            continue;
+         const BodyID body( records[r].body );
+         if( body->getType() != sphereType ) {
+            if( local.empty() )
+               local = where( function ) + "body " + idString( records[r].id ) + " has to move "
+                       "from process " + std::to_string( holderOf[r] ) + " to process " +
+                       std::to_string( ownerOf[r] ) + ", which is implemented for spheres only";
+            continue;
+         }
+         const ConstSphereID sphere( static_body_cast<const Sphere>( body ) );
+         Relocation m;
+         m.id = records[r].id;
+         m.uid = static_cast<std::uint64_t>( body->getID() );
+         m.radius = double( sphere->getRadius() );
+         m.shellThickness = double( sphere->getShellThickness() );
+         for( int k=0; k<3; ++k ) m.surfaceVel[k] = double( body->getRelSurfaceVel()[k] );
+         m.material = static_cast<std::uint64_t>( sphere->getMaterial() );
+         m.visible = body->isVisible() ? 1 : 0;
+         m.fixed = body->isFixed() ? 1 : 0;
+         m.collisionEnabled = body->isCollisionEnabled() ? 1 : 0;
+         m.owner = ownerOf[r];
+         mine.push_back( m );
+      }
+      if( local.empty() && !mine.empty() && !HasClearShadowCopiesActive::value )
+         local = where( function ) + "moving a body to a distant process on restart needs a "
+                 "collision system that can rebuild its shadow copies (clearShadowCopies())";
+      const std::string agreedMove( agreeOnError( local ) );
+      if( !agreedMove.empty() )
+         throw std::runtime_error( agreedMove );
+
+      // all descriptors to all processes (few bodies move)
+      // (the layout in 64 bits; refused by every process beyond MPI's int counts)
+      std::uint64_t count64( mine.size() * sizeof( Relocation ) );
+      std::vector<std::uint64_t> bytes64( std::size_t( MPISettings::size() ), 0 );
+      MPI_Allgather( &count64, 1, MPI_UINT64_T, bytes64.data(), 1, MPI_UINT64_T, MPISettings::comm() );
+      std::vector<int> bytes, displs;
+      const std::string layout( detail::gatherLayout( bytes64, bytes, displs ) );
+      if( !layout.empty() )
+         throw std::runtime_error( where( function ) + layout );
+      const std::size_t total( std::size_t( displs.back() ) + std::size_t( bytes.back() ) );
+      relocations.resize( total / sizeof( Relocation ) );
+      MPI_Allgatherv( mine.data(), bytes[std::size_t( MPISettings::rank() )], MPI_BYTE,
+                      relocations.data(), bytes.data(), displs.data(), MPI_BYTE, MPISettings::comm() );
+#endif
+   }
+
+   // The history map of the bodies this process holds after the restore, built before anything
+   // changes (the only allocation of the commit without relocations: the strong guarantee of
+   // the serial path)
+   std::unordered_map<BodyId,LoadRecord> restored;
+   for( std::size_t r=0; r<records.size(); ++r ) {
+      const Record& e( records[r] );
+      const bool mine( parallel ? ownerOf[r] == MPISettings::rank() : e.body != nullptr );
+      if( mine && e.hasPrevious ) restored.emplace( e.id, e.previous );
+   }
+
+   // ----- Commit. Without relocations no operation below throws (pe's setters throw only for a
+   // global body inside an exclusive section, which was refused above). With relocations the
+   // destruction, the synchronization and the instantiation follow; an exception there (out of
+   // memory, an MPI error) is fatal for the run, the state of the worlds is then unspecified. -----
    impl_->pending_.clear();
    loadsAppliedThisStep.store( false );
-   for( std::size_t i=0; i<entries.size(); ++i ) {
-      const Entry& e( entries[i] );
-      impl_->overrideState( e.body, e.state );
-      e.body->setPrevFluidForce( e.hasFluid,
+   impl_->prepared_ = false;
+   if( parallel ) impl_->overridden_ = true;
+
+   const auto write = [&]( BodyID body, const Record& e ) {
+      impl_->overrideState( body, e.state );
+      body->setPrevFluidForce( e.hasFluid,
          Vec3( real( e.fluidForce[0] ), real( e.fluidForce[1] ), real( e.fluidForce[2] ) ),
          Vec3( real( e.fluidTorque[0] ), real( e.fluidTorque[1] ), real( e.fluidTorque[2] ) ) );
+   };
+
+   // 1. the bodies that stay where they are held: their saved poses (owned by this process)
+   //    first, so that a pending override (setKinematicState() into a neighbour) is replaced
+   //    before any synchronization could migrate them
+   for( std::size_t r=0; r<records.size(); ++r ) {
+      const Record& e( records[r] );
+      if( e.body == nullptr || ( parallel && ownerOf[r] != MPISettings::rank() ) )
+         continue;
+      write( e.body, e );
+   }
+
+#if HAVE_MPI
+   if( !relocations.empty() ) {
+      // 2. drop every shadow copy (removal notifications, registrations cleared), destroy the
+      //    moving bodies on their holders (no process is registered for them any more), and
+      //    synchronize: the removals arrive, the remaining bodies (all at their saved, owned
+      //    positions) get fresh shadow copies
+      detail::tryClearShadowCopies( *theCollisionSystem() );
+      std::unordered_set<BodyId> moving;
+      for( const Relocation& m : relocations ) moving.insert( m.id );
+      for( std::size_t r=0; r<records.size(); ++r ) {
+         if( records[r].body != nullptr && moving.count( records[r].id ) &&
+             ownerOf[r] != MPISettings::rank() ) {
+            impl_->meshVolumes_.erase( records[r].id );
+            destroy( records[r].body );
+            records[r].body = nullptr;
+         }
+      }
+      World::synchronize();
+      // 3. the owners of the saved positions create the spheres as LOCAL bodies with their ids,
+      //    as a body arrives at its new owner in pe's migration: instantiated, the remote flag
+      //    cleared, added to the world, which sets this process as the owner; then state and
+      //    histories through the new pointer. The next advance() synchronizes before stepping
+      //    and sends their shadow copies.
+      std::unordered_map<BodyId,const Relocation*> byId;
+      for( const Relocation& m : relocations ) byId[m.id] = &m;
+      for( std::size_t r=0; r<records.size(); ++r ) {
+         const auto it( byId.find( records[r].id ) );
+         if( it == byId.end() || it->second->owner != MPISettings::rank() )
+            continue;
+         const Relocation& m( *it->second );
+         const KinematicState& st( records[r].state );
+         const SphereID sphere( instantiateSphere(
+            static_cast<id_t>( m.id ), static_cast<id_t>( m.uid ), toPe( st.position ), Vec3(),
+            Quat( real( st.orientation[0] ), real( st.orientation[1] ), real( st.orientation[2] ),
+                  real( st.orientation[3] ) ),
+            real( m.radius ), static_cast<MaterialID>( m.material ), m.visible != 0,
+            m.fixed != 0, false ) );
+         sphere->setRemote( false );
+         sphere->setShellThickness( real( m.shellThickness ) );
+         sphere->setCollisionEnabled( m.collisionEnabled != 0 );
+         sphere->setRelSurfaceVel( Vec3( real( m.surfaceVel[0] ), real( m.surfaceVel[1] ),
+                                         real( m.surfaceVel[2] ) ) );
+         theDefaultManager()->add( sphere );   // an exception here is fatal (see above)
+         records[r].body = sphere;
+         write( sphere, records[r] );
+      }
+   }
+#endif
+
+   impl_->previous_.swap( restored );
+}
+//*************************************************************************************************
+
+
+
+
+//=================================================================================================
+//
+//  FREE FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\brief Reads the dividing planes of a slab decomposition from a text file.
+ *
+ * \param filename The plane file: one plane per line, "px py pz nx ny nz" (a point on the plane
+ *        and its normal, taken as written); empty lines are skipped. This is the format of
+ *        pe's loadSlabPlanes() (pe/interface/support/decompose.h) and of the pe_partpy strategy
+ *        plane_single, so one file can partition the CFD mesh and decompose pe's domain.
+ * \return The planes in file order (see Engine::decomposeSlabs()).
+ * \exception std::runtime_error The file cannot be opened, a line does not hold six numbers, or
+ *            a normal is zero or a number is not finite.
+ */
+std::vector<SlabPlane> readSlabPlanes( const std::string& filename )
+{
+   std::ifstream file( filename.c_str() );
+   if( !file.is_open() )
+      throw std::runtime_error( "pe::coupling::readSlabPlanes: could not open the plane file " +
+                                filename );
+   std::vector<SlabPlane> planes;
+   std::string line;
+   int lineNumber( 0 );
+   while( std::getline( file, line ) ) {
+      ++lineNumber;
+      if( line.find_first_not_of( " \t\r" ) == std::string::npos )
+         continue;
+      std::istringstream iss( line );
+      iss.imbue( std::locale::classic() );
+      SlabPlane p;
+      std::string rest;
+      if( !( iss >> p.point[0] >> p.point[1] >> p.point[2] >> p.normal[0] >> p.normal[1]
+                 >> p.normal[2] ) || ( iss >> rest ) )
+         throw std::runtime_error( "pe::coupling::readSlabPlanes: line " +
+                                   std::to_string( lineNumber ) + " of " + filename +
+                                   " does not hold exactly six numbers (px py pz nx ny nz)" );
+      // a zero normal is a zero vector (not a zero squared norm: (-1e-200, 0, 0) is a valid
+      // direction, decomposeSlabs() scales it before the normalization)
+      if( !allFinite( p.point ) || !allFinite( p.normal ) ||
+          ( p.normal[0] == 0.0 && p.normal[1] == 0.0 && p.normal[2] == 0.0 ) )
+         throw std::runtime_error( "pe::coupling::readSlabPlanes: line " +
+                                   std::to_string( lineNumber ) + " of " + filename +
+                                   " holds a non-finite number or a zero normal" );
+      planes.push_back( p );
+   }
+   return planes;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Tests points against a sphere with pe's sphere predicate, without a body.
+ *
+ * \param centre The centre.
+ * \param radius The radius.
+ * \param xyz The points, interleaved x0 y0 z0 x1 ...
+ * \param numPoints The number of points.
+ * \param flags Output: 1 where Sphere::containsPoint() of a sphere with this centre and radius
+ *        accepts the point (|x - X|^2 <= r^2 in pe::real, the same expression), 0 elsewhere.
+ * \return void
+ * \exception std::invalid_argument Null pointers with numPoints > 0, or a non-finite argument.
+ *
+ * For callers that hold the states of bodies the local process does not hold (e.g. a coupling
+ * whose processes see all bodies while pe distributes them).
+ */
+void sphereContainsPoints( const Vec3d& centre, double radius, const double* xyz,
+                           std::size_t numPoints, unsigned char* flags )
+{
+   if( numPoints > 0 && ( xyz == nullptr || flags == nullptr ) )
+      throw std::invalid_argument( "pe::coupling::sphereContainsPoints: null point or flag array" );
+   if( !allFinite( centre ) || !std::isfinite( radius ) )
+      throw std::invalid_argument( "pe::coupling::sphereContainsPoints: the sphere is not finite" );
+   for( std::size_t i=0; i<3*numPoints; ++i )
+      if( !std::isfinite( xyz[i] ) )
+         throw std::invalid_argument( "pe::coupling::sphereContainsPoints: point " +
+                                      std::to_string( i / 3 ) + " is not finite" );
+   const Vec3 gpos_( toPe( centre ) );
+   const real radius_( radius );
+   for( std::size_t i=0; i<numPoints; ++i ) {
+      // static_cast, not real( ... ): clang parses 'Vec3 gpos( real( xyz[3*i] ), ... )' as a function declaration
+      const Vec3 gpos( static_cast<real>( xyz[3*i] ), static_cast<real>( xyz[3*i+1] ),
+                       static_cast<real>( xyz[3*i+2] ) );
+      flags[i] = ( ( gpos - gpos_ ).sqrLength() <= ( radius_*radius_ ) ) ? 1u : 0u;
    }
 }
 //*************************************************************************************************

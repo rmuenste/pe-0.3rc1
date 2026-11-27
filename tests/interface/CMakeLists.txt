@@ -1184,6 +1184,13 @@ if(MPI_CXX_FOUND)
   set_tests_properties(pe-coupling-header-mpi-h PROPERTIES LABELS "${coupling_header_labels}")
 endif()
 
+# The layout of the coupling API's variable-length gathers (64-bit sizes, refused beyond MPI's
+# int counts): a pure computation, in serial and MPI builds
+add_executable(pe_coupling_gather_layout_test pe_coupling_gather_layout_test.cpp)
+target_link_libraries(pe_coupling_gather_layout_test PRIVATE pe_static_lubstage_fluid)
+add_test(NAME pe-coupling-gather-layout COMMAND pe_coupling_gather_layout_test)
+set_tests_properties(pe-coupling-gather-layout PROPERTIES LABELS "unit;serial;interface;coupling")
+
 # The serial-semantics tests. They need no MPI_Init, so they are serial-only (an MPI build
 # runs the pe-coupling-mpi test instead).
 if(NOT PE_USE_MPI)
@@ -1367,4 +1374,186 @@ if(PE_USE_MPI AND MPI_FOUND)
     LABELS "integration;mpi;interface;coupling"
     TIMEOUT 120
   )
+
+  # Domain-decomposed world (decomposeSlabs(), loads, history, migration, prepared checkpoint):
+  # the trajectory of a sphere crossing every slab boundary on 2 and 4 processes is compared bit
+  # for bit with the single-process reference written by the fixture test. The broken variant
+  # (the history is not restored after a migration) must fail.
+  add_executable(pe_coupling_mpi_dd_test pe_coupling_mpi_dd_test.cpp)
+  target_link_libraries(pe_coupling_mpi_dd_test PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+  set(coupling_dd_reference ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_reference.txt)
+  add_test(
+    NAME pe-coupling-mpi-dd-reference
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference} --write-reference
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-reference PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 FIXTURES_SETUP coupling_dd_reference
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  foreach(np 2 4)
+    # the 4-process run also saves the checkpoint of step 80 (the sphere has crossed two planes)
+    # for the fresh-process restart below
+    set(coupling_dd_cp ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_checkpoint_${np}.txt)
+    add_test(
+      NAME pe-coupling-mpi-dd-${np}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${np} ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference}
+        --save-checkpoint ${coupling_dd_cp} ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-${np} PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS ${np}
+      FIXTURES_REQUIRED coupling_dd_reference FIXTURES_SETUP coupling_dd_checkpoint_${np}
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+    # a fresh process set: the world rebuilt by the creation calls (the sphere in slab 0), the
+    # saved checkpoint read (on 4 processes the body moves over two slabs), continued bit for bit
+    add_test(
+      NAME pe-coupling-mpi-dd-restart-${np}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${np} ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference} --restart ${coupling_dd_cp}
+        ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-restart-${np} PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS ${np}
+      FIXTURES_REQUIRED "coupling_dd_reference;coupling_dd_checkpoint_${np}"
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
+  # Ownership on inclined planes (exact complements), the reach and displacement rules, and a
+  # contact across a slab plane after applied loads (friction chosen by the current velocity)
+  add_executable(pe_coupling_mpi_dd_rules_test pe_coupling_mpi_dd_rules_test.cpp)
+  target_link_libraries(pe_coupling_mpi_dd_rules_test PRIVATE pe_static_lubstage_fluid MPI::MPI_CXX)
+  foreach(np 2 4)
+    add_test(
+      NAME pe-coupling-mpi-dd-incline-${np}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${np} ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> incline ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-incline-${np} PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS ${np}
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
+  foreach(mode closing bignormal closingcontact)
+    add_test(
+      NAME pe-coupling-mpi-dd-${mode}-2
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> ${mode} ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-${mode}-2 PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 2
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
+  foreach(mode destination buoyant mixed)
+    add_test(
+      NAME pe-coupling-mpi-dd-${mode}-4
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4 ${MPIEXEC_PREFLAGS}
+        $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> ${mode} ${MPIEXEC_POSTFLAGS}
+    )
+    set_tests_properties(pe-coupling-mpi-dd-${mode}-4 PROPERTIES
+      LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 4
+      ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  endforeach()
+  # a migration into a process whose further neighbour holds a body the migrated one touches
+  set(coupling_dd_third ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_thirdshadow_reference.txt)
+  add_test(
+    NAME pe-coupling-mpi-dd-thirdshadow-reference
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> thirdshadow ${coupling_dd_third} --write-reference
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-thirdshadow-reference PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 FIXTURES_SETUP coupling_dd_third
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-thirdshadow-3
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 3 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> thirdshadow ${coupling_dd_third}
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-thirdshadow-3 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 3
+    FIXTURES_REQUIRED coupling_dd_third ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  set(coupling_dd_native ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_nativepresync_reference.txt)
+  add_test(
+    NAME pe-coupling-mpi-dd-nativepresync-reference
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> nativepresync ${coupling_dd_native} --write-reference
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-nativepresync-reference PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 FIXTURES_SETUP coupling_dd_native
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-nativepresync-3
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 3 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> nativepresync ${coupling_dd_native}
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-nativepresync-3 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 3
+    FIXTURES_REQUIRED coupling_dd_native ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-presync-3
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 3 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> presync ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-presync-3 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 3
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-oneproc-1
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> oneproc ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-oneproc-1 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-parallel-4
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> parallel ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-parallel-4 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 4
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  set(coupling_dd_friction ${CMAKE_CURRENT_BINARY_DIR}/pe_coupling_mpi_dd_friction_reference.txt)
+  add_test(
+    NAME pe-coupling-mpi-dd-friction-reference
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> friction ${coupling_dd_friction} --write-reference
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-friction-reference PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 FIXTURES_SETUP coupling_dd_friction
+    ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-friction-2
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_rules_test> friction ${coupling_dd_friction}
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-friction-2 PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 2
+    FIXTURES_REQUIRED coupling_dd_friction ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  add_test(
+    NAME pe-coupling-mpi-dd-broken-history
+    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ${MPIEXEC_PREFLAGS}
+      $<TARGET_FILE:pe_coupling_mpi_dd_test> ${coupling_dd_reference} --broken skip-history
+      ${MPIEXEC_POSTFLAGS}
+  )
+  set_tests_properties(pe-coupling-mpi-dd-broken-history PROPERTIES
+    LABELS "integration;mpi;interface;coupling" TIMEOUT 120 PROCESSORS 2 WILL_FAIL TRUE
+    FIXTURES_REQUIRED coupling_dd_reference ENVIRONMENT "${fbm_query_mpi_oversubscribe}")
+  # every domain-decomposed test in its own working directory: each checks its processes' pe
+  # logs (pe<rank>.log) for [ERROR lines
+  foreach(t pe-coupling-mpi-dd-reference pe-coupling-mpi-dd-2 pe-coupling-mpi-dd-4
+            pe-coupling-mpi-dd-restart-2 pe-coupling-mpi-dd-restart-4 pe-coupling-mpi-dd-broken-history
+            pe-coupling-mpi-dd-incline-2 pe-coupling-mpi-dd-incline-4 pe-coupling-mpi-dd-parallel-4
+            pe-coupling-mpi-dd-closing-2 pe-coupling-mpi-dd-bignormal-2 pe-coupling-mpi-dd-closingcontact-2 pe-coupling-mpi-dd-destination-4 pe-coupling-mpi-dd-buoyant-4
+            pe-coupling-mpi-dd-mixed-4 pe-coupling-mpi-dd-friction-reference pe-coupling-mpi-dd-friction-2
+            pe-coupling-mpi-dd-thirdshadow-reference pe-coupling-mpi-dd-thirdshadow-3 pe-coupling-mpi-dd-oneproc-1
+            pe-coupling-mpi-dd-presync-3 pe-coupling-mpi-dd-nativepresync-reference
+            pe-coupling-mpi-dd-nativepresync-3)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
+    set_tests_properties(${t} PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/dd-work/${t})
+  endforeach()
 endif()

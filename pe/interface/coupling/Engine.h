@@ -44,6 +44,20 @@
 #include <pe/interface/coupling/Types.h>
 
 
+//*************************************************************************************************
+/*!rief Defined (as 1) by a pe whose coupling API runs a domain-decomposed world on several
+ *        processes.
+ * \ingroup coupling
+ *
+ * The functions this adds (Engine::decomposeSlabs(), Engine::ownsPoint(), Engine::processRank(),
+ * Engine::processCount(), Engine::loadHistory(), Engine::setLoadHistory(),
+ * Engine::prepareCheckpoint(), readSlabPlanes(), sphereContainsPoints()) are not present in older
+ * pe versions with the coupling API; a client that supports both tests this macro.
+ */
+#define PE_COUPLING_DOMAIN_DECOMPOSITION 1
+//*************************************************************************************************
+
+
 namespace pe {
 
 namespace coupling {
@@ -131,14 +145,59 @@ namespace coupling {
  * refuse such meshes; use convex movable meshes or a CGAL build.
  *
  * \b MPI builds. The engine works on the bodies of the local process. On one process it is
- * fully functional. On more than one process (pe's communicator) reading stays available
- * (enumeration, states, shadow copies via Selection::shadowCopies / BodyState::shadow,
- * classification) and advance() works; everything whose state cannot follow a body to
- * another process yet throws std::runtime_error ("not implemented yet") before changing
- * anything: addLoad(), applyLoads(), writeCheckpoint(), readCheckpoint(), and
- * setKinematicState() on a global body, on a body with shadow copies, on a shadow copy or to
- * a position outside the local subdomain. MPI must be initialized before the Engine is
- * constructed.
+ * fully functional. On more than one process (pe's communicator; MPI must be initialized before
+ * the Engine is constructed):
+ * - decomposeSlabs() decomposes the domain into a chain of slabs, one per process (before any
+ *   body is created; the two slabs at a plane share exactly its points, ties go to the lower
+ *   rank); ownsPoint() tells which process creates a body (a body is created by the process
+ *   that owns its centre; a caller that evaluates it on every process should still agree on
+ *   one, e.g. the lowest claiming rank, before creating). pe keeps shadow copies on, and
+ *   migrates bodies to, neighbouring slabs only, so: createSphere() refuses a sphere whose reach
+ *   (radius plus pe's process overlap) is not smaller than the thinnest interior slab (a process
+ *   on each side; parallel planes); and advance(), on three or more processes, refuses before
+ *   every pe step, collectively, a local finite body (fixed ones included) whose reach touches a
+ *   slab that is not a neighbour of its holder's (a contact there would be missed), or whose
+ *   reach plus its displacement estimate d = (|v| + a h) h does (a the acceleration the solver
+ *   applies; pe would delete it as an outflow), or that can reach a neighbouring slab j within
+ *   d while its reach plus d touches a slab that is not a neighbour of j (the destination rule),
+ *   or whose reach plus d crosses a closing plane (n planes for n processes: the region beyond
+ *   it belongs to no process, and pe discards a contact whose point lies there; createSphere()
+ *   refuses such a sphere too).
+ *   d estimates a free body (contact impulses are not predicted). The decomposition and these
+ *   rules are process-wide, like pe's domain: a replacement Engine handle keeps them; one
+ *   decomposition per process lifetime (a native replacement of pe's MPI topology is not
+ *   detected). After a pe step or a pre-step synchronization in which a body migrated into a
+ *   process, advance() synchronizes before the next contact search, so that the new holder's
+ *   further neighbours get its shadow copy in time (pe's migration sends copies only to the
+ *   previous holder's neighbours). pe's migration does not carry a body's sleep state (it is
+ *   awake on its new holder); with a pe built with sleep mode this is the caller's
+ *   responsibility (the FEAT exchange refuses such a build);
+ * - reading (enumeration, states, shadow copies via Selection::shadowCopies /
+ *   BodyState::shadow, classification) works on the local bodies and shadow copies;
+ *   sphereContainsPoints() evaluates pe's sphere predicate for a sphere the process does not
+ *   hold;
+ * - addLoad() and applyLoads() work locally: each process adds and applies the loads of its
+ *   own bodies. A migrating body loses its coupling history (pe's migration does not carry it,
+ *   see LoadHistory): read it with loadHistory() after applyLoads() and restore it on the new
+ *   owner with setLoadHistory() before its next applyLoads(), and the continuation is bit for
+ *   bit that of one process. applyLoads() changes velocities that shadow copies on other
+ *   processes still hold the old values of, so the next advance() synchronizes before its first
+ *   pe step (pe's contact construction reads them);
+ * - advance() is collective (it synchronizes before a step when pe, applied loads or a state
+ *   override need it; pending loads on any process make every process throw);
+ * - setKinematicState() works on local bodies, also with shadow copies, to a position in the
+ *   local or a neighbouring subdomain (pe migrates to neighbours only); a global body, a shadow
+ *   copy or a farther position is refused ("not implemented yet");
+ * - checkpoints: prepareCheckpoint() (collective) gathers the records on the root process,
+ *   which writes them with writeCheckpoint() (version 3, records sorted by id). The prepared
+ *   text is a snapshot: its validity ends with the next call that changes the world or the
+ *   coupling state on ANY process; the root notices only its own changes (creation, addLoad(),
+ *   applyLoads(), advance(), setKinematicState(), setLoadHistory(), readCheckpoint()), so write
+ *   it directly after preparing, with no such call on any process in between.
+ *   readCheckpoint() is collective (every process gets the same text) and restores each record
+ *   on the process that owns its saved position (pe's rule), moving a sphere there with its id
+ *   and histories if the rebuilt world holds it elsewhere; a global finite body is refused
+ *   before anything changes.
  *
  * \b Checkpoints. Scope: finite non-union bodies plus planes at rest, with empty force and
  * torque slots, written between coupling steps. Both checkpoint functions refuse a world with
@@ -177,12 +236,15 @@ namespace coupling {
  *   before the first result is written. An allocation failure later on (the spatial index
  *   collects candidates per point; CGAL mesh predicates may allocate) can leave the results of
  *   earlier points written.
- * - advance(): its checks are local and run before any collective and before the first step;
- *   if a pe step throws, the bodies may have moved partially (pe gives no guarantee).
+ * - advance(): its checks run before the first step (on several processes collectively: the
+ *   pending loads and the reach rules, so every process throws together); if a pe step throws,
+ *   the bodies may have moved partially (pe gives no guarantee).
  * - writeCheckpoint(): the world and the Engine never change; the text is built in memory and
  *   written with one unformatted write(), so on a stream failure the stream may hold a part.
  * - readCheckpoint(): world and Engine unchanged (everything is validated before the first
  *   change, and the commit cannot throw); the stream may have been consumed up to the error.
+ *   Exception: on several processes, when a sphere has to move to another process, the commit
+ *   destroys, synchronizes and instantiates; an exception there is fatal (state unspecified).
  *
  * \b Precision. The API is supported and tested with pe built in double precision. Values are
  * still checked after their conversion to pe::real; BuildInfo reports the real type.
@@ -225,6 +287,16 @@ public:
                                                      // (velocity sync); no effect on one
    void  setSplitImpulse      ( bool enable );
    bool  splitImpulse         () const;
+   //@}
+   //**********************************************************************************************
+
+   //**Domain decomposition functions**************************************************************
+   /*!\name Domain decomposition functions */
+   //@{
+   void decomposeSlabs( const std::vector<SlabPlane>& planes );
+   bool ownsPoint     ( const Vec3d& point ) const;
+   int  processRank   () const;
+   int  processCount  () const;
    //@}
    //**********************************************************************************************
 
@@ -275,6 +347,8 @@ public:
    void clearLoads            ();
    bool hasPendingLoads       () const;
    void applyLoads            ( double relaxation, double dt );
+   LoadHistory loadHistory    ( BodyId id ) const;
+   void setLoadHistory        ( BodyId id, const LoadHistory& history );
    void advance               ( double dt, unsigned int substeps = 1 );
    void acknowledgeWorldReload();
    //@}
@@ -283,8 +357,9 @@ public:
    //**Checkpoint functions************************************************************************
    /*!\name Checkpoint functions */
    //@{
-   void writeCheckpoint( std::ostream& os ) const;
-   void readCheckpoint ( std::istream& is );
+   void prepareCheckpoint();
+   void writeCheckpoint  ( std::ostream& os ) const;
+   void readCheckpoint   ( std::istream& is );
    //@}
    //**********************************************************************************************
 
@@ -300,6 +375,22 @@ private:
    //@}
    //**********************************************************************************************
 };
+//*************************************************************************************************
+
+//=================================================================================================
+//
+//  FREE FUNCTIONS
+//
+//=================================================================================================
+
+//*************************************************************************************************
+/*!\name Free functions of the coupling API */
+//@{
+PE_COUPLING_API std::vector<SlabPlane> readSlabPlanes( const std::string& filename );
+
+PE_COUPLING_API void sphereContainsPoints( const Vec3d& centre, double radius, const double* xyz,
+                                           std::size_t numPoints, unsigned char* flags );
+//@}
 //*************************************************************************************************
 
 } // namespace coupling

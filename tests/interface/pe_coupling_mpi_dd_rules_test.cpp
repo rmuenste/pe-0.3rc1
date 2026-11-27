@@ -1,0 +1,968 @@
+//=================================================================================================
+/*!
+ *  \file tests/interface/pe_coupling_mpi_dd_rules_test.cpp
+ *  \brief The coupling API on a domain-decomposed world: ownership on inclined planes, the reach
+ *         and displacement rules, and contacts across a slab plane after applied loads
+ *
+ *  Copyright (C) 2026 Raphael Münster
+ *
+ *  This file is part of pe.
+ *
+ *  pe is free software: you can redistribute it and/or modify it under the terms of the GNU
+ *  General Public License as published by the Free Software Foundation, either version 3 of the
+ *  License, or (at your option) any later version.
+ *
+ *  Usage: pe_coupling_mpi_dd_rules_test incline | parallel | closing | destination | buoyant |
+ *                                        mixed
+ *         pe_coupling_mpi_dd_rules_test friction <reference file> [--write-reference]
+ *
+ *  incline (2 or 4 processes): dividing planes through the z axis, the first through (1,0,0)
+ *  with the normal (-1,1,0). Every point on a plane has exactly one owner (the two slabs at a
+ *  plane share exactly its points; the opposite half space is the exact complement), and a
+ *  sphere centred on a plane is created by exactly one process (the lowest claiming rank). On
+ *  4 processes a sphere next to the common axis reaches every slab: advance() refuses it on all
+ *  processes (reach rule) and nothing moves.
+ *
+ *  parallel (4 processes): planes x = -1, -0.95, 1 (an interior slab of width 0.05) and the
+ *  closing plane x = 3. createSphere() refuses a sphere whose reach is not smaller than 0.05; a
+ *  small sphere whose displacement in one pe step can carry it two slabs on is refused by
+ *  advance() on all processes (displacement rule), and stepped with 100 substeps; a checkpoint whose
+ *  saved position lies beyond the closing plane (no process owns it) is refused.
+ *
+ *  incline on 4 processes also: a FIXED sphere next to the axis is refused like a movable one.
+ *  parallel also: the refusal holds with a second Engine handle on the same world.
+ *
+ *  closing (2 processes): divider x = 0, closing plane x = 0.01 (the gap to it is no interior
+ *  slab): a sphere of radius 0.02 at x = -1 is created and stepped.
+ *
+ *  closingcontact (2 processes): planes z = 0.100 and the closing plane z = 0.102 (the review
+ *  case): a sphere A of radius 0.010 at z = 0.099 reaches beyond the closing plane and is refused
+ *  at creation (rule iv); a sphere B of radius 0.0005 at z = 0.101 is created, and a step that
+ *  could carry it beyond the closing plane is refused (rule iv).
+ *
+ *  bignormal (2 processes): the dividing plane x = 0 given with the normal (-1e200, 0, 0), whose
+ *  squared length overflows: it still divides x <= 0 (process 0) from x > 0 (process 1).
+ *
+ *  destination (4 processes): planes x = 0, x = 0.04 + 0.01 y, x = 10; a sphere of radius 0.05
+ *  at x = 0.039, y = 0 moving 0.002 in one step would reach slab 2 while still touching slab 0:
+ *  refused before the step (rule iii).
+ *
+ *  buoyant (4 processes): planes z = 0, 1, 10; a light sphere (density 100 in a fluid of 1000,
+ *  gravity 10 down) at z = -0.1 rises 9 * 10 * 0.15^2 = 2.025 in one step of 0.15: refused
+ *  (rule ii with the buoyancy-reduced acceleration; |g| alone would allow it).
+ *
+ *  mixed (4 processes): a checkpoint of two spheres in slab 0; one is then moved to slab 2, the
+ *  other gets a pending override into slab 1; the restore must move the first back (with its
+ *  id) and put the second at its saved pose on process 0; both are local bodies of process 0.
+ *
+ *  thirdshadow (1 process with --write-reference, 3 processes): planes z = 0.95, 1.96, a global
+ *  floor at z = 0, sphere A (radius 1) at z = 0.94 and sphere B (radius 0.015) at z = 1.99, no
+ *  gravity, split impulses, error reduction and contact relaxation 1, two pe substeps. In the
+ *  first the floor corrects A's penetration by 0.06; A migrates from process 0 to process 1 and
+ *  then overlaps B, which lies wholly in slab 2. In the second the contact A-B must be found
+ *  (process 2 needs A's shadow copy, which only the new holder can send): the states after the
+ *  step agree with one process (1e-6 of the largest value).
+ *
+ *  presync (3 processes): planes z = 0 and 1; a sphere of radius 0.1 created at z = -0.5 is
+ *  moved by setKinematicState() to z = 0.97 (it would migrate to process 1 in the
+ *  synchronization before the next step), a sphere of radius 0.005 sits at z = 1.055 in slab 2
+ *  (the review's native case). The reach rules run before that synchronization, on the holder
+ *  (process 0), and refuse the step: the moved sphere reaches slab 2 (rule i), so the contact
+ *  that only a second synchronization would let process 2 see cannot be missed silently.
+ *
+ *  nativepresync (1 process with --write-reference, 3 processes): the same situation with pe's
+ *  NATIVE domain setup (defineLocalDomain() and connect() with the half spaces of the planes
+ *  z = 0 and 1, as decomposeDomainPlaneSlabs() does, without Engine::decomposeSlabs(), so no
+ *  reach rule is installed). The sphere of radius 0.1 created at z = -0.5 on process 0 is moved
+ *  by setKinematicState() to z = 0.97: it migrates to process 1 in the synchronization before
+ *  the step and reaches into slab 2, where the sphere of radius 0.005 at z = 1.055 lies. In the
+ *  only substep of the one advance() process 2 must see the moved sphere's shadow copy, which
+ *  only its new holder sends (advance() synchronizes again after an arrival in the pre-step
+ *  synchronization): the states after the step equal those of one process bit for bit (as
+ *  measured) and the small sphere is pushed up.
+ *
+ *  oneproc (1 process): decomposeSlabs() on one process installs nothing and records nothing:
+ *  a later Engine configures again; a normal (-1e-200, 0, 0) is accepted (scaled), also from a
+ *  plane file (readSlabPlanes()).
+ *
+ *  Every mode also requires that pe's logs hold no [ERROR line.
+ *
+ *  friction (1 process with --write-reference, 2 processes): two touching spheres on both sides
+ *  of the plane x = 0 (the contact point lies on it, so process 0 constructs the contact with a
+ *  shadow copy of the sphere of process 1); static friction 0.9, dynamic friction 0.05. Each
+ *  step the holder of the right sphere applies a load that pushes it against the other and
+ *  along y. The velocities after each step must agree with the single-process reference to
+ *  1e-4 of the largest velocity of the step: pe's contact construction selects the friction
+ *  coefficient by the relative velocity, so it must see the velocity after the load, not the
+ *  shadow copy's old one (with the old one it takes the static coefficient and the result
+ *  differs by far more). The agreement is not bitwise: pe relaxes contacts between processes
+ *  (setContactRelaxation()), measured 1e-6.
+ */
+//=================================================================================================
+
+#include <mpi.h>
+#include <pe/core.h>
+#include <pe/interface/coupling/Engine.h>
+
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <limits>
+#include <memory>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "pe_coupling_test_util.h"
+
+using coupling_test::expect;
+using coupling_test::expectThrows;
+namespace pc = pe::coupling;
+
+static const pc::Vec3d zero{ { 0.0, 0.0, 0.0 } };
+
+//*************************************************************************************************
+/*!\brief The number of processes that claim a point.
+ */
+static int claims( pc::Engine& engine, const pc::Vec3d& p )
+{
+   int own( engine.ownsPoint( p ) ? 1 : 0 ), total( 0 );
+   MPI_Allreduce( &own, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   return total;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Creates a sphere on the lowest process that claims its centre; returns the id
+ *        (everywhere) and the number of processes that created one.
+ */
+static pc::BodyId createOnOwner( pc::Engine& engine, const pc::Vec3d& c, double r,
+                                 pc::MaterialId mat, int& created )
+{
+   int rank( 0 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   int claim( engine.ownsPoint( c ) ? rank : std::numeric_limits<int>::max() ), lowest( 0 );
+   MPI_Allreduce( &claim, &lowest, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD );
+   std::uint64_t id( 0 );
+   int mine( 0 );
+   if( rank == lowest ) {
+      id = engine.createSphere( c, r, mat, 1 );
+      mine = 1;
+   }
+   std::uint64_t all( 0 );
+   MPI_Allreduce( &id, &all, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD );
+   MPI_Allreduce( &mine, &created, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   return all;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The state of a body, gathered from its holder.
+ */
+static pc::BodyState stateOf( pc::Engine& engine, pc::BodyId id )
+{
+   int rank( 0 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   int held( 0 );
+   for( pc::BodyId b : ids ) held += ( b == id ) ? 1 : 0;
+   int owner( held ? rank : -1 );
+   MPI_Allreduce( MPI_IN_PLACE, &owner, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD );
+   double buf[9] = {};
+   if( held ) {
+      const pc::BodyState s( engine.state( id ) );
+      for( int k=0; k<3; ++k ) { buf[k] = s.position[k]; buf[3+k] = s.linearVelocity[k];
+                                 buf[6+k] = s.angularVelocity[k]; }
+   }
+   MPI_Bcast( buf, 9, MPI_DOUBLE, owner < 0 ? 0 : owner, MPI_COMM_WORLD );
+   pc::BodyState s{};
+   for( int k=0; k<3; ++k ) { s.position[k] = buf[k]; s.linearVelocity[k] = buf[3+k];
+                              s.angularVelocity[k] = buf[6+k]; }
+   return s;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief No "[ERROR" line in pe's log of any process (pe<rank>.log in the working directory).
+ */
+static void expectCleanLog()
+{
+   int rank( 0 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   std::ifstream in( ( "pe" + std::to_string( rank ) + ".log" ).c_str() );
+   std::string line;
+   int errors( 0 );
+   while( std::getline( in, line ) )
+      errors += ( line.find( "[ERROR" ) != std::string::npos ) ? 1 : 0;
+   int total( 0 );
+   MPI_Allreduce( &errors, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   expect( total == 0, "pe's logs hold no [ERROR line (" + std::to_string( total ) + " found)" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The process holding a body in pe's central storage as a local, non-remote body owned
+ *        by itself (-1 if not exactly one).
+ */
+static int localHolder( pc::BodyId id )
+{
+   int rank( 0 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   int mine( 0 ), good( 0 );
+   const auto& storage( pe::theCollisionSystem()->getBodyStorage() );
+   for( auto it=storage.begin(); it!=storage.end(); ++it ) {
+      if( it->getSystemID() != static_cast<pe::id_t>( id ) )
+         continue;
+      ++mine;
+      good += ( !it->isRemote() && it->getOwnerRank() == rank ) ? 1 : 0;
+   }
+   int sums[2] = { mine, good };
+   MPI_Allreduce( MPI_IN_PLACE, sums, 2, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   int who( mine ? rank : -1 );
+   MPI_Allreduce( MPI_IN_PLACE, &who, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD );
+   return ( sums[0] == 1 && sums[1] == 1 ) ? who : -1;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Inclined planes: unique ownership on the planes, unique creation, the reach rule.
+ */
+static void incline( pc::Engine& engine, int size )
+{
+   // planes through the z axis; the first through (1,0,0) with the normal (-1,1,0) (a plane
+   // through the axis shifted along x, as in the review case)
+   std::vector<pc::SlabPlane> planes;
+   planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 1.0, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 1.0, 0.0 } } } );
+   for( int k=1; k+1<size; ++k ) {
+      const double a( 3.14159265358979 * ( 0.25 + 0.2 * k ) );
+      planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 1.0, 0.0, 0.0 } },
+                                       pc::Vec3d{ { -std::sin( a ), std::cos( a ), 0.0 } } } );
+   }
+   engine.decomposeSlabs( planes );
+
+   // points on the first plane: (1,0,0) + s (1,1,0) + t (0,0,1), on the half of it (s < 0)
+   // that only slabs 0 and 1 share (planes through a common axis cut the space into wedges, and
+   // on the other half of the first plane the last wedge overlaps the first)
+   int bad( 0 ), checked( 0 );
+   for( int i=-40; i<=-1; ++i ) {
+      for( int j=0; j<3; ++j ) {
+         const double s( 0.0173 * i ), t( 0.37 * j - 0.4 );
+         const pc::Vec3d p{ { 1.0 + s, s, t } };
+         bad += ( claims( engine, p ) != 1 ) ? 1 : 0;
+         ++checked;
+      }
+   }
+   expect( bad == 0, "every point on the inclined plane has exactly one owner (" +
+                     std::to_string( bad ) + " of " + std::to_string( checked ) + " not)" );
+
+   // a sphere centred on the plane is created by exactly one process
+   const pc::MaterialId mat( engine.createMaterial( "rulesIncline", 1000.0, 0.0, 0.1, 0.1 ) );
+   int created( 0 );
+   const pc::Vec3d onPlane{ { 1.0 - 0.0173 * 17, -0.0173 * 17, 0.0 } };
+   createOnOwner( engine, onPlane, 0.01, mat, created );
+   expect( created == 1, "a sphere centred on the inclined plane is created exactly once" );
+   engine.advance( 1.0e-3 );
+
+   if( size >= 4 ) {
+      // a FIXED sphere next to the axis (created natively, then fixed): refused like any body
+      {
+         const pe::Vec3 c( 1.01, 0.002, -0.3 );
+         int claim( pe::theCollisionSystem()->getDomain().ownsPoint( c ) ? 1 : 0 ), first( 0 );
+         int rank( 0 );
+         MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+         int mine( claim ? rank : std::numeric_limits<int>::max() );
+         MPI_Allreduce( &mine, &first, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD );
+         pe::SphereID fixed( nullptr );
+         if( rank == first ) {
+            fixed = pe::createSphere( 77, c, 0.05, static_cast<pe::MaterialID>( mat ) );
+            fixed->setFixed( true );
+         }
+         expectThrows<std::runtime_error>( [&]() { engine.advance( 1.0e-3 ); },
+                                           "advance() with a fixed sphere reaching a distant slab",
+                                           "(fixed, held by process", "rule i" );
+         if( fixed != nullptr )
+            pe::destroy( fixed );
+         engine.advance( 1.0e-3 );
+      }
+      // next to the common axis (all planes contain the point (1,0,0) and the z direction) a
+      // sphere reaches every slab: the reach rule refuses the step on all processes
+      const pc::BodyId near( createOnOwner( engine, pc::Vec3d{ { 1.01, 0.002, 0.3 } }, 0.05, mat,
+                                            created ) );
+      expect( created == 1, "the sphere next to the axis is created exactly once" );
+      const pc::BodyState before( stateOf( engine, near ) );
+      expectThrows<std::runtime_error>( [&]() { engine.advance( 1.0e-3 ); },
+                                        "advance() with a sphere reaching a distant slab",
+                                        "reaches into slab", "not a neighbour" );
+      const pc::BodyState after( stateOf( engine, near ) );
+      expect( before.position == after.position, "the refused step moved nothing" );
+   }
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Parallel planes with a thin interior slab: the creation rule and the displacement rule.
+ */
+static void parallel( std::unique_ptr<pc::Engine>& handle, int rank )
+{
+   pc::Engine& engine( *handle );
+   std::vector<pc::SlabPlane> planes;
+   for( double x : { -1.0, -0.95, 1.0, 3.0 } )
+      planes.push_back( pc::SlabPlane{ pc::Vec3d{ { x, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } } );
+   engine.decomposeSlabs( planes );
+   const pc::MaterialId mat( engine.createMaterial( "rulesParallel", 1000.0, 0.0, 0.1, 0.1 ) );
+
+   // the creation rule: reach 0.05 + overlap is not smaller than the 0.05 slab (on the owner)
+   const pc::Vec3d c{ { -1.5, 0.0, 0.0 } };
+   int refused( 0 );
+   if( engine.ownsPoint( c ) ) {
+      try { engine.createSphere( c, 0.05, mat, 1 ); }
+      catch( const std::invalid_argument& ex ) {
+         refused = std::string( ex.what() ).find( "thinnest interior slab" ) != std::string::npos;
+      }
+   }
+   MPI_Allreduce( MPI_IN_PLACE, &refused, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   expect( refused == 1, "createSphere() refuses a sphere as thick as the thinnest slab" );
+
+   // the displacement rule: a small sphere in slab 0 that moves 0.4 in one step of 1e-3
+   int created( 0 );
+   const pc::BodyId id( createOnOwner( engine, pc::Vec3d{ { -1.2, 0.0, 0.0 } }, 0.01, mat,
+                                       created ) );
+   expect( created == 1, "the small sphere is created" );
+   engine.advance( 1.0e-3 );   // at rest: allowed
+   const pc::BodyState s0( stateOf( engine, id ) );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId b : ids )
+      if( b == id )
+         engine.setKinematicState( id, pc::KinematicState{ s0.position,
+                                   pc::Quatd{ { 1.0, 0.0, 0.0, 0.0 } }, pc::Vec3d{ { 400.0, 0.0, 0.0 } },
+                                   zero } );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 1.0e-3 ); },
+                                     "advance() that could carry a body two slabs on",
+                                     "can move into slab", "outflow" );
+   {
+      // a replacement Engine handle on the same world keeps the decomposition's rules
+      handle.reset();
+      handle.reset( new pc::Engine() );
+      expectThrows<std::runtime_error>( [&]() { handle->advance( 1.0e-3 ); },
+                                        "the same step with a replacement Engine handle",
+                                        "can move into slab", "outflow" );
+   }
+   pc::Engine& next( *handle );
+   const pc::BodyState s1( stateOf( next, id ) );
+   expect( s1.position == s0.position, "the refused step moved nothing" );
+   // with 100 substeps each pe step moves it 0.004 (the destination rule needs the step small
+   // against the 0.05 slab it passes): allowed
+   next.advance( 1.0e-3, 100 );
+   const pc::BodyState s2( stateOf( next, id ) );
+   expect( s2.position[0] > s0.position[0] + 0.3, "the step with substeps moved the sphere" );
+
+   // a checkpoint whose saved position lies beyond the closing plane: no process owns it
+   next.prepareCheckpoint();
+   std::string text;
+   if( rank == 0 ) {
+      std::ostringstream os;
+      next.writeCheckpoint( os );
+      text = os.str();
+   }
+   int len( int( text.size() ) );
+   MPI_Bcast( &len, 1, MPI_INT, 0, MPI_COMM_WORLD );
+   text.resize( std::size_t( len ) );
+   MPI_Bcast( &text[0], len, MPI_CHAR, 0, MPI_COMM_WORLD );
+   std::istringstream in( text );
+   std::ostringstream edited;
+   std::string line;
+   while( std::getline( in, line ) ) {
+      std::istringstream ls( line );
+      std::string tag;
+      pc::BodyId bid( 0 );
+      if( ( ls >> tag >> bid ) && tag == "body" && bid == id ) {
+         std::vector<std::string> tok;
+         std::istringstream ts( line );
+         std::string t;
+         while( ts >> t ) tok.push_back( t );
+         tok[2] = "3.5";
+         line.clear();
+         for( std::size_t i=0; i<tok.size(); ++i ) line += ( i ? " " : "" ) + tok[i];
+      }
+      edited << line << '\n';
+   }
+   std::istringstream beyond( edited.str() );
+   expectThrows<std::runtime_error>( [&]() { next.readCheckpoint( beyond ); },
+                                     "a saved position beyond the closing plane", "owned by 0 processes" );
+   const pc::BodyState s3( stateOf( next, id ) );
+   expect( s3.position == s2.position, "the refused restore changed nothing" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Two processes with a closing plane close to the divider: no interior slab.
+ */
+static void closing( pc::Engine& engine )
+{
+   engine.decomposeSlabs( { pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } },
+                            pc::SlabPlane{ pc::Vec3d{ { 0.01, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } } } );
+   const pc::MaterialId mat( engine.createMaterial( "rulesClosing", 1000.0, 0.0, 0.1, 0.1 ) );
+   int created( 0 );
+   std::string error;
+   try {
+      createOnOwner( engine, pc::Vec3d{ { -1.0, 0.0, 0.0 } }, 0.02, mat, created );
+   }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   int failed( error.empty() ? 0 : 1 );
+   MPI_Allreduce( MPI_IN_PLACE, &failed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD );
+   expect( failed == 0 && created == 1, "a sphere of radius 0.02 is created next to a short "
+           "terminal slab (" + error + ")" );
+   engine.advance( 1.0e-3 );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A closing plane: rule iv at creation and before a step.
+ */
+static void closingcontact( pc::Engine& engine )
+{
+   engine.decomposeSlabs( { pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.100 } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } },
+                            pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.102 } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } } );
+   const pc::MaterialId mat( engine.createMaterial( "rulesClosingContact", 1000.0, 0.0, 0.1, 0.1 ) );
+   // A: refused on its owner (process 0), agreed by everybody
+   std::string error;
+   int created( 0 );
+   const pc::Vec3d ca{ { 0.0, 0.0, 0.099 } };
+   if( engine.ownsPoint( ca ) ) {
+      try { engine.createSphere( ca, 0.010, mat, 1 ); }
+      catch( const std::exception& ex ) { error = ex.what(); }
+   }
+   int refused( error.find( "rule iv" ) != std::string::npos ? 1 : 0 );
+   MPI_Allreduce( MPI_IN_PLACE, &refused, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   expect( refused == 1, "a sphere reaching beyond the closing plane is refused at creation (rule iv)" );
+   // B: created, then a step towards the closing plane is refused on every process
+   created = 0;
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 0.101 } }, 0.0005, mat, created ) );
+   expect( created == 1, "the small sphere inside is created" );
+   engine.advance( 1.0e-6 );
+   const pc::BodyState s0( stateOf( engine, b ) );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId x : ids )
+      if( x == b )
+         engine.setKinematicState( b, pc::KinematicState{ s0.position, pc::Quatd{ { 1.0, 0.0, 0.0, 0.0 } },
+                                   pc::Vec3d{ { 0.0, 0.0, 1.0 } }, zero } );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 1.0e-3 ); },
+                                     "a step that could carry the sphere beyond the closing plane",
+                                     "rule iv", "closing plane" );
+   expect( stateOf( engine, b ).position == s0.position, "the refused step moved nothing" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A finite normal whose squared length overflows: (-1e200, 0, 0) at x = 0 must still
+ *        divide the space (it collapsed to a zero normal before).
+ */
+static void bignormal( pc::Engine& engine, int rank )
+{
+   engine.decomposeSlabs( { pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.0 } }, pc::Vec3d{ { -1.0e200, 0.0, 0.0 } } } } );
+   int bad( 0 );
+   for( double x : { -1.0, -1.0e-3, 0.0, 1.0e-3, 1.0 } ) {
+      const pc::Vec3d p{ { x, 0.3, -0.2 } };
+      int own( engine.ownsPoint( p ) ? rank : -1 ), owner( 0 );
+      MPI_Allreduce( &own, &owner, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD );
+      bad += ( claims( engine, p ) != 1 || owner != ( x <= 0.0 ? 0 : 1 ) ) ? 1 : 0;
+   }
+   expect( bad == 0, "the plane with the normal (-1e200, 0, 0) divides x <= 0 (process 0) from x > 0" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A migration into a process whose further neighbour holds a body the migrated one
+ *        touches in the next pe step; returns the final states as one line.
+ */
+static std::string thirdshadow( pc::Engine& engine, int size )
+{
+   if( size > 1 ) {
+      std::vector<pc::SlabPlane> planes;
+      for( double z : { 0.95, 1.96 } )
+         planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, z } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } );
+      engine.decomposeSlabs( planes );
+   }
+   engine.setSplitImpulse( true );
+   engine.setErrorReduction( 1.0 );
+   engine.setContactRelaxation( 1.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesThird", 1000.0, 0.0, 0.0, 0.0 ) );
+   engine.createPlane( pc::Vec3d{ { 0.0, 0.0, 1.0 } }, 0.0, mat, 50 );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 0.94 } }, 1.0, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 1.99 } }, 0.015, mat, created ) );
+   engine.advance( 0.02, 2 );
+   std::ostringstream oss;
+   oss.precision( 17 );
+   for( pc::BodyId x : { a, b } ) {
+      const pc::BodyState s( stateOf( engine, x ) );
+      for( int k=0; k<3; ++k ) oss << ' ' << s.position[k];
+      for( int k=0; k<3; ++k ) oss << ' ' << s.linearVelocity[k];
+   }
+   return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A body that migrates in the synchronization before a step (after setKinematicState())
+ *        and touches a body of the third process in that step; returns the states as one line.
+ */
+static void presync( pc::Engine& engine, int size )
+{
+   {
+      std::vector<pc::SlabPlane> planes;
+      for( double z : { 0.0, 1.0 } )
+         planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, z } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } );
+      engine.decomposeSlabs( planes );
+   }
+   engine.setSplitImpulse( true );
+   engine.setErrorReduction( 1.0 );
+   engine.setContactRelaxation( 1.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesPresync", 1000.0, 0.0, 0.0, 0.0 ) );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, -0.5 } }, 0.1, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 1.055 } }, 0.005, mat, created ) );
+   engine.advance( 1.0e-6 );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId x : ids )
+      if( x == a ) {
+         const pc::BodyState s( engine.state( a ) );
+         engine.setKinematicState( a, pc::KinematicState{ pc::Vec3d{ { 0.0, 0.0, 0.97 } }, s.orientation,
+                                                          zero, zero } );
+      }
+   const pc::BodyState b0( stateOf( engine, b ) );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 0.01 ); },
+                                     "the step after moving the sphere next to the third process's body",
+                                     "rule i", "reaches into slab 2" );
+   expect( stateOf( engine, b ).position == b0.position, "the refused step moved nothing" );
+   (void)size;
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief The presync situation with pe's native domain setup (no reach rules); returns the
+ *        states after the step as one line.
+ */
+static std::string nativepresync( pc::Engine& engine, int rank, int size )
+{
+   if( size > 1 ) {
+      // three slabs z <= 0, 0 <= z <= 1, z >= 1: each plane as the half space on its positive
+      // side (normal towards decreasing z), its exact complement for the slab above it
+      const pe::HalfSpace p0( pe::Vec3( 0, 0, -1 ), 0 ), p1( pe::Vec3( 0, 0, -1 ), -1 );
+      expect( size == 3, "nativepresync runs on 1 or 3 processes" );
+      if( rank == 0 ) {
+         pe::defineLocalDomain( p0 );
+         pe::connect( 1, pe::intersect( p1, p0.opposite() ) );
+      }
+      else if( rank == 1 ) {
+         pe::defineLocalDomain( pe::intersect( p1, p0.opposite() ) );
+         pe::connect( 0, p0 );
+         pe::connect( 2, p1.opposite() );
+      }
+      else if( rank == 2 ) {
+         pe::defineLocalDomain( p1.opposite() );
+         pe::connect( 1, pe::intersect( p1, p0.opposite() ) );
+      }
+   }
+   engine.setSplitImpulse( true );
+   engine.setErrorReduction( 1.0 );
+   engine.setContactRelaxation( 1.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesNativePresync", 1000.0, 0.0, 0.0, 0.0 ) );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, -0.5 } }, 0.1, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, 1.055 } }, 0.005, mat, created ) );
+   expect( created == 1, "the small sphere is created once" );
+   expect( size == 1 || localHolder( b ) == 2, "the small sphere lies on process 2" );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId x : ids )
+      if( x == a ) {
+         const pc::BodyState s( engine.state( a ) );
+         engine.setKinematicState( a, pc::KinematicState{ pc::Vec3d{ { 0.0, 0.0, 0.97 } }, s.orientation,
+                                                          zero, zero } );
+      }
+   engine.advance( 0.01, 1 );
+   expect( size == 1 || localHolder( a ) == 1, "the moved sphere migrated to process 1" );
+   std::ostringstream oss;
+   oss.precision( 17 );
+   for( pc::BodyId x : { a, b } ) {
+      const pc::BodyState s( stateOf( engine, x ) );
+      for( int k=0; k<3; ++k ) oss << ' ' << s.position[k];
+      for( int k=0; k<3; ++k ) oss << ' ' << s.linearVelocity[k];
+   }
+   return oss.str();
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief One process: decomposeSlabs() records nothing; small normals.
+ */
+static void oneproc( std::unique_ptr<pc::Engine>& handle )
+{
+   const std::vector<pc::SlabPlane> tiny{ pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.0 } },
+                                                         pc::Vec3d{ { -1.0e-200, 0.0, 0.0 } } } };
+   std::string error;
+   try { handle->decomposeSlabs( tiny ); }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   expect( error.empty(), "a normal (-1e-200, 0, 0) is accepted (" + error + ")" );
+   handle.reset();
+   handle.reset( new pc::Engine() );
+   error.clear();
+   try { handle->decomposeSlabs( tiny ); }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   expect( error.empty(), "a later Engine on one process configures again (" + error + ")" );
+   {
+      std::ofstream f( "tiny_plane.txt" );
+      f << "0 0 0 -1e-200 0 0\n";
+   }
+   error.clear();
+   std::vector<pc::SlabPlane> read;
+   try { read = pc::readSlabPlanes( "tiny_plane.txt" ); }
+   catch( const std::exception& ex ) { error = ex.what(); }
+   expect( error.empty() && read.size() == 1 && read[0].normal[0] == -1.0e-200,
+           "readSlabPlanes() accepts the normal (-1e-200, 0, 0) (" + error + ")" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Converging inclined planes: the destination rule.
+ */
+static void destination( pc::Engine& engine )
+{
+   engine.decomposeSlabs( { pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } },
+                            pc::SlabPlane{ pc::Vec3d{ { 0.04, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.01, 0.0 } } },
+                            pc::SlabPlane{ pc::Vec3d{ { 10.0, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } } } );
+   const pc::MaterialId mat( engine.createMaterial( "rulesDestination", 1000.0, 0.0, 0.1, 0.1 ) );
+   int created( 0 );
+   const pc::BodyId id( createOnOwner( engine, pc::Vec3d{ { 0.039, 0.0, 0.0 } }, 0.05, mat, created ) );
+   expect( created == 1, "the sphere in the thin wedge slab is created" );
+   engine.advance( 1.0e-6 );   // at rest: allowed (it touches slabs 0 and 2, both neighbours)
+   const pc::BodyState s0( stateOf( engine, id ) );
+   std::vector<pc::BodyId> ids;
+   engine.bodyIds( pc::Selection::movable, ids );
+   for( pc::BodyId b : ids )
+      if( b == id )
+         engine.setKinematicState( id, pc::KinematicState{ s0.position,
+                                   pc::Quatd{ { 1.0, 0.0, 0.0, 0.0 } }, pc::Vec3d{ { 2.0, 0.0, 0.0 } },
+                                   zero } );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 1.0e-3 ); },
+                                     "advance() moving the sphere into slab 2 while it touches slab 0",
+                                     "rule iii", "destination" );
+   expect( stateOf( engine, id ).position == s0.position, "the refused step moved nothing" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A light sphere: the displacement rule with the buoyancy-reduced acceleration.
+ */
+static void buoyant( pc::Engine& engine )
+{
+   std::vector<pc::SlabPlane> planes;
+   for( double z : { 0.0, 1.0, 10.0 } )
+      planes.push_back( pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, z } }, pc::Vec3d{ { 0.0, 0.0, -1.0 } } } );
+   engine.decomposeSlabs( planes );
+   engine.setGravity( pc::Vec3d{ { 0.0, 0.0, -10.0 } } );
+   engine.setFluidDensity( 1000.0 );
+   const pc::MaterialId mat( engine.createMaterial( "rulesBuoyant", 100.0, 0.0, 0.1, 0.1 ) );
+   int created( 0 );
+   const pc::BodyId id( createOnOwner( engine, pc::Vec3d{ { 0.0, 0.0, -0.1 } }, 0.01, mat, created ) );
+   expect( created == 1, "the light sphere is created" );
+   const pc::BodyState s0( stateOf( engine, id ) );
+   expectThrows<std::runtime_error>( [&]() { engine.advance( 0.15 ); },
+                                     "advance() that lifts the light sphere two slabs",
+                                     "rule ii", "can move into slab 2" );
+   expect( stateOf( engine, id ).position == s0.position, "the refused step moved nothing" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief A restore that moves one sphere back over two slabs while another, which stays, has a
+ *        pending override into a neighbour.
+ */
+static void mixed( pc::Engine& engine, int rank )
+{
+   std::vector<pc::SlabPlane> planes;
+   for( double x : { -1.0, 0.0, 1.0 } )
+      planes.push_back( pc::SlabPlane{ pc::Vec3d{ { x, 0.0, 0.0 } }, pc::Vec3d{ { -1.0, 0.0, 0.0 } } } );
+   engine.decomposeSlabs( planes );
+   const pc::MaterialId mat( engine.createMaterial( "rulesMixed", 1000.0, 0.0, 0.1, 0.1 ) );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { -1.5, 0.0, 0.0 } }, 0.05, mat, created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { -1.5, 1.0, 0.0 } }, 0.05, mat, created ) );
+   engine.advance( 1.0e-6 );
+   const pc::BodyState a0( stateOf( engine, a ) ), b0( stateOf( engine, b ) );
+   // the checkpoint: both in slab 0
+   engine.prepareCheckpoint();
+   std::string text;
+   if( rank == 0 ) {
+      std::ostringstream os;
+      engine.writeCheckpoint( os );
+      text = os.str();
+   }
+   int len( int( text.size() ) );
+   MPI_Bcast( &len, 1, MPI_INT, 0, MPI_COMM_WORLD );
+   text.resize( std::size_t( len ) );
+   MPI_Bcast( &text[0], len, MPI_CHAR, 0, MPI_COMM_WORLD );
+   // A moves to slab 2, one slab per synchronization
+   const auto moveTo = [&]( pc::BodyId id, double x ) {
+      std::vector<pc::BodyId> ids;
+      engine.bodyIds( pc::Selection::movable, ids );
+      for( pc::BodyId bid : ids )
+         if( bid == id ) {
+            const pc::BodyState s( engine.state( id ) );
+            engine.setKinematicState( id, pc::KinematicState{ pc::Vec3d{ { x, s.position[1], s.position[2] } },
+                                      s.orientation, zero, zero } );
+         }
+   };
+   moveTo( a, -0.5 );
+   engine.advance( 1.0e-6 );
+   moveTo( a, 0.5 );
+   engine.advance( 1.0e-6 );
+   expect( localHolder( a ) == 2, "A was moved to process 2" );
+   // B: a pending override into slab 1 (not synchronized)
+   moveTo( b, -0.5 );
+   std::istringstream is( text );
+   engine.readCheckpoint( is );
+   expect( localHolder( a ) == 0, "after the restore A is a local body of process 0 again" );
+   expect( localHolder( b ) == 0, "after the restore B is a local body of process 0" );
+   const pc::BodyState a1( stateOf( engine, a ) ), b1( stateOf( engine, b ) );
+   expect( a1.position == a0.position && b1.position == b0.position,
+           "both are at their saved positions on their actual holder" );
+   engine.advance( 1.0e-6 );
+   expect( localHolder( a ) == 0 && localHolder( b ) == 0, "after a step both stay on process 0" );
+}
+//*************************************************************************************************
+
+
+//*************************************************************************************************
+/*!\brief Two touching spheres on both sides of x = 0; returns one line per step.
+ */
+static std::vector<std::string> friction( pc::Engine& engine, int size )
+{
+   if( size > 1 ) {
+      engine.decomposeSlabs( { pc::SlabPlane{ pc::Vec3d{ { 0.0, 0.0, 0.0 } },
+                                              pc::Vec3d{ { -1.0, 0.0, 0.0 } } } } );
+   }
+   const pc::MaterialId mat( engine.createMaterial( "rulesFriction", 1000.0, 0.0, 0.9, 0.05 ) );
+   int created( 0 );
+   const pc::BodyId a( createOnOwner( engine, pc::Vec3d{ { -0.05, 0.0, 0.0 } }, 0.05, mat,
+                                      created ) );
+   const pc::BodyId b( createOnOwner( engine, pc::Vec3d{ { 0.05, 0.0, 0.0 } }, 0.05, mat,
+                                      created ) );
+   engine.advance( 1.0e-12 );   // shadow copies exist
+   std::vector<std::string> lines;
+   for( int step=1; step<=6; ++step ) {
+      std::vector<pc::BodyId> ids;
+      engine.bodyIds( pc::Selection::movable, ids );
+      for( pc::BodyId x : ids )
+         if( x == b )
+            engine.addLoad( b, pc::Vec3d{ { -2.0, 3.0 * step, 0.0 } }, zero );
+      engine.applyLoads( 1.0, 1.0e-3 );
+      engine.advance( 1.0e-3 );
+      std::ostringstream oss;
+      oss.precision( 17 );
+      oss << "step " << step;
+      for( pc::BodyId x : { a, b } ) {
+         const pc::BodyState s( stateOf( engine, x ) );
+         for( int k=0; k<3; ++k ) oss << ' ' << s.linearVelocity[k];
+         for( int k=0; k<3; ++k ) oss << ' ' << s.angularVelocity[k];
+      }
+      lines.push_back( oss.str() );
+   }
+   return lines;
+}
+//*************************************************************************************************
+
+
+int main( int argc, char** argv )
+{
+   MPI_Init( &argc, &argv );
+   int rank( 0 ), size( 1 );
+   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+   MPI_Comm_size( MPI_COMM_WORLD, &size );
+   // pe opens its log only when it logs something: remove the log of an earlier run, so that
+   // expectCleanLog() reads this run's log only
+   std::remove( ( "pe" + std::to_string( rank ) + ".log" ).c_str() );
+   const std::string mode( argc > 1 ? argv[1] : "" );
+
+   std::unique_ptr<pc::Engine> handle( new pc::Engine() );
+   pc::Engine& engine( *handle );
+   engine.setGravity( zero );
+
+   if( mode == "incline" ) {
+      incline( engine, size );
+   }
+   else if( mode == "parallel" ) {
+      parallel( handle, rank );
+   }
+   else if( mode == "closing" ) {
+      closing( engine );
+   }
+   else if( mode == "oneproc" ) {
+      oneproc( handle );
+   }
+   else if( mode == "presync" ) {
+      presync( engine, size );
+   }
+   else if( mode == "nativepresync" && argc > 2 ) {
+      const std::string reference( argv[2] );
+      const bool write( argc > 3 && std::string( argv[3] ) == "--write-reference" );
+      const std::string line( nativepresync( engine, rank, size ) );
+      if( write ) {
+         if( rank == 0 ) {
+            std::ofstream out( reference.c_str() );
+            out << line << '\n';
+         }
+      }
+      else {
+         std::ifstream in( reference.c_str() );
+         std::string l;
+         std::getline( in, l );
+         std::istringstream ra( l ), rb( line );
+         std::vector<double> xa, xb;
+         double x( 0 );
+         while( ra >> x ) xa.push_back( x );
+         while( rb >> x ) xb.push_back( x );
+         double diff( 1.0 );
+         if( xa.size() == 12 && xb.size() == 12 ) {
+            diff = 0.0;
+            for( std::size_t i=0; i<12; ++i )
+               diff = std::max( diff, std::fabs( xa[i] - xb[i] ) );
+         }
+         if( rank == 0 )
+            std::printf( "pe_coupling_mpi_dd_rules_test nativepresync (%d ranks): B at z = %.17g "
+                         "(one process: %.17g), largest absolute difference %.3e\n", size,
+                         xb.size() == 12 ? xb[8] : 0.0, xa.size() == 12 ? xa[8] : 0.0, diff );
+         expect( xa.size() == 12 && diff == 0.0 && xa[8] > 1.055,
+                 "the contact of the sphere that migrated in the pre-step synchronization with the "
+                 "sphere of the third process is found in the first substep (states bitwise equal to "
+                 "one process; B pushed up)" );
+      }
+   }
+   else if( mode == "thirdshadow" && argc > 2 ) {
+      const std::string reference( argv[2] );
+      const bool write( argc > 3 && std::string( argv[3] ) == "--write-reference" );
+      const std::string line( thirdshadow( engine, size ) );
+      if( write ) {
+         if( rank == 0 ) {
+            std::ofstream out( reference.c_str() );
+            out << line << '\n';
+         }
+      }
+      else {
+         std::ifstream in( reference.c_str() );
+         std::string l;
+         std::getline( in, l );
+         std::istringstream ra( l ), rb( line );
+         std::vector<double> xa, xb;
+         double x( 0 );
+         while( ra >> x ) xa.push_back( x );
+         while( rb >> x ) xb.push_back( x );
+         double scale( 0.0 ), diff( 1.0 );
+         if( xa.size() == 12 && xb.size() == 12 ) {
+            diff = 0.0;
+            for( std::size_t i=0; i<12; ++i ) {
+               scale = std::max( scale, std::fabs( xa[i] ) );
+               diff = std::max( diff, std::fabs( xa[i] - xb[i] ) );
+            }
+         }
+         if( rank == 0 )
+            std::printf( "pe_coupling_mpi_dd_rules_test thirdshadow (%d ranks): B at z = %.17g (one "
+                         "process: %.17g), largest difference %.3e\n", size,
+                         xb.size() == 12 ? xb[8] : 0.0, xa.size() == 12 ? xa[8] : 0.0, diff );
+         expect( xa.size() == 12 && diff <= 1.0e-6 * scale && xa[8] > 1.99,
+                 "the contact of the migrated sphere with the sphere of the third process is found "
+                 "in the second substep (states equal to one process; B pushed up)" );
+      }
+   }
+   else if( mode == "closingcontact" ) {
+      closingcontact( engine );
+   }
+   else if( mode == "bignormal" ) {
+      bignormal( engine, rank );
+   }
+   else if( mode == "destination" ) {
+      destination( engine );
+   }
+   else if( mode == "buoyant" ) {
+      buoyant( engine );
+   }
+   else if( mode == "mixed" ) {
+      mixed( engine, rank );
+   }
+   else if( mode == "friction" && argc > 2 ) {
+      const std::string reference( argv[2] );
+      const bool write( argc > 3 && std::string( argv[3] ) == "--write-reference" );
+      const std::vector<std::string> lines( friction( engine, size ) );
+      if( write ) {
+         if( rank == 0 ) {
+            std::ofstream out( reference.c_str() );
+            for( const std::string& l : lines ) out << l << '\n';
+         }
+      }
+      else {
+         std::ifstream in( reference.c_str() );
+         std::string l;
+         double worst( 0.0 );
+         std::size_t n( 0 );
+         for( const std::string& mine : lines ) {
+            if( !std::getline( in, l ) ) { worst = 1.0; break; }
+            std::istringstream ra( l ), rb( mine );
+            std::string w1, w2;
+            int s1( 0 ), s2( 0 );
+            ra >> w1 >> s1;
+            rb >> w2 >> s2;
+            std::vector<double> xa, xb;
+            double x( 0 ), y( 0 );
+            while( ra >> x && rb >> y ) { xa.push_back( x ); xb.push_back( y ); }
+            double scale( 0.0 );
+            for( double v : xa ) scale = std::max( scale, std::fabs( v ) );
+            for( std::size_t i=0; i<xa.size(); ++i ) {
+               worst = std::max( worst, std::fabs( xa[i] - xb[i] ) / scale );
+               ++n;
+            }
+         }
+         if( rank == 0 )
+            std::printf( "pe_coupling_mpi_dd_rules_test friction (%d ranks): largest relative "
+                         "difference to one process %.3e over %zu values\n", size, worst, n );
+         expect( n == 6 * 12 && worst <= 1.0e-4,
+                 "the velocities agree with the single-process reference (1e-4 of the largest)" );
+      }
+   }
+   else {
+      if( rank == 0 )
+         std::fprintf( stderr, "usage: %s incline | parallel | closing | destination | buoyant | mixed | nativepresync "
+                       "| friction <reference> [--write-reference]\n", argv[0] );
+      MPI_Abort( MPI_COMM_WORLD, 2 );
+   }
+
+   expectCleanLog();
+   int local( coupling_test::failures() ), total( 0 );
+   MPI_Allreduce( &local, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD );
+   if( rank == 0 )
+      std::printf( "pe_coupling_mpi_dd_rules_test %s (%d ranks): %s (%d failed checks over all "
+                   "ranks)\n", mode.c_str(), size, total ? "FAILED" : "PASSED", total );
+   MPI_Finalize();
+   return total ? 1 : 0;
+}
